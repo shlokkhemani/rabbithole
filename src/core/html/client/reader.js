@@ -303,10 +303,20 @@ export const CLIENT_READER = `  // =============================================
     textNode.parentNode.insertBefore(m, textNode);
     m.appendChild(textNode);
   }
+  // A rendered formula's text lives inside <math>; slipping a <mark> (an HTML
+  // element) in there produces invalid MathML and the formula stops rendering.
+  // Leave math internals unwrapped — the surrounding prose still highlights and
+  // the offsets are unaffected (marking is purely visual).
+  function inMath(node){
+    for (var p = node; p; p = p.parentNode){
+      if (p.localName === "math") return true;
+    }
+    return false;
+  }
   function wrapRange(range, childId, cls){
     var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
     if (startC === endC && startC.nodeType === 3){
-      if (startO === endO) return;
+      if (startO === endO || inMath(startC)) return;
       var mid = startC.splitText(startO); mid.splitText(endO - startO);
       wrapTextNode(mid, childId, cls); return;
     }
@@ -321,7 +331,7 @@ export const CLIENT_READER = `  // =============================================
     }
     for (var i = collected.length - 1; i >= 0; i--){
       var c = collected[i], node = c.node, s = c.start, e = c.end, L = node.textContent.length;
-      if (s >= e || !L) continue;
+      if (s >= e || !L || inMath(node)) continue;
       var t = s > 0 ? node.splitText(s) : node;
       if (e < L) t.splitText(e - s);
       wrapTextNode(t, childId, cls);

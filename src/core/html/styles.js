@@ -76,6 +76,9 @@ body.agent-down .activity.writing { display: none; }
 .md li { margin: 0 0 0.3em; }
 .md li::marker { color: var(--fg-faint); }
 .md li > ul, .md li > ol { margin: 0.3em 0 0.35em; }
+.md .math-display { margin: 0.4em 0 1em; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; text-align: center; }
+.md .math-display math { display: block; }
+.md math { font-size: 1.05em; }
 .md code { font-family: var(--font-mono); font-size: 0.82em; background: var(--code-bg); border-radius: 4px; padding: 0.12em 0.38em; }
 .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.85em 1em; margin: 0.4em 0 1em; overflow-x: auto; overscroll-behavior-x: contain; line-height: 1.55; }
 .md pre code { background: none; border: none; padding: 0; font-size: 0.8em; }

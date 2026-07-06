@@ -30,6 +30,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "katex": "^0.16.47",
     "marked": "^15.0.7",
     "zod": "^3.24.2"
   },

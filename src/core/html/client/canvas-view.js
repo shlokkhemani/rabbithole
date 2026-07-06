@@ -194,6 +194,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     var kid = sendFollowup(node, question, null);
     node.ncText.value = "";
     autoGrowEl(node.ncText, 90);
+    closeCardDrawer(node);
     updateCardComposer(node);
     revealNode(kid, source);
   }

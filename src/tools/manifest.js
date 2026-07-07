@@ -6,12 +6,24 @@ function str(description, extra = {}) {
 function obj(fields, extra = {}) {
   return { kind: "object", fields, ...extra };
 }
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 
 function validateOpen(params) {
   if (params.hole_id) return;
   if (!params.title) throw new Error("title is required when starting a new Rabbithole");
   if (!params.content && !params.file_path) {
     throw new Error("Provide content or file_path when starting a new Rabbithole");
+  }
+  if (params.base_url && !isHttpUrl(params.base_url)) {
+    throw new Error("base_url must be an absolute http(s) URL");
   }
 }
 
@@ -35,12 +47,13 @@ export const toolDefinitions = [
       title: str("Document title (required for a new hole)", { optional: true }),
       content: str("Raw markdown for the root document", { optional: true }),
       file_path: str("Path to a .md file (alternative to content)", { optional: true }),
+      base_url: str("Base URL for resolving relative Markdown links/images", { optional: true }),
       hole_id: str("Resume a saved hole instead of starting a new one", { optional: true }),
     }),
     resultKind: "json",
     validateInput: validateOpen,
-    run: ({ title, content, file_path, hole_id }, extra) =>
-      openRabbithole({ title, content, filePath: file_path, holeId: hole_id, signal: extra?.signal }),
+    run: ({ title, content, file_path, base_url, hole_id }, extra) =>
+      openRabbithole({ title, content, filePath: file_path, baseUrl: base_url, holeId: hole_id, signal: extra?.signal }),
   },
   {
     name: "answer_branch",

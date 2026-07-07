@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
-import { renderMarkdownToHtml } from "./markdown.js";
+import { renderMarkdownToHtml, resolveMarkdownBaseUrl } from "./markdown.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, closeSessionsForHole } from "./sessions.js";
 import { loadHole, listHoles } from "./storage.js";
@@ -18,18 +18,20 @@ async function resolveMarkdown({ content, filePath }) {
  * `signal` is the MCP request's AbortSignal — if the human cancels the tool
  * call, the session tells the browser the agent detached.
  */
-export async function openRabbithole({ title, content, filePath, holeId, signal }) {
+export async function openRabbithole({ title, content, filePath, baseUrl, holeId, signal }) {
   if (holeId) return resumeRabbithole(holeId, signal);
 
   log(`openRabbithole: "${title}"`);
   const markdown = await resolveMarkdown({ content, filePath });
+  const rootBaseUrl = resolveMarkdownBaseUrl(markdown, baseUrl);
   const rootId = randomUUID();
   const rootNode = {
     id: rootId,
     parent_id: null,
     title: title || "Document",
     markdown,
-    contentHtml: await renderMarkdownToHtml(markdown),
+    base_url: rootBaseUrl,
+    contentHtml: await renderMarkdownToHtml(markdown, { baseUrl: rootBaseUrl }),
     origin: null,
     position: { x: 0, y: 0 },
     size: null,
@@ -77,7 +79,8 @@ async function resumeRabbithole(holeId, signal) {
       parent_id: raw.parent_id ?? null,
       title: raw.title ?? "",
       markdown: pending ? "" : (raw.markdown ?? ""),
-      contentHtml: pending ? "" : await renderMarkdownToHtml(raw.markdown ?? ""),
+      base_url: raw.base_url ?? null,
+      contentHtml: pending ? "" : await renderMarkdownToHtml(raw.markdown ?? "", { baseUrl: raw.base_url }),
       origin: raw.origin ?? null,
       position: raw.position ?? { x: 0, y: 0 },
       size: raw.size ?? null,

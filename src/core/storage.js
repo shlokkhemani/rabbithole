@@ -57,6 +57,7 @@ export async function saveHole(hole) {
       parent_id: node.parent_id ?? null,
       title: node.title ?? "",
       markdown: node.markdown ?? "",
+      base_url: node.base_url ?? null,
       origin: node.origin ?? null,
       position: node.position ?? { x: 0, y: 0 },
       size: node.size ?? null,

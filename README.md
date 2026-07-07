@@ -74,8 +74,9 @@ Follow these steps exactly:
    also responds to a standard MCP `initialize` with server name `rabbithole`.)
 4. **Tell your human what to do next**: they should start a session and say
    *"open &lt;some document&gt; in rabbithole"* — you then call `open_rabbithole`
-   with `{ title, content }` (or `{ title, file_path }`), which blocks until
-   they select text and ask. Answer with `answer_branch` (stream chunks with
+   with `{ title, content }` (or `{ title, file_path }`; add `base_url` when
+   markdown contains relative links/images), which blocks until they select text
+   and ask. Answer with `answer_branch` (stream chunks with
    `partial: true`, finish with a titled final call) and keep looping until
    `status='session_closed'`.
 
@@ -88,7 +89,7 @@ cached. If the browser must not auto-open (headless), set
 
 | Tool | What it does |
 |------|--------------|
-| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
+| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url` for relative Markdown links/images) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
 | `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 

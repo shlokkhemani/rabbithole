@@ -313,6 +313,7 @@ export class RabbitHoleSession {
       title: n.title ?? "",
       contentHtml: n.contentHtml ?? "",
       markdown: n.markdown ?? "",
+      base_url: n.base_url ?? null,
       origin: n.origin ?? null,
       position: n.position ?? { x: 0, y: 0 },
       size: n.size ?? null,
@@ -401,7 +402,7 @@ export class RabbitHoleSession {
     // mid-stream should still surface as stalled), and nothing persists yet.
     if (partial) {
       node.markdown = (node.markdown || "") + String(content ?? "");
-      node.contentHtml = await renderMarkdownToHtml(node.markdown);
+      node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url });
       this.startAnswerWatchdog();
       this.broadcast({ type: "node_progress", node_id: node.id, contentHtml: node.contentHtml });
       return { ok: true, node_id: node.id, request_id: requestId, partial: true };
@@ -419,7 +420,7 @@ export class RabbitHoleSession {
     const buffered = node.markdown || "";
     node.markdown = buffered && !tail.startsWith(buffered) ? buffered + tail : tail;
     node.title = String(title ?? node.title ?? "Untitled").trim() || "Untitled";
-    node.contentHtml = await renderMarkdownToHtml(node.markdown);
+    node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url });
     node.status = "answered";
     // Fresh answers land unread; the client flips this the moment the human
     // actually opens them (and immediately if they're watching it stream).
@@ -518,6 +519,7 @@ export class RabbitHoleSession {
       parent_id: parentId,
       title: synthesis ? "Synthesis" : lens ? LENS_LABELS[lens] : question ? truncate(question, 48) : "…",
       markdown: "",
+      base_url: parent.base_url ?? null,
       contentHtml: "",
       origin: { selected_text: selectedText, question, lens, synthesis, anchor, branch_type: branchType },
       position: normalizePosition(payload.position),

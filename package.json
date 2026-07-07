@@ -22,6 +22,9 @@
   "bin": {
     "rabbithole-mcp": "./bin/mcp-server.js"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "files": [
     "bin",
     "src",

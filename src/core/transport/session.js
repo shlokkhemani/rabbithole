@@ -1,9 +1,10 @@
 import http from "node:http";
+import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
 import { renderMarkdownToHtml } from "../markdown.js";
-import { saveHole } from "../storage.js";
+import { addAssetsToHole, getAssetContentType, resolveAsset, saveHole } from "../storage.js";
 import { inheritedNodeBaseUrl, maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../base-url.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
@@ -32,12 +33,13 @@ const ANSWER_WATCHDOG_MS = 4 * 60 * 1000;
  * drives the canvas and posts branch requests / node updates.
  */
 export class RabbitHoleSession {
-  constructor({ holeId, title, rootId, createdAt, nodes, viewState, isResume, renderPage, onClose }) {
+  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose }) {
     this.id = randomUUID();
     this.holeId = holeId || randomUUID();
     this.title = title || "Untitled";
     this.rootId = rootId || null;
     this.createdAt = createdAt || new Date().toISOString();
+    this.assetNames = new Set(assetNames || []);
     this.viewState = viewState ?? null;
     this.renderPage = renderPage;
     this.onClose = onClose;
@@ -342,6 +344,47 @@ export class RabbitHoleSession {
     };
   }
 
+  async buildExportHydration() {
+    const hydration = { ...this.buildHydration(), frozen: true };
+    const dataUriCache = new Map();
+    hydration.nodes = [];
+    for (const node of this.serializeNodes()) {
+      hydration.nodes.push({
+        ...node,
+        contentHtml: await this.inlineAssetImageSrcs(node.contentHtml, dataUriCache),
+      });
+    }
+    return hydration;
+  }
+
+  async inlineAssetImageSrcs(html, dataUriCache) {
+    const source = String(html ?? "");
+    const srcRe = /\bsrc="\/assets\/([a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg))"/g;
+    let out = "";
+    let last = 0;
+    let match;
+    while ((match = srcRe.exec(source))) {
+      out += source.slice(last, match.index);
+      out += `src="${await this.assetDataUri(match[1], dataUriCache)}"`;
+      last = srcRe.lastIndex;
+    }
+    return out + source.slice(last);
+  }
+
+  async assetDataUri(name, dataUriCache) {
+    if (dataUriCache.has(name)) return dataUriCache.get(name);
+    let dataUri = "data:,";
+    try {
+      const filePath = await resolveAsset(this.holeId, name);
+      if (filePath) {
+        const bytes = await fs.readFile(filePath);
+        dataUri = `data:${getAssetContentType(name)};base64,${bytes.toString("base64")}`;
+      }
+    } catch {}
+    dataUriCache.set(name, dataUri);
+    return dataUri;
+  }
+
   toHole() {
     // Answered nodes persist in full. Pending nodes persist as durable asks —
     // the question and its anchor survive, but any half-streamed markdown is
@@ -380,7 +423,7 @@ export class RabbitHoleSession {
 
   // ---- the answer path (agent -> server -> browser) -----------------------
 
-  async answerBranch({ requestId, title, content, partial, baseUrl, signal }) {
+  async answerBranch({ requestId, title, content, partial, baseUrl, assets, signal }) {
     this.touch();
     if (this.closed) throw new Error("Rabbithole session is already closed");
     this.clearAnswerWatchdog();
@@ -399,6 +442,9 @@ export class RabbitHoleSession {
     const node = this.nodes.get(nodeId);
     if (!node) throw buildJsonError(`Node ${nodeId} not found`, 404);
 
+    const addedAssets = await addAssetsToHole(this.holeId, assets);
+    for (const asset of addedAssets) this.assetNames.add(asset.name);
+
     const explicitBaseUrl = normalizeBaseUrl(baseUrl);
     if (explicitBaseUrl) {
       node.base_url = explicitBaseUrl;
@@ -410,7 +456,7 @@ export class RabbitHoleSession {
     // mid-stream should still surface as stalled), and nothing persists yet.
     if (partial) {
       node.markdown = (node.markdown || "") + String(content ?? "");
-      node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url });
+      node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url, assetNames: this.assetNames });
       this.startAnswerWatchdog();
       this.broadcast({ type: "node_progress", node_id: node.id, contentHtml: node.contentHtml });
       return { ok: true, node_id: node.id, request_id: requestId, partial: true };
@@ -429,7 +475,7 @@ export class RabbitHoleSession {
     node.markdown = buffered && !tail.startsWith(buffered) ? buffered + tail : tail;
     node.title = String(title ?? node.title ?? "Untitled").trim() || "Untitled";
     if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(node);
-    node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url });
+    node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url, assetNames: this.assetNames });
     node.status = "answered";
     // Fresh answers land unread; the client flips this the moment the human
     // actually opens them (and immediately if they're watching it stream).
@@ -662,6 +708,7 @@ export class RabbitHoleSession {
   async handleRequest(req, res) {
     this.touch();
     const url = new URL(req.url || "/", this.url || "http://127.0.0.1");
+    const assetRequestName = rawAssetRequestName(req.url);
 
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
       res.writeHead(200, {
@@ -672,16 +719,22 @@ export class RabbitHoleSession {
       return;
     }
 
+    if (req.method === "GET" && assetRequestName !== undefined) {
+      await this.serveAsset(assetRequestName, res);
+      return;
+    }
+
     // A read-only single-file snapshot of the whole hole: the same page with
     // `frozen: true` hydration (no SSE, no asking) and markdown baked in, served
     // as a download. The page is already self-contained, so this is the export.
     if (req.method === "GET" && url.pathname === "/export") {
+      const hydration = await this.buildExportHydration();
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Content-Disposition": `attachment; filename="${exportFilename(this.title)}"`,
         "Cache-Control": "no-store, no-cache, must-revalidate",
       });
-      res.end(this.renderPage({ ...this.buildHydration(), frozen: true }));
+      res.end(this.renderPage(hydration));
       return;
     }
 
@@ -738,6 +791,47 @@ export class RabbitHoleSession {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not Found");
   }
+
+  async serveAsset(name, res) {
+    const headers = {
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    };
+    if (!name) {
+      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
+      res.end("Not Found");
+      return;
+    }
+
+    let filePath = null;
+    try {
+      filePath = await resolveAsset(this.holeId, name);
+    } catch {
+      filePath = null;
+    }
+    if (!filePath) {
+      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
+      res.end("Not Found");
+      return;
+    }
+
+    try {
+      const bytes = await fs.readFile(filePath);
+      res.writeHead(200, { ...headers, "Content-Type": getAssetContentType(name) });
+      res.end(bytes);
+    } catch {
+      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
+      res.end("Not Found");
+    }
+  }
+}
+
+function rawAssetRequestName(reqUrl) {
+  const rawPath = String(reqUrl || "").split(/[?#]/, 1)[0];
+  if (!rawPath.startsWith("/assets/")) return undefined;
+  const name = rawPath.slice("/assets/".length);
+  if (!name || /[\/\\%]/.test(name)) return null;
+  return name;
 }
 
 function truncate(s, n) {

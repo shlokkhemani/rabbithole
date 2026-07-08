@@ -11,10 +11,11 @@
     "url": "git+https://github.com/shlokkhemani/rabbithole.git"
   },
   "scripts": {
-    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3",
+    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
-    "test:stage3": "node test/stage3-base-url-verify.mjs"
+    "test:stage3": "node test/stage3-base-url-verify.mjs",
+    "test:stage4": "node test/stage4-assets-verify.mjs"
   },
   "keywords": [
     "mcp",

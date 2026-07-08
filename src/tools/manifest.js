@@ -1,5 +1,6 @@
 import { openRabbithole, answerBranch, listRabbitholes } from "../core/index.js";
 import { normalizeBaseUrl } from "../core/base-url.js";
+import { MAX_ASSETS_PER_CALL, validateAssetEntriesSync } from "../core/storage.js";
 
 function str(description, extra = {}) {
   return { kind: "string", description, ...extra };
@@ -7,9 +8,18 @@ function str(description, extra = {}) {
 function obj(fields, extra = {}) {
   return { kind: "object", fields, ...extra };
 }
+function arr(items, extra = {}) {
+  return { kind: "array", items, ...extra };
+}
+
+const assetInput = obj({
+  name: str("Filename to use in markdown asset: references, e.g. diagram-1.png"),
+  file_path: str("Local path to the image file to copy into this Rabbithole"),
+});
 
 function validateOpen(params) {
   normalizeBaseUrl(params.base_url);
+  validateAssetEntriesSync(params.assets);
   if (params.hole_id) return;
   if (!params.title) throw new Error("title is required when starting a new Rabbithole");
   if (!params.content && !params.file_path) {
@@ -19,6 +29,7 @@ function validateOpen(params) {
 
 function validateAnswer(params) {
   normalizeBaseUrl(params.base_url);
+  validateAssetEntriesSync(params.assets);
 }
 
 export const toolDefinitions = [
@@ -30,6 +41,7 @@ export const toolDefinitions = [
       "{ hole_id } (use list_rabbitholes to find it). " +
       "When opening content fetched from a URL or repo, pass the document's own URL as base_url so " +
       "relative images and links resolve. " +
+      "For local images that are not on the web, pass assets and reference them as ![alt](asset:name.png). " +
       "The canvas opens in the browser and this call BLOCKS until the human acts. " +
       "It returns status='branch_request' when the human selects text and asks a question — answer it " +
       "with answer_branch. A branch_request with EMPTY selected_text is a follow-up question about the " +
@@ -46,12 +58,26 @@ export const toolDefinitions = [
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,
       }),
+      assets: arr(assetInput, {
+        optional: true,
+        maxItems: MAX_ASSETS_PER_CALL,
+        description:
+          "Local image files to attach to this hole; reference them in markdown as asset:name.png images",
+      }),
       hole_id: str("Resume a saved hole instead of starting a new one", { optional: true }),
     }),
     resultKind: "json",
     validateInput: validateOpen,
-    run: ({ title, content, file_path, base_url, hole_id }, extra) =>
-      openRabbithole({ title, content, filePath: file_path, baseUrl: base_url, holeId: hole_id, signal: extra?.signal }),
+    run: ({ title, content, file_path, base_url, hole_id, assets }, extra) =>
+      openRabbithole({
+        title,
+        content,
+        filePath: file_path,
+        baseUrl: base_url,
+        holeId: hole_id,
+        assets,
+        signal: extra?.signal,
+      }),
   },
   {
     name: "answer_branch",
@@ -61,6 +87,7 @@ export const toolDefinitions = [
       "Authoring vocabulary:",
       "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
       "- If the answer is content fetched from a URL or repo, pass its document URL as base_url so relative images and links resolve.",
+      "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
       "- Use ```show when a concept is spatial or structural: architecture, memory layout, relationships.",
       "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
       "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",
@@ -86,6 +113,12 @@ export const toolDefinitions = [
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,
       }),
+      assets: arr(assetInput, {
+        optional: true,
+        maxItems: MAX_ASSETS_PER_CALL,
+        description:
+          "Local image files to attach to this hole; reference them in markdown as asset:name.png images",
+      }),
       partial: {
         kind: "boolean",
         description:
@@ -96,13 +129,14 @@ export const toolDefinitions = [
     }),
     resultKind: "json",
     validateInput: validateAnswer,
-    run: ({ session_id, request_id, title, content, base_url, partial }, extra) =>
+    run: ({ session_id, request_id, title, content, base_url, assets, partial }, extra) =>
       answerBranch({
         sessionId: session_id,
         requestId: request_id,
         title,
         content,
         baseUrl: base_url,
+        assets,
         partial,
         signal: extra?.signal,
       }),

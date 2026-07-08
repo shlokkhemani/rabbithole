@@ -4,7 +4,7 @@ import { log } from "./logger.js";
 import { renderMarkdownToHtml } from "./markdown.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, closeSessionsForHole } from "./sessions.js";
-import { loadHole, listHoles } from "./storage.js";
+import { addAssetsToHole, listAssets, loadHole, listHoles } from "./storage.js";
 import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "./base-url.js";
 
 async function resolveMarkdown({ content, filePath }) {
@@ -19,19 +19,22 @@ async function resolveMarkdown({ content, filePath }) {
  * `signal` is the MCP request's AbortSignal — if the human cancels the tool
  * call, the session tells the browser the agent detached.
  */
-export async function openRabbithole({ title, content, filePath, holeId, baseUrl, signal }) {
-  if (holeId) return resumeRabbithole(holeId, signal);
+export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, signal }) {
+  if (holeId) return resumeRabbithole(holeId, signal, assets);
 
   log(`openRabbithole: "${title}"`);
   const markdown = await resolveMarkdown({ content, filePath });
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
+  const newHoleId = randomUUID();
+  await addAssetsToHole(newHoleId, assets);
+  const assetNames = new Set(await listAssets(newHoleId));
   const rootId = randomUUID();
   const rootNode = {
     id: rootId,
     parent_id: null,
     title: title || "Document",
     markdown,
-    contentHtml: await renderMarkdownToHtml(markdown, { baseUrl: base.base_url }),
+    contentHtml: await renderMarkdownToHtml(markdown, { baseUrl: base.base_url, assetNames }),
     base_url: base.base_url,
     base_url_source: base.base_url_source,
     origin: null,
@@ -45,10 +48,11 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
   };
 
   const session = await createSession({
-    holeId: randomUUID(),
+    holeId: newHoleId,
     title: title || "Document",
     rootId,
     nodes: [rootNode],
+    assetNames,
     isResume: false,
     renderPage: (hydration) => buildCanvasHtml(hydration),
   });
@@ -56,9 +60,11 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
   return session.waitForEvent(signal);
 }
 
-async function resumeRabbithole(holeId, signal) {
+async function resumeRabbithole(holeId, signal, assets) {
   log(`resumeRabbithole: ${holeId}`);
+  await addAssetsToHole(holeId, assets);
   const hole = await loadHole(holeId);
+  const assetNames = new Set(await listAssets(hole.hole_id));
 
   // Guard against schema drift / partial files: a hole with no root_id or no
   // root node would open a session the browser can't render and the tool would
@@ -82,7 +88,7 @@ async function resumeRabbithole(holeId, signal) {
       parent_id: raw.parent_id ?? null,
       title: raw.title ?? "",
       markdown: pending ? "" : (raw.markdown ?? ""),
-      contentHtml: pending ? "" : await renderMarkdownToHtml(raw.markdown ?? "", { baseUrl: base.base_url }),
+      contentHtml: pending ? "" : await renderMarkdownToHtml(raw.markdown ?? "", { baseUrl: base.base_url, assetNames }),
       base_url: base.base_url,
       base_url_source: base.base_url_source,
       origin: raw.origin ?? null,
@@ -106,6 +112,7 @@ async function resumeRabbithole(holeId, signal) {
     rootId: hole.root_id,
     createdAt: hole.created_at,
     nodes,
+    assetNames,
     viewState: hole.view_state ?? null,
     isResume: true,
     renderPage: (hydration) => buildCanvasHtml(hydration),
@@ -119,7 +126,7 @@ async function resumeRabbithole(holeId, signal) {
  * event; a partial call streams a chunk into the pending node and returns
  * immediately so the human watches the answer arrive.
  */
-export async function answerBranch({ sessionId, requestId, title, content, partial, baseUrl, signal }) {
+export async function answerBranch({ sessionId, requestId, title, content, partial, baseUrl, assets, signal }) {
   const session = getSession(sessionId);
   if (!session || session.isClosed()) {
     return { status: "session_closed", session_id: sessionId };
@@ -130,6 +137,7 @@ export async function answerBranch({ sessionId, requestId, title, content, parti
     content,
     partial,
     baseUrl: normalizeBaseUrl(baseUrl),
+    assets,
     signal,
   });
 }

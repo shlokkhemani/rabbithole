@@ -20,7 +20,7 @@ export function registerFenceRenderer(language, render) {
 // schemes on links/images. This is the single chokepoint all node markdown flows
 // through (root docs, answers, resumes).
 const SAFE_URL = /^(?:https?:|mailto:|tel:|#|\/|\.\/|\.\.\/|[^:]*$)/i;
-const SAFE_IMG = /^(?:https?:\/\/|\/|\.\/|\.\.\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i;
+const SAFE_IMG = /^(?:https?:\/\/|\/|\.\/|\.\.\/|asset:[a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg)$|data:image\/(?:png|jpe?g|gif|webp);base64,)/i;
 // Whitespace/control chars used to obfuscate a scheme (e.g. "java\tscript:").
 const URL_NOISE = new RegExp("[\\u0000-\\u0020]+", "g");
 const INLINE_DOLLAR = "$";
@@ -34,6 +34,7 @@ const BLOCK_MATH_START = /(?:^|\n) {0,3}(?:\$\$(?!\$)|\\\[)/;
 const VISUAL_FENCE_LANGUAGES = new Set(["show"]);
 const VISUAL_FENCE_START = /(?:^|\n) {0,3}`{3,}[ \t]*show(?=$|[ \t\n])/i;
 let renderBaseUrl = null;
+let renderAssetNames = null;
 
 function isWhitespace(ch) {
   return ch === undefined || /\s/.test(ch);
@@ -318,7 +319,7 @@ const renderer = {
     return `<a href="${escapeHtml(safe)}"${titleAttr}${target} rel="noopener noreferrer">${text}</a>`;
   },
   image({ href, title, text }) {
-    const resolved = resolveMarkdownUrl(href, { baseUrl: renderBaseUrl, image: true });
+    const resolved = resolveMarkdownUrl(href, { baseUrl: renderBaseUrl, image: true, assetNames: renderAssetNames });
     const safe = sanitizeUrl(resolved, SAFE_IMG);
     if (safe === null) return escapeHtml(text || "");
     const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
@@ -331,13 +332,16 @@ registerFenceRenderer("show", (source) => renderVisualPlaceholder("show", source
 marked.use({ extensions: [visualFencePendingExtension, mathBlockExtension, mathInlineExtension], renderer });
 
 /** Renders markdown to safe HTML, collapsing inter-tag whitespace for compact embedding. */
-export async function renderMarkdownToHtml(markdown, { baseUrl = null } = {}) {
+export async function renderMarkdownToHtml(markdown, { baseUrl = null, assetNames = null } = {}) {
   const previousBaseUrl = renderBaseUrl;
+  const previousAssetNames = renderAssetNames;
   renderBaseUrl = baseUrl;
+  renderAssetNames = assetNames;
   try {
     const html = marked.parse(String(markdown ?? ""));
     return html.replace(/>\n+</g, "><").replace(/\n<\/code>/g, "</code>");
   } finally {
     renderBaseUrl = previousBaseUrl;
+    renderAssetNames = previousAssetNames;
   }
 }

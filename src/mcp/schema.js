@@ -4,6 +4,7 @@ function applyCommon(schema, def) {
   let next = schema;
   if (def.description) next = next.describe(def.description);
   if (def.minItems != null && "min" in next) next = next.min(def.minItems);
+  if (def.maxItems != null && "max" in next) next = next.max(def.maxItems);
   if (def.optional) next = next.optional();
   if (def.default !== undefined) next = next.default(def.default);
   return next;

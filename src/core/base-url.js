@@ -1,3 +1,5 @@
+import { resolveAssetMarkdownImageUrl } from "./assets.js";
+
 const BASE_URL_KEYS = ["base_url", "canonical", "canonical_url", "source_url", "url", "source"];
 const VALID_BASE_SOURCES = new Set(["explicit", "frontmatter", "inherited"]);
 const SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -202,8 +204,12 @@ function rewriteGithubImageUrl(value) {
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
 }
 
-export function resolveMarkdownUrl(raw, { baseUrl = null, image = false } = {}) {
+export function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null } = {}) {
   let value = String(raw ?? "");
+  if (image) {
+    const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames });
+    if (assetUrl !== undefined) return assetUrl;
+  }
   if (shouldResolveUrl(value, baseUrl)) {
     try {
       value = new URL(value, baseUrl).href;

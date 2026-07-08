@@ -28,6 +28,19 @@ await esbuild.build({
   logLevel: "silent"
 });
 
+await esbuild.build({
+  entryPoints: [path.join(rootDir, "src/ui/frozen-entry.js")],
+  outfile: path.join(absOutdir, "frozen-client.js"),
+  bundle: true,
+  format: "iife",
+  globalName: "RabbitholeFrozenClient",
+  target: "es2018",
+  minify: false,
+  sourcemap: false,
+  legalComments: "none",
+  logLevel: "silent"
+});
+
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
 

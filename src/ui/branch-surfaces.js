@@ -40,6 +40,7 @@ import {
   renderSidebar
 } from "./reader.js";
 import { mountVisuals } from "./visuals.js";
+import { downloadSnapshot } from "./snapshot.js";
 
 var branchHooks = {
   post: function(){ return Promise.resolve({ ok: true }); }
@@ -188,11 +189,15 @@ export function closeShare(){ shareOpen = false; shareMenu.classList.remove("vis
       ? "Copied this document as Markdown"
       : "Copied the trail — " + path.length + " documents");
   }
-  function onExportSnapshot(){
-    closeShare();
-    window.location.href = "/export";
-    flashHint("Snapshot downloading — a single file that opens anywhere.");
-  }
+	  function onExportSnapshot(){
+	    closeShare();
+	    flashHint("Preparing snapshot...");
+	    downloadSnapshot().then(function(){
+	      flashHint("Snapshot downloading — a single file that opens anywhere.");
+	    }, function(){
+	      flashHint("Couldn't prepare the snapshot.");
+	    });
+	  }
 export function synthesize(source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];

@@ -204,10 +204,10 @@ function rewriteGithubImageUrl(value) {
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
 }
 
-export function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null } = {}) {
+export function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null, resolveAssetUrl = undefined } = {}) {
   let value = String(raw ?? "");
   if (image) {
-    const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames });
+    const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames, resolveAssetUrl });
     if (assetUrl !== undefined) return assetUrl;
   }
   if (shouldResolveUrl(value, baseUrl)) {

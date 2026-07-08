@@ -1,4 +1,4 @@
-var RabbitholeClient = (() => {
+var RabbitholeFrozenClient = (() => {
   var __create = Object.create;
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -1574,9 +1574,9 @@ var RabbitholeClient = (() => {
     }
   });
 
-  // src/ui/entry.js
-  var entry_exports = {};
-  __export(entry_exports, {
+  // src/ui/frozen-entry.js
+  var frozen_entry_exports = {};
+  __export(frozen_entry_exports, {
     startRabbithole: () => startRabbithole
   });
 
@@ -1724,26 +1724,6 @@ var RabbitholeClient = (() => {
   }
   function setModeValue(value) {
     mode = value;
-  }
-  function setClosedState(value, reason) {
-    closed = !!value;
-    closedReason = reason || null;
-  }
-  function setAgentAttached(value) {
-    agentAttached2 = !!value;
-  }
-  function setAgentReason(value) {
-    agentReason = value || null;
-  }
-  function setConnLost(value) {
-    connLost2 = !!value;
-  }
-  function resetSseFails() {
-    sseFails = 0;
-  }
-  function incrementSseFails() {
-    sseFails += 1;
-    return sseFails;
   }
   function setCanvasBuilt(value) {
     canvasBuilt = !!value;
@@ -2424,15 +2404,6 @@ var RabbitholeClient = (() => {
     col.appendChild(t);
     return t;
   }
-  function updateThreadItem(k) {
-    var item = readerMain.querySelector('[data-turn="' + k.id + '"]');
-    if (!item) {
-      var t = ensureThread();
-      if (t) t.appendChild(buildThreadItem(k));
-      return;
-    }
-    fillTurnAnswer(item.querySelector(".turn-a"), k);
-  }
   function removeThreadItem(childId) {
     var item = readerMain.querySelector('[data-turn="' + childId + '"]');
     if (item && item.parentNode) item.parentNode.removeChild(item);
@@ -2461,14 +2432,6 @@ var RabbitholeClient = (() => {
         wrapRange(rr, childId, cls);
       } catch (e) {
       }
-    }
-  }
-  function upgradeMarks(root, childId) {
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i2 = 0; i2 < marks.length; i2++) {
-      marks[i2].classList.remove("mark-pending");
-      marks[i2].classList.add("mark-ready");
     }
   }
   function removeMarks(root, childId) {
@@ -31263,288 +31226,8 @@ ${text2}</tr>
     window.__rhMarkdownRendererSentinel = MARKDOWN_RENDERER_SENTINEL;
   }
 
-  // src/ui/transport-status.js
-  function initTransportStatus() {
-    document.getElementById("banner-x").addEventListener("click", function() {
-      if (bannerKey) bannerDismissed[bannerKey] = true;
-      bannerEl.classList.remove("visible");
-    });
-  }
-  function post(payload) {
-    if (frozen) return Promise.resolve({ ok: true });
-    return fetch("/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(function() {
-      return null;
-    });
-  }
-  var viewSaveTimer = 0;
-  function scheduleViewSave() {
-    if (frozen || closed) return;
-    if (viewSaveTimer) clearTimeout(viewSaveTimer);
-    viewSaveTimer = setTimeout(function() {
-      viewSaveTimer = 0;
-      if (closed) return;
-      var cur = nodes[currentNodeId];
-      var scroll = mode === "reader" ? readerMain.scrollTop : cur && cur._scrollTop || 0;
-      post({ type: "view_state", state: { mode, node_id: currentNodeId, scroll, view: { x: view.x, y: view.y, scale: view.scale } } });
-    }, 600);
-  }
-  var saveTimers = {};
-  function persistNode(node) {
-    if (saveTimers[node.id]) clearTimeout(saveTimers[node.id]);
-    saveTimers[node.id] = setTimeout(function() {
-      post({ type: "node_update", node_id: node.id, position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h }, collapsed: node.collapsed, font_scale: node.font_scale });
-    }, 350);
-  }
-  function persistNodesBulk(list2) {
-    if (!list2 || !list2.length) return;
-    post({ type: "nodes_update", nodes: list2.map(function(n) {
-      return { node_id: n.id, position: { x: n.x, y: n.y }, size: { w: n.w, h: n.h }, collapsed: n.collapsed, font_scale: n.font_scale };
-    }) });
-  }
-  var sse = null;
-  function connectSse() {
-    var after = hydration.last_event_id || 0;
-    sse = new EventSource("/sse?after=" + after);
-    sse.onopen = function() {
-      resetSseFails();
-      if (connLost2) {
-        setConnLost(false);
-        refreshStatus();
-      }
-    };
-    sse.onmessage = function(ev) {
-      try {
-        handleServer(JSON.parse(ev.data));
-      } catch (e) {
-      }
-    };
-    sse.onerror = function() {
-      if (closed) return;
-      if (incrementSseFails() >= 2 && !connLost2) {
-        fetch("/health", { cache: "no-store" }).then(function(r2) {
-          if (!r2.ok) throw new Error("bad status");
-        }).catch(function() {
-          if (!closed && !connLost2) {
-            setConnLost(true);
-            refreshStatus();
-          }
-        });
-      }
-    };
-  }
-  var streamRenderRaf = 0;
-  var streamRenderQueue = {};
-  function requestFrame(fn) {
-    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(fn);
-    return setTimeout(fn, 16);
-  }
-  function cancelQueuedStreamRender(nodeId) {
-    delete streamRenderQueue[nodeId];
-  }
-  function scheduleStreamRender(node, firstChunk) {
-    var queued = streamRenderQueue[node.id];
-    streamRenderQueue[node.id] = { node, firstChunk: queued ? queued.firstChunk : firstChunk };
-    if (streamRenderRaf) return;
-    streamRenderRaf = requestFrame(function() {
-      streamRenderRaf = 0;
-      var batch = streamRenderQueue;
-      streamRenderQueue = {};
-      Object.keys(batch).forEach(function(id) {
-        var item = batch[id];
-        if (!item.node || item.node.status !== "pending") return;
-        refreshNodeHtml(item.node);
-        renderStreamSurfaces(item.node, item.firstChunk);
-      });
-    });
-  }
-  function renderStreamSurfaces(node, firstChunk) {
-    if (node.bodyEl) {
-      var cs = node.bodyEl.scrollTop;
-      fillBody(node);
-      node.bodyEl.scrollTop = cs;
-      scheduleEdges();
-    }
-    if (mode !== "reader") return;
-    var keep = readerMain.scrollTop;
-    if (currentNodeId === node.id) {
-      var rdc = readerMain.querySelector('.doc-content[data-node-id="' + node.id + '"]');
-      if (rdc) {
-        rdc.innerHTML = "";
-        if (node.html) fillStreaming(rdc, node, "reader:" + node.id);
-        else rdc.appendChild(buildLoading(node));
-        readerMain.scrollTop = keep;
-      }
-    } else if (currentNodeId === node.parent_id) {
-      if (isFollowup(node)) {
-        updateThreadItem(node);
-        readerMain.scrollTop = keep;
-      } else {
-        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-        if (live && !firstChunk) {
-          live.innerHTML = node.html || "";
-          mountVisuals(live, "reader-side:" + node.id);
-          mountDocImages(live, node, null, "reader-side:" + node.id);
-        } else renderSidebar();
-      }
-    }
-  }
-  function handleServer(msg) {
-    if (msg.type === "node_answered") {
-      var node = nodes[msg.node_id];
-      if (!node) {
-        var pos = msg.position || {};
-        node = nodes[msg.node_id] = {
-          id: msg.node_id,
-          parent_id: msg.parent_id || null,
-          title: msg.title || "\u2026",
-          html: "",
-          md: "",
-          base_url: msg.base_url || null,
-          base_url_source: msg.base_url_source || null,
-          read: false,
-          origin: msg.origin || null,
-          x: pos.x || 0,
-          y: pos.y || 0,
-          w: DEFAULT_CHILD.w,
-          h: DEFAULT_CHILD.h,
-          font_scale: msg.font_scale || 1,
-          collapsed: false,
-          status: "pending",
-          _order: nextOrder(),
-          _startTs: Date.now()
-        };
-        if (canvasBuilt) {
-          createNodeEl(node);
-          renderVisibility();
-          drawEdges();
-        }
-        if (node.origin && node.origin.anchor) {
-          if (mode === "reader")
-            wrapInContainer(readerMain.querySelector('.doc-content[data-node-id="' + node.parent_id + '"]'), node.origin.anchor, node.id, "hl mark-pending");
-          var pp = nodes[node.parent_id];
-          if (pp && pp.bodyEl) wrapInContainer(pp.bodyEl.querySelector(".doc-content"), node.origin.anchor, node.id, "hl mark-pending");
-        }
-      }
-      cancelQueuedStreamRender(node.id);
-      node.status = "answered";
-      node.title = msg.title || node.title;
-      node.md = msg.markdown || node.md || "";
-      node.base_url = msg.base_url || null;
-      node.base_url_source = msg.base_url_source || null;
-      refreshNodeHtml(node);
-      node.read = false;
-      if (node.titleEl) {
-        node.titleEl.textContent = node.title;
-        node.titleEl.title = node.title;
-      }
-      if (node.bodyEl) {
-        fillBody(node);
-        scheduleEdges();
-      }
-      updateCardComposer(node);
-      if (mode === "reader") {
-        if (currentNodeId === node.id) {
-          renderBreadcrumb();
-          renderReaderBody();
-          renderSidebar();
-          updateComposerState();
-          markRead(node);
-        } else {
-          upgradeMarks(readerMain, node.id);
-          if (currentNodeId === node.parent_id) {
-            if (isFollowup(node)) {
-              updateThreadItem(node);
-              markRead(node);
-            } else renderSidebar();
-          }
-        }
-      }
-      var p = nodes[node.parent_id];
-      if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      refreshAmbient();
-      updateSince();
-    } else if (msg.type === "node_deleted") {
-      removeNodesLocal(msg.node_ids || [], null);
-    } else if (msg.type === "node_progress") {
-      var sn = nodes[msg.node_id];
-      if (sn && sn.status === "pending") {
-        var firstChunk = !sn.md;
-        sn.md = msg.markdown || "";
-        sn.base_url = msg.base_url || sn.base_url || null;
-        sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
-        scheduleStreamRender(sn, firstChunk);
-      }
-    } else if (msg.type === "agent_status") {
-      setAgentAttached(!!msg.attached);
-      setAgentReason(msg.reason || null);
-      refreshStatus();
-    } else if (msg.type === "session_closed") {
-      setClosedState(true, msg.reason || "session_closed");
-      if (sse) {
-        try {
-          sse.close();
-        } catch (e) {
-        }
-        sse = null;
-      }
-      refreshStatus();
-    }
-  }
-  var bannerKey = null;
-  var bannerDismissed = {};
-  function setBanner(key, warn, title, msg) {
-    bannerKey = key;
-    if (bannerDismissed[key]) {
-      bannerEl.classList.remove("visible");
-      return;
-    }
-    bannerTitle.textContent = title;
-    bannerMsg.textContent = msg;
-    bannerEl.classList.toggle("warn", !!warn);
-    bannerEl.classList.add("visible");
-  }
-  function clearBanner() {
-    bannerKey = null;
-    bannerEl.classList.remove("visible");
-  }
-  function hasPendingAsks() {
-    for (var k in nodes) if (nodes[k].status === "pending") return true;
-    return false;
-  }
-  function refreshStatus() {
-    document.body.classList.toggle("agent-down", agentDown());
-    document.body.classList.toggle("session-over", closed);
-    var savedNote = hasPendingAsks() ? " Your unanswered questions are saved and will be answered there." : "";
-    if (frozen) {
-      clearBanner();
-    } else if (closed) {
-      if (closedReason === "done")
-        setBanner("done", false, "Session ended", "This Rabbithole is saved. Reopen it from your terminal any time to keep exploring." + savedNote);
-      else if (closedReason === "superseded")
-        setBanner("superseded", false, "Reopened elsewhere", "This Rabbithole was just reopened in another tab \u2014 continue there. This view is now read-only.");
-      else if (closedReason === "timeout")
-        setBanner("timeout", true, "Session timed out", "Everything is saved. Reopen this Rabbithole from your terminal to continue." + savedNote);
-      else
-        setBanner("closed", true, "The agent has left", "Everything answered so far is saved. Reopen this Rabbithole from your terminal to keep exploring." + savedNote);
-    } else if (connLost2) {
-      setBanner("connlost", true, "Connection lost", "Can't reach the agent session \u2014 it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
-    } else if (!agentAttached2) {
-      if (agentReason === "stalled")
-        setBanner("stalled", true, "The agent went quiet", "No response for a while \u2014 it may have stopped. You can keep asking: questions are saved and answered when the agent returns.");
-      else
-        setBanner("cancelled", true, "The agent stopped listening", "The tool call was cancelled. You can keep asking \u2014 questions are saved and answered when the agent picks this hole back up.");
-    } else {
-      clearBanner();
-      bannerDismissed = {};
-    }
-    if (mode === "reader") renderSidebar();
-    updateComposerState();
-    if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
-  }
-
   // src/ui/hydrate.js
-  function hydrateInitialState({ connectSse: connectSse2 = null, post: post2 = null, refreshStatus: refreshStatus2 = null } = {}) {
+  function hydrateInitialState({ connectSse = null, post: post2 = null, refreshStatus: refreshStatus2 = null } = {}) {
     setRendererAssetData(hydration.asset_data || null);
     if (frozen) document.body.classList.add("frozen");
     (hydration.nodes || []).forEach(function(raw) {
@@ -31606,7 +31289,7 @@ ${text2}</tr>
     }
     refreshAmbient();
     if (typeof refreshStatus2 === "function") refreshStatus2();
-    if (!frozen && typeof connectSse2 === "function") connectSse2();
+    if (!frozen && typeof connectSse === "function") connectSse();
   }
 
   // src/ui/chrome-init.js
@@ -31666,7 +31349,12 @@ ${text2}</tr>
     }
   }
 
-  // src/ui/entry.js
+  // src/ui/frozen-entry.js
+  function post() {
+    return Promise.resolve({ ok: true });
+  }
+  function refreshStatus() {
+  }
   function startRabbithole(hydration2) {
     initCore(hydration2);
     initVisuals();
@@ -31684,12 +31372,14 @@ ${text2}</tr>
       hideAsk,
       hidePeek,
       updateComposerState,
-      scheduleViewSave,
+      scheduleViewSave: function() {
+      },
       setMode,
       post,
       mountVisuals,
       mountDocImages,
-      persistNode,
+      persistNode: function() {
+      },
       animateScroll
     });
     registerCanvasHooks({
@@ -31697,9 +31387,12 @@ ${text2}</tr>
       hidePeek,
       sendFollowup,
       confirmDelete,
-      persistNode,
-      persistNodesBulk,
-      scheduleViewSave
+      persistNode: function() {
+      },
+      persistNodesBulk: function() {
+      },
+      scheduleViewSave: function() {
+      }
     });
     registerAskHooks({
       post,
@@ -31719,8 +31412,7 @@ ${text2}</tr>
     initAskFollowups();
     initPalette();
     initBranchSurfaces();
-    initTransportStatus();
-    initChrome({ connectSse, post, refreshStatus });
+    initChrome({ post, refreshStatus });
   }
-  return __toCommonJS(entry_exports);
+  return __toCommonJS(frozen_entry_exports);
 })();

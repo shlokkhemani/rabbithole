@@ -166,7 +166,6 @@ async function runSessionLifecycleFixture() {
     parent_id: null,
     title: "Root",
     markdown: "Root",
-    contentHtml: "<p>Root</p>",
     base_url: "https://example.com/docs/root.md",
     base_url_source: "explicit",
     origin: null,
@@ -203,11 +202,16 @@ async function runSessionLifecycleFixture() {
       content: "![partial](img.png)",
       partial: true,
     });
+    const partialHtml = await renderMarkdownToHtml(partialNode.markdown, { baseUrl: partialNode.base_url });
     assertIncludes(
-      partialNode.contentHtml,
+      partialHtml,
       'src="https://example.com/docs/img.png"',
-      "streaming partials should render with the inherited base"
+      "streaming partial markdown should render with the inherited base"
     );
+    const progress = session.outboundEvents.at(-1).data;
+    assert.equal(progress.type, "node_progress");
+    assert.equal(progress.markdown, "![partial](img.png)");
+    assert.equal(Object.hasOwn(progress, "contentHtml"), false);
 
     const upgradeAsk = session.handleBranchRequest({
       parent_id: "root",
@@ -226,8 +230,9 @@ async function runSessionLifecycleFixture() {
     assert.equal(next.status, "session_closed");
     assert.equal(upgradeNode.base_url, "https://other.example/articles/page.md");
     assert.equal(upgradeNode.base_url_source, "frontmatter");
+    const upgradeHtml = await renderMarkdownToHtml(upgradeNode.markdown, { baseUrl: upgradeNode.base_url });
     assertIncludes(
-      upgradeNode.contentHtml,
+      upgradeHtml,
       'src="https://other.example/articles/img.png"',
       "finalized inherited nodes should upgrade to their own frontmatter base"
     );

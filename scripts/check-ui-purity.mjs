@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uiDir = path.join(rootDir, "src/ui");
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
+const allowedShared = new Set([
+  path.join(rootDir, "src/core/markdown-renderer.js"),
+  path.join(rootDir, "src/core/html/shell.js"),
+]);
 const failures = [];
 
 for (const file of await listJs(uiDir)) {
@@ -18,7 +22,7 @@ for (const file of await listJs(uiDir)) {
     if (specifier.startsWith(".")) {
       const resolved = path.resolve(path.dirname(file), specifier);
       const relToUi = path.relative(uiDir, resolved);
-      if (relToUi.startsWith("..") || path.isAbsolute(relToUi)) {
+      if ((relToUi.startsWith("..") || path.isAbsolute(relToUi)) && !allowedShared.has(`${resolved}.js`) && !allowedShared.has(resolved)) {
         failures.push(`${rel(file)} reaches outside src/ui via ${specifier}`);
       }
       continue;

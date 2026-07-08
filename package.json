@@ -14,14 +14,15 @@
     "build": "node build.mjs",
     "check:dist": "node scripts/check-dist.mjs",
     "check:purity": "node scripts/check-ui-purity.mjs",
-    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7",
+    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7 && npm run test:stage8",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
     "test:stage3": "node test/stage3-base-url-verify.mjs",
     "test:stage4": "node test/stage4-assets-verify.mjs",
     "test:stage5": "node test/stage5-pdf-verify.mjs",
     "test:stage6": "node test/stage6-image-ux-verify.mjs",
-    "test:stage7": "node test/stage7-rearm-verify.mjs"
+    "test:stage7": "node test/stage7-rearm-verify.mjs",
+    "test:stage8": "node test/stage8-md-wire-verify.mjs"
   },
   "keywords": [
     "mcp",

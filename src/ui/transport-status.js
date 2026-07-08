@@ -29,6 +29,7 @@ import {
   setAgentReason,
   setClosedState,
   setConnLost,
+  sideEl,
   updateSince,
   view
 } from "./core.js";
@@ -50,6 +51,9 @@ import {
 } from "./canvas-view.js";
 import { updateComposerState } from "./ask-followups.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
+import { mountDocImages } from "./image-ux.js";
+import { refreshNodeHtml } from "./renderer.js";
+import { mountVisuals } from "./visuals.js";
 
   // ===========================================================================
   // transport
@@ -116,6 +120,31 @@ export function connectSse(){
       }
     };
   }
+  var streamRenderRaf = 0;
+  var streamRenderQueue = {};
+  function requestFrame(fn){
+    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(fn);
+    return setTimeout(fn, 16);
+  }
+  function cancelQueuedStreamRender(nodeId){
+    delete streamRenderQueue[nodeId];
+  }
+  function scheduleStreamRender(node, firstChunk){
+    var queued = streamRenderQueue[node.id];
+    streamRenderQueue[node.id] = { node: node, firstChunk: queued ? queued.firstChunk : firstChunk };
+    if (streamRenderRaf) return;
+    streamRenderRaf = requestFrame(function(){
+      streamRenderRaf = 0;
+      var batch = streamRenderQueue;
+      streamRenderQueue = {};
+      Object.keys(batch).forEach(function(id){
+        var item = batch[id];
+        if (!item.node || item.node.status !== "pending") return;
+        refreshNodeHtml(item.node);
+        renderStreamSurfaces(item.node, item.firstChunk);
+      });
+    });
+  }
   // Repaint a streaming node everywhere it is currently on screen: the reader
   // main doc, its follow-up thread turn, and its canvas card. Scroll positions
   // are restored exactly on every repaint — arriving text must never move the
@@ -144,11 +173,12 @@ export function renderStreamSurfaces(node, firstChunk){
         // The branch streams live inside its sidebar tile: the first chunk
         // rebuilds the tile (Thinking… → Writing… + the live pane), later
         // chunks just repaint the pane.
-        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-        if (live && !firstChunk) {
-          live.innerHTML = node.html || "";
-          if (typeof mountVisuals === "function") mountVisuals(live, "reader-side:" + node.id);
-        }
+	        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
+	        if (live && !firstChunk) {
+	          live.innerHTML = node.html || "";
+	          mountVisuals(live, "reader-side:" + node.id);
+	          mountDocImages(live, node, null, "reader-side:" + node.id);
+	        }
         else renderSidebar();
       }
     }
@@ -164,7 +194,8 @@ export function handleServer(msg){
         var pos = msg.position || {};
         node = nodes[msg.node_id] = {
           id: msg.node_id, parent_id: msg.parent_id || null, title: msg.title || "…",
-          html: "", md: "", read: false, origin: msg.origin || null, x: pos.x || 0, y: pos.y || 0,
+          html: "", md: "", base_url: msg.base_url || null, base_url_source: msg.base_url_source || null,
+          read: false, origin: msg.origin || null, x: pos.x || 0, y: pos.y || 0,
           w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: msg.font_scale || 1,
           collapsed: false, status: "pending",
           _order: nextOrder(), _startTs: Date.now()
@@ -177,8 +208,12 @@ export function handleServer(msg){
           if (pp && pp.bodyEl) wrapInContainer(pp.bodyEl.querySelector(".doc-content"), node.origin.anchor, node.id, "hl mark-pending");
         }
       }
-      node.status = "answered"; node.title = msg.title || node.title; node.html = msg.contentHtml || "";
+      cancelQueuedStreamRender(node.id);
+      node.status = "answered"; node.title = msg.title || node.title;
       node.md = msg.markdown || node.md || "";
+      node.base_url = msg.base_url || null;
+      node.base_url_source = msg.base_url_source || null;
+      refreshNodeHtml(node);
       node.read = false; // unread until the human actually reaches it
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }
@@ -206,14 +241,16 @@ export function handleServer(msg){
       // Another surface (or a replayed event) removed a branch — mirror it.
       removeNodesLocal(msg.node_ids || [], null);
     } else if (msg.type === "node_progress"){
-      // A chunk of a streaming answer: the payload carries everything written
-      // so far, already rendered. Ignore unknown/settled nodes — node_answered
+      // A chunk of a streaming answer: the payload carries the full markdown
+      // written so far. Ignore unknown/settled nodes — node_answered
       // is the authoritative end state and self-heals.
       var sn = nodes[msg.node_id];
       if (sn && sn.status === "pending"){
-        var firstChunk = !sn.html;
-        sn.html = msg.contentHtml || "";
-        renderStreamSurfaces(sn, firstChunk);
+        var firstChunk = !sn.md;
+        sn.md = msg.markdown || "";
+        sn.base_url = msg.base_url || sn.base_url || null;
+        sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
+        scheduleStreamRender(sn, firstChunk);
       }
     } else if (msg.type === "agent_status"){
       setAgentAttached(!!msg.attached);

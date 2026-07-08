@@ -7,13 +7,19 @@
  */
 
 import { escapeHtml, serializeForInlineScript } from "../utils.js";
-import { getClientBundle, getDompurifyScript, getKatexCss } from "./built-assets.js";
+import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss } from "./built-assets.js";
 import { CANVAS_SHELL } from "./shell.js";
 import { CANVAS_STYLES } from "./styles.js";
 
 export function buildCanvasHtml(hydration) {
   const title = hydration?.title || "Rabbithole";
   const hydrationJson = serializeForInlineScript(hydration);
+  const frozen = !!hydration?.frozen;
+  const clientBundle = frozen ? getFrozenClientBundle() : getClientBundle();
+  const clientGlobal = frozen ? "RabbitholeFrozenClient" : "RabbitholeClient";
+  const liveSnapshotSource = frozen
+    ? ""
+    : `  window.__RABBITHOLE_FROZEN_CLIENT__ = ${serializeForInlineScript(getFrozenClientBundle())};\n`;
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -31,11 +37,11 @@ ${CANVAS_SHELL}
 <script>
 ${getDompurifyScript()}
 (function(){
-  "use strict";
-  var hydration = ${hydrationJson};
-${getClientBundle()}
-  RabbitholeClient.startRabbithole(hydration);
-})();
+	  "use strict";
+	  var hydration = ${hydrationJson};
+	${liveSnapshotSource}${clientBundle}
+	  ${clientGlobal}.startRabbithole(hydration);
+	})();
 </script>
 </body>
 </html>`;

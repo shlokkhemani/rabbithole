@@ -171,9 +171,12 @@ export function hideAsk(){ ask.classList.remove("visible"); pendingAsk = null; c
     var pos = placeChild(parent, BRANCH_SELECTION);
     var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
     var node = {
-      id: childId, parent_id: parent.id,
-      title: lens ? lensLabel(lens) : (question ? truncate(question, 48) : "…"),
-      html: "", md: "", read: false,
+	      id: childId, parent_id: parent.id,
+	      title: lens ? lensLabel(lens) : (question ? truncate(question, 48) : "…"),
+	      html: "", md: "",
+	      base_url: parent.base_url || null,
+	      base_url_source: parent.base_url ? "inherited" : null,
+	      read: false,
       origin: { selected_text: pendingAsk.selectedText, question: question, lens: lens, anchor: anchor, branch_type: BRANCH_SELECTION },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
@@ -229,9 +232,12 @@ export function sendFollowup(parent, question, lens, synthesis){
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
-      id: childId, parent_id: parent.id,
-      title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48),
-      html: "", md: "", read: false,
+	      id: childId, parent_id: parent.id,
+	      title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48),
+	      html: "", md: "",
+	      base_url: parent.base_url || null,
+	      base_url_source: parent.base_url ? "inherited" : null,
+	      read: false,
       origin: { selected_text: "", question: question, lens: lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()

@@ -49,7 +49,6 @@ async function runPageFixtures() {
     parent_id: null,
     title: "Root",
     markdown,
-    contentHtml: await renderMarkdownToHtml(markdown, { assetNames: new Set(["diagram-1.png"]) }),
     origin: null,
     position: { x: 0, y: 0 },
     size: null,

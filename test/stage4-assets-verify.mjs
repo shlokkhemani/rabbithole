@@ -158,7 +158,6 @@ async function runSessionFixtures(source, source2) {
     parent_id: null,
     title: "Root",
     markdown,
-    contentHtml: await renderMarkdownToHtml(markdown, { assetNames }),
     base_url: null,
     base_url_source: null,
     origin: null,
@@ -184,7 +183,9 @@ async function runSessionFixtures(source, source2) {
   try {
     const live = await fetch(session.url);
     assert.equal(live.status, 200);
-    assertIncludes(await live.text(), "/assets/diagram-1.png", "live hydration should keep asset URLs");
+    const liveHtml = await live.text();
+    assertIncludes(liveHtml, "asset:diagram-1.png", "live hydration should carry markdown asset refs");
+    assert(!liveHtml.includes('"contentHtml"'), "live hydration should not carry rendered HTML");
 
     const asset = await fetch(`${session.url}/assets/diagram-1.png`);
     assert.equal(asset.status, 200);
@@ -225,10 +226,12 @@ async function runSessionFixtures(source, source2) {
     });
     assert.equal(partial.partial, true);
     const child = session.nodes.get("child-assets");
-    assertIncludes(child.contentHtml, "/assets/answer.png", "streamed HTML should keep asset URLs");
+    const childHtml = await renderMarkdownToHtml(child.markdown, { assetNames: session.assetNames });
+    assertIncludes(childHtml, "/assets/answer.png", "streamed markdown should render asset URLs");
     const progress = session.outboundEvents.at(-1).data;
     assert.equal(progress.type, "node_progress");
-    assertIncludes(progress.contentHtml, "/assets/answer.png", "SSE progress should carry asset URLs");
+    assertIncludes(progress.markdown, "asset:answer.png", "SSE progress should carry markdown asset refs");
+    assert.equal(Object.hasOwn(progress, "contentHtml"), false, "SSE progress should not carry rendered HTML");
 
     const streamedAsset = await fetch(`${session.url}/assets/answer.png`);
     assert.equal(streamedAsset.status, 200);

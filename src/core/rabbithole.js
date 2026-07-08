@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
-import { renderMarkdownToHtml } from "./markdown.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
 import { addAssetsToHole, adoptStagedAssets, listAssets, loadHole, listHoles } from "./storage.js";
@@ -40,7 +39,6 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
     parent_id: null,
     title: title || "Document",
     markdown,
-    contentHtml: await renderMarkdownToHtml(markdown, { baseUrl: base.base_url, assetNames }),
     base_url: base.base_url,
     base_url_source: base.base_url_source,
     origin: null,
@@ -101,7 +99,6 @@ async function resumeRabbithole(holeId, signal, assets) {
       parent_id: raw.parent_id ?? null,
       title: raw.title ?? "",
       markdown: pending ? "" : (raw.markdown ?? ""),
-      contentHtml: pending ? "" : await renderMarkdownToHtml(raw.markdown ?? "", { baseUrl: base.base_url, assetNames }),
       base_url: base.base_url,
       base_url_source: base.base_url_source,
       origin: raw.origin ?? null,

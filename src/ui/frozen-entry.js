@@ -30,16 +30,13 @@ import {
   initBranchSurfaces,
   registerBranchHooks
 } from "./branch-surfaces.js";
-import {
-  connectSse,
-  initTransportStatus,
-  persistNode,
-  persistNodesBulk,
-  post,
-  refreshStatus,
-  scheduleViewSave
-} from "./transport-status.js";
 import { initChrome } from "./chrome-init.js";
+
+function post() {
+  return Promise.resolve({ ok: true });
+}
+
+function refreshStatus() {}
 
 export function startRabbithole(hydration) {
   initCore(hydration);
@@ -58,12 +55,12 @@ export function startRabbithole(hydration) {
     hideAsk: hideAsk,
     hidePeek: hidePeek,
     updateComposerState: updateComposerState,
-    scheduleViewSave: scheduleViewSave,
+    scheduleViewSave: function(){},
     setMode: setMode,
     post: post,
     mountVisuals: mountVisuals,
     mountDocImages: mountDocImages,
-    persistNode: persistNode,
+    persistNode: function(){},
     animateScroll: animateScroll
   });
   registerCanvasHooks({
@@ -71,9 +68,9 @@ export function startRabbithole(hydration) {
     hidePeek: hidePeek,
     sendFollowup: sendFollowup,
     confirmDelete: confirmDelete,
-    persistNode: persistNode,
-    persistNodesBulk: persistNodesBulk,
-    scheduleViewSave: scheduleViewSave
+    persistNode: function(){},
+    persistNodesBulk: function(){},
+    scheduleViewSave: function(){}
   });
   registerAskHooks({
     post: post,
@@ -94,6 +91,5 @@ export function startRabbithole(hydration) {
   initAskFollowups();
   initPalette();
   initBranchSurfaces();
-  initTransportStatus();
-  initChrome({ connectSse: connectSse, post: post, refreshStatus: refreshStatus });
+  initChrome({ post: post, refreshStatus: refreshStatus });
 }

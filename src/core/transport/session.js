@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
-import { renderMarkdownToHtml } from "../markdown.js";
 import { addAssetsToHole, getAssetContentType, resolveAsset, saveHole } from "../storage.js";
 import { inheritedNodeBaseUrl, maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../base-url.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
@@ -384,15 +383,13 @@ export class RabbitHoleSession {
     return titles.reverse();
   }
 
-  // For the browser page. Carries both contentHtml (what the client renders)
-  // and the raw markdown — the source feeds "copy as Markdown" in the page, and
-  // for a local page the payload cost is noise.
+  // For the browser page. Markdown is canonical on the wire; the page derives
+  // safe HTML through the shared browser-bundled renderer.
   serializeNodes() {
     return [...this.nodes.values()].map((n) => ({
       id: n.id,
       parent_id: n.parent_id ?? null,
       title: n.title ?? "",
-      contentHtml: n.contentHtml ?? "",
       markdown: n.markdown ?? "",
       base_url: n.base_url ?? null,
       base_url_source: n.base_url_source ?? null,
@@ -423,30 +420,12 @@ export class RabbitHoleSession {
   }
 
   async buildExportHydration() {
-    const hydration = { ...this.buildHydration(), frozen: true };
+    const hydration = { ...this.buildHydration(), frozen: true, asset_data: {} };
     const dataUriCache = new Map();
-    hydration.nodes = [];
-    for (const node of this.serializeNodes()) {
-      hydration.nodes.push({
-        ...node,
-        contentHtml: await this.inlineAssetImageSrcs(node.contentHtml, dataUriCache),
-      });
+    for (const name of [...this.assetNames].sort()) {
+      hydration.asset_data[name] = await this.assetDataUri(name, dataUriCache);
     }
     return hydration;
-  }
-
-  async inlineAssetImageSrcs(html, dataUriCache) {
-    const source = String(html ?? "");
-    const srcRe = /\bsrc="\/assets\/([a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg))"/g;
-    let out = "";
-    let last = 0;
-    let match;
-    while ((match = srcRe.exec(source))) {
-      out += source.slice(last, match.index);
-      out += `src="${await this.assetDataUri(match[1], dataUriCache)}"`;
-      last = srcRe.lastIndex;
-    }
-    return out + source.slice(last);
   }
 
   async assetDataUri(name, dataUriCache) {
@@ -475,7 +454,7 @@ export class RabbitHoleSession {
       view_state: this.viewState,
       nodes: [...this.nodes.values()]
         .filter((n) => (n.status ?? "answered") === "answered" || n.status === "pending")
-        .map((n) => (n.status === "pending" ? { ...n, markdown: "", contentHtml: "" } : n)),
+        .map((n) => (n.status === "pending" ? { ...n, markdown: "" } : n)),
     };
   }
 
@@ -535,9 +514,14 @@ export class RabbitHoleSession {
     // mid-stream should still surface as stalled), and nothing persists yet.
     if (partial) {
       node.markdown = (node.markdown || "") + String(content ?? "");
-      node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url, assetNames: this.assetNames });
       this.startAnswerWatchdog();
-      this.broadcast({ type: "node_progress", node_id: node.id, contentHtml: node.contentHtml });
+      this.broadcast({
+        type: "node_progress",
+        node_id: node.id,
+        markdown: node.markdown,
+        base_url: node.base_url,
+        base_url_source: node.base_url_source,
+      });
       return { ok: true, node_id: node.id, request_id: requestId, partial: true };
     }
 
@@ -554,7 +538,6 @@ export class RabbitHoleSession {
     node.markdown = buffered && !tail.startsWith(buffered) ? buffered + tail : tail;
     node.title = String(title ?? node.title ?? "Untitled").trim() || "Untitled";
     if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(node);
-    node.contentHtml = await renderMarkdownToHtml(node.markdown, { baseUrl: node.base_url, assetNames: this.assetNames });
     node.status = "answered";
     // Fresh answers land unread; the client flips this the moment the human
     // actually opens them (and immediately if they're watching it stream).
@@ -565,7 +548,6 @@ export class RabbitHoleSession {
       node_id: node.id,
       parent_id: node.parent_id,
       title: node.title,
-      contentHtml: node.contentHtml,
       markdown: node.markdown,
       base_url: node.base_url,
       base_url_source: node.base_url_source,
@@ -656,7 +638,6 @@ export class RabbitHoleSession {
       parent_id: parentId,
       title: synthesis ? "Synthesis" : lens ? LENS_LABELS[lens] : question ? truncate(question, 48) : "…",
       markdown: "",
-      contentHtml: "",
       base_url: inheritedBase.base_url,
       base_url_source: inheritedBase.base_url_source,
       origin: { selected_text: selectedText, question, lens, synthesis, anchor, branch_type: branchType },
@@ -805,8 +786,9 @@ export class RabbitHoleSession {
     }
 
     // A read-only single-file snapshot of the whole hole: the same page with
-    // `frozen: true` hydration (no SSE, no asking) and markdown baked in, served
-    // as a download. The page is already self-contained, so this is the export.
+    // Compatibility shim for saved links/tests. The in-app Download snapshot flow
+    // generates the same frozen page in the browser; this route only packages the
+    // current server state with data-URI assets and the frozen client bundle.
     if (req.method === "GET" && url.pathname === "/export") {
       const hydration = await this.buildExportHydration();
       res.writeHead(200, {

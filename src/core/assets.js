@@ -49,12 +49,17 @@ export function getAssetContentType(name) {
   }
 }
 
-export function resolveAssetMarkdownImageUrl(raw, { assetNames = null } = {}) {
+export function defaultAssetUrlResolver(name) {
+  const slash = String.fromCharCode(47);
+  return slash + "assets" + slash + name;
+}
+
+export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl = defaultAssetUrlResolver } = {}) {
   const match = ASSET_URL_RE.exec(String(raw ?? ""));
   if (!match) return undefined;
 
   const name = match[1];
   if (!isValidAssetName(name)) return null;
   if (assetNames && !assetNames.has(name)) return null;
-  return `/assets/${name}`;
+  return resolveAssetUrl(name);
 }

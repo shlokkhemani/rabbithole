@@ -1,37 +1,22 @@
 import {
-  DEFAULT_CHILD,
-  DEFAULT_ROOT,
-  MAX_SCALE,
-  MIN_SCALE,
-  armSince,
   currentNodeId,
   flashHint,
-  frozen,
-  hydration,
   mode,
-  nextOrder,
   nodes,
-  refreshAmbient,
-  rootId,
-  setCanvasFramed,
-  setCurrentNodeId,
   toggleTheme,
-  unreadNodes,
-  updateSince,
-  view
 } from "./core.js";
 import { focusedMark, jumpToOrigin, openNode, stepMark } from "./reader.js";
-import { frameAll, setMode, tidy } from "./canvas-view.js";
+import { frameAll, tidy } from "./canvas-view.js";
 import { togglePalette } from "./palette.js";
-import { connectSse, post, refreshStatus } from "./transport-status.js";
+import { hydrateInitialState } from "./hydrate.js";
 
   // ===========================================================================
   // chrome (theme, hint, keys)
   // ===========================================================================
-export function initChrome(){
+export function initChrome(options){
   document.addEventListener("keydown", onGlobalKeydown);
   applyInitialTheme();
-  hydrateInitialState();
+  hydrateInitialState(options || {});
 }
 
 function onGlobalKeydown(e){
@@ -67,53 +52,4 @@ function applyInitialTheme(){
     if (!savedTheme && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) savedTheme = "dark";
     if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
   } catch(e){}
-}
-
-  // ===========================================================================
-  // init
-  // ===========================================================================
-function hydrateInitialState(){
-    if (frozen) document.body.classList.add("frozen");
-    (hydration.nodes || []).forEach(function(raw){
-      var isRoot = raw.id === rootId;
-      var size = raw.size || (isRoot ? DEFAULT_ROOT : DEFAULT_CHILD);
-      nodes[raw.id] = {
-        id: raw.id, parent_id: raw.parent_id, title: raw.title, html: raw.contentHtml,
-        md: raw.markdown || "", read: !!raw.read, origin: raw.origin,
-        x: (raw.position && raw.position.x) || 0, y: (raw.position && raw.position.y) || 0,
-        w: size.w, h: size.h, font_scale: raw.font_scale || 1, collapsed: !!raw.collapsed,
-        status: raw.status || "answered", _order: 0,
-        _startTs: (raw.status === "pending") ? Date.now() : 0
-      };
-    });
-    Object.keys(nodes).forEach(function(id){ nodes[id]._order = nextOrder(); });
-    // Holes saved before read-tracking would wake up all-unread. If nothing was
-    // ever marked read (and no view was ever saved), treat the past as read.
-    var anyRead = false, k;
-    for (k in nodes) if (nodes[k].read) anyRead = true;
-    if (!anyRead && !hydration.view_state){
-      var legacy = [];
-      for (k in nodes){
-        if (nodes[k].status === "answered"){ nodes[k].read = true; legacy.push({ node_id: k, read: true }); }
-      }
-      if (!frozen && legacy.length) post({ type: "nodes_update", nodes: legacy });
-    }
-    // Land exactly where the human left off: same document, same scroll, same
-    // canvas framing, same mode. A first open starts at the root like always.
-    var vs = hydration.view_state;
-    if (vs && vs.node_id && nodes[vs.node_id]){
-      setCurrentNodeId(vs.node_id);
-      if (vs.scroll) nodes[vs.node_id]._scrollTop = vs.scroll;
-    }
-    if (vs && vs.view){
-      view.x = vs.view.x; view.y = vs.view.y;
-      view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vs.view.scale || 1));
-      setCanvasFramed(true); // the saved framing wins; don't re-frame on first entry
-    }
-    openNode(currentNodeId); // READER is the default; canvas DOM is built lazily
-    if (vs && vs.mode === "canvas") setMode("canvas");
-    if (unreadNodes().length){ armSince(); updateSince(); }
-    refreshAmbient();
-    refreshStatus();
-    if (!frozen) connectSse();
 }

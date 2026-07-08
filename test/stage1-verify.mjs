@@ -140,7 +140,6 @@ async function assertPageAssembly() {
     parent_id: null,
     title: "Root",
     markdown: rootMarkdown,
-    contentHtml: await renderMarkdownToHtml(rootMarkdown),
     origin: null,
     position: { x: 0, y: 0 },
     size: null,
@@ -175,8 +174,13 @@ async function assertPageAssembly() {
       assert.equal(count(html, KATEX_CSS_SENTINEL), 1, `${label} should include KaTeX CSS once`);
       assert.equal(count(html, "data:font/woff2;base64,"), 20, `${label} should inline KaTeX woff2 fonts`);
       assert(!/fonts\/KaTeX_[^)]+\.(?:woff|ttf)/.test(html), `${label} should not reference external KaTeX fonts`);
-      assert(html.includes("language-js hljs"), `${label} should include highlighted code`);
+      assert(html.includes("Root with $x^2$."), `${label} should carry markdown in hydration`);
+      assert(!html.includes('"contentHtml"'), `${label} hydration should not carry server-rendered HTML`);
+      assert(html.includes("rabbithole-shared-markdown-renderer-v1"), `${label} should bundle the shared renderer`);
     }
+    assert(liveHtml.includes("new EventSource"), "live page should keep the live SSE transport");
+    assert(!exportHtml.includes("new EventSource"), "frozen export should not include the live SSE transport");
+    assert(!exportHtml.includes("/sse"), "frozen export should not include the live SSE route");
 
     const scriptMatch = liveHtml.match(/<script>\n([\s\S]*)\n<\/script>/);
     assert(scriptMatch, "assembled HTML should contain one inline script");

@@ -5,7 +5,6 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { ingestPdf, openRabbithole } from "../src/core/index.js";
 import { closeAllSessions, getSession } from "../src/core/sessions.js";
-import { renderMarkdownToHtml } from "../src/core/markdown.js";
 import {
   assertSafeHoleId,
   listAssets,
@@ -104,7 +103,6 @@ async function makeHole(holeId) {
         parent_id: null,
         title: "Root",
         markdown,
-        contentHtml: await renderMarkdownToHtml(markdown),
         base_url: null,
         base_url_source: null,
         origin: null,
@@ -175,7 +173,9 @@ async function runStagingAdoptionFixture(pdfPath) {
 
   const live = await fetch(session.url);
   assert.equal(live.status, 200);
-  assert((await live.text()).includes("/assets/page-001.png"));
+  const liveHtml = await live.text();
+  assert(liveHtml.includes("asset:page-001.png"));
+  assert(!liveHtml.includes('"contentHtml"'));
   const asset = await fetch(`${session.url}/assets/page-001.png`);
   assert.equal(asset.status, 200);
   assert.equal(asset.headers.get("content-type"), "image/png");

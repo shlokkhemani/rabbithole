@@ -9,7 +9,6 @@ process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole
 
 const { openRabbithole, answerBranch } = await import("../src/core/index.js");
 const { closeAllSessions, getSession } = await import("../src/core/sessions.js");
-const { renderMarkdownToHtml } = await import("../src/core/markdown.js");
 const { saveHole } = await import("../src/core/storage.js");
 
 function sleep(ms) {
@@ -26,7 +25,6 @@ function rootNode(id = "root") {
     parent_id: null,
     title: "Root",
     markdown: "Root",
-    contentHtml: "<p>Root</p>",
     base_url: null,
     base_url_source: null,
     origin: null,
@@ -114,7 +112,6 @@ async function runSavedAskRequeueFixture() {
     parent_id: "root",
     title: "Saved question",
     markdown: "",
-    contentHtml: "",
     base_url: null,
     base_url_source: null,
     origin: {
@@ -140,7 +137,7 @@ async function runSavedAskRequeueFixture() {
     root_id: "root",
     created_at: new Date().toISOString(),
     nodes: [
-      { ...root, contentHtml: await renderMarkdownToHtml(root.markdown) },
+      root,
       child,
     ],
   });

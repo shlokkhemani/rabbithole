@@ -247,6 +247,15 @@ export const CLIENT_READER = `  // =============================================
       html += '</div>';
     });
     sideEl.innerHTML = html;
+    mountSidebarVisuals();
+  }
+  function mountSidebarVisuals(){
+    if (typeof mountVisuals !== "function") return;
+    var panes = sideEl.querySelectorAll(".side-item[data-child] .si-live .md");
+    for (var i = 0; i < panes.length; i++){
+      var item = panes[i].closest(".side-item[data-child]");
+      mountVisuals(panes[i], "reader-side:" + (item ? item.dataset.child : i));
+    }
   }
   function pendingStatusHtml(k){
     if (frozen) return '<span class="si-muted">unanswered in this snapshot</span>';

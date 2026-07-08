@@ -4,6 +4,7 @@
  * former single template literal exactly; hydration is the only interpolation.
  */
 import { CLIENT_CORE } from "./client/core.js";
+import { CLIENT_VISUALS } from "./client/visuals.js";
 import { CLIENT_READER } from "./client/reader.js";
 import { CLIENT_CANVAS_VIEW } from "./client/canvas-view.js";
 import { CLIENT_ASK_FOLLOWUPS } from "./client/ask-followups.js";
@@ -21,6 +22,7 @@ export function renderClientScript(hydrationJson) {
   return [
     CLIENT_PREFIX + hydrationJson + ";" + LINE_BREAK,
     CLIENT_CORE,
+    CLIENT_VISUALS,
     CLIENT_READER,
     CLIENT_CANVAS_VIEW,
     CLIENT_ASK_FOLLOWUPS,

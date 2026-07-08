@@ -79,7 +79,7 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
       var rdc = readerMain.querySelector('.doc-content[data-node-id="' + node.id + '"]');
       if (rdc){
         rdc.innerHTML = "";
-        if (node.html) fillStreaming(rdc, node);
+        if (node.html) fillStreaming(rdc, node, "reader:" + node.id);
         else rdc.appendChild(buildLoading(node));
         readerMain.scrollTop = keep;
       }
@@ -90,7 +90,10 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
         // rebuilds the tile (Thinking… → Writing… + the live pane), later
         // chunks just repaint the pane.
         var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-        if (live && !firstChunk) live.innerHTML = node.html || "";
+        if (live && !firstChunk) {
+          live.innerHTML = node.html || "";
+          if (typeof mountVisuals === "function") mountVisuals(live, "reader-side:" + node.id);
+        }
         else renderSidebar();
       }
     }

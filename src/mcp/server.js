@@ -28,6 +28,11 @@ const server = new McpServer(
       "You already hold the documents you authored, so that's enough context. On a RESUMED hole the",
       "first branch_request includes a 'rehydration' field with the full tree (plus any saved_asks);",
       "read it to reload context. Use list_rabbitholes to find a saved hole to resume.",
+      "",
+      "Answer authoring:",
+      "- Use GFM markdown, $...$/$$...$$ or \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
+      "- For spatial structure, use ```show fences with HTML/CSS/inline-SVG only; scripts are stripped.",
+      "- Stream prose in 1-3 sentence chunks, but send each visual fence contiguously so it renders when closed.",
     ].join("\n"),
   }
 );

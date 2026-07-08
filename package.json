@@ -10,6 +10,11 @@
     "type": "git",
     "url": "git+https://github.com/shlokkhemani/rabbithole.git"
   },
+  "scripts": {
+    "test": "npm run test:stage1 && npm run test:stage2",
+    "test:stage1": "node test/stage1-verify.mjs",
+    "test:stage2": "node test/stage2-verify.mjs"
+  },
   "keywords": [
     "mcp",
     "mcp-server",
@@ -30,6 +35,9 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "dompurify": "^3.4.11",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.17.0",
     "marked": "^15.0.7",
     "zod": "^3.24.2"
   },

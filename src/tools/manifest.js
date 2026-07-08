@@ -44,19 +44,28 @@ export const toolDefinitions = [
   },
   {
     name: "answer_branch",
-    description:
-      "Answer one pending branch request from an open Rabbithole. Called after open_rabbithole or " +
-      "answer_branch returns status='branch_request'. Write a focused, well-formatted markdown answer to " +
-      "the human's question about their selection — use the selected_text, parent_node_title, and lineage " +
-      "for context (you already hold the documents you authored). If selected_text is empty the human asked " +
-      "a follow-up about the parent document as a whole — answer conversationally in its context. If the " +
-      "request has a 'lens', match that style. " +
-      "STREAM every answer that is longer than a couple of sentences: send it in 1–3 sentence chunks with " +
-      "partial=true (each returns immediately and the text appears live in the browser), then send the " +
-      "REMAINING final chunk in a normal call with the 'title'. Partial chunks are concatenated verbatim — " +
-      "include your own spacing/newlines, and never repeat text you already sent. Provide a short 'title' " +
-      "(a few words) on the final call. The final call BLOCKS and returns the next event (another " +
-      "branch_request, or session_closed).",
+    description: [
+      "Answer one pending branch request from an open Rabbithole. Called after open_rabbithole or answer_branch returns status='branch_request'. Write a focused, well-formatted markdown answer to the human's question about their selection - use selected_text, parent_node_title, and lineage for context (you already hold the documents you authored). If selected_text is empty, answer conversationally about the parent document as a whole. If the request has a 'lens', match that style.",
+      "",
+      "Authoring vocabulary:",
+      "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
+      "- Use ```show when a concept is spatial or structural: architecture, memory layout, relationships.",
+      "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
+      "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",
+      "- Design visuals for about 380px card width; make them fluid and keep labels short.",
+      "- Use theme tokens, never hardcoded colors, so visuals match light and dark themes:",
+      "  --fg, --fg-bold, --fg-dim, --fg-faint, --node-bg, --bar-bg, --border, --border-focus, --accent, --accent-contrast, --code-bg, --hl, --hl-strong, --warn, --font-ui, --font-doc, --font-mono.",
+      "- Example show:",
+      "```show",
+      "<style>.flow{display:grid;gap:8px}.box{border:1px solid var(--border);padding:8px;border-radius:6px}</style>",
+      "<div class='flow'><div class='box'>Parse</div><div class='box' style='background:var(--hl)'>Render</div></div>",
+      "```",
+      "- Streaming choreography: send prose in 1-3 sentence chunks as usual.",
+      "- Emit each visual fence contiguously, ideally in one chunk; readers see a placeholder until the fence closes.",
+      "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
+      "",
+      "Finish streaming by sending the remaining final chunk in a normal call with a short 'title'. Partial chunks concatenate verbatim: include your own spacing/newlines and never repeat text already sent. The final call blocks and returns the next event.",
+    ].join("\n"),
     input: obj({
       session_id: str("Active session ID from open_rabbithole"),
       request_id: str("The request_id of the branch_request being answered"),

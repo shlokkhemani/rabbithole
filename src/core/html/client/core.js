@@ -296,9 +296,15 @@ export const CLIENT_CORE = `
     wrap.appendChild(sk);
     return wrap;
   }
+  function visualSurfaceKey(node, base){
+    return (base === CANVAS_BASE ? "canvas:" : "reader:") + ((node && node.id) || "unknown");
+  }
+  function mountDocVisuals(dc, node, base){
+    if (typeof mountVisuals === "function") mountVisuals(dc, visualSurfaceKey(node, base));
+  }
   // A pending node that has streamed content renders it live: the words so far,
   // a breathing caret at the end of the text, and a quiet status row beneath.
-  function fillStreaming(dc, node){
+  function fillStreaming(dc, node, surfaceKey){
     dc.innerHTML = node.html || "";
     var caret = document.createElement("span");
     caret.className = "stream-caret";
@@ -314,6 +320,7 @@ export const CLIENT_CORE = `
       '<span class="ll-frozen">Unfinished when this snapshot was exported</span>' +
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
     dc.appendChild(st);
+    if (typeof mountVisuals === "function") mountVisuals(dc, surfaceKey || ("stream:" + ((node && node.id) || "unknown")));
   }
   function formatElapsed(ms){
     var s = Math.floor(ms / 1000);
@@ -337,10 +344,13 @@ export const CLIENT_CORE = `
     dc.dataset.nodeId = node.id;
     dc.style.fontSize = fontPx(node, base) + "px";
     if (node.status === "pending"){
-      if (node.html) fillStreaming(dc, node);
+      if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
       else dc.appendChild(buildLoading(node));
     }
-    else dc.innerHTML = node.html || "";
+    else {
+      dc.innerHTML = node.html || "";
+      mountDocVisuals(dc, node, base);
+    }
     return dc;
   }
 

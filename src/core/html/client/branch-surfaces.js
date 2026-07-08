@@ -21,6 +21,10 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
       '<span>' + esc(kid.title || "Untitled") + '</span>' + badge + '</div>' +
       '<div class="peek-body md">' + (kid.html || "") + '</div>' +
       '<div class="peek-hint">Click to open</div>';
+    if (typeof mountVisuals === "function"){
+      var peekBody = peekEl.querySelector(".peek-body");
+      if (peekBody) mountVisuals(peekBody, "peek:" + kid.id);
+    }
     var r = mark.getBoundingClientRect();
     var top = r.bottom + 8;
     if (top + peekEl.offsetHeight + 10 > window.innerHeight) top = Math.max(10, r.top - peekEl.offsetHeight - 8);

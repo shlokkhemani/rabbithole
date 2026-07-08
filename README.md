@@ -101,6 +101,8 @@ The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch
   peek preview; child docs carry a FROM strip that jumps back to the exact origin.
 - **Streamed answers:** words appear live with a breathing caret — in the
   reader, the thread, and the canvas card.
+- **Rich Markdown:** answers can use math, highlighted language code fences,
+  and `show` diagrams; source stays as Markdown for copy/export.
 - **Lenses:** one-tap presets on the ask popup — Explain · ELI5 · Example ·
   Go Deeper (keys 1–4).
 - **Follow-up chat:** a composer under each document asks about the doc as a

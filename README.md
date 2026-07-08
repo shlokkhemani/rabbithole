@@ -175,6 +175,19 @@ and opening that content with `base_url` instead of ingesting the PDF.
 - `src/` — server, canvas UI (self-contained HTML), storage
 - `website/` — [rabbithole.ing](https://rabbithole.ing), a Next.js single-page site
 
+## Development
+
+The browser runtime source lives in `src/ui/` and is bundled into committed
+artifacts under `dist/`. When editing the UI, run:
+
+```bash
+npm run build
+npm run check:dist
+```
+
+Commit both the source changes and `dist/`. There is no `prepare` build step;
+GitHub `npx` installs use the committed artifacts.
+
 ## License
 
 MIT

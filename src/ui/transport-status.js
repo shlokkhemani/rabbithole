@@ -1,18 +1,74 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_TRANSPORT_STATUS = `  // ===========================================================================
+import {
+  DEFAULT_CHILD,
+  agentAttached,
+  agentDown,
+  agentReason,
+  bannerEl,
+  bannerMsg,
+  bannerTitle,
+  buildLoading,
+  canvasBuilt,
+  closed,
+  closedReason,
+  connLost,
+  currentNodeId,
+  fillStreaming,
+  frozen,
+  hydration,
+  incrementSseFails,
+  isFollowup,
+  isUnread,
+  markRead,
+  mode,
+  nextOrder,
+  nodes,
+  readerMain,
+  refreshAmbient,
+  resetSseFails,
+  setAgentAttached,
+  setAgentReason,
+  setClosedState,
+  setConnLost,
+  updateSince,
+  view
+} from "./core.js";
+import {
+  renderBreadcrumb,
+  renderReaderBody,
+  renderSidebar,
+  updateThreadItem,
+  upgradeMarks,
+  wrapInContainer
+} from "./reader.js";
+import {
+  createNodeEl,
+  drawEdges,
+  fillBody,
+  renderVisibility,
+  scheduleEdges,
+  updateCardComposer
+} from "./canvas-view.js";
+import { updateComposerState } from "./ask-followups.js";
+import { removeNodesLocal } from "./branch-surfaces.js";
+
+  // ===========================================================================
   // transport
   // ===========================================================================
-  function post(payload){
+export function initTransportStatus(){
+  document.getElementById("banner-x").addEventListener("click", function(){
+    if (bannerKey) bannerDismissed[bannerKey] = true;
+    bannerEl.classList.remove("visible");
+  });
+}
+
+export function post(payload){
     if (frozen) return Promise.resolve({ ok: true }); // a snapshot has no server
     return fetch("/events", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) }).catch(function(){ return null; });
   }
   // Where-was-I, persisted (debounced) on every meaningful move so a reopen —
   // tomorrow or after a crash — lands exactly here.
   var viewSaveTimer = 0;
-  function scheduleViewSave(){
+export function scheduleViewSave(){
     if (frozen || closed) return;
     if (viewSaveTimer) clearTimeout(viewSaveTimer);
     viewSaveTimer = setTimeout(function(){
@@ -24,28 +80,28 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
     }, 600);
   }
   var saveTimers = {};
-  function persistNode(node){
+export function persistNode(node){
     if (saveTimers[node.id]) clearTimeout(saveTimers[node.id]);
     saveTimers[node.id] = setTimeout(function(){
       post({ type:"node_update", node_id: node.id, position:{x:node.x,y:node.y}, size:{w:node.w,h:node.h}, collapsed: node.collapsed, font_scale: node.font_scale });
     }, 350);
   }
   // One request for a whole-layout change (Tidy) instead of N debounced posts.
-  function persistNodesBulk(list){
+export function persistNodesBulk(list){
     if (!list || !list.length) return;
     post({ type:"nodes_update", nodes: list.map(function(n){
       return { node_id: n.id, position:{x:n.x,y:n.y}, size:{w:n.w,h:n.h}, collapsed: n.collapsed, font_scale: n.font_scale };
     }) });
   }
   var sse = null;
-  function connectSse(){
+export function connectSse(){
     // Pass the hydration checkpoint so any event broadcast between page-serve and
     // this connect is replayed (the first connect has no Last-Event-ID header).
     var after = hydration.last_event_id || 0;
     sse = new EventSource("/sse?after=" + after);
     sse.onopen = function(){
-      sseFails = 0;
-      if (connLost){ connLost = false; refreshStatus(); }
+      resetSseFails();
+      if (connLost){ setConnLost(false); refreshStatus(); }
     };
     sse.onmessage = function(ev){ try { handleServer(JSON.parse(ev.data)); } catch(e){} };
     // EventSource retries forever on its own; after a couple of failures probe
@@ -53,11 +109,10 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
     // letting pending asks shimmer into eternity. Recovers via onopen.
     sse.onerror = function(){
       if (closed) return;
-      sseFails++;
-      if (sseFails >= 2 && !connLost){
+      if (incrementSseFails() >= 2 && !connLost){
         fetch("/health", { cache: "no-store" })
           .then(function(r){ if (!r.ok) throw new Error("bad status"); })
-          .catch(function(){ if (!closed && !connLost){ connLost = true; refreshStatus(); } });
+          .catch(function(){ if (!closed && !connLost){ setConnLost(true); refreshStatus(); } });
       }
     };
   }
@@ -66,7 +121,7 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
   // are restored exactly on every repaint — arriving text must never move the
   // human's place (an innerHTML swap briefly collapses scrollHeight, which
   // would otherwise clamp the scroll and make the view jump).
-  function renderStreamSurfaces(node, firstChunk){
+export function renderStreamSurfaces(node, firstChunk){
     if (node.bodyEl){
       var cs = node.bodyEl.scrollTop;
       fillBody(node);
@@ -99,7 +154,7 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
     }
   }
 
-  function handleServer(msg){
+export function handleServer(msg){
     if (msg.type === "node_answered"){
       var node = nodes[msg.node_id];
       if (!node){
@@ -112,7 +167,7 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
           html: "", md: "", read: false, origin: msg.origin || null, x: pos.x || 0, y: pos.y || 0,
           w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: msg.font_scale || 1,
           collapsed: false, status: "pending",
-          _order: orderCounter++, _startTs: Date.now()
+          _order: nextOrder(), _startTs: Date.now()
         };
         if (canvasBuilt){ createNodeEl(node); renderVisibility(); drawEdges(); }
         if (node.origin && node.origin.anchor){
@@ -161,12 +216,11 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
         renderStreamSurfaces(sn, firstChunk);
       }
     } else if (msg.type === "agent_status"){
-      agentAttached = !!msg.attached;
-      agentReason = msg.reason || null;
+      setAgentAttached(!!msg.attached);
+      setAgentReason(msg.reason || null);
       refreshStatus();
     } else if (msg.type === "session_closed"){
-      closed = true;
-      closedReason = msg.reason || "session_closed";
+      setClosedState(true, msg.reason || "session_closed");
       // Stop EventSource from reconnecting forever to the now-dead endpoint.
       if (sse) { try { sse.close(); } catch(e){} sse = null; }
       refreshStatus();
@@ -190,16 +244,11 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
     bannerKey = null;
     bannerEl.classList.remove("visible");
   }
-  document.getElementById("banner-x").addEventListener("click", function(){
-    if (bannerKey) bannerDismissed[bannerKey] = true;
-    bannerEl.classList.remove("visible");
-  });
-
   function hasPendingAsks(){
     for (var k in nodes) if (nodes[k].status === "pending") return true;
     return false;
   }
-  function refreshStatus(){
+export function refreshStatus(){
     document.body.classList.toggle("agent-down", agentDown());
     document.body.classList.toggle("session-over", closed);
     // Once the session is over the server is gone, so new asks can't be taken —
@@ -231,5 +280,3 @@ export const CLIENT_TRANSPORT_STATUS = `  // ===================================
     updateComposerState();
     if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
   }
-
-`;

@@ -1,8 +1,8 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_IMAGE_UX = `  // ===========================================================================
+import { visualSurfaceKey } from "./core.js";
+import { scheduleEdges } from "./canvas-view.js";
+import { hideAsk } from "./ask-followups.js";
+
+  // ===========================================================================
   // MARKDOWN IMAGE UX
   // ===========================================================================
   var imageResizeMemory = {};
@@ -24,7 +24,7 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
     var max = Math.max(IMAGE_MIN_WIDTH, dc ? dc.clientWidth : IMAGE_MIN_WIDTH);
     return Math.max(IMAGE_MIN_WIDTH, Math.min(max, value));
   }
-  function nearestImageScrollContainer(el){
+export function nearestImageScrollContainer(el){
     var cur = el ? el.parentElement : null;
     while (cur && cur !== document.body && cur !== document.documentElement){
       var style = window.getComputedStyle(cur);
@@ -39,7 +39,7 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
     var rect = scroller.getBoundingClientRect();
     return rect.height ? rect.height / scroller.offsetHeight : 1;
   }
-  function keepImageHandleAnchored(scroller, beforeRect, afterRect){
+export function keepImageHandleAnchored(scroller, beforeRect, afterRect){
     if (!scroller || !beforeRect || !afterRect) return;
     var delta = afterRect.bottom - beforeRect.bottom;
     if (!delta) return;
@@ -54,7 +54,7 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
     delete frame.dataset.rhResized;
     if (key) delete imageResizeMemory[key];
   }
-  function beginImageResize(e, dc, frame, key){
+export function beginImageResize(e, dc, frame, key){
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -99,7 +99,7 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
     var dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
-  function openImageLightbox(src, alt){
+export function openImageLightbox(src, alt){
     closeImageLightbox();
     var overlay = document.createElement("div");
     overlay.className = "rh-lightbox";
@@ -179,13 +179,13 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
     overlay.addEventListener("pointercancel", function(e){ clearPointer(e.pointerId); });
     document.addEventListener("keydown", onKey, true);
   }
-  function closeImageLightbox(){
+export function closeImageLightbox(){
     if (!activeLightbox) return;
     document.removeEventListener("keydown", activeLightbox.key, true);
     if (activeLightbox.el && activeLightbox.el.parentNode) activeLightbox.el.parentNode.removeChild(activeLightbox.el);
     activeLightbox = null;
   }
-  function mountDocImages(dc, node, base, surfaceKey){
+export function mountDocImages(dc, node, base, surfaceKey){
     if (!dc || !dc.querySelectorAll) return;
     var imgs = dc.querySelectorAll("img");
     for (var i = 0; i < imgs.length; i++){
@@ -229,5 +229,3 @@ export const CLIENT_IMAGE_UX = `  // ===========================================
       }; })(frame, key));
     }
   }
-
-`;

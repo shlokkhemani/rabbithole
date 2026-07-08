@@ -1,12 +1,85 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_BRANCH_SURFACES = `  // ===========================================================================
+import {
+  confirmEl,
+  canvasBuilt,
+  childrenOf,
+  currentNodeId,
+  esc,
+  flashHint,
+  frozen,
+  closed,
+  isUnread,
+  lensBadgeHtml,
+  lensLabel,
+  lineageNodes,
+  mode,
+  motionSourceFromEvent,
+  nodes,
+  peekEl,
+  playLandingCue,
+  readerMain,
+  refreshAmbient,
+  rootId,
+  setCurrentNodeId,
+  setSurfaceOrigin,
+  shareMenu,
+  truncate,
+  updateSince
+} from "./core.js";
+import { sendFollowup } from "./ask-followups.js";
+import {
+  clearEdgeHighlight,
+  drawEdges,
+  renderVisibility,
+  revealNode
+} from "./canvas-view.js";
+import {
+  openNode,
+  removeMarks,
+  removeThreadItem,
+  renderBreadcrumb,
+  renderSidebar
+} from "./reader.js";
+import { mountVisuals } from "./visuals.js";
+
+var branchHooks = {
+  post: function(){ return Promise.resolve({ ok: true }); }
+};
+
+export function registerBranchHooks(hooks) {
+  Object.assign(branchHooks, hooks || {});
+}
+
+  // ===========================================================================
   // HOVER PEEK — glance at a branch from its mark without leaving the page
   // ===========================================================================
   var peekTimer = 0, peekFor = null;
-  function hidePeek(){
+export function initBranchSurfaces(){
+  readerMain.addEventListener("mouseover", onReaderMarkMouseover);
+  readerMain.addEventListener("mouseout", onReaderMarkMouseout);
+  peekEl.addEventListener("mouseleave", function(){ hidePeek(); });
+  peekEl.addEventListener("click", function(){
+    var kid = peekFor && nodes[peekFor];
+    hidePeek();
+    if (kid) openNode(kid.id);
+  });
+  document.getElementById("r-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
+  document.getElementById("t-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
+  document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
+  document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
+  document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
+  document.getElementById("sm-synth").addEventListener("click", function(e){
+    closeShare();
+    synthesize(motionSourceFromEvent(e));
+  });
+  document.getElementById("cf-keep").addEventListener("click", hideConfirm);
+  document.getElementById("cf-remove").addEventListener("click", function(){
+    var node = confirmFor && nodes[confirmFor];
+    hideConfirm();
+    if (node) deleteBranch(node);
+  });
+}
+
+export function hidePeek(){
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
     peekFor = null;
     peekEl.classList.remove("visible");
@@ -33,34 +106,28 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
     peekEl.classList.add("visible");
     setSurfaceOrigin(peekEl, r);
   }
-  readerMain.addEventListener("mouseover", function(e){
+  function onReaderMarkMouseover(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
     peekTimer = setTimeout(function(){ peekTimer = 0; showPeek(m); }, 220);
-  });
-  readerMain.addEventListener("mouseout", function(e){
+  }
+  function onReaderMarkMouseout(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
     setTimeout(function(){
       if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
     }, 80);
-  });
-  peekEl.addEventListener("mouseleave", function(){ hidePeek(); });
-  peekEl.addEventListener("click", function(){
-    var kid = peekFor && nodes[peekFor];
-    hidePeek();
-    if (kid) openNode(kid.id);
-  });
+  }
 
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize
   // ===========================================================================
   var shareOpen = false;
-  function toggleShare(anchor){
+export function toggleShare(anchor){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
@@ -74,9 +141,7 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
     shareMenu.classList.add("visible");
     setSurfaceOrigin(shareMenu, r);
   }
-  function closeShare(){ shareOpen = false; shareMenu.classList.remove("visible"); }
-  document.getElementById("r-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
-  document.getElementById("t-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
+export function closeShare(){ shareOpen = false; shareMenu.classList.remove("visible"); }
 
   function copyText(text, okMsg){
     function done(){ flashHint(okMsg); }
@@ -94,45 +159,41 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){
     if (!n.origin) return "";
-    if (n.origin.synthesis) return "> ✦ Synthesis of the whole Rabbithole\\n\\n";
+    if (n.origin.synthesis) return "> ✦ Synthesis of the whole Rabbithole\n\n";
     var ask = n.origin.lens ? lensLabel(n.origin.lens) : (n.origin.question || "");
-    if (n.origin.selected_text) return "> Asked about: “" + n.origin.selected_text + "”" + (ask ? " — " + ask : "") + "\\n\\n";
-    return ask ? "> Follow-up — " + ask + "\\n\\n" : "";
+    if (n.origin.selected_text) return "> Asked about: “" + n.origin.selected_text + "”" + (ask ? " — " + ask : "") + "\n\n";
+    return ask ? "> Follow-up — " + ask + "\n\n" : "";
   }
   function docMarkdown(n, depth){
     var h = "#";
     for (var i = 0; i < Math.min(depth, 3); i++) h += "#";
     var body = (n.md || "").trim() || "_(still being written)_";
-    return h + " " + (n.title || "Untitled") + "\\n\\n" + originLine(n) + body + "\\n";
+    return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
   }
   function trailMarkdown(id){
     var path = lineageNodes(id), parts = [];
     for (var i = 0; i < path.length; i++) parts.push(docMarkdown(path[i], i));
-    return parts.join("\\n---\\n\\n");
+    return parts.join("\n---\n\n");
   }
-  document.getElementById("sm-doc").addEventListener("click", function(){
+  function onCopyDoc(){
     closeShare();
     var n = nodes[currentNodeId];
     if (!n) return;
     copyText(docMarkdown(n, 0), "Copied “" + truncate(n.title || "Untitled", 40) + "” as Markdown");
-  });
-  document.getElementById("sm-trail").addEventListener("click", function(){
+  }
+  function onCopyTrail(){
     closeShare();
     var path = lineageNodes(currentNodeId);
     copyText(trailMarkdown(currentNodeId), path.length === 1
       ? "Copied this document as Markdown"
       : "Copied the trail — " + path.length + " documents");
-  });
-  document.getElementById("sm-export").addEventListener("click", function(){
+  }
+  function onExportSnapshot(){
     closeShare();
     window.location.href = "/export";
     flashHint("Snapshot downloading — a single file that opens anywhere.");
-  });
-  document.getElementById("sm-synth").addEventListener("click", function(e){
-    closeShare();
-    synthesize(motionSourceFromEvent(e));
-  });
-  function synthesize(source){
+  }
+export function synthesize(source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];
     if (!root) return;
@@ -154,7 +215,7 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
   // DELETE — remove a branch (and its subtree) after an inline confirm
   // ===========================================================================
   var confirmFor = null;
-  function confirmDelete(node, anchor){
+export function confirmDelete(node, anchor){
     if (closed){
       flashHint(frozen ? "This is a read-only snapshot." : "Session ended — changes can't be saved anymore.");
       return;
@@ -170,13 +231,7 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
     confirmEl.classList.add("visible");
     setSurfaceOrigin(confirmEl, r);
   }
-  function hideConfirm(){ confirmFor = null; confirmEl.classList.remove("visible"); }
-  document.getElementById("cf-keep").addEventListener("click", hideConfirm);
-  document.getElementById("cf-remove").addEventListener("click", function(){
-    var node = confirmFor && nodes[confirmFor];
-    hideConfirm();
-    if (node) deleteBranch(node);
-  });
+export function hideConfirm(){ confirmFor = null; confirmEl.classList.remove("visible"); }
   function countSubtree(id){
     var c = 1;
     childrenOf(id).forEach(function(k){ c += countSubtree(k.id); });
@@ -190,13 +245,13 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
   function deleteBranch(node){
     var title = node.title || "Untitled";
     var ids = collectSubtree(node.id, []);
-    post({ type: "delete_node", node_id: node.id });
+    branchHooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
     flashHint(ids.length > 1
       ? "Removed “" + truncate(title, 40) + "” and " + (ids.length - 1) + " inside it"
       : "Removed “" + truncate(title, 40) + "”");
   }
-  function removeNodesLocal(ids, parentId){
+export function removeNodesLocal(ids, parentId){
     var currentGone = false;
     for (var i = 0; i < ids.length; i++){
       var id = ids[i], n = nodes[id];
@@ -207,11 +262,11 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
       removeThreadItem(id);
       var p = nodes[n.parent_id];
       if (p && p.bodyEl) removeMarks(p.bodyEl, id);
-      delete edgeHl[id];
+      clearEdgeHighlight(id);
       delete nodes[id];
     }
     if (currentGone){
-      currentNodeId = (parentId && nodes[parentId]) ? parentId : rootId;
+      setCurrentNodeId((parentId && nodes[parentId]) ? parentId : rootId);
       if (mode === "reader") openNode(currentNodeId);
     }
     if (canvasBuilt){ renderVisibility(); drawEdges(); }
@@ -219,5 +274,3 @@ export const CLIENT_BRANCH_SURFACES = `  // ====================================
     refreshAmbient();
     updateSince();
   }
-
-`;

@@ -1,21 +1,24 @@
 # HTML Frontend Layout
 
-The Rabbithole page is still served as one self-contained HTML document, but
-the source is split by responsibility:
+The Rabbithole page is served as one self-contained HTML document. Static shell
+and CSS still live as template strings here, while the browser runtime is now a
+committed build artifact.
 
 - `canvas.js` assembles the document and owns the public `buildCanvasHtml(...)`
   API.
 - `styles.js` contains the inline stylesheet.
 - `shell.js` contains the static DOM shell.
-- `client-script.js` assembles the browser runtime.
-- `client/*.js` are ordered browser-runtime chunks. They are concatenated into
-  one `<script>` tag, so shared variables/functions intentionally live in the
-  same browser scope.
+- `built-assets.js` reads committed files from `dist/`:
+  `client.js`, `katex.css`, and `dompurify.js`.
+- `src/ui/*.js` are the browser runtime source modules. Edit those, then run
+  `npm run build` and commit the resulting `dist/` changes.
 
 Behavior-preserving rules:
 
-- Do not introduce backticks or `${...}` into runtime chunks.
-- Keep client-code string escapes doubled (`"\\n"`, `/\\s+/`) because the chunk
-  strings are still evaluated once before reaching the browser.
-- Verify by generating final HTML, extracting `<script>`, and running
+- The served page and `/export` must stay single-file HTML with no external
+  asset requests.
+- Do not read browser vendor assets from `node_modules` at runtime; vendor
+  sources are inlined into `dist/` by `build.mjs`.
+- Verify final HTML by extracting the single inline `<script>` and running
   `node --check` on that extracted script.
+- `npm run check:dist` must pass before changes land so `dist/` stays fresh.

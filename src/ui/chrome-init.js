@@ -1,24 +1,40 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_CHROME_INIT = `  // ===========================================================================
+import {
+  DEFAULT_CHILD,
+  DEFAULT_ROOT,
+  MAX_SCALE,
+  MIN_SCALE,
+  armSince,
+  currentNodeId,
+  flashHint,
+  frozen,
+  hydration,
+  mode,
+  nextOrder,
+  nodes,
+  refreshAmbient,
+  rootId,
+  setCanvasFramed,
+  setCurrentNodeId,
+  toggleTheme,
+  unreadNodes,
+  updateSince,
+  view
+} from "./core.js";
+import { focusedMark, jumpToOrigin, openNode, stepMark } from "./reader.js";
+import { frameAll, setMode, tidy } from "./canvas-view.js";
+import { togglePalette } from "./palette.js";
+import { connectSse, post, refreshStatus } from "./transport-status.js";
+
+  // ===========================================================================
   // chrome (theme, hint, keys)
   // ===========================================================================
-  function toggleTheme(){
-    var cur = document.documentElement.getAttribute("data-theme");
-    var next = cur === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("rh-theme", next); } catch(e){}
-  }
-  var hintTimer = 0;
-  function flashHint(msg){
-    if (hintTimer) clearTimeout(hintTimer);
-    hintEl.textContent = msg;
-    hintEl.classList.add("flash");
-    hintTimer = setTimeout(function(){ hintTimer = 0; hintEl.classList.remove("flash"); }, 4000);
-  }
-  document.addEventListener("keydown", function(e){
+export function initChrome(){
+  document.addEventListener("keydown", onGlobalKeydown);
+  applyInitialTheme();
+  hydrateInitialState();
+}
+
+function onGlobalKeydown(e){
     // ⌘K works everywhere, even from inside a textarea — it's the escape hatch.
     if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")){
       e.preventDefault();
@@ -42,37 +58,21 @@ export const CLIENT_CHROME_INIT = `  // ========================================
       var cur = nodes[currentNodeId];
       if (cur && cur.parent_id && nodes[cur.parent_id]){ e.preventDefault(); jumpToOrigin(cur, "keyboard"); }
     }
-  });
-  // j/k focus ring over the current document's marks (doc order, thread included).
-  var kbdMarkIdx = -1;
-  function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
-  function focusedMark(){
-    var marks = allMarks();
-    return (kbdMarkIdx >= 0 && kbdMarkIdx < marks.length) ? marks[kbdMarkIdx] : null;
-  }
-  function stepMark(delta){
-    var marks = allMarks();
-    if (!marks.length) return;
-    var prev = focusedMark();
-    if (prev) prev.classList.remove("mark-focus");
-    kbdMarkIdx = kbdMarkIdx < 0 ? (delta > 0 ? 0 : marks.length - 1)
-      : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
-    var m = marks[kbdMarkIdx];
-    m.classList.add("mark-focus");
-    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
-  }
+}
+
   // A saved choice wins; otherwise the page follows the system preference.
+function applyInitialTheme(){
   try {
     var savedTheme = localStorage.getItem("rh-theme");
     if (!savedTheme && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) savedTheme = "dark";
     if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
   } catch(e){}
+}
 
   // ===========================================================================
   // init
   // ===========================================================================
-  (function(){
+function hydrateInitialState(){
     if (frozen) document.body.classList.add("frozen");
     (hydration.nodes || []).forEach(function(raw){
       var isRoot = raw.id === rootId;
@@ -86,7 +86,7 @@ export const CLIENT_CHROME_INIT = `  // ========================================
         _startTs: (raw.status === "pending") ? Date.now() : 0
       };
     });
-    Object.keys(nodes).forEach(function(id){ nodes[id]._order = orderCounter++; });
+    Object.keys(nodes).forEach(function(id){ nodes[id]._order = nextOrder(); });
     // Holes saved before read-tracking would wake up all-unread. If nothing was
     // ever marked read (and no view was ever saved), treat the past as read.
     var anyRead = false, k;
@@ -102,19 +102,18 @@ export const CLIENT_CHROME_INIT = `  // ========================================
     // canvas framing, same mode. A first open starts at the root like always.
     var vs = hydration.view_state;
     if (vs && vs.node_id && nodes[vs.node_id]){
-      currentNodeId = vs.node_id;
+      setCurrentNodeId(vs.node_id);
       if (vs.scroll) nodes[vs.node_id]._scrollTop = vs.scroll;
     }
     if (vs && vs.view){
       view.x = vs.view.x; view.y = vs.view.y;
       view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vs.view.scale || 1));
-      canvasFramed = true; // the saved framing wins; don't re-frame on first entry
+      setCanvasFramed(true); // the saved framing wins; don't re-frame on first entry
     }
     openNode(currentNodeId); // READER is the default; canvas DOM is built lazily
     if (vs && vs.mode === "canvas") setMode("canvas");
-    if (unreadNodes().length){ sinceArmed = true; updateSince(); }
+    if (unreadNodes().length){ armSince(); updateSince(); }
     refreshAmbient();
     refreshStatus();
     if (!frozen) connectSse();
-  })();
-})();`;
+}

@@ -3,12 +3,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import vm from "node:vm";
 import { TextDecoder } from "node:util";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
 import { buildCanvasHtml } from "../src/core/html/canvas.js";
-import { getDompurifyScript } from "../src/core/html/vendor-css.js";
-import { CLIENT_VISUALS } from "../src/core/html/client/visuals.js";
+import { getDompurifyScript } from "../src/core/html/built-assets.js";
+import { mountVisuals } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -212,10 +211,14 @@ function createVisualHarness() {
       return Buffer.from(String(value || ""), "base64").toString("binary");
     },
   };
-  vm.runInNewContext(`${CLIENT_VISUALS}\nthis.__mountVisuals = mountVisuals;`, context);
+  globalThis.window = context.window;
+  globalThis.document = context.document;
+  globalThis.Uint8Array = context.Uint8Array;
+  globalThis.TextDecoder = context.TextDecoder;
+  globalThis.atob = context.atob;
   return {
     document,
-    mountVisuals: context.__mountVisuals,
+    mountVisuals,
     getLastConfig: () => lastConfig,
     getHook: () => hook,
   };

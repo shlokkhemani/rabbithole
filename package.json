@@ -11,6 +11,9 @@
     "url": "git+https://github.com/shlokkhemani/rabbithole.git"
   },
   "scripts": {
+    "build": "node build.mjs",
+    "check:dist": "node scripts/check-dist.mjs",
+    "check:purity": "node scripts/check-ui-purity.mjs",
     "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
@@ -34,6 +37,7 @@
   },
   "files": [
     "bin",
+    "dist",
     "src",
     "README.md",
     "LICENSE"
@@ -52,5 +56,8 @@
   "optionalDependencies": {
     "@napi-rs/canvas": "^1.0.2",
     "pdfjs-dist": "^4.0.379"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }

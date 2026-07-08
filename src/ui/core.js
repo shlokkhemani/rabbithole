@@ -1,120 +1,208 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_CORE = `
-  var SVGNS = "http://www.w3.org/2000/svg";
-  var DEFAULT_ROOT = { w: 480, h: 580 };
-  var DEFAULT_CHILD = { w: 420, h: 460 };
-  var MIN_SCALE = 0.15, MAX_SCALE = 2.5;
-  var READER_BASE = 17, CANVAS_BASE = 14, MIN_FS = 0.7, MAX_FS = 2.4;
-  var BRANCH_SELECTION = "selection", BRANCH_FOLLOWUP = "followup";
-  var TREE_PARENT_GAP = 70, TREE_STACK_GAP = 30;
+export var SVGNS = "http://www.w3.org/2000/svg";
+export var DEFAULT_ROOT = { w: 480, h: 580 };
+export var DEFAULT_CHILD = { w: 420, h: 460 };
+export var MIN_SCALE = 0.15, MAX_SCALE = 2.5;
+export var READER_BASE = 17, CANVAS_BASE = 14, MIN_FS = 0.7, MAX_FS = 2.4;
+export var BRANCH_SELECTION = "selection", BRANCH_FOLLOWUP = "followup";
+export var TREE_PARENT_GAP = 70, TREE_STACK_GAP = 30;
 
-  var rootId = hydration.root_id;
-  var frozen = !!hydration.frozen; // read-only exported snapshot
-  var nodes = {};
-  var currentNodeId = rootId;
-  var mode = "reader";
-  var view = { x: 0, y: 0, scale: 1 };
-  var closed = frozen;
-  var closedReason = frozen ? "frozen" : null;
-  var agentAttached = hydration.agent_attached !== false;
-  var agentReason = null;
-  var connLost = false;
-  var sseFails = 0;
-  var pendingAsk = null;
-  var canvasBuilt = false;   // canvas DOM is built lazily on first entry
-  var canvasFramed = false;  // frame-all runs once; afterwards the view is preserved
-  var edgeRaf = 0;           // coalesces edge redraws during drag/resize/scroll
-  var orderCounter = 0;
+export var hydration = null;
+export var rootId = null;
+export var frozen = false; // read-only exported snapshot
+export var nodes = {};
+export var currentNodeId = null;
+export var mode = "reader";
+export var view = { x: 0, y: 0, scale: 1 };
+export var closed = false;
+export var closedReason = null;
+export var agentAttached = true;
+export var agentReason = null;
+export var connLost = false;
+export var sseFails = 0;
+export var canvasBuilt = false;   // canvas DOM is built lazily on first entry
+export var canvasFramed = false;  // frame-all runs once; afterwards the view is preserved
+var orderCounter = 0;
 
-  // refs
-  var readerMain = document.getElementById("reader-main");
-  var sideEl = document.getElementById("reader-side");
-  var breadcrumbEl = document.getElementById("breadcrumb");
-  var viewport = document.getElementById("viewport");
-  var world = document.getElementById("world");
-  var edgesSvg = document.getElementById("edges");
-  var ask = document.getElementById("ask");
-  var askText = document.getElementById("ask-text");
-  var askGo = document.getElementById("ask-go");
-  var zoomLabel = document.getElementById("zoom-label");
-  var hintEl = document.getElementById("hint");
-  var bannerEl = document.getElementById("banner");
-  var bannerTitle = document.getElementById("banner-title");
-  var bannerMsg = document.getElementById("banner-msg");
-  var composerInner = document.getElementById("composer-inner");
-  var composerText = document.getElementById("composer-text");
-  var composerSend = document.getElementById("composer-send");
-  var actReader = document.getElementById("act-reader");
-  var actCanvas = document.getElementById("act-canvas");
-  var actSep = document.getElementById("act-sep");
-  var sinceEl = document.getElementById("since");
-  var sinceMsg = document.getElementById("since-msg");
-  var paletteEl = document.getElementById("palette");
-  var palText = document.getElementById("pal-text");
-  var palResults = document.getElementById("pal-results");
-  var peekEl = document.getElementById("peek");
-  var shareMenu = document.getElementById("sharemenu");
-  var confirmEl = document.getElementById("confirm");
+// refs
+export var readerMain = null;
+export var sideEl = null;
+export var breadcrumbEl = null;
+export var viewport = null;
+export var world = null;
+export var edgesSvg = null;
+export var ask = null;
+export var askText = null;
+export var askGo = null;
+export var zoomLabel = null;
+export var hintEl = null;
+export var bannerEl = null;
+export var bannerTitle = null;
+export var bannerMsg = null;
+export var composerInner = null;
+export var composerText = null;
+export var composerSend = null;
+export var actReader = null;
+export var actCanvas = null;
+export var actSep = null;
+export var sinceEl = null;
+export var sinceMsg = null;
+export var paletteEl = null;
+export var palText = null;
+export var palResults = null;
+export var peekEl = null;
+export var shareMenu = null;
+export var confirmEl = null;
+var hintTimer = 0;
+
+var coreHooks = {
+  post: function(){ return Promise.resolve({ ok: true }); },
+  ensureCanvasBuilt: function(){},
+  diveToNode: function(){},
+  openNode: function(){},
+  mountVisuals: null,
+  mountDocImages: null,
+  effH: function(n){ return n.h; }
+};
+
+export function registerCoreHooks(hooks) {
+  Object.assign(coreHooks, hooks || {});
+}
+
+export function initCore(inputHydration) {
+  hydration = inputHydration || {};
+  rootId = hydration.root_id;
+  frozen = !!hydration.frozen;
+  nodes = {};
+  currentNodeId = rootId;
+  mode = "reader";
+  view = { x: 0, y: 0, scale: 1 };
+  closed = frozen;
+  closedReason = frozen ? "frozen" : null;
+  agentAttached = hydration.agent_attached !== false;
+  agentReason = null;
+  connLost = false;
+  sseFails = 0;
+  canvasBuilt = false;
+  canvasFramed = false;
+  orderCounter = 0;
+  hintTimer = 0;
+  sinceDismissed = false;
+  sinceArmed = false;
+
+  readerMain = document.getElementById("reader-main");
+  sideEl = document.getElementById("reader-side");
+  breadcrumbEl = document.getElementById("breadcrumb");
+  viewport = document.getElementById("viewport");
+  world = document.getElementById("world");
+  edgesSvg = document.getElementById("edges");
+  ask = document.getElementById("ask");
+  askText = document.getElementById("ask-text");
+  askGo = document.getElementById("ask-go");
+  zoomLabel = document.getElementById("zoom-label");
+  hintEl = document.getElementById("hint");
+  bannerEl = document.getElementById("banner");
+  bannerTitle = document.getElementById("banner-title");
+  bannerMsg = document.getElementById("banner-msg");
+  composerInner = document.getElementById("composer-inner");
+  composerText = document.getElementById("composer-text");
+  composerSend = document.getElementById("composer-send");
+  actReader = document.getElementById("act-reader");
+  actCanvas = document.getElementById("act-canvas");
+  actSep = document.getElementById("act-sep");
+  sinceEl = document.getElementById("since");
+  sinceMsg = document.getElementById("since-msg");
+  paletteEl = document.getElementById("palette");
+  palText = document.getElementById("pal-text");
+  palResults = document.getElementById("pal-results");
+  peekEl = document.getElementById("peek");
+  shareMenu = document.getElementById("sharemenu");
+  confirmEl = document.getElementById("confirm");
+
+  initReduceMotion();
+  actReader.addEventListener("click", onActivityClick);
+  actCanvas.addEventListener("click", onActivityClick);
+  document.getElementById("since-show").addEventListener("click", function(e){
+    var un = unreadNodes();
+    if (un.length) goToNode(un[0], motionSourceFromEvent(e));
+  });
+  document.getElementById("since-x").addEventListener("click", function(){
+    sinceDismissed = true;
+    sinceEl.classList.remove("visible");
+  });
+  setInterval(updateLoadingTimers, 1000);
+}
+
+export function setCurrentNodeId(id){ currentNodeId = id; }
+export function setModeValue(value){ mode = value; }
+export function setClosedState(value, reason){ closed = !!value; closedReason = reason || null; }
+export function setAgentAttached(value){ agentAttached = !!value; }
+export function setAgentReason(value){ agentReason = value || null; }
+export function setConnLost(value){ connLost = !!value; }
+export function resetSseFails(){ sseFails = 0; }
+export function incrementSseFails(){ sseFails += 1; return sseFails; }
+export function setCanvasBuilt(value){ canvasBuilt = !!value; }
+export function setCanvasFramed(value){ canvasFramed = !!value; }
+export function nextOrder(){ return orderCounter++; }
+export function armSince(){ sinceArmed = true; }
 
   // ---------- helpers ----------
-  function uuid() {
+export function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
-  function esc(s){ var d=document.createElement("div"); d.textContent = (s==null?"":String(s)); return d.innerHTML; }
-  function truncate(s, n){ s = String(s); return s.length > n ? s.slice(0, n) + "…" : s; }
-  function childrenOf(id) { var out=[]; for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]); return out; }
-  function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
-  function lineageNodes(id){ var arr=[], n=nodes[id], guard={}; while(n && !guard[n.id]){ guard[n.id]=1; arr.push(n); n = n.parent_id ? nodes[n.parent_id] : null; } return arr.reverse(); }
-  function isVisible(node){ var p = node.parent_id ? nodes[node.parent_id] : null; while(p){ if(p.collapsed) return false; p = p.parent_id ? nodes[p.parent_id] : null; } return true; }
-  function fontPx(node, base){ return Math.round(base * (node.font_scale || 1)); }
-  function nodeOrder(a,b){
+export function esc(s){ var d=document.createElement("div"); d.textContent = (s==null?"":String(s)); return d.innerHTML; }
+export function truncate(s, n){ s = String(s); return s.length > n ? s.slice(0, n) + "…" : s; }
+export function childrenOf(id) { var out=[]; for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]); return out; }
+export function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
+export function lineageNodes(id){ var arr=[], n=nodes[id], guard={}; while(n && !guard[n.id]){ guard[n.id]=1; arr.push(n); n = n.parent_id ? nodes[n.parent_id] : null; } return arr.reverse(); }
+export function isVisible(node){ var p = node.parent_id ? nodes[node.parent_id] : null; while(p){ if(p.collapsed) return false; p = p.parent_id ? nodes[p.parent_id] : null; } return true; }
+export function fontPx(node, base){ return Math.round(base * (node.font_scale || 1)); }
+export function nodeOrder(a,b){
     return ((a._order||0) - (b._order||0)) || String(a.id || "").localeCompare(String(b.id || ""));
   }
-  function branchTypeOf(n){
+export function branchTypeOf(n){
     if (!n || (!n.origin && !n.parent_id)) return null;
     var t = n.origin && n.origin.branch_type;
     if (t === BRANCH_SELECTION || t === BRANCH_FOLLOWUP) return t;
     return n.origin && n.origin.selected_text ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
   }
-  function isSelectionBranch(n){ return branchTypeOf(n) === BRANCH_SELECTION; }
+export function isSelectionBranch(n){ return branchTypeOf(n) === BRANCH_SELECTION; }
   // A follow-up is a branch with no selection: asked from the composer, shown
   // as an inline chat turn beneath its parent document. Legacy nodes without an
   // explicit branch_type fall back to selected_text: present means selection,
   // absent means follow-up.
-  function isFollowup(n){ return branchTypeOf(n) === BRANCH_FOLLOWUP; }
-  function followupsOf(id){
+export function isFollowup(n){ return branchTypeOf(n) === BRANCH_FOLLOWUP; }
+export function followupsOf(id){
     return childrenOf(id).filter(isFollowup).sort(nodeOrder);
   }
-  function nodeBounds(n){
-    return { minX: n.x, minY: n.y, maxX: n.x + n.w, maxY: n.y + effH(n) };
+export function nodeBounds(n){
+    return { minX: n.x, minY: n.y, maxX: n.x + n.w, maxY: n.y + coreHooks.effH(n) };
   }
-  function unionBounds(a,b){
+export function unionBounds(a,b){
     if (!a) return b;
     if (!b) return a;
     return { minX: Math.min(a.minX,b.minX), minY: Math.min(a.minY,b.minY),
       maxX: Math.max(a.maxX,b.maxX), maxY: Math.max(a.maxY,b.maxY) };
   }
-  function shiftBounds(b, dx, dy){
+export function shiftBounds(b, dx, dy){
     return { minX: b.minX + dx, minY: b.minY + dy, maxX: b.maxX + dx, maxY: b.maxY + dy };
   }
-  function boundsOverlap(a,b){
+export function boundsOverlap(a,b){
     return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
   }
-  function agentDown(){ return closed || connLost || !agentAttached; }
+export function agentDown(){ return closed || connLost || !agentAttached; }
   var reduceMotion = false, reduceMotionMql = null;
   function setReduceMotion(e){ reduceMotion = !!(e && e.matches); }
+function initReduceMotion(){
   if (window.matchMedia){
     reduceMotionMql = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReduceMotion(reduceMotionMql);
     if (reduceMotionMql.addEventListener) reduceMotionMql.addEventListener("change", setReduceMotion);
     else if (reduceMotionMql.addListener) reduceMotionMql.addListener(setReduceMotion);
   }
-  function shouldReduceMotion(){ return reduceMotion; }
-  function motionSourceFromEvent(e){ return (e && e.detail !== 0) ? "pointer" : "keyboard"; }
+}
+export function shouldReduceMotion(){ return reduceMotion; }
+export function motionSourceFromEvent(e){ return (e && e.detail !== 0) ? "pointer" : "keyboard"; }
   function bezierCoord(t, a, b){
     var mt = 1 - t;
     return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
@@ -143,9 +231,9 @@ export const CLIENT_CORE = `
     }
     return bezierCoord(t, y1, y2);
   }
-  function easeOutMotion(k){ return cubicBezier(0.23, 1, 0.32, 1, k); }
-  function easeInOutMotion(k){ return cubicBezier(0.77, 0, 0.175, 1, k); }
-  function playLandingCue(el, cls){
+export function easeOutMotion(k){ return cubicBezier(0.23, 1, 0.32, 1, k); }
+export function easeInOutMotion(k){ return cubicBezier(0.77, 0, 0.175, 1, k); }
+export function playLandingCue(el, cls){
     if (!el || document.hidden) return;
     cls = cls || "flash";
     el.classList.remove(cls);
@@ -157,7 +245,7 @@ export const CLIENT_CORE = `
     }
     requestAnimationFrame(function(){ el.classList.remove(cls); });
   }
-  function setSurfaceOrigin(el, anchorRect){
+export function setSurfaceOrigin(el, anchorRect){
     if (!el || !anchorRect) return;
     var er = el.getBoundingClientRect();
     var ax = anchorRect.left + anchorRect.width / 2;
@@ -174,22 +262,22 @@ export const CLIENT_CORE = `
   // Fresh answers stay "unread" (dot on the card and the sidebar item) until
   // the human actually opens them. The flag persists,
   // so answers that land while you're away are waiting with a dot on re-entry.
-  function isUnread(n){ return n.status === "answered" && !n.read && n.id !== rootId; }
-  function markRead(node){
+export function isUnread(n){ return n.status === "answered" && !n.read && n.id !== rootId; }
+export function markRead(node){
     if (!node || node.read) return;
     node.read = true;
-    if (!frozen && !closed) post({ type: "node_update", node_id: node.id, read: true });
+    if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
     if (node.el) node.el.classList.remove("unread");
     refreshAmbient();
     updateSince();
   }
-  function unreadNodes(){
+export function unreadNodes(){
     var out = [];
     for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
     out.sort(function(a,b){ return (a._order||0) - (b._order||0); });
     return out;
   }
-  function pendingNodes(){
+export function pendingNodes(){
     var out = [];
     for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
     out.sort(function(a,b){ return (a._order||0) - (b._order||0); });
@@ -197,23 +285,23 @@ export const CLIENT_CORE = `
   }
   // Bring a node to the human in whichever view they're in: the reader opens it
   // (streaming answers render live), the canvas dives to the card and flashes it.
-  function goToNode(node, source){
+export function goToNode(node, source){
     if (!node) return;
     if (mode === "canvas"){
-      ensureCanvasBuilt();
-      diveToNode(node, source);
+      coreHooks.ensureCanvasBuilt();
+      coreHooks.diveToNode(node, source);
       flashNode(node);
       if (node.status === "answered") markRead(node);
     } else {
-      openNode(node.id);
+      coreHooks.openNode(node.id);
     }
   }
-  function flashNode(node){
+export function flashNode(node){
     if (!node.el) return;
     playLandingCue(node.el, "flash");
   }
   // The ambient chip only tracks answers currently being written.
-  function refreshAmbient(){
+export function refreshAmbient(){
     var writing = pendingNodes().length;
     var label = "", cls = "activity on";
     if (writing > 0 && !agentDown()){ label = writing + " writing…"; cls += " writing"; }
@@ -231,14 +319,11 @@ export const CLIENT_CORE = `
     var pend = pendingNodes();
     if (pend.length) goToNode(pend[pend.length - 1], source);
   }
-  actReader.addEventListener("click", onActivityClick);
-  actCanvas.addEventListener("click", onActivityClick);
-
   // "Since you left" strip — a re-entry announcement only: armed at load when
   // unread answers were waiting, retired as they're opened (or on dismiss).
   // Answers landing live mid-session never resurrect it.
   var sinceDismissed = false, sinceArmed = false;
-  function updateSince(){
+export function updateSince(){
     if (!sinceArmed || sinceDismissed || frozen){ sinceEl.classList.remove("visible"); return; }
     var n = unreadNodes().length;
     if (!n){ sinceArmed = false; sinceEl.classList.remove("visible"); return; }
@@ -247,26 +332,17 @@ export const CLIENT_CORE = `
       : n + " answers arrived while you were away";
     sinceEl.classList.add("visible");
   }
-  document.getElementById("since-show").addEventListener("click", function(e){
-    var un = unreadNodes();
-    if (un.length) goToNode(un[0], motionSourceFromEvent(e));
-  });
-  document.getElementById("since-x").addEventListener("click", function(){
-    sinceDismissed = true;
-    sinceEl.classList.remove("visible");
-  });
-
   // ---------- lenses (one-tap preset asks) ----------
   // Each lens sends its full crafted question to the agent, but every UI
   // surface shows only the short label (origin.lens carries the key).
-  var LENSES = {
+export var LENSES = {
     explain: { label: "Explain", q: "Explain this clearly and precisely: what it means here, why it matters, and the key intuition an expert would want me to take away." },
     eli5: { label: "ELI5", q: "Explain this like I'm five: start with a concrete everyday analogy, then translate the analogy back to the real thing, one level more precise." },
     example: { label: "Example", q: "Show this in action with one concrete worked example: realistic, minimal, step by step. Use runnable code if it's code-shaped, real numbers if it's quantitative." },
     deeper: { label: "Go Deeper", q: "Go one level deeper than this document does: the underlying mechanism, the important edge cases, and what experts know about this that introductory treatments gloss over." }
   };
-  function lensLabel(key){ return LENSES[key] ? LENSES[key].label : String(key || ""); }
-  function lensBadgeHtml(key){ return '<span class="lens-badge">' + esc(lensLabel(key)) + '</span>'; }
+export function lensLabel(key){ return LENSES[key] ? LENSES[key].label : String(key || ""); }
+export function lensBadgeHtml(key){ return '<span class="lens-badge">' + esc(lensLabel(key)) + '</span>'; }
 
   // ---------- loading placeholder (pending answers) ----------
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' +
@@ -279,7 +355,7 @@ export const CLIENT_CORE = `
     '<path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/>' +
     '</svg>' +
     '</span>';
-  function buildLoading(node){
+export function buildLoading(node){
     var wrap = document.createElement("div");
     wrap.className = "loading";
     var st = document.createElement("div");
@@ -296,17 +372,17 @@ export const CLIENT_CORE = `
     wrap.appendChild(sk);
     return wrap;
   }
-  function visualSurfaceKey(node, base){
+export function visualSurfaceKey(node, base){
     return (base === CANVAS_BASE ? "canvas:" : "reader:") + ((node && node.id) || "unknown");
   }
   function mountDocMedia(dc, node, base){
     var surfaceKey = visualSurfaceKey(node, base);
-    if (typeof mountVisuals === "function") mountVisuals(dc, surfaceKey);
-    if (typeof mountDocImages === "function") mountDocImages(dc, node, base, surfaceKey);
+    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, base, surfaceKey);
   }
   // A pending node that has streamed content renders it live: the words so far,
   // a breathing caret at the end of the text, and a quiet status row beneath.
-  function fillStreaming(dc, node, surfaceKey){
+export function fillStreaming(dc, node, surfaceKey){
     dc.innerHTML = node.html || "";
     var caret = document.createElement("span");
     caret.className = "stream-caret";
@@ -323,8 +399,8 @@ export const CLIENT_CORE = `
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
     dc.appendChild(st);
     surfaceKey = surfaceKey || ("stream:" + ((node && node.id) || "unknown"));
-    if (typeof mountVisuals === "function") mountVisuals(dc, surfaceKey);
-    if (typeof mountDocImages === "function") mountDocImages(dc, node, null, surfaceKey);
+    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, null, surfaceKey);
   }
   function formatElapsed(ms){
     var s = Math.floor(ms / 1000);
@@ -332,17 +408,17 @@ export const CLIENT_CORE = `
     if (s < 60) return s + "s";
     return Math.floor(s / 60) + "m " + (s % 60) + "s";
   }
-  setInterval(function(){
+function updateLoadingTimers(){
     if (closed) return; // freeze timers once the session is over
     var els = document.querySelectorAll(".loading-time");
     for (var i = 0; i < els.length; i++){
       var t = Number(els[i].getAttribute("data-start")) || 0;
       if (t) els[i].textContent = formatElapsed(Date.now() - t);
     }
-  }, 1000);
+}
 
   // ---------- shared document content ----------
-  function buildDocContent(node, base){
+export function buildDocContent(node, base){
     var dc = document.createElement("div");
     dc.className = "doc-content md";
     dc.dataset.nodeId = node.id;
@@ -358,4 +434,16 @@ export const CLIENT_CORE = `
     return dc;
   }
 
-`;
+export function toggleTheme(){
+  var cur = document.documentElement.getAttribute("data-theme");
+  var next = cur === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("rh-theme", next); } catch(e){}
+}
+
+export function flashHint(msg){
+  if (hintTimer) clearTimeout(hintTimer);
+  hintEl.textContent = msg;
+  hintEl.classList.add("flash");
+  hintTimer = setTimeout(function(){ hintTimer = 0; hintEl.classList.remove("flash"); }, 4000);
+}

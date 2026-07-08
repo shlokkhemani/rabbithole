@@ -1,20 +1,105 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_ASK_FOLLOWUPS = `  // ===========================================================================
+import {
+  BRANCH_FOLLOWUP,
+  BRANCH_SELECTION,
+  DEFAULT_CHILD,
+  LENSES,
+  TREE_PARENT_GAP,
+  TREE_STACK_GAP,
+  ask,
+  askGo,
+  askText,
+  boundsOverlap,
+  branchTypeOf,
+  canvasBuilt,
+  childrenOf,
+  closed,
+  composerInner,
+  composerSend,
+  composerText,
+  connLost,
+  currentNodeId,
+  easeOutMotion,
+  flashHint,
+  frozen,
+  agentAttached,
+  lensLabel,
+  mode,
+  motionSourceFromEvent,
+  nextOrder,
+  nodeBounds,
+  nodeOrder,
+  nodes,
+  readerMain,
+  refreshAmbient,
+  setSurfaceOrigin,
+  shouldReduceMotion,
+  shiftBounds,
+  unionBounds,
+  uuid
+} from "./core.js";
+import {
+  autoGrowEl,
+  createNodeEl,
+  drawEdges,
+  effH,
+  revealNode,
+  renderVisibility,
+  scheduleEdges
+} from "./canvas-view.js";
+import {
+  buildThreadItem,
+  charOffset,
+  ensureThread,
+  removeMarks,
+  removeThreadItem,
+  renderSidebar,
+  wrapInContainer
+} from "./reader.js";
+
+var askHooks = {
+  post: function(){ return Promise.resolve({ ok: true }); },
+  closeShare: function(){},
+  hideConfirm: function(){},
+  hidePeek: function(){}
+};
+
+export function registerAskHooks(hooks) {
+  Object.assign(askHooks, hooks || {});
+}
+
+  // ===========================================================================
   // ASK (shared by both views)
   // ===========================================================================
-  function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
+export function initAskFollowups(){
   document.addEventListener("mousedown", function(e){
     var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
-    if (!c("#sharemenu") && !c("#r-share") && !c("#t-share")) closeShare();
-    if (!c("#confirm")) hideConfirm();
-    if (!c("#peek") && !c("mark[data-child]")) hidePeek();
+    if (!c("#sharemenu") && !c("#r-share") && !c("#t-share")) askHooks.closeShare();
+    if (!c("#confirm")) askHooks.hideConfirm();
+    if (!c("#peek") && !c("mark[data-child]")) askHooks.hidePeek();
     if (inAsk(e)) return;
     hideAsk();
   });
   document.addEventListener("mouseup", function(e){ if (inAsk(e)) return; setTimeout(maybeShowAsk, 0); });
+  askGo.addEventListener("click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
+  document.getElementById("ask-lenses").addEventListener("click", function(e){
+    var b = e.target.closest ? e.target.closest(".lens") : null;
+    if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
+  });
+  askText.addEventListener("input", function(){ autoGrowEl(askText, 110); });
+  askText.addEventListener("keydown", onAskTextKeydown);
+  composerText.addEventListener("input", function(){ autoGrowComposer(); updateComposerState(); });
+  composerText.addEventListener("keydown", function(e){
+    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
+  });
+  composerSend.addEventListener("click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
+  readerMain.addEventListener("wheel", interruptScrollAnimation, { passive: true });
+  readerMain.addEventListener("touchstart", interruptScrollAnimation, { passive: true });
+  readerMain.addEventListener("pointerdown", interruptScrollAnimation, { passive: true });
+  readerMain.addEventListener("scroll", function(){ if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation(); }, { passive: true });
+  document.addEventListener("keydown", interruptScrollAnimation);
+}
+
+function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
 
   function maybeShowAsk(){
     var sel = window.getSelection();
@@ -53,7 +138,8 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     autoGrowEl(askText, 110);
     askText.focus();
   }
-  function hideAsk(){ ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight(); }
+  var pendingAsk = null;
+export function hideAsk(){ ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight(); }
   // Custom Highlight API — keeps the selected text visibly marked while the popup
   // has focus. Best-effort: browsers without it just fall back to today's look.
   function paintAskHighlight(range){
@@ -63,14 +149,8 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     try { if (window.CSS && CSS.highlights) CSS.highlights.delete("rh-ask"); } catch(e){}
   }
 
-  askGo.addEventListener("click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
-  document.getElementById("ask-lenses").addEventListener("click", function(e){
-    var b = e.target.closest ? e.target.closest(".lens") : null;
-    if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
-  });
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
-  askText.addEventListener("input", function(){ autoGrowEl(askText, 110); });
-  askText.addEventListener("keydown", function(e){
+  function onAskTextKeydown(e){
     if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitAsk(null, "keyboard"); }
     else if (e.key === "Escape"){ hideAsk(); }
     // Number keys are lens shortcuts only while the box is empty — once the
@@ -79,7 +159,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }
-  });
+  }
 
   function submitAsk(lensKey, source){
     if (!pendingAsk || closed) return;
@@ -96,7 +176,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
       html: "", md: "", read: false,
       origin: { selected_text: pendingAsk.selectedText, question: question, lens: lens, anchor: anchor, branch_type: BRANCH_SELECTION },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
-      status: "pending", _order: orderCounter++, _startTs: Date.now()
+      status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
     nodes[childId] = node;
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
@@ -113,7 +193,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
 
     var sel = window.getSelection(); if (sel) sel.removeAllRanges();
     hideAsk();
-    post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
+    askHooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: node.origin.selected_text, question: question, lens: lens, anchor: anchor,
            branch_type: BRANCH_SELECTION,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } })
@@ -125,7 +205,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
   }
 
   // ---------- follow-up composer ----------
-  function updateComposerState(){
+export function updateComposerState(){
     var current = nodes[currentNodeId];
     // A missing agent doesn't disable asking — questions queue server-side and
     // are answered when it returns. Only a closed session (server gone) does.
@@ -140,17 +220,12 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     composerSend.disabled = down || !composerText.value.trim();
   }
   function autoGrowComposer(){ autoGrowEl(composerText, 140); }
-  composerText.addEventListener("input", function(){ autoGrowComposer(); updateComposerState(); });
-  composerText.addEventListener("keydown", function(e){
-    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
-  });
-  composerSend.addEventListener("click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
 
   // Shared follow-up submission: from the reader composer or a card's docked one.
   // The thread turn is only appended when the parent is the document currently
   // open in the reader — otherwise it appears on the next open. A synthesis ask
   // rides the same path but renders as a distinct branch node, not a chat turn.
-  function sendFollowup(parent, question, lens, synthesis){
+export function sendFollowup(parent, question, lens, synthesis){
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
@@ -159,7 +234,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
       html: "", md: "", read: false,
       origin: { selected_text: "", question: question, lens: lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
-      status: "pending", _order: orderCounter++, _startTs: Date.now()
+      status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
     nodes[childId] = node;
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
@@ -175,7 +250,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
-    post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
+    askHooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
     refreshAmbient();
     return node;
   }
@@ -184,12 +259,12 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
   // scroll in the app (submit → your new question) is driven by hand. rAF never
   // fires in a hidden window — jump instantly there instead of never arriving.
   var scrollAnimId = 0, scrollAnimIgnoreUntil = 0;
-  function cancelScrollAnimation(){ scrollAnimId++; }
+export function cancelScrollAnimation(){ scrollAnimId++; }
   function setAnimatedScrollTop(el, value){
     scrollAnimIgnoreUntil = performance.now() + 80;
     el.scrollTop = value;
   }
-  function animateScroll(el, target, source){
+export function animateScroll(el, target, source){
     var myId = ++scrollAnimId;
     if (document.hidden || shouldReduceMotion() || source !== "pointer"){ el.scrollTop = target; return; }
     var s = el.scrollTop, t0 = performance.now(), D = 240;
@@ -202,11 +277,6 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     requestAnimationFrame(step);
   }
   function interruptScrollAnimation(){ cancelScrollAnimation(); }
-  readerMain.addEventListener("wheel", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("touchstart", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("pointerdown", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("scroll", function(){ if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation(); }, { passive: true });
-  document.addEventListener("keydown", interruptScrollAnimation);
   function submitFollowup(source){
     if (closed){ flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this Rabbithole from your terminal to continue."); return; }
     var parent = nodes[currentNodeId];
@@ -223,7 +293,7 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
   // Undo an optimistic branch whose request the server rejected/never received.
   // No-op if the node is already gone, or if an answer raced in ahead of the
   // failed-POST callback (don't delete a node the agent actually answered).
-  function rollbackBranch(node){
+export function rollbackBranch(node){
     var live = nodes[node.id];
     if (!live || live.status === "answered") return;
     delete nodes[node.id];
@@ -238,14 +308,14 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     flashHint("Couldn't reach the agent — that ask was undone.");
   }
 
-  function subtreeBounds(node){
+export function subtreeBounds(node){
     var b = nodeBounds(node);
     if (!node.collapsed){
       childrenOf(node.id).sort(nodeOrder).forEach(function(k){ b = unionBounds(b, subtreeBounds(k)); });
     }
     return b;
   }
-  function placeChild(parent, branchType){
+export function placeChild(parent, branchType){
     var type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
     var x = type === BRANCH_SELECTION ? parent.x + parent.w + TREE_PARENT_GAP : parent.x;
     var y = type === BRANCH_SELECTION ? parent.y : parent.y + effH(parent) + TREE_PARENT_GAP;
@@ -272,5 +342,3 @@ export const CLIENT_ASK_FOLLOWUPS = `  // ======================================
     }
     return { x: x, y: y };
   }
-
-`;

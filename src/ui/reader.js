@@ -1,11 +1,61 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_READER = `  // ===========================================================================
+import {
+  BRANCH_SELECTION,
+  CANVAS_BASE,
+  MAX_FS,
+  MIN_FS,
+  READER_BASE,
+  anchorStart,
+  breadcrumbEl,
+  buildDocContent,
+  buildLoading,
+  childrenOf,
+  closed,
+  composerSend,
+  composerText,
+  currentNodeId,
+  esc,
+  followupsOf,
+  fontPx,
+  frozen,
+  isFollowup,
+  isUnread,
+  lensBadgeHtml,
+  markRead,
+  mode,
+  motionSourceFromEvent,
+  nodes,
+  playLandingCue,
+  readerMain,
+  rootId,
+  setCurrentNodeId,
+  setModeValue,
+  sideEl,
+  toggleTheme,
+  truncate,
+  world
+} from "./core.js";
+
+var readerHooks = {
+  hideAsk: function(){},
+  hidePeek: function(){},
+  updateComposerState: function(){},
+  scheduleViewSave: function(){},
+  setMode: function(){},
+  post: function(){ return Promise.resolve({ ok: true }); },
+  mountVisuals: null,
+  mountDocImages: null,
+  persistNode: function(){},
+  animateScroll: function(){}
+};
+
+export function registerReaderHooks(hooks) {
+  Object.assign(readerHooks, hooks || {});
+}
+
+  // ===========================================================================
   // READER
   // ===========================================================================
-  function openNode(id){
+export function openNode(id){
     if (!nodes[id]) return;
     // Snapshot the outgoing document's position (belt & braces alongside the
     // scroll listener) so every window keeps its place when you come back.
@@ -13,21 +63,21 @@ export const CLIENT_READER = `  // =============================================
     // reads 0 and would clobber the position saved on the way out.
     var prev = nodes[currentNodeId];
     if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
-    currentNodeId = id;
-    mode = "reader";
+    setCurrentNodeId(id);
+    setModeValue("reader");
     document.body.classList.remove("mode-canvas");
-    hideAsk();
-    hidePeek();
+    readerHooks.hideAsk();
+    readerHooks.hidePeek();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
     renderSidebar();
-    updateComposerState();
+    readerHooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
-    scheduleViewSave();
+    readerHooks.scheduleViewSave();
   }
 
-  function renderBreadcrumb(){
+export function renderBreadcrumb(){
     var path = lineageNodes(currentNodeId), html = "";
     path.forEach(function(n, i){
       if (i > 0) html += '<span class="crumb-sep">›</span>';
@@ -36,13 +86,25 @@ export const CLIENT_READER = `  // =============================================
     });
     breadcrumbEl.innerHTML = html;
   }
-  breadcrumbEl.addEventListener("click", function(e){
-    var c = e.target.closest(".crumb");
-    if (!c || c.classList.contains("current")) return;
-    openNode(c.dataset.id);
-  });
+export function initReader(){
+    breadcrumbEl.addEventListener("click", function(e){
+      var c = e.target.closest(".crumb");
+      if (!c || c.classList.contains("current")) return;
+      openNode(c.dataset.id);
+    });
+    readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
+    readerMain.addEventListener("click", onMarkClick);
+    world.addEventListener("click", onMarkClick);
+    sideEl.addEventListener("click", onSidebarClick);
+    document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
+    document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
+    document.getElementById("r-canvas").addEventListener("click", function(){ readerHooks.setMode("canvas"); });
+    document.getElementById("r-done").addEventListener("click", function(){ if (!closed) readerHooks.post({ type: "done" }); });
+    document.getElementById("r-theme").addEventListener("click", toggleTheme);
+    document.getElementById("t-theme").addEventListener("click", toggleTheme);
+  }
 
-  function renderReaderBody(){
+export function renderReaderBody(){
     var node = nodes[currentNodeId];
     readerMain.innerHTML = "";
     var col = document.createElement("div");
@@ -88,7 +150,7 @@ export const CLIENT_READER = `  // =============================================
   }
   // Open the parent and land on the exact origin: the inline mark for a
   // selection branch, the thread turn for a follow-up.
-  function jumpToOrigin(node, source){
+export function jumpToOrigin(node, source){
     var parent = nodes[node.parent_id];
     if (!parent) return;
     openNode(parent.id);
@@ -96,27 +158,27 @@ export const CLIENT_READER = `  // =============================================
                  readerMain.querySelector('[data-turn="' + node.id + '"]');
     if (!target) return;
     var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
+    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
     if (target.tagName === "MARK"){
       var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
       for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
     }
   }
-  readerMain.addEventListener("scroll", function(){
+  function onReaderScroll(){
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    hidePeek();
-    scheduleViewSave();
-  }, { passive: true });
+    readerHooks.hidePeek();
+    readerHooks.scheduleViewSave();
+  }
 
   // ---------- follow-up thread ----------
-  function buildThreadRule(){
+export function buildThreadRule(){
     var r = document.createElement("div");
     r.className = "thread-rule";
     r.textContent = "Conversation";
     return r;
   }
-  function buildThreadItem(k){
+export function buildThreadItem(k){
     var item = document.createElement("div");
     item.className = "turn";
     item.dataset.turn = k.id;
@@ -133,7 +195,7 @@ export const CLIENT_READER = `  // =============================================
     item.appendChild(a);
     return item;
   }
-  function fillTurnAnswer(a, k){
+export function fillTurnAnswer(a, k){
     a.innerHTML = "";
     if (k.status === "pending" && !k.html){
       a.appendChild(buildLoading(k));
@@ -148,7 +210,7 @@ export const CLIENT_READER = `  // =============================================
     // node_answered lands and the turn re-renders.
     if (k.status === "answered") applyChildHighlights(dc, k);
   }
-  function ensureThread(){
+export function ensureThread(){
     var t = readerMain.querySelector("#thread");
     if (t) return t;
     var col = readerMain.querySelector(".reader-col");
@@ -159,7 +221,7 @@ export const CLIENT_READER = `  // =============================================
     col.appendChild(t);
     return t;
   }
-  function updateThreadItem(k){
+export function updateThreadItem(k){
     var item = readerMain.querySelector('[data-turn="' + k.id + '"]');
     if (!item){
       var t = ensureThread();
@@ -168,14 +230,14 @@ export const CLIENT_READER = `  // =============================================
     }
     fillTurnAnswer(item.querySelector(".turn-a"), k);
   }
-  function removeThreadItem(childId){
+export function removeThreadItem(childId){
     var item = readerMain.querySelector('[data-turn="' + childId + '"]');
     if (item && item.parentNode) item.parentNode.removeChild(item);
     var t = readerMain.querySelector("#thread");
     if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
   }
 
-  function applyChildHighlights(dc, node){
+export function applyChildHighlights(dc, node){
     var kids = childrenOf(node.id).filter(function(k){ return k.origin && k.origin.anchor; });
     kids.sort(function(a,b){ return b.origin.anchor.offset_start - a.origin.anchor.offset_start; }); // apply end→start
     kids.forEach(function(k){
@@ -187,19 +249,19 @@ export const CLIENT_READER = `  // =============================================
   }
 
   // Wrap one selection (by offsets, always text-node endpoints) inside a container.
-  function wrapInContainer(dc, anchor, childId, cls){
+export function wrapInContainer(dc, anchor, childId, cls){
     if (!dc || !anchor) return;
     var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
     if (rr){ try { wrapRange(rr, childId, cls); } catch(e){} }
   }
   // Promote a child's pending marks to ready within a container.
-  function upgradeMarks(root, childId){
+export function upgradeMarks(root, childId){
     if (!root) return;
     var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
     for (var i = 0; i < marks.length; i++){ marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready"); }
   }
   // Unwrap a child's marks (used to roll back a failed ask) so offsets stay valid.
-  function removeMarks(root, childId){
+export function removeMarks(root, childId){
     if (!root) return;
     var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
     for (var i = 0; i < marks.length; i++){
@@ -216,10 +278,7 @@ export const CLIENT_READER = `  // =============================================
     // Pending branches open too — the reader shows the answer streaming in live.
     if (k) openNode(k.id);
   }
-  readerMain.addEventListener("click", onMarkClick);
-  world.addEventListener("click", onMarkClick);
-
-  function renderSidebar(){
+export function renderSidebar(){
     var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){
       return (anchorStart(a) - anchorStart(b)) || ((a._order||0) - (b._order||0));
     });
@@ -249,46 +308,40 @@ export const CLIENT_READER = `  // =============================================
     sideEl.innerHTML = html;
     mountSidebarVisuals();
   }
-  function mountSidebarVisuals(){
-    if (typeof mountVisuals !== "function") return;
+export function mountSidebarVisuals(){
+    if (typeof readerHooks.mountVisuals !== "function") return;
     var panes = sideEl.querySelectorAll(".side-item[data-child] .si-live .md");
     for (var i = 0; i < panes.length; i++){
       var item = panes[i].closest(".side-item[data-child]");
       var key = "reader-side:" + (item ? item.dataset.child : i);
-      mountVisuals(panes[i], key);
-      if (typeof mountDocImages === "function") mountDocImages(panes[i], nodes[item ? item.dataset.child : ""], null, key);
+      readerHooks.mountVisuals(panes[i], key);
+      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i], nodes[item ? item.dataset.child : ""], null, key);
     }
   }
-  function pendingStatusHtml(k){
+export function pendingStatusHtml(k){
     if (frozen) return '<span class="si-muted">unanswered in this snapshot</span>';
     if (closed) return '<span class="si-muted">saved — answered when you reopen</span>';
     if (connLost || !agentAttached) return '<span class="si-muted">saved — waiting for the agent</span>';
     if (k && k.html) return '<span class="shimmer-text">Writing…</span>';
     return '<span class="shimmer-text">Thinking…</span>';
   }
-  sideEl.addEventListener("click", function(e){
+  function onSidebarClick(e){
     var it = e.target.closest(".side-item");
     if (!it) return;
     openNode(it.dataset.child); // pending items open too — the answer streams there
-  });
+  }
 
-  function setReaderFontScale(delta){
+export function setReaderFontScale(delta){
     var node = nodes[currentNodeId];
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
     var dcs = readerMain.querySelectorAll(".doc-content");
     for (var i = 0; i < dcs.length; i++) dcs[i].style.fontSize = fontPx(node, READER_BASE) + "px";
     if (node.bodyEl){ var cdc = node.bodyEl.querySelector(".doc-content"); if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px"; }
-    persistNode(node);
+    readerHooks.persistNode(node);
   }
-  document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
-  document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
-  document.getElementById("r-canvas").addEventListener("click", function(){ setMode("canvas"); });
-  document.getElementById("r-done").addEventListener("click", function(){ if (!closed) post({ type: "done" }); });
-  document.getElementById("r-theme").addEventListener("click", toggleTheme);
-  document.getElementById("t-theme").addEventListener("click", toggleTheme);
 
   // ---------- offset <-> range highlighting ----------
-  function rangeFromOffsets(container, startOff, endOff){
+export function rangeFromOffsets(container, startOff, endOff){
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     var pos = 0, sN, sO, eN, eO;
     while (walker.nextNode()){
@@ -302,19 +355,19 @@ export const CLIENT_READER = `  // =============================================
     try { r.setStart(sN, sO); r.setEnd(eN, eO); } catch(e){ return null; }
     return r;
   }
-  function charOffset(container, node, offset){
+export function charOffset(container, node, offset){
     var r = document.createRange();
     r.selectNodeContents(container);
     try { r.setEnd(node, offset); } catch(e){ return 0; }
     return r.toString().length;
   }
-  function wrapTextNode(textNode, childId, cls){
+export function wrapTextNode(textNode, childId, cls){
     var m = document.createElement("mark");
     m.className = cls; m.dataset.child = childId;
     textNode.parentNode.insertBefore(m, textNode);
     m.appendChild(textNode);
   }
-  function wrapRange(range, childId, cls){
+export function wrapRange(range, childId, cls){
     var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
     if (startC === endC && startC.nodeType === 3){
       if (startO === endO) return;
@@ -339,4 +392,22 @@ export const CLIENT_READER = `  // =============================================
     }
   }
 
-`;
+  // j/k focus ring over the current document's marks (doc order, thread included).
+  var kbdMarkIdx = -1;
+export function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
+export function focusedMark(){
+    var marks = allMarks();
+    return (kbdMarkIdx >= 0 && kbdMarkIdx < marks.length) ? marks[kbdMarkIdx] : null;
+  }
+export function stepMark(delta){
+    var marks = allMarks();
+    if (!marks.length) return;
+    var prev = focusedMark();
+    if (prev) prev.classList.remove("mark-focus");
+    kbdMarkIdx = kbdMarkIdx < 0 ? (delta > 0 ? 0 : marks.length - 1)
+      : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
+    var m = marks[kbdMarkIdx];
+    m.classList.add("mark-focus");
+    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
+    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+  }

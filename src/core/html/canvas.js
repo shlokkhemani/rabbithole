@@ -7,10 +7,9 @@
  */
 
 import { escapeHtml, serializeForInlineScript } from "../utils.js";
-import { renderClientScript } from "./client-script.js";
+import { getClientBundle, getDompurifyScript, getKatexCss } from "./built-assets.js";
 import { CANVAS_SHELL } from "./shell.js";
 import { CANVAS_STYLES } from "./styles.js";
-import { getDompurifyScript, getKatexCss } from "./vendor-css.js";
 
 export function buildCanvasHtml(hydration) {
   const title = hydration?.title || "Rabbithole";
@@ -31,7 +30,12 @@ ${getKatexCss()}
 ${CANVAS_SHELL}
 <script>
 ${getDompurifyScript()}
-${renderClientScript(hydrationJson)}
+(function(){
+  "use strict";
+  var hydration = ${hydrationJson};
+${getClientBundle()}
+  RabbitholeClient.startRabbithole(hydration);
+})();
 </script>
 </body>
 </html>`;

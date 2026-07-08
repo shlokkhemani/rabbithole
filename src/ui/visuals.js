@@ -1,15 +1,11 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_VISUALS = `  // ===========================================================================
+  // ===========================================================================
   // VISUAL FENCES
   // ===========================================================================
-  var visualSurfaceCaches = {};
-  var visualHandlers = {};
-  var visualHooksReady = false;
-  var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\\/\\/|https?:|\\/|\\.\\/|\\.\\.\\/|#|data:image\\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
-  var VISUAL_SANITIZE_CONFIG = {
+export var visualSurfaceCaches = {};
+var visualHandlers = {};
+var visualHooksReady = false;
+var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
+export var VISUAL_SANITIZE_CONFIG = {
     USE_PROFILES: { html: true, svg: true, svgFilters: true },
     ADD_TAGS: ["style"],
     ADD_ATTR: ["style"],
@@ -27,7 +23,7 @@ export const CLIENT_VISUALS = `  // ============================================
     ".rh-viz-content img{max-width:100%;height:auto;}" +
     ".rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}" +
     ".rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
-  function registerVisualHandler(type, build){
+export function registerVisualHandler(type, build){
     if (!type || typeof build !== "function") return;
     visualHandlers[String(type).toLowerCase()] = build;
   }
@@ -42,10 +38,10 @@ export const CLIENT_VISUALS = `  // ============================================
     }
     return purifier;
   }
-  function sanitizeVisualSource(source){
+export function sanitizeVisualSource(source){
     return ensureVisualSanitizer().sanitize(source, VISUAL_SANITIZE_CONFIG);
   }
-  function decodeVisualSource(encoded){
+export function decodeVisualSource(encoded){
     var bin = atob(String(encoded || ""));
     if (typeof TextDecoder === "function"){
       var bytes = new Uint8Array(bin.length);
@@ -59,9 +55,9 @@ export const CLIENT_VISUALS = `  // ============================================
     }
   }
   function visualCacheKey(type, encoded){
-    return String(type || "") + "\\n" + String(encoded || "");
+    return String(type || "") + "\n" + String(encoded || "");
   }
-  function visualFallback(source, message){
+export function visualFallback(source, message){
     var wrap = document.createElement("div");
     wrap.className = "viz-fallback";
     var note = document.createElement("div");
@@ -75,7 +71,7 @@ export const CLIENT_VISUALS = `  // ============================================
     wrap.appendChild(pre);
     return wrap;
   }
-  function buildShowVisual(source){
+export function buildShowVisual(source){
     try {
       var clean = sanitizeVisualSource(source);
       var host = document.createElement("div");
@@ -103,7 +99,7 @@ export const CLIENT_VISUALS = `  // ============================================
     if (!visualSurfaceCaches[key]) visualSurfaceCaches[key] = {};
     return visualSurfaceCaches[key];
   }
-  function mountVisuals(containerEl, surfaceKey){
+export function mountVisuals(containerEl, surfaceKey){
     if (!containerEl || !containerEl.querySelectorAll) return;
     var placeholders = containerEl.querySelectorAll(".viz");
     if (!placeholders.length) {
@@ -151,7 +147,8 @@ export const CLIENT_VISUALS = `  // ============================================
     }
   }
 
-  registerVisualHandler("show", function(source){ return buildShowVisual(source); });
-  window.__rhVisuals = { mount: mountVisuals, caches: visualSurfaceCaches, config: VISUAL_SANITIZE_CONFIG, register: registerVisualHandler };
+registerVisualHandler("show", function(source){ return buildShowVisual(source); });
 
-`;
+export function initVisuals(){
+  window.__rhVisuals = { mount: mountVisuals, caches: visualSurfaceCaches, config: VISUAL_SANITIZE_CONFIG, register: registerVisualHandler };
+}

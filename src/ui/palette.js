@@ -1,8 +1,30 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_PALETTE = `  // ===========================================================================
+import {
+  esc,
+  goToNode,
+  isUnread,
+  lensBadgeHtml,
+  mode,
+  motionSourceFromEvent,
+  nodes,
+  palResults,
+  palText,
+  paletteEl,
+  truncate
+} from "./core.js";
+import { frameAll, tidy } from "./canvas-view.js";
+
+var paletteHooks = {
+  hideAsk: function(){},
+  hidePeek: function(){},
+  closeShare: function(){},
+  hideConfirm: function(){}
+};
+
+export function registerPaletteHooks(hooks) {
+  Object.assign(paletteHooks, hooks || {});
+}
+
+  // ===========================================================================
   // ⌘K PALETTE — search the whole hole, plus canvas commands when opened there.
   // ===========================================================================
   function getPlain(node){
@@ -15,34 +37,40 @@ export const CLIENT_PALETTE = `  // ============================================
     return node._plain || "";
   }
   var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false;
-  function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
-  function openPalette(){
+export function initPalette(){
+  paletteEl.addEventListener("mousedown", function(e){ if (e.target === paletteEl) closePalette(); });
+  palText.addEventListener("input", function(){ renderPalette(palText.value); });
+  palText.addEventListener("keydown", onPaletteKeydown);
+  palResults.addEventListener("click", onPaletteClick);
+  palResults.addEventListener("mousemove", onPaletteMousemove);
+}
+
+export function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
+export function openPalette(){
     palOpen = true;
     palCanvasCommands = mode === "canvas";
-    hideAsk(); hidePeek(); closeShare(); hideConfirm();
+    paletteHooks.hideAsk(); paletteHooks.hidePeek(); paletteHooks.closeShare(); paletteHooks.hideConfirm();
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
     palText.focus();
   }
-  function closePalette(){
+export function closePalette(){
     palOpen = false;
     palCanvasCommands = false;
     paletteEl.classList.remove("visible");
     palText.blur();
   }
-  paletteEl.addEventListener("mousedown", function(e){ if (e.target === paletteEl) closePalette(); });
-  palText.addEventListener("input", function(){ renderPalette(palText.value); });
-  palText.addEventListener("keydown", function(e){
+  function onPaletteKeydown(e){
     if (e.key === "Escape"){ e.stopPropagation(); closePalette(); }
     else if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
     else if (e.key === "ArrowUp"){ e.preventDefault(); movePalSel(-1); }
     else if (e.key === "Enter"){ e.preventDefault(); commitPal("keyboard"); }
-  });
+  }
   // Rank: title hits above quote/question hits above body hits; every token
   // must appear somewhere. An empty query lists everything, newest first.
   function renderPalette(q){
-    var tokens = q.toLowerCase().split(/\\s+/).filter(function(t){ return !!t; });
+    var tokens = q.toLowerCase().split(/\s+/).filter(function(t){ return !!t; });
     var scored = [];
     for (var id in nodes){
       var n = nodes[id];
@@ -158,17 +186,15 @@ export const CLIENT_PALETTE = `  // ============================================
     closePalette();
     if (node) goToNode(node, source);
   }
-  palResults.addEventListener("click", function(e){
+  function onPaletteClick(e){
     var it = e.target.closest(".pal-item");
     if (!it) return;
     palSel = Number(it.dataset.idx) || 0;
     commitPal(motionSourceFromEvent(e));
-  });
-  palResults.addEventListener("mousemove", function(e){
+  }
+  function onPaletteMousemove(e){
     var it = e.target.closest(".pal-item");
     if (!it) return;
     var idx = Number(it.dataset.idx) || 0;
     if (idx !== palSel){ palSel = idx; var items = palResults.querySelectorAll(".pal-item"); for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel); }
-  });
-
-`;
+  }

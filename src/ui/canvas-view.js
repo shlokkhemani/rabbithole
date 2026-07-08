@@ -1,14 +1,101 @@
-/*
- * Browser-runtime chunk. These strings are concatenated in order by
- * ../client-script.js so the served page remains self-contained.
- */
-export const CLIENT_CANVAS_VIEW = `  // ===========================================================================
+import {
+  BRANCH_FOLLOWUP,
+  BRANCH_SELECTION,
+  CANVAS_BASE,
+  DEFAULT_CHILD,
+  MAX_FS,
+  MAX_SCALE,
+  MIN_FS,
+  MIN_SCALE,
+  READER_BASE,
+  SVGNS,
+  TREE_PARENT_GAP,
+  TREE_STACK_GAP,
+  boundsOverlap,
+  branchTypeOf,
+  buildDocContent,
+  canvasBuilt,
+  canvasFramed,
+  childrenOf,
+  closed,
+  connLost,
+  currentNodeId,
+  easeInOutMotion,
+  easeOutMotion,
+  edgesSvg,
+  fontPx,
+  flashHint,
+  frozen,
+  agentAttached,
+  isFollowup,
+  isSelectionBranch,
+  isUnread,
+  isVisible,
+  lensLabel,
+  markRead,
+  mode,
+  motionSourceFromEvent,
+  nodeBounds,
+  nodeOrder,
+  nodes,
+  playLandingCue,
+  readerMain,
+  registerCoreHooks,
+  rootId,
+  setCanvasBuilt,
+  setCanvasFramed,
+  setModeValue,
+  shiftBounds,
+  shouldReduceMotion,
+  unionBounds,
+  view,
+  viewport,
+  world,
+  zoomLabel
+} from "./core.js";
+import { applyChildHighlights, openNode } from "./reader.js";
+
+var canvasHooks = {
+  hideAsk: function(){},
+  hidePeek: function(){},
+  sendFollowup: function(){ return null; },
+  confirmDelete: function(){},
+  persistNode: function(){},
+  persistNodesBulk: function(){},
+  scheduleViewSave: function(){}
+};
+
+export function registerCanvasHooks(hooks) {
+  Object.assign(canvasHooks, hooks || {});
+}
+
+export function initCanvasView(){
+  registerCoreHooks({
+    ensureCanvasBuilt: ensureCanvasBuilt,
+    diveToNode: diveToNode,
+    effH: effH
+  });
+  world.addEventListener("mouseover", onWorldMouseOver);
+  world.addEventListener("mouseout", onWorldMouseOut);
+  initViewportPan();
+  viewport.addEventListener("wheel", onViewportWheel, { passive: false });
+  viewport.addEventListener("dblclick", onViewportDblClick);
+  document.getElementById("t-reader").addEventListener("click", function(){ openNode(currentNodeId); });
+  document.getElementById("t-frame").addEventListener("click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
+  document.getElementById("t-tidy").addEventListener("click", function(e){ tidy(motionSourceFromEvent(e)); });
+  document.getElementById("t-zin").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
+  document.getElementById("t-zout").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 0.87); });
+  zoomLabel.addEventListener("click", function(){ zoomTo(viewport.clientWidth/2, viewport.clientHeight/2, 1); });
+  exposeFilmCameraHook();
+}
+
+  // ===========================================================================
   // CANVAS
   // ===========================================================================
-  function applyTransform(){
+export function applyTransform(){
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
     zoomLabel.textContent = Math.round(view.scale * 100) + "%";
-    scheduleViewSave();
+    canvasHooks.scheduleViewSave();
   }
   function exposeFilmCameraHook(){
     var enabled = false;
@@ -32,7 +119,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
       }
     });
   }
-  function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
+export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
   function zoomAt(sx, sy, factor){
     var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
     zoomTo(sx, sy, next);
@@ -46,7 +133,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
   var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
 
-  function createNodeEl(node, enter){
+export function createNodeEl(node, enter){
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
     if (enter && !document.hidden && !shouldReduceMotion()) el.className += " node-enter";
@@ -70,7 +157,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     if (node.id !== rootId){
       var delBtn = mkBtn("✕", "Remove this branch");
       delBtn.classList.add("danger");
-      delBtn.addEventListener("click", function(e){ e.stopPropagation(); confirmDelete(node, delBtn); });
+      delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasHooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
     acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
@@ -117,7 +204,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   }
 
   // Glide the canvas view into a card at reading scale.
-  function diveToNode(node, source){
+export function diveToNode(node, source){
     var vw = viewport.clientWidth, vh = viewport.clientHeight;
     var ts = Math.min(1, Math.max(0.75, Math.min((vw - 120) / node.w, (vh - 120) / effH(node))));
     var tx = vw / 2 - (node.x + node.w / 2) * ts;
@@ -131,7 +218,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   // The scrollbar only appears once the textarea is actually at its cap —
   // otherwise sub-pixel rounding paints a stray thumb next to the send button.
-  function autoGrowEl(ta, max){
+export function autoGrowEl(ta, max){
     ta.style.height = "auto";
     ta.style.height = Math.min(max, ta.scrollHeight) + "px";
     ta.style.overflowY = ta.scrollHeight > max ? "auto" : "hidden";
@@ -172,7 +259,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   }
   // Same honest states as the reader's composer: an away agent doesn't disable
   // asking (questions queue server-side); only a pending doc or a dead session does.
-  function updateCardComposer(node){
+export function updateCardComposer(node){
     if (!node.ncText) return;
     var down = closed || node.status === "pending";
     node.ncText.disabled = down;
@@ -191,7 +278,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     if (node.status === "pending") return;
     var question = node.ncText.value.trim();
     if (!question) return;
-    var kid = sendFollowup(node, question, null);
+    var kid = canvasHooks.sendFollowup(node, question, null);
     node.ncText.value = "";
     autoGrowEl(node.ncText, 90);
     closeCardDrawer(node);
@@ -201,7 +288,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   // Asking from a card spawns the answer card wherever placeChild puts it —
   // possibly off-screen. Pan just enough to bring it into view (user-initiated,
   // so moving the viewport is expected; streaming never does this).
-  function revealNode(n, source){
+export function revealNode(n, source){
     if (mode !== "canvas" || !n) return;
     var pad = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
     var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
@@ -214,12 +301,12 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     if (!dx && !dy) return;
     animatePan(view.x + dx, view.y + dy, source, 230, "out");
   }
-  function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, view.scale, { source: source, duration: duration, ease: ease }); }
+export function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, view.scale, { source: source, duration: duration, ease: ease }); }
   // One shared view glide (pan + zoom together): frame-all, reveal, and
   // search/activity jumps. A newer glide cancels an in-flight one; hidden windows jump
   // instantly (rAF never fires there).
   var viewAnimId = 0;
-  function animateView(tx, ty, ts, opts){
+export function animateView(tx, ty, ts, opts){
     opts = opts || {};
     var myId = ++viewAnimId;
     if (document.hidden || shouldReduceMotion() || opts.source !== "pointer"){
@@ -236,7 +323,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     requestAnimationFrame(step);
   }
 
-  function fillBody(node){
+export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
@@ -259,10 +346,10 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content"); if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
     if (mode === "reader" && currentNodeId === node.id){ var rdc = readerMain.querySelector(".doc-content"); if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px"; }
     scheduleEdges();
-    persistNode(node);
+    canvasHooks.persistNode(node);
   }
 
-  function layoutNode(node){
+export function layoutNode(node){
     var el = node.el; el.style.left = node.x + "px"; el.style.top = node.y + "px"; el.style.width = node.w + "px";
     if (!node.collapsed) el.style.height = node.h + "px";
   }
@@ -292,35 +379,36 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   function enableDrag(node, handle){
     var sx, sy, ox, oy;
     onPointerGesture(handle,
-      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
+      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); canvasHooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
       function(ev){ node.x = ox + (ev.clientX - sx) / view.scale; node.y = oy + (ev.clientY - sy) / view.scale; layoutNode(node); scheduleEdges(); },
-      function(){ drawEdges(); persistNode(node); });
+      function(){ drawEdges(); canvasHooks.persistNode(node); });
   }
   function enableResize(node, handle){
     var sx, sy, ow, oh;
     onPointerGesture(handle,
       function(e){ if (e.button !== 0) return false; e.preventDefault(); e.stopPropagation(); sx=e.clientX; sy=e.clientY; ow=node.w; oh=node.h; return true; },
       function(ev){ node.w = Math.max(240, ow + (ev.clientX - sx)/view.scale); node.h = Math.max(160, oh + (ev.clientY - sy)/view.scale); layoutNode(node); scheduleEdges(); },
-      function(){ drawEdges(); persistNode(node); });
+      function(){ drawEdges(); canvasHooks.persistNode(node); });
   }
-  function toggleCollapse(node, btn){
+export function toggleCollapse(node, btn){
     node.collapsed = !node.collapsed;
     node.el.classList.toggle("collapsed", node.collapsed);
     btn.innerHTML = NODE_COLLAPSE_ICON;
     if (!node.collapsed) layoutNode(node);
-    renderVisibility(); drawEdges(); persistNode(node);
+    renderVisibility(); drawEdges(); canvasHooks.persistNode(node);
   }
-  function renderVisibility(){
+export function renderVisibility(){
     for (var id in nodes){ var n = nodes[id]; if (!n.el) continue; if (n.id === rootId){ n.el.style.display = ""; continue; } n.el.style.display = isVisible(n) ? "" : "none"; }
   }
-  function scheduleEdges(){
+var edgeRaf = 0;           // coalesces edge redraws during drag/resize/scroll
+export function scheduleEdges(){
     if (edgeRaf) return;
     edgeRaf = requestAnimationFrame(function(){ edgeRaf = 0; drawEdges(); });
   }
 
   // Effective on-canvas height: a collapsed card is its head only.
-  function effH(n){ return (n.collapsed && n.el) ? (n.el.offsetHeight || 36) : n.h; }
-  function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
+export function effH(n){ return (n.collapsed && n.el) ? (n.el.offsetHeight || 36) : n.h; }
+function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
 
   // Which side the edge leaves the parent from and enters the child on — chosen
   // by where the child actually sits, so a card dragged left of (or above) its
@@ -378,7 +466,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   }
 
   var edgeEls = {};
-  function drawEdges(){
+export function drawEdges(){
     while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
     edgeEls = {};
     var visCache = {};
@@ -409,13 +497,16 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   // the SVG constantly (streaming, scrolling, dragging) and a class-only
   // highlight would blink off mid-hover on every redraw.
   var edgeHl = {};
-  function setEdgeHighlight(childId, on){
+export function setEdgeHighlight(childId, on){
     if (on) edgeHl[childId] = true; else delete edgeHl[childId];
     var els = edgeEls[childId];
     if (!els) return;
     for (var i = 0; i < els.length; i++) els[i].classList.toggle("edge-hl", on);
   }
-  function focusOrigin(node, on){
+export function clearEdgeHighlight(childId){
+    delete edgeHl[childId];
+  }
+export function focusOrigin(node, on){
     if (mode !== "canvas") return;
     setEdgeHighlight(node.id, on);
     var p = node.parent_id ? nodes[node.parent_id] : null;
@@ -425,22 +516,22 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     }
   }
   // Hovering the highlighted text lights up the edge to the branch it spawned.
-  world.addEventListener("mouseover", function(e){
+  function onWorldMouseOver(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (m) setEdgeHighlight(m.dataset.child, true);
-  });
-  world.addEventListener("mouseout", function(e){
+  }
+  function onWorldMouseOut(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (m) setEdgeHighlight(m.dataset.child, false);
-  });
+  }
 
-  (function(){
+  function initViewportPan(){
     var sx, sy, ox, oy;
     onPointerGesture(viewport,
-      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; hideAsk(); viewAnimId++; viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
+      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasHooks.hideAsk(); viewAnimId++; viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
       function(ev){ view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
       function(){ viewport.classList.remove("panning"); });
-  })();
+  }
 
   // Can this element still scroll in the direction of the wheel delta?
   function canScroll(el, dx, dy){
@@ -457,7 +548,7 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
   // scroll begun inside a card keeps scrolling that card — never the canvas —
   // even if the cursor drifts off it. A pause in wheel events ends the gesture.
   var wheelKind = null, wheelCard = null, wheelTs = 0;
-  viewport.addEventListener("wheel", function(e){
+  function onViewportWheel(e){
     if (e.ctrlKey){ e.preventDefault(); wheelKind = null; zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01)); return; }
     if (!wheelKind || e.timeStamp - wheelTs > 180){
       wheelCard = (e.target.closest && e.target.closest(".node")) || null;
@@ -486,9 +577,9 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
       el = el.parentNode;
     }
     if (!consumable) e.preventDefault();
-  }, { passive: false });
+  }
 
-  function frameAll(animate, source){
+export function frameAll(animate, source){
     var ids = Object.keys(nodes).filter(function(id){ return isVisible(nodes[id]); });
     if (!ids.length) return;
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
@@ -500,12 +591,12 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     view.scale = ts; view.x = tx; view.y = ty; applyTransform();
   }
   // Double-clicking empty canvas = frame everything (canvas-tool muscle memory).
-  viewport.addEventListener("dblclick", function(e){
+  function onViewportDblClick(e){
     if (e.target.closest && e.target.closest(".node")) return;
     frameAll(true, motionSourceFromEvent(e));
-  });
+  }
 
-  function tidy(source){
+export function tidy(source){
     var visited={};
     function moveSubtree(node, dx, dy){
       node.x += dx; node.y += dy;
@@ -550,48 +641,39 @@ export const CLIENT_CANVAS_VIEW = `  // ========================================
     var ids = Object.keys(visited);
     var moved = [];
     ids.forEach(function(id){ var nn=nodes[id]; layoutNode(nn); moved.push(nn); });
-    persistNodesBulk(moved);
+    canvasHooks.persistNodesBulk(moved);
     drawEdges(); frameAll(true, source);
   }
-  document.getElementById("t-reader").addEventListener("click", function(){ openNode(currentNodeId); });
-  document.getElementById("t-frame").addEventListener("click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
-  document.getElementById("t-tidy").addEventListener("click", function(e){ tidy(motionSourceFromEvent(e)); });
-  document.getElementById("t-zin").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
-  document.getElementById("t-zout").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 0.87); });
-  zoomLabel.addEventListener("click", function(){ zoomTo(viewport.clientWidth/2, viewport.clientHeight/2, 1); });
 
   // Canvas cards (DOM + rendered markdown for every node) are only built the first
   // time the user actually opens the canvas — Reader is the default, so a large
   // hole pays no canvas cost until/unless it's wanted.
-  function ensureCanvasBuilt(){
+export function ensureCanvasBuilt(){
     if (canvasBuilt) return;
-    canvasBuilt = true;
+    setCanvasBuilt(true);
     Object.keys(nodes).forEach(function(id){ if (!nodes[id].el) createNodeEl(nodes[id]); });
     renderVisibility();
     applyTransform();
   }
-  function setMode(m){
+export function setMode(m){
     if (m === "canvas" && mode === "reader"){
       // display:none resets the reader's scrollTop — remember it first so
       // toggling out to the canvas and back lands exactly where you were.
       var cur = nodes[currentNodeId];
       if (cur) cur._scrollTop = readerMain.scrollTop;
     }
-    mode = m;
+    setModeValue(m);
     if (m === "canvas"){
       ensureCanvasBuilt();
-      hidePeek();
+      canvasHooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function(){
         drawEdges();
         // Frame everything only the first time; afterwards the canvas keeps the
         // pan/zoom you left it at.
-        if (!canvasFramed){ canvasFramed = true; frameAll(); }
+        if (!canvasFramed){ setCanvasFramed(true); frameAll(); }
       });
-      scheduleViewSave();
+      canvasHooks.scheduleViewSave();
     }
     else { openNode(currentNodeId); }
   }
-  exposeFilmCameraHook();
-
-`;

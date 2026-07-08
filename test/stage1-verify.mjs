@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
 import { buildCanvasHtml } from "../src/core/html/canvas.js";
-import { getKatexCss } from "../src/core/html/vendor-css.js";
+import { getKatexCss } from "../src/core/html/built-assets.js";
 import { createSession, closeAllSessions } from "../src/core/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";

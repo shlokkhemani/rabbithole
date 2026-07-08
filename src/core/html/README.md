@@ -10,6 +10,10 @@ and CSS live as pure template strings here, while Node-only assembly lives under
   `buildCanvasHtml(...)` API for the MCP host.
 - `src/node/html/built-assets.js` reads committed files from `dist/`:
   `client.js`, `frozen-client.js`, `katex.css`, and `dompurify.js`.
+- `src/web/` is the standalone static web host. `npm run build` writes
+  `web/dist/` (ignored) with `index.html`, `app.js`, CSS, DOMPurify, and frozen
+  snapshot source. `scripts/check-dist.mjs` intentionally compares only the
+  committed MCP `dist/` artifacts.
 - `src/ui/*.js` are the browser runtime source modules. Edit those, then run
   `npm run build` and commit the resulting `dist/` changes.
 - Hydration and SSE carry node markdown, not rendered HTML. The browser renders
@@ -21,6 +25,10 @@ and CSS live as pure template strings here, while Node-only assembly lives under
 - Node-tree mutations shared by hosts live in `src/core/reducer.js`; the MCP
   session in `src/node/transport/session.js` handles HTTP/SSE and agent
   orchestration around that reducer.
+- The web host injects a direct in-page transport adapter instead of HTTP/SSE:
+  browser events go to `DirectRabbitholeHost`, which applies the core reducer,
+  persists through `IdbStore`, and streams Brain events back into the same UI
+  `handleServer(...)` path.
 - Streaming uses full-markdown-so-far `node_progress.markdown` payloads. The
   client coalesces stream renders to `requestAnimationFrame`, which keeps replay
   and reconnect logic simple while preserving existing scroll positions.
@@ -41,3 +49,14 @@ Behavior-preserving rules:
 - Verify final HTML by extracting the single inline `<script>` and running
   `node --check` on that extracted script.
 - `npm run check:dist` must pass before changes land so `dist/` stays fresh.
+
+Web CSP:
+
+- `web/dist/index.html` sets `default-src 'self'`, keeps scripts self-only, allows
+  inline styles for the existing canvas runtime's dynamic positioning/sizing, and
+  pins `connect-src` to the
+  built-in BYOK providers plus localhost custom endpoints:
+  OpenRouter, OpenAI, Anthropic, `localhost`, and `127.0.0.1`.
+- Remote custom providers are deliberately not wildcarded. To use one from the
+  static app, edit the generated CSP (or rebuild with that origin added). This
+  keeps the default shipped app from allowing arbitrary key-bearing requests.

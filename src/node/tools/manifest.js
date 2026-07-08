@@ -1,5 +1,6 @@
 import { openRabbithole, answerBranch, ingestPdf, listRabbitholes } from "../index.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
+import { AUTHORING_VOCABULARY } from "../../core/prompts/index.js";
 import { MAX_ASSETS_PER_CALL, validateAssetEntriesSync } from "../fs-store.js";
 
 function str(description, extra = {}) {
@@ -125,24 +126,7 @@ export const toolDefinitions = [
     description: [
       "Answer one pending branch request from an open Rabbithole. Called after open_rabbithole or answer_branch returns status='branch_request'. Write a focused, well-formatted markdown answer to the human's question about their selection - use selected_text, parent_node_title, and lineage for context (you already hold the documents you authored). If selected_text is empty, answer conversationally about the parent document as a whole. If the request has a 'lens', match that style.",
       "",
-      "Authoring vocabulary:",
-      "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
-      "- If the answer is content fetched from a URL or repo, pass its document URL as base_url so relative images and links resolve.",
-      "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
-      "- Use ```show when a concept is spatial or structural: architecture, memory layout, relationships.",
-      "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
-      "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",
-      "- Design visuals for about 380px card width; make them fluid and keep labels short.",
-      "- Use theme tokens, never hardcoded colors, so visuals match light and dark themes:",
-      "  --fg, --fg-bold, --fg-dim, --fg-faint, --node-bg, --bar-bg, --border, --border-focus, --accent, --accent-contrast, --code-bg, --hl, --hl-strong, --warn, --font-ui, --font-doc, --font-mono.",
-      "- Example show:",
-      "```show",
-      "<style>.flow{display:grid;gap:8px}.box{border:1px solid var(--border);padding:8px;border-radius:6px}</style>",
-      "<div class='flow'><div class='box'>Parse</div><div class='box' style='background:var(--hl)'>Render</div></div>",
-      "```",
-      "- Streaming choreography: send prose in 1-3 sentence chunks as usual.",
-      "- Emit each visual fence contiguously, ideally in one chunk; readers see a placeholder until the fence closes.",
-      "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
+      AUTHORING_VOCABULARY,
       "",
       "Finish streaming by sending the remaining final chunk in a normal call with a short 'title'. Partial chunks concatenate verbatim: include your own spacing/newlines and never repeat text already sent. The final call blocks and returns the next event. If it returns status='keep_listening', immediately call open_rabbithole { hole_id }; if the host reports a tool timeout (e.g. timed out awaiting tools/call), do the same. Do not re-send content; asks are saved.",
     ].join("\n"),

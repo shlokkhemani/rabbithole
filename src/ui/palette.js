@@ -12,6 +12,7 @@ import {
   truncate
 } from "./core.js";
 import { frameAll, tidy } from "./canvas-view.js";
+import { activateFocusTrap } from "./focus-trap.js";
 
 var paletteHooks = {
   hideAsk: function(){},
@@ -36,7 +37,7 @@ export function registerPaletteHooks(hooks) {
     }
     return node._plain || "";
   }
-  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false;
+  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palTrap = null;
 export function initPalette(){
   paletteEl.addEventListener("mousedown", function(e){ if (e.target === paletteEl) closePalette(); });
   palText.addEventListener("input", function(){ renderPalette(palText.value); });
@@ -53,12 +54,14 @@ export function openPalette(){
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
-    palText.focus();
+    if (palTrap) palTrap();
+    palTrap = activateFocusTrap(paletteEl, { initialFocus: palText, onEscape: closePalette });
   }
 export function closePalette(){
     palOpen = false;
     palCanvasCommands = false;
     paletteEl.classList.remove("visible");
+    if (palTrap){ palTrap(); palTrap = null; }
     palText.blur();
   }
   function onPaletteKeydown(e){

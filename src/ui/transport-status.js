@@ -58,6 +58,14 @@ import { mountVisuals } from "./visuals.js";
   // ===========================================================================
   // transport
   // ===========================================================================
+var transportAdapter = null;
+var sse = null;
+var webTransport = null;
+
+export function setTransportAdapter(adapter){
+  transportAdapter = adapter && typeof adapter === "object" ? adapter : null;
+}
+
 export function initTransportStatus(){
   document.getElementById("banner-x").addEventListener("click", function(){
     if (bannerKey) bannerDismissed[bannerKey] = true;
@@ -67,6 +75,9 @@ export function initTransportStatus(){
 
 export function post(payload){
     if (frozen) return Promise.resolve({ ok: true }); // a snapshot has no server
+    if (transportAdapter && typeof transportAdapter.post === "function") {
+      return Promise.resolve(transportAdapter.post(payload)).catch(function(){ return null; });
+    }
     return fetch("/events", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) }).catch(function(){ return null; });
   }
   // Where-was-I, persisted (debounced) on every meaningful move so a reopen —
@@ -97,8 +108,22 @@ export function persistNodesBulk(list){
       return { node_id: n.id, position:{x:n.x,y:n.y}, size:{w:n.w,h:n.h}, collapsed: n.collapsed, font_scale: n.font_scale };
     }) });
   }
-  var sse = null;
 export function connectSse(){
+    if (transportAdapter && typeof transportAdapter.connect === "function") {
+      webTransport = transportAdapter.connect({
+        after: hydration.last_event_id || 0,
+        onOpen: function(){
+          resetSseFails();
+          if (connLost){ setConnLost(false); refreshStatus(); }
+        },
+        onMessage: handleServer,
+        onError: function(){
+          if (closed) return;
+          if (incrementSseFails() >= 2 && !connLost){ setConnLost(true); refreshStatus(); }
+        }
+      });
+      return webTransport;
+    }
     // Pass the hydration checkpoint so any event broadcast between page-serve and
     // this connect is replayed (the first connect has no Last-Event-ID header).
     var after = hydration.last_event_id || 0;
@@ -209,6 +234,7 @@ export function handleServer(msg){
         }
       }
       cancelQueuedStreamRender(node.id);
+      node.error = null;
       node.status = "answered"; node.title = msg.title || node.title;
       node.md = msg.markdown || node.md || "";
       node.base_url = msg.base_url || null;
@@ -247,10 +273,33 @@ export function handleServer(msg){
       var sn = nodes[msg.node_id];
       if (sn && sn.status === "pending"){
         var firstChunk = !sn.md;
+        sn.error = null;
         sn.md = msg.markdown || "";
         sn.base_url = msg.base_url || sn.base_url || null;
         sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
         scheduleStreamRender(sn, firstChunk);
+      }
+    } else if (msg.type === "node_error"){
+      var en = nodes[msg.node_id];
+      if (en && en.status === "pending"){
+        en.error = {
+          message: msg.message || "The provider request failed.",
+          code: msg.code || null,
+          retryable: msg.retryable !== false
+        };
+        if (msg.markdown != null) en.md = msg.markdown || "";
+        cancelQueuedStreamRender(en.id);
+        refreshNodeHtml(en);
+        renderStreamSurfaces(en, !en.md);
+        if (en.bodyEl){ fillBody(en); scheduleEdges(); }
+        if (mode === "reader"){
+          if (currentNodeId === en.id){ renderReaderBody(); updateComposerState(); }
+          else if (currentNodeId === en.parent_id){
+            if (isFollowup(en)) updateThreadItem(en);
+            else renderSidebar();
+          }
+        }
+        refreshAmbient();
       }
     } else if (msg.type === "agent_status"){
       setAgentAttached(!!msg.attached);
@@ -260,6 +309,7 @@ export function handleServer(msg){
       setClosedState(true, msg.reason || "session_closed");
       // Stop EventSource from reconnecting forever to the now-dead endpoint.
       if (sse) { try { sse.close(); } catch(e){} sse = null; }
+      if (webTransport && typeof webTransport.close === "function") { try { webTransport.close(); } catch(e){} webTransport = null; }
       refreshStatus();
     }
   }

@@ -15,3 +15,6 @@ SPEC-WEB-AUDIT.md
 website/.next/
 website/out/
 website/next-env.d.ts
+
+# standalone web app build output
+web/dist/

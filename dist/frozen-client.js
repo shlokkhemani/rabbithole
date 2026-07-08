@@ -1669,7 +1669,7 @@ var RabbitholeFrozenClient = (() => {
   var LENS_LABELS = Object.freeze(
     Object.fromEntries(Object.entries(LENSES).map(([key, value]) => [key, value.label]))
   );
-  function truncate2(value, length) {
+  function truncate(value, length) {
     const s = String(value != null ? value : "");
     return s.length > length ? `${s.slice(0, length).trimEnd()}\u2026` : s;
   }
@@ -1792,9 +1792,9 @@ var RabbitholeFrozenClient = (() => {
   var view = { x: 0, y: 0, scale: 1 };
   var closed = false;
   var closedReason = null;
-  var agentAttached2 = true;
+  var agentAttached = true;
   var agentReason = null;
-  var connLost2 = false;
+  var connLost = false;
   var sseFails = 0;
   var canvasBuilt = false;
   var canvasFramed = false;
@@ -1857,9 +1857,9 @@ var RabbitholeFrozenClient = (() => {
     view = { x: 0, y: 0, scale: 1 };
     closed = frozen;
     closedReason = frozen ? "frozen" : null;
-    agentAttached2 = hydration.agent_attached !== false;
+    agentAttached = hydration.agent_attached !== false;
     agentReason = null;
-    connLost2 = false;
+    connLost = false;
     sseFails = 0;
     canvasBuilt = false;
     canvasFramed = false;
@@ -1935,8 +1935,8 @@ var RabbitholeFrozenClient = (() => {
     d.textContent = s == null ? "" : String(s);
     return d.innerHTML;
   }
-  function truncate3(s, n) {
-    return truncate2(s, n);
+  function truncate2(s, n) {
+    return truncate(s, n);
   }
   function childrenOf(id) {
     var out = [];
@@ -1946,7 +1946,7 @@ var RabbitholeFrozenClient = (() => {
   function anchorStart(n) {
     return n.origin && n.origin.anchor ? n.origin.anchor.offset_start : 1e9;
   }
-  function lineageNodes2(id) {
+  function lineageNodes(id) {
     var arr = [], n = nodes[id], guard = {};
     while (n && !guard[n.id]) {
       guard[n.id] = 1;
@@ -1994,7 +1994,7 @@ var RabbitholeFrozenClient = (() => {
     return boundsOverlap(a, b);
   }
   function agentDown() {
-    return closed || connLost2 || !agentAttached2;
+    return closed || connLost || !agentAttached;
   }
   var reduceMotion = false;
   var reduceMotionMql = null;
@@ -2164,6 +2164,31 @@ var RabbitholeFrozenClient = (() => {
   }
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
   function buildLoading(node) {
+    if (node && node.error) {
+      var errWrap = document.createElement("div");
+      errWrap.className = "loading provider-error";
+      var title = document.createElement("div");
+      title.className = "provider-error-title";
+      title.textContent = "Provider request failed";
+      var msg = document.createElement("div");
+      msg.className = "provider-error-msg";
+      msg.textContent = node.error.message || "The model provider returned an error.";
+      var retry = document.createElement("button");
+      retry.className = "provider-retry";
+      retry.type = "button";
+      retry.textContent = "Retry";
+      retry.disabled = node.error.retryable === false;
+      retry.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        node.error = null;
+        coreHooks.post({ type: "retry_branch", node_id: node.id });
+      });
+      errWrap.appendChild(title);
+      errWrap.appendChild(msg);
+      errWrap.appendChild(retry);
+      return errWrap;
+    }
     var wrap = document.createElement("div");
     wrap.className = "loading";
     var st = document.createElement("div");
@@ -2479,7 +2504,7 @@ var RabbitholeFrozenClient = (() => {
         ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
       } else if (node.origin.selected_text) {
         var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + esc(node.origin.question) : "";
-        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate3(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
+        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
       } else {
         ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : esc(node.origin.question || ""));
       }
@@ -2642,7 +2667,7 @@ var RabbitholeFrozenClient = (() => {
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
       html2 += '<div class="side-item' + (pending ? " pending" : "") + '" data-child="' + k.id + '">';
       html2 += '<div class="si-q"><span class="si-num">' + (i2 + 1) + "</span><span>" + qHtml + "</span></div>";
-      if (quote) html2 += '<div class="si-quote">\u201C' + esc(truncate3(quote, 80)) + "\u201D</div>";
+      if (quote) html2 += '<div class="si-quote">\u201C' + esc(truncate2(quote, 80)) + "\u201D</div>";
       html2 += '<div class="si-status">' + status + "</div>";
       if (pending && k.html) html2 += '<div class="si-live"><div class="md">' + k.html + "</div></div>";
       html2 += "</div>";
@@ -3093,7 +3118,7 @@ var RabbitholeFrozenClient = (() => {
     if (frozen) node.ncText.placeholder = "Read-only snapshot";
     else if (closed) node.ncText.placeholder = "Session ended \u2014 saved";
     else if (node.status === "pending") node.ncText.placeholder = "Still being written\u2026";
-    else if (connLost2 || !agentAttached2) node.ncText.placeholder = "Asks are saved for the agent\u2026";
+    else if (connLost || !agentAttached) node.ncText.placeholder = "Asks are saved for the agent\u2026";
     else node.ncText.placeholder = "Ask a follow-up\u2026";
     node.ncSend.disabled = down || !node.ncText.value.trim();
   }
@@ -3805,7 +3830,7 @@ var RabbitholeFrozenClient = (() => {
     var node = {
       id: childId,
       parent_id: parent.id,
-      title: lens ? lensLabel2(lens) : question ? truncate(question, 48) : "\u2026",
+      title: lens ? lensLabel2(lens) : question ? truncate2(question, 48) : "\u2026",
       html: "",
       md: "",
       base_url: parent.base_url || null,
@@ -3866,7 +3891,7 @@ var RabbitholeFrozenClient = (() => {
     if (frozen) composerText.placeholder = "Read-only snapshot \u2014 open the live Rabbithole to keep asking";
     else if (closed) composerText.placeholder = "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there";
     else if (current && current.status === "pending") composerText.placeholder = "This answer is still being written\u2026";
-    else if (connLost2 || !agentAttached2) composerText.placeholder = "The agent is away \u2014 questions are saved and answered when it returns\u2026";
+    else if (connLost || !agentAttached) composerText.placeholder = "The agent is away \u2014 questions are saved and answered when it returns\u2026";
     else composerText.placeholder = "Ask a follow-up about this document\u2026";
     composerSend.disabled = down || !composerText.value.trim();
   }
@@ -3879,7 +3904,7 @@ var RabbitholeFrozenClient = (() => {
     var node = {
       id: childId,
       parent_id: parent.id,
-      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate(question, 48),
+      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate2(question, 48),
       html: "",
       md: "",
       base_url: parent.base_url || null,
@@ -3994,6 +4019,79 @@ var RabbitholeFrozenClient = (() => {
     });
   }
 
+  // src/ui/focus-trap.js
+  var FOCUSABLE = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+  function activateFocusTrap(root, options2) {
+    if (!root) return function() {
+    };
+    options2 = options2 || {};
+    var previous = document.activeElement;
+    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
+    function focusables() {
+      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE)) : [];
+      return all.filter(function(el) {
+        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
+      });
+    }
+    function focusInitial() {
+      var target = options2.initialFocus || focusables()[0] || root;
+      try {
+        target.focus({ preventScroll: true });
+      } catch (e) {
+        try {
+          target.focus();
+        } catch (_e) {
+        }
+      }
+    }
+    function onKeydown(e) {
+      if (e.key === "Escape" && typeof options2.onEscape === "function") {
+        e.preventDefault();
+        e.stopPropagation();
+        options2.onEscape(e);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      var items = focusables();
+      if (!items.length) {
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeydown, true);
+    setTimeout(focusInitial, 0);
+    return function deactivateFocusTrap() {
+      document.removeEventListener("keydown", onKeydown, true);
+      if (options2.restoreFocus !== false && previous && previous.focus) {
+        try {
+          previous.focus({ preventScroll: true });
+        } catch (e) {
+          try {
+            previous.focus();
+          } catch (_e) {
+          }
+        }
+      }
+    };
+  }
+
   // src/ui/image-ux.js
   var imageResizeMemory = {};
   var activeLightbox = null;
@@ -4101,6 +4199,7 @@ var RabbitholeFrozenClient = (() => {
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", alt || "Image preview");
+    overlay.setAttribute("tabindex", "-1");
     var img = document.createElement("img");
     img.className = "rh-lightbox-img";
     img.src = src;
@@ -4113,7 +4212,8 @@ var RabbitholeFrozenClient = (() => {
     var pointers = {};
     var pinch = null;
     setLightboxTransform(img, state);
-    activeLightbox = { el: overlay, key: onKey };
+    var trap = activateFocusTrap(overlay, { initialFocus: overlay, onEscape: closeImageLightbox });
+    activeLightbox = { el: overlay, key: onKey, trap };
     function onKey(e) {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -4187,6 +4287,7 @@ var RabbitholeFrozenClient = (() => {
   function closeImageLightbox() {
     if (!activeLightbox) return;
     document.removeEventListener("keydown", activeLightbox.key, true);
+    if (typeof activeLightbox.trap === "function") activeLightbox.trap();
     if (activeLightbox.el && activeLightbox.el.parentNode) activeLightbox.el.parentNode.removeChild(activeLightbox.el);
     activeLightbox = null;
   }
@@ -4268,6 +4369,7 @@ var RabbitholeFrozenClient = (() => {
   var palSel = 0;
   var palItems = [];
   var palCanvasCommands = false;
+  var palTrap = null;
   function initPalette() {
     paletteEl.addEventListener("mousedown", function(e) {
       if (e.target === paletteEl) closePalette();
@@ -4293,12 +4395,17 @@ var RabbitholeFrozenClient = (() => {
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
-    palText.focus();
+    if (palTrap) palTrap();
+    palTrap = activateFocusTrap(paletteEl, { initialFocus: palText, onEscape: closePalette });
   }
   function closePalette() {
     palOpen = false;
     palCanvasCommands = false;
     paletteEl.classList.remove("visible");
+    if (palTrap) {
+      palTrap();
+      palTrap = null;
+    }
     palText.blur();
   }
   function onPaletteKeydown(e) {
@@ -4408,10 +4515,10 @@ var RabbitholeFrozenClient = (() => {
       }
     }
     var quote = n.origin && n.origin.selected_text;
-    if (quote) return "\u201C" + hiTokens(truncate3(quote, 90), tokens) + "\u201D";
+    if (quote) return "\u201C" + hiTokens(truncate2(quote, 90), tokens) + "\u201D";
     var q = n.origin && n.origin.question;
-    if (q) return hiTokens(truncate3(q, 100), tokens);
-    return esc(truncate3(body, 100));
+    if (q) return hiTokens(truncate2(q, 100), tokens);
+    return esc(truncate2(body, 100));
   }
   function hiTokens(text2, tokens) {
     if (!tokens.length) return esc(text2);
@@ -4559,6 +4666,11 @@ var RabbitholeFrozenClient = (() => {
 
   // src/ui/snapshot.js
   var ASSET_REF_RE = /asset:([a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg))/gi;
+  var snapshotHooks = {
+    fetchAssetData: null,
+    getFrozenClientSource: null,
+    getDompurifySource: null
+  };
   function escapeHtml(str) {
     return String(str != null ? str : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
@@ -4618,6 +4730,13 @@ var RabbitholeFrozenClient = (() => {
     });
   }
   async function fetchAssetData(name) {
+    if (typeof snapshotHooks.fetchAssetData === "function") {
+      try {
+        var hooked = await snapshotHooks.fetchAssetData(name);
+        if (hooked) return hooked;
+      } catch (e) {
+      }
+    }
     try {
       var slash = String.fromCharCode(47);
       var res = await fetch(slash + "assets" + slash + name, { cache: "no-store" });
@@ -4634,6 +4753,9 @@ var RabbitholeFrozenClient = (() => {
     return out;
   }
   function extractDompurifySource() {
+    if (typeof snapshotHooks.getDompurifySource === "function") {
+      return snapshotHooks.getDompurifySource() || "";
+    }
     var script2 = document.scripts && document.scripts[0] ? document.scripts[0].textContent || "" : "";
     var marker = "\n(function(){";
     var idx = script2.indexOf(marker);
@@ -4659,7 +4781,7 @@ var RabbitholeFrozenClient = (() => {
     var title = snapshotHydration && snapshotHydration.title || "Rabbithole";
     var styleText = ((_a2 = document.querySelector("style")) == null ? void 0 : _a2.textContent) || "";
     var dompurifySource = extractDompurifySource();
-    var frozenClient = window.__RABBITHOLE_FROZEN_CLIENT__;
+    var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function" ? snapshotHooks.getFrozenClientSource() : window.__RABBITHOLE_FROZEN_CLIENT__;
     if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
     var lt = String.fromCharCode(60);
     var gt = String.fromCharCode(62);
@@ -4781,6 +4903,7 @@ var RabbitholeFrozenClient = (() => {
     }, 80);
   }
   var shareOpen = false;
+  var shareTrap = null;
   function toggleShare(anchor) {
     if (shareOpen) {
       closeShare();
@@ -4796,10 +4919,19 @@ var RabbitholeFrozenClient = (() => {
     shareOpen = true;
     shareMenu.classList.add("visible");
     setSurfaceOrigin(shareMenu, r2);
+    if (shareTrap) shareTrap();
+    shareTrap = activateFocusTrap(shareMenu, {
+      initialFocus: shareMenu.querySelector("button"),
+      onEscape: closeShare
+    });
   }
   function closeShare() {
     shareOpen = false;
     shareMenu.classList.remove("visible");
+    if (shareTrap) {
+      shareTrap();
+      shareTrap = null;
+    }
   }
   function copyText(text2, okMsg) {
     function done() {
@@ -4842,7 +4974,7 @@ var RabbitholeFrozenClient = (() => {
     return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
   }
   function trailMarkdown(id) {
-    var path2 = lineageNodes2(id), parts = [];
+    var path2 = lineageNodes(id), parts = [];
     for (var i2 = 0; i2 < path2.length; i2++) parts.push(docMarkdown(path2[i2], i2));
     return parts.join("\n---\n\n");
   }
@@ -4850,11 +4982,11 @@ var RabbitholeFrozenClient = (() => {
     closeShare();
     var n = nodes[currentNodeId];
     if (!n) return;
-    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate3(n.title || "Untitled", 40) + "\u201D as Markdown");
+    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
   }
   function onCopyTrail() {
     closeShare();
-    var path2 = lineageNodes2(currentNodeId);
+    var path2 = lineageNodes(currentNodeId);
     copyText(trailMarkdown(currentNodeId), path2.length === 1 ? "Copied this document as Markdown" : "Copied the trail \u2014 " + path2.length + " documents");
   }
   function onExportSnapshot() {
@@ -4924,7 +5056,7 @@ var RabbitholeFrozenClient = (() => {
     var ids = collectSubtree(node.id, []);
     branchHooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
-    flashHint(ids.length > 1 ? "Removed \u201C" + truncate3(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate3(title, 40) + "\u201D");
+    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
   }
   function removeNodesLocal(ids, parentId) {
     var currentGone = false;

@@ -28,6 +28,7 @@ import {
   refreshAmbient,
   setSurfaceOrigin,
   shouldReduceMotion,
+  truncate,
   uuid
 } from "./core.js";
 import {

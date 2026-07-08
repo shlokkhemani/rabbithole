@@ -359,6 +359,31 @@ export function lensBadgeHtml(key){ return '<span class="lens-badge">' + esc(len
     '</svg>' +
     '</span>';
 export function buildLoading(node){
+    if (node && node.error){
+      var errWrap = document.createElement("div");
+      errWrap.className = "loading provider-error";
+      var title = document.createElement("div");
+      title.className = "provider-error-title";
+      title.textContent = "Provider request failed";
+      var msg = document.createElement("div");
+      msg.className = "provider-error-msg";
+      msg.textContent = node.error.message || "The model provider returned an error.";
+      var retry = document.createElement("button");
+      retry.className = "provider-retry";
+      retry.type = "button";
+      retry.textContent = "Retry";
+      retry.disabled = node.error.retryable === false;
+      retry.addEventListener("click", function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        node.error = null;
+        coreHooks.post({ type: "retry_branch", node_id: node.id });
+      });
+      errWrap.appendChild(title);
+      errWrap.appendChild(msg);
+      errWrap.appendChild(retry);
+      return errWrap;
+    }
     var wrap = document.createElement("div");
     wrap.className = "loading";
     var st = document.createElement("div");

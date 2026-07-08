@@ -37,11 +37,13 @@ import {
   persistNodesBulk,
   post,
   refreshStatus,
-  scheduleViewSave
+  scheduleViewSave,
+  setTransportAdapter
 } from "./transport-status.js";
 import { initChrome } from "./chrome-init.js";
 
-export function startRabbithole(hydration) {
+export function startRabbithole(hydration, options) {
+  setTransportAdapter(options && options.transport);
   initCore(hydration);
   initVisuals();
 

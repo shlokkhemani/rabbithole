@@ -41,6 +41,7 @@ import {
 } from "./reader.js";
 import { mountVisuals } from "./visuals.js";
 import { downloadSnapshot } from "./snapshot.js";
+import { activateFocusTrap } from "./focus-trap.js";
 
 var branchHooks = {
   post: function(){ return Promise.resolve({ ok: true }); }
@@ -127,7 +128,7 @@ export function hidePeek(){
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize
   // ===========================================================================
-  var shareOpen = false;
+  var shareOpen = false, shareTrap = null;
 export function toggleShare(anchor){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
@@ -141,8 +142,17 @@ export function toggleShare(anchor){
     shareOpen = true;
     shareMenu.classList.add("visible");
     setSurfaceOrigin(shareMenu, r);
+    if (shareTrap) shareTrap();
+    shareTrap = activateFocusTrap(shareMenu, {
+      initialFocus: shareMenu.querySelector("button"),
+      onEscape: closeShare
+    });
   }
-export function closeShare(){ shareOpen = false; shareMenu.classList.remove("visible"); }
+export function closeShare(){
+    shareOpen = false;
+    shareMenu.classList.remove("visible");
+    if (shareTrap){ shareTrap(); shareTrap = null; }
+  }
 
   function copyText(text, okMsg){
     function done(){ flashHint(okMsg); }

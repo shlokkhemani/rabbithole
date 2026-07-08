@@ -11,6 +11,16 @@ import {
 
 const ASSET_REF_RE = /asset:([a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg))/gi;
 
+var snapshotHooks = {
+  fetchAssetData: null,
+  getFrozenClientSource: null,
+  getDompurifySource: null
+};
+
+export function setSnapshotHooks(hooks) {
+  snapshotHooks = Object.assign({}, snapshotHooks, hooks || {});
+}
+
 function escapeHtml(str) {
   return String(str ?? "")
     .replace(/&/g, "&amp;")
@@ -81,6 +91,12 @@ function blobToDataUrl(blob) {
 }
 
 async function fetchAssetData(name) {
+  if (typeof snapshotHooks.fetchAssetData === "function") {
+    try {
+      var hooked = await snapshotHooks.fetchAssetData(name);
+      if (hooked) return hooked;
+    } catch(e) {}
+  }
   try {
     var slash = String.fromCharCode(47);
     var res = await fetch(slash + "assets" + slash + name, { cache: "no-store" });
@@ -99,6 +115,9 @@ async function buildAssetData(snapshotNodes) {
 }
 
 function extractDompurifySource() {
+  if (typeof snapshotHooks.getDompurifySource === "function") {
+    return snapshotHooks.getDompurifySource() || "";
+  }
   var script = document.scripts && document.scripts[0] ? document.scripts[0].textContent || "" : "";
   var marker = "\n(function(){";
   var idx = script.indexOf(marker);
@@ -125,7 +144,9 @@ export function buildSnapshotHtml(snapshotHydration) {
   var title = (snapshotHydration && snapshotHydration.title) || "Rabbithole";
   var styleText = document.querySelector("style")?.textContent || "";
   var dompurifySource = extractDompurifySource();
-  var frozenClient = window.__RABBITHOLE_FROZEN_CLIENT__;
+  var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function"
+    ? snapshotHooks.getFrozenClientSource()
+    : window.__RABBITHOLE_FROZEN_CLIENT__;
   if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
   var lt = String.fromCharCode(60);
   var gt = String.fromCharCode(62);

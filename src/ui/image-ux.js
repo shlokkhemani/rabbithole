@@ -1,6 +1,7 @@
 import { visualSurfaceKey } from "./core.js";
 import { scheduleEdges } from "./canvas-view.js";
 import { hideAsk } from "./ask-followups.js";
+import { activateFocusTrap } from "./focus-trap.js";
 
   // ===========================================================================
   // MARKDOWN IMAGE UX
@@ -106,6 +107,7 @@ export function openImageLightbox(src, alt){
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", alt || "Image preview");
+    overlay.setAttribute("tabindex", "-1");
     var img = document.createElement("img");
     img.className = "rh-lightbox-img";
     img.src = src;
@@ -118,7 +120,8 @@ export function openImageLightbox(src, alt){
     var pointers = {};
     var pinch = null;
     setLightboxTransform(img, state);
-    activeLightbox = { el: overlay, key: onKey };
+    var trap = activateFocusTrap(overlay, { initialFocus: overlay, onEscape: closeImageLightbox });
+    activeLightbox = { el: overlay, key: onKey, trap: trap };
     function onKey(e){
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -182,6 +185,7 @@ export function openImageLightbox(src, alt){
 export function closeImageLightbox(){
     if (!activeLightbox) return;
     document.removeEventListener("keydown", activeLightbox.key, true);
+    if (typeof activeLightbox.trap === "function") activeLightbox.trap();
     if (activeLightbox.el && activeLightbox.el.parentNode) activeLightbox.el.parentNode.removeChild(activeLightbox.el);
     activeLightbox = null;
   }

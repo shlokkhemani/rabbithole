@@ -3,10 +3,12 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { CANVAS_STYLES } from "./src/core/html/styles.js";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
-const outdir = parseOutdir(process.argv.slice(2));
+const parsed = parseOutdir(process.argv.slice(2));
+const outdir = parsed.outdir;
 const absOutdir = path.resolve(rootDir, outdir);
 
 const KATEX_FONT_SRC =
@@ -44,6 +46,10 @@ await esbuild.build({
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
 
+if (!parsed.explicit) {
+  await buildWebApp(absOutdir);
+}
+
 async function buildKatexCss() {
   const cssPath = require.resolve("katex/dist/katex.css");
   const css = await fs.readFile(cssPath, "utf8");
@@ -75,8 +81,81 @@ async function replaceAsync(source, regex, replacer) {
   return parts.join("");
 }
 
+async function buildWebApp(assetDir) {
+  const webDist = path.join(rootDir, "web/dist");
+  await fs.rm(webDist, { recursive: true, force: true });
+  await fs.mkdir(webDist, { recursive: true });
+
+  await esbuild.build({
+    entryPoints: [path.join(rootDir, "src/web/app.js")],
+    outfile: path.join(webDist, "app.js"),
+    bundle: true,
+    format: "iife",
+    globalName: "RabbitholeWebApp",
+    target: "es2018",
+    minify: false,
+    sourcemap: false,
+    legalComments: "none",
+    logLevel: "silent"
+  });
+
+  const [katexCss, dompurify, frozenClient, webCss] = await Promise.all([
+    fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
+    fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
+    fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
+    fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
+  ]);
+
+  await fs.writeFile(path.join(webDist, "styles.css"), `${CANVAS_STYLES}\n${katexCss}\n${webCss}`, "utf8");
+  await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
+  await fs.writeFile(
+    path.join(webDist, "frozen-source.js"),
+    `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
+      `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n`,
+    "utf8"
+  );
+  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(), "utf8");
+}
+
+function buildWebIndexHtml() {
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    "img-src 'self' blob: data: https:",
+    "connect-src 'self' https://openrouter.ai https://api.openai.com https://api.anthropic.com http://localhost:* http://127.0.0.1:*",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
+  return `<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>Rabbithole</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<script src="./dompurify.js"></script>
+<script src="./frozen-source.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>`;
+}
+
+function safeJsString(value) {
+  return JSON.stringify(String(value ?? ""))
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 function parseOutdir(args) {
   const prefix = "--outdir=";
   const arg = args.find((item) => item.startsWith(prefix));
-  return arg ? arg.slice(prefix.length) : "dist";
+  return arg ? { outdir: arg.slice(prefix.length), explicit: true } : { outdir: "dist", explicit: false };
 }

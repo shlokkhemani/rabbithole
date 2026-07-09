@@ -116,7 +116,9 @@ export function renderReaderBody(){
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
       if (node.origin.synthesis){
-        ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
+        ctx.innerHTML = node.origin.synthesis_mode === "question_map"
+          ? '<span class="rc-label">Question Map</span>Gaps, open questions, and next branches'
+          : '<span class="rc-label">Synthesis</span>Selected nodes, distilled';
       } else if (node.origin.selected_text){
         var tail = node.origin.lens ? " — " + lensBadgeHtml(node.origin.lens)
           : (node.origin.question ? " — " + esc(node.origin.question) : "");
@@ -292,7 +294,7 @@ export function renderSidebar(){
     var html = '<h3>Branches (' + kids.length + ')</h3>';
     kids.forEach(function(k, i){
       var pending = k.status !== "answered";
-      var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
+      var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ ' + (k.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + '</span>'
         : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
         : esc((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
       var quote = (k.origin && k.origin.selected_text) ? k.origin.selected_text : "";

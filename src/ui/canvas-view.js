@@ -62,11 +62,42 @@ var canvasHooks = {
   confirmDelete: function(){},
   persistNode: function(){},
   persistNodesBulk: function(){},
-  scheduleViewSave: function(){}
+  scheduleViewSave: function(){},
+  onSelectionChange: function(){}
 };
+
+var selectedNodeIds = {};
 
 export function registerCanvasHooks(hooks) {
   Object.assign(canvasHooks, hooks || {});
+}
+
+export function selectedCanvasNodes(){
+  var out = [];
+  for (var id in selectedNodeIds){
+    if (selectedNodeIds[id] && nodes[id] && nodes[id].status !== "pending") out.push(nodes[id]);
+  }
+  out.sort(nodeOrder);
+  return out;
+}
+
+export function clearCanvasSelection(){
+  for (var id in selectedNodeIds){
+    if (nodes[id] && nodes[id].el) nodes[id].el.classList.remove("selected");
+    if (nodes[id] && nodes[id].selectBtn){
+      nodes[id].selectBtn.classList.remove("active");
+      nodes[id].selectBtn.textContent = "□";
+      nodes[id].selectBtn.setAttribute("aria-pressed", "false");
+    }
+  }
+  selectedNodeIds = {};
+  notifySelectionChange();
+}
+
+function notifySelectionChange(){
+  var count = selectedCanvasNodes().length;
+  canvasHooks.onSelectionChange(count);
+  try { document.dispatchEvent(new CustomEvent("rh-selection-change", { detail: { count: count } })); } catch(_e){}
 }
 
 export function initCanvasView(){
@@ -132,6 +163,7 @@ export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y
   }
   var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
   var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
+  var NODE_COPY_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="5" y="4" width="7" height="9" rx="1.2"/><path d="M4 11.5H3.7c-.7 0-1.2-.5-1.2-1.2V3.7c0-.7.5-1.2 1.2-1.2h5.6c.7 0 1.2.5 1.2 1.2V4"/></svg>';
 
 export function createNodeEl(node, enter){
     var el = document.createElement("div");
@@ -146,10 +178,15 @@ export function createNodeEl(node, enter){
       badge.title = "Where this Rabbithole begins";
       head.appendChild(badge);
     }
+    var selectBtn = mkBtn("□", "Select for synthesis");
+    selectBtn.classList.add("node-select");
+    selectBtn.setAttribute("aria-pressed", "false");
     var titleEl = document.createElement("span"); titleEl.className = "node-title"; titleEl.textContent = node.title || "…";
     titleEl.title = node.title || "";
     var aDown = mkBtn("A−", "Smaller text"); var aUp = mkBtn("A+", "Larger text");
     aDown.classList.add("node-font-btn"); aUp.classList.add("node-font-btn");
+    var copyBtn = mkIconBtn(NODE_COPY_ICON, "Copy Markdown");
+    copyBtn.classList.add("node-copy-btn");
     var collapseBtn = mkIconBtn(NODE_COLLAPSE_ICON, "Collapse");
     var openBtn = mkIconBtn(NODE_EXPAND_ICON, "Expand");
     var divider = document.createElement("span"); divider.className = "node-act-divider"; divider.setAttribute("aria-hidden", "true");
@@ -160,8 +197,8 @@ export function createNodeEl(node, enter){
       delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasHooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
-    acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
-    head.appendChild(titleEl); head.appendChild(acts);
+    acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(copyBtn); acts.appendChild(openBtn);
+    head.appendChild(selectBtn); head.appendChild(titleEl); head.appendChild(acts);
 
     var body = document.createElement("div"); body.className = "node-body";
     var comp = buildCardComposer(node);
@@ -169,7 +206,7 @@ export function createNodeEl(node, enter){
     el.appendChild(head); el.appendChild(body); el.appendChild(comp); el.appendChild(resize);
     world.appendChild(el);
 
-    node.el = el; node.bodyEl = body; node.titleEl = titleEl;
+    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.selectBtn = selectBtn;
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
@@ -178,6 +215,8 @@ export function createNodeEl(node, enter){
     enableDrag(node, head);
     enableResize(node, resize);
     head.addEventListener("dblclick", function(){ openNode(node.id); });
+    selectBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleNodeSelected(node); });
+    copyBtn.addEventListener("click", function(e){ e.stopPropagation(); copyNodeMarkdown(node); });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });
@@ -203,6 +242,21 @@ export function createNodeEl(node, enter){
     return node;
   }
 
+  function toggleNodeSelected(node){
+    if (!node || node.status === "pending") return;
+    var on = !selectedNodeIds[node.id];
+    if (on) selectedNodeIds[node.id] = true;
+    else delete selectedNodeIds[node.id];
+    if (node.el) node.el.classList.toggle("selected", on);
+    if (node.selectBtn){
+      node.selectBtn.classList.toggle("active", on);
+      node.selectBtn.textContent = on ? "✓" : "□";
+      node.selectBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    flashHint(on ? "Selected for synthesis" : "Removed from synthesis selection");
+    notifySelectionChange();
+  }
+
   // Glide the canvas view into a card at reading scale.
 export function diveToNode(node, source){
     var vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -213,6 +267,27 @@ export function diveToNode(node, source){
   }
   function mkBtn(txt, title){ var b = document.createElement("button"); b.className = "node-btn"; b.textContent = txt; b.title = title; return b; }
   function mkIconBtn(svg, title){ var b = mkBtn("", title); b.innerHTML = svg; b.setAttribute("aria-label", title); return b; }
+  function copyNodeMarkdown(node){
+    var title = node.title || "Untitled";
+    var body = (node.md || "").trim();
+    var text = "# " + title + (body ? "\n\n" + body : "");
+    function done(){ flashHint("Copied “" + title.slice(0, 40) + (title.length > 40 ? "…" : "") + "” as Markdown"); }
+    function legacy(){
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch(_err) {}
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done, function(){ legacy(); done(); });
+    } else {
+      legacy(); done();
+    }
+  }
 
   // ---------- per-card follow-up composer ----------
   var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -327,7 +402,7 @@ export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
-      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";
+      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = node.origin.synthesis_mode === "question_map" ? "✦ Question Map from selected nodes" : "✦ Synthesis from selected nodes";
       body.appendChild(sq);
     } else if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";
@@ -467,27 +542,29 @@ function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
 
   var edgeEls = {};
   var edgeGeometry = {};
-  function ensureEdgeEls(childId){
-    var els = edgeEls[childId];
+  function ensureEdgeEls(edgeId, childId, className){
+    var els = edgeEls[edgeId];
     if (els) return els;
     var path = document.createElementNS(SVGNS, "path");
     path.setAttribute("data-child", childId);
+    if (className) path.classList.add(className);
     var dot = document.createElementNS(SVGNS, "circle");
     dot.setAttribute("r", "3");
     dot.setAttribute("data-child", childId);
+    if (className) dot.classList.add(className);
     edgesSvg.appendChild(path);
     edgesSvg.appendChild(dot);
-    edgeEls[childId] = [path, dot];
-    return edgeEls[childId];
+    edgeEls[edgeId] = [path, dot];
+    return edgeEls[edgeId];
   }
-  function removeEdge(childId){
-    var els = edgeEls[childId];
+  function removeEdge(edgeId){
+    var els = edgeEls[edgeId];
     if (els){
       for (var i = 0; i < els.length; i++) if (els[i].parentNode) els[i].parentNode.removeChild(els[i]);
     }
-    delete edgeEls[childId];
-    delete edgeGeometry[childId];
-    delete edgeHl[childId];
+    delete edgeEls[edgeId];
+    delete edgeGeometry[edgeId];
+    delete edgeHl[edgeId];
   }
   function applyEdgeClasses(childId, path, dot, anchored){
     path.classList.toggle("edge-hl", !!edgeHl[childId]);
@@ -505,32 +582,58 @@ export function drawEdges(){
     var visCache = {};
     function vis(node){ var k = node.id; if (k in visCache) return visCache[k]; return (visCache[k] = isVisible(node)); }
     for (var id in nodes){
-      var n = nodes[id]; if (!n.parent_id || !n.el) continue; var p = nodes[n.parent_id]; if (!p || !p.el) continue;
-      if (!vis(n) || !vis(p)) continue;
-      live[n.id] = true;
-      var sides = edgeSides(p, n);
-      var start = edgeStart(p, n, sides[0]);
-      var end = edgeEnd(n, sides[1]);
-      var horiz = sides[0] === "left" || sides[0] === "right";
-      var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
-      var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var geom = {
-        d: d,
-        cx: String(start.x),
-        cy: String(start.y),
-        anchored: !!start.anchored
-      };
-      var els = ensureEdgeEls(n.id);
-      var path = els[0], dot = els[1], prev = edgeGeometry[n.id];
-      if (!prev || prev.d !== geom.d) path.setAttribute("d", geom.d);
-      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
-      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
-      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path, dot, geom.anchored);
-      else if (!!edgeHl[n.id] !== path.classList.contains("edge-hl")) applyEdgeClasses(n.id, path, dot, geom.anchored);
-      edgeGeometry[n.id] = geom;
+      var n = nodes[id]; if (!n.el || !vis(n)) continue;
+      var sources = (n.origin && n.origin.synthesis_sources) || [];
+      var hidePrimaryEdge = sources.length > 0;
+      if (n.parent_id && !hidePrimaryEdge){
+        var p = nodes[n.parent_id];
+        if (p && p.el && vis(p)){
+          live[n.id] = true;
+          var sides = edgeSides(p, n);
+          var start = edgeStart(p, n, sides[0]);
+          var end = edgeEnd(n, sides[1]);
+          var horiz = sides[0] === "left" || sides[0] === "right";
+          var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
+          var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
+          var geom = {
+            d: d,
+            cx: String(start.x),
+            cy: String(start.y),
+            anchored: !!start.anchored
+          };
+          var els = ensureEdgeEls(n.id, n.id, "");
+          var path = els[0], dot = els[1], prev = edgeGeometry[n.id];
+          if (!prev || prev.d !== geom.d) path.setAttribute("d", geom.d);
+          if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+          if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+          if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path, dot, geom.anchored);
+          else if (!!edgeHl[n.id] !== path.classList.contains("edge-hl")) applyEdgeClasses(n.id, path, dot, geom.anchored);
+          edgeGeometry[n.id] = geom;
+        }
+      }
+      for (var si = 0; si < sources.length; si++){
+        var sourceId = sources[si];
+        var sp = nodes[sourceId];
+        if (!sp || !sp.el || !vis(sp)) continue;
+        var edgeId = sourceId + "->" + n.id;
+        live[edgeId] = true;
+        var ssides = edgeSides(sp, n);
+        var sstart = edgeStart(sp, n, ssides[0]);
+        var send = edgeEnd(n, ssides[1]);
+        var shoriz = ssides[0] === "left" || ssides[0] === "right";
+        var sreach = Math.max(40, (shoriz ? Math.abs(send.x - sstart.x) : Math.abs(send.y - sstart.y)) / 2);
+        var sd = "M " + sstart.x + " " + sstart.y + " C " + ctrlPt(sstart, ssides[0], sreach) + " " + ctrlPt(send, ssides[1], sreach) + " " + send.x + " " + send.y;
+        var sgeom = { d: sd, cx: String(sstart.x), cy: String(sstart.y), anchored: false };
+        var sels = ensureEdgeEls(edgeId, n.id, "source-edge");
+        var spath = sels[0], sdot = sels[1], sprev = edgeGeometry[edgeId];
+        if (!sprev || sprev.d !== sgeom.d) spath.setAttribute("d", sgeom.d);
+        if (!sprev || sprev.cx !== sgeom.cx) sdot.setAttribute("cx", sgeom.cx);
+        if (!sprev || sprev.cy !== sgeom.cy) sdot.setAttribute("cy", sgeom.cy);
+        edgeGeometry[edgeId] = sgeom;
+      }
     }
-    for (var childId in edgeEls){
-      if (!live[childId]) removeEdge(childId);
+    for (var edgeId in edgeEls){
+      if (!live[edgeId]) removeEdge(edgeId);
     }
   }
   // Highlight state lives here, not just on the elements — edges can be removed

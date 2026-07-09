@@ -3,9 +3,10 @@ import { spawnSync } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WEB_DIST = path.join(ROOT, "web/dist");
 
 try {

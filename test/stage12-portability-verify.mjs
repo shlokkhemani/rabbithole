@@ -4,9 +4,10 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WEB_DIST = path.join(ROOT, "web/dist");
 const MOCK_KEY = "rh_mock_key_DO_NOT_LEAK";
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -91,6 +92,12 @@ try {
   assert.deepEqual(original.assets, ["page-001.png"]);
   assert(original.sizes["page-001.png"] > 100, "PDF page asset should be non-empty");
 
+  const sessionJsonPath = path.join(tmp, "pdf-document-session.json");
+  const sessionJson = await page.evaluate(() => window.__rhWebApp.exportSnapshotJsonForTest());
+  assert.equal(sessionJson.format, "rabbithole-session-json");
+  assert.equal(typeof sessionJson.session.asset_data["page-001.png"], "string");
+  await fs.writeFile(sessionJsonPath, `${JSON.stringify(sessionJson, null, 2)}\n`);
+
   const shareDownloadPromise = page.waitForEvent("download");
   await page.click("#r-share");
   await page.click("#sm-portable");
@@ -138,6 +145,31 @@ try {
   assert.equal(imported.sizes["page-001.png"], original.sizes["page-001.png"]);
 
   await fresh.close();
+
+  const jsonFresh = await browser.newContext({ acceptDownloads: true });
+  const jsonImportPage = await jsonFresh.newPage();
+  await jsonImportPage.goto(baseUrl, { waitUntil: "networkidle" });
+  await jsonImportPage.setInputFiles("#file-md", sessionJsonPath);
+  await jsonImportPage.waitForSelector(".doc-content[data-node-id] img");
+  await jsonImportPage.waitForSelector("text=Portable asset page");
+  await jsonImportPage.waitForFunction(() => {
+    const img = document.querySelector(".doc-content[data-node-id] img");
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+
+  const jsonImported = await jsonImportPage.evaluate(async () => {
+    const holeId = window.__rhWebApp.currentHoleId();
+    const raw = await window.__rhWebApp.readRawHole(holeId);
+    const assets = await window.__rhWebApp.store.listAssets(holeId);
+    const sizes = {};
+    for (const name of assets) sizes[name] = (await window.__rhWebApp.store.getAsset(holeId, name)).size;
+    return { holeId, raw, assets, sizes };
+  });
+  assert.deepEqual(projectHole(jsonImported.raw), projectHole(original.raw));
+  assert.deepEqual(jsonImported.assets, original.assets);
+  assert.equal(jsonImported.sizes["page-001.png"], original.sizes["page-001.png"]);
+
+  await jsonFresh.close();
   await context.close();
   console.log("stage12 portability verification passed");
 } finally {
@@ -164,7 +196,7 @@ function projectHole(hole) {
   return {
     title: hole.title,
     root_id: hole.root_id,
-    view_state: hole.view_state,
+    view_state: comparableViewState(hole),
     nodes: hole.nodes.map((node) => ({
       id: node.id,
       parent_id: node.parent_id,
@@ -174,13 +206,35 @@ function projectHole(hole) {
       base_url_source: node.base_url_source,
       origin: node.origin,
       position: node.position,
-      size: node.size,
+      size: comparableNodeSize(node, hole),
       font_scale: node.font_scale,
       collapsed: node.collapsed,
       status: node.status,
       read: node.read,
     })),
   };
+}
+
+function comparableNodeSize(node, hole) {
+  const size = node.size;
+  if (!size) return null;
+  const defaults = node.id === hole.root_id ? { w: 480, h: 580 } : { w: 420, h: 460 };
+  const isDefaultSize = Number(size.w) === defaults.w && Number(size.h) === defaults.h;
+  return isDefaultSize ? null : size;
+}
+
+function comparableViewState(hole) {
+  const state = hole.view_state;
+  if (!state) return null;
+  const view = state.view || {};
+  const isDefaultReaderLanding =
+    state.mode === "reader" &&
+    state.node_id === hole.root_id &&
+    (Number(state.scroll) || 0) === 0 &&
+    (Number(view.x) || 0) === 0 &&
+    (Number(view.y) || 0) === 0 &&
+    (Number(view.scale) || 1) === 1;
+  return isDefaultReaderLanding ? null : state;
 }
 
 function sse(chunks) {

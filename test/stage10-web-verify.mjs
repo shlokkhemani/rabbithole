@@ -3,9 +3,10 @@ import { spawnSync } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WEB_DIST = path.join(ROOT, "web/dist");
 const MOCK_KEY = "rh_mock_key_DO_NOT_LEAK";
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -92,6 +93,8 @@ try {
   await page.waitForSelector(".katex");
   await page.waitForSelector(".hljs");
   await page.waitForSelector(".viz-show");
+  const synthModes = await page.$$eval("#synth-mode option", (options) => options.map((option) => option.value));
+  assert.deepEqual(synthModes, ["synthesis", "question_map"]);
 
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");
@@ -123,6 +126,13 @@ try {
   assert(snapshotHtml.includes("Euler identity connects rotation"));
   assert(snapshotHtml.includes("Second branch explains the geometric view"));
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
+
+  const snapshotJson = await page.evaluate(() => window.__rhWebApp.exportSnapshotJsonForTest());
+  assert.equal(snapshotJson.format, "rabbithole-session-json");
+  assert.equal(snapshotJson.format_version, 1);
+  assert.equal(snapshotJson.session.title, "Web Smoke");
+  assert(JSON.stringify(snapshotJson).includes("Second branch explains the geometric view"));
+  assert(!JSON.stringify(snapshotJson).includes(MOCK_KEY), "session JSON export must not contain provider key");
 
   const rawHoleJson = await page.evaluate(() => window.__rhWebApp.readRawHole().then((hole) => JSON.stringify(hole)));
   assert(rawHoleJson.includes("Second branch explains the geometric view"));

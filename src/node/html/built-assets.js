@@ -6,30 +6,42 @@ const KATEX_CSS_PATH = new URL("../../../dist/katex.css", import.meta.url);
 const DOMPURIFY_SCRIPT_PATH = new URL("../../../dist/dompurify.js", import.meta.url);
 
 let cachedClientBundle = null;
+let cachedClientMtime = 0;
 let cachedFrozenClientBundle = null;
+let cachedFrozenClientMtime = 0;
 let cachedKatexCss = null;
+let cachedKatexMtime = 0;
 let cachedDompurifyScript = null;
+let cachedDompurifyMtime = 0;
 
 export function getClientBundle() {
-  if (cachedClientBundle) return cachedClientBundle;
+  const mtime = fs.statSync(CLIENT_PATH).mtimeMs;
+  if (cachedClientBundle && cachedClientMtime === mtime) return cachedClientBundle;
   cachedClientBundle = fs.readFileSync(CLIENT_PATH, "utf8");
+  cachedClientMtime = mtime;
   return cachedClientBundle;
 }
 
 export function getFrozenClientBundle() {
-  if (cachedFrozenClientBundle) return cachedFrozenClientBundle;
+  const mtime = fs.statSync(FROZEN_CLIENT_PATH).mtimeMs;
+  if (cachedFrozenClientBundle && cachedFrozenClientMtime === mtime) return cachedFrozenClientBundle;
   cachedFrozenClientBundle = fs.readFileSync(FROZEN_CLIENT_PATH, "utf8");
+  cachedFrozenClientMtime = mtime;
   return cachedFrozenClientBundle;
 }
 
 export function getKatexCss() {
-  if (cachedKatexCss) return cachedKatexCss;
+  const mtime = fs.statSync(KATEX_CSS_PATH).mtimeMs;
+  if (cachedKatexCss && cachedKatexMtime === mtime) return cachedKatexCss;
   cachedKatexCss = fs.readFileSync(KATEX_CSS_PATH, "utf8");
+  cachedKatexMtime = mtime;
   return cachedKatexCss;
 }
 
 export function getDompurifyScript() {
-  if (cachedDompurifyScript) return cachedDompurifyScript;
+  const mtime = fs.statSync(DOMPURIFY_SCRIPT_PATH).mtimeMs;
+  if (cachedDompurifyScript && cachedDompurifyMtime === mtime) return cachedDompurifyScript;
   cachedDompurifyScript = fs.readFileSync(DOMPURIFY_SCRIPT_PATH, "utf8");
+  cachedDompurifyMtime = mtime;
   return cachedDompurifyScript;
 }

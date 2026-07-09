@@ -75,6 +75,7 @@ export function initBranchSurfaces(){
   document.getElementById("synth-cancel").addEventListener("click", closeSynthesisPrompt);
   document.getElementById("synth-close").addEventListener("click", closeSynthesisPrompt);
   document.getElementById("synth-text").addEventListener("input", updateSynthesisPromptState);
+  document.getElementById("synth-mode").addEventListener("change", updateSynthesisModeCopy);
   document.getElementById("synth-text").addEventListener("keydown", function(e){
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); submitSelectedSynthesis("keyboard"); }
     else if (e.key === "Escape"){ closeSynthesisPrompt(); }
@@ -111,7 +112,7 @@ export function hidePeek(){
     var kid = nodes[mark.dataset.child];
     if (!kid || kid.status !== "answered") return;
     peekFor = kid.id;
-    var badge = (kid.origin && kid.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
+    var badge = (kid.origin && kid.origin.synthesis) ? '<span class="lens-badge">✦ ' + (kid.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + '</span>'
       : (kid.origin && kid.origin.lens) ? lensBadgeHtml(kid.origin.lens) : "";
     peekEl.innerHTML = '<div class="peek-title">' + (isUnread(kid) ? '<span class="pal-dot"></span>' : "") +
       '<span>' + esc(kid.title || "Untitled") + '</span>' + badge + '</div>' +
@@ -197,7 +198,7 @@ export function closeShare(){
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){
     if (!n.origin) return "";
-    if (n.origin.synthesis) return "> ✦ Synthesis of the whole Rabbithole\n\n";
+    if (n.origin.synthesis) return n.origin.synthesis_mode === "question_map" ? "> ✦ Question Map from selected nodes\n\n" : "> ✦ Synthesis from selected nodes\n\n";
     var ask = n.origin.lens ? lensLabel(n.origin.lens) : (n.origin.question || "");
     if (n.origin.selected_text) return "> Asked about: “" + n.origin.selected_text + "”" + (ask ? " — " + ask : "") + "\n\n";
     return ask ? "> Follow-up — " + ask + "\n\n" : "";
@@ -314,8 +315,11 @@ export function synthesize(source){
     var panel = document.getElementById("synth-panel");
     var count = document.getElementById("synth-count");
     var text = document.getElementById("synth-text");
+    var modeSelect = document.getElementById("synth-mode");
     if (count) count.textContent = String(selected.length);
-    if (text && !text.value.trim()) text.value = "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+    if (modeSelect && !modeSelect.value) modeSelect.value = "synthesis";
+    updateSynthesisModeCopy();
+    if (text && !text.value.trim()) text.value = defaultSynthesisPrompt(synthesisMode());
     panel.classList.add("visible");
     updateSynthesisPromptState();
     if (text) text.focus();
@@ -333,11 +337,36 @@ export function synthesize(source){
     if (send) send.disabled = selected.length < 2 || !text || !text.value.trim();
   }
 
+  function synthesisMode(){
+    var modeSelect = document.getElementById("synth-mode");
+    return modeSelect && modeSelect.value === "question_map" ? "question_map" : "synthesis";
+  }
+
+  function defaultSynthesisPrompt(mode){
+    if (mode === "question_map") return "Map what these nodes answer, what remains unclear, and which next branches should be opened to close the gaps.";
+    return "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+  }
+
+  function updateSynthesisModeCopy(){
+    var text = document.getElementById("synth-text");
+    var mode = synthesisMode();
+    if (text){
+      text.placeholder = mode === "question_map"
+        ? "What should this question map focus on? e.g. Find gaps, tensions, and next branches for this research direction."
+        : "What should the synthesis focus on? e.g. Turn these nodes into one thesis architecture proposal, keep tradeoffs and next steps.";
+      var value = text.value.trim();
+      if (!value || value === defaultSynthesisPrompt("synthesis") || value === defaultSynthesisPrompt("question_map")) text.value = defaultSynthesisPrompt(mode);
+    }
+    var send = document.getElementById("synth-send");
+    if (send) send.title = mode === "question_map" ? "Create question map" : "Create synthesis";
+    updateSynthesisPromptState();
+  }
+
   function submitSelectedSynthesis(source){
     var text = document.getElementById("synth-text");
     var prompt = text ? text.value.trim() : "";
     if (!prompt){ updateSynthesisPromptState(); return; }
-    synthesizeSelected(source, prompt);
+    synthesizeSelected(source, prompt, synthesisMode());
     closeSynthesisPrompt();
     if (text) text.value = "";
   }
@@ -350,7 +379,24 @@ export function synthesize(source){
       (body || "_(no markdown content)_");
   }
 
-  function synthesizeSelected(source, prompt){
+  function questionMapPrompt(prompt, sourceText){
+    return "Build a Question Map ONLY from the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\n" +
+      "Human focus prompt:\n" + prompt + "\n\n" +
+      "Organize the result into these sections:\n" +
+      "1. Answered questions\n" +
+      "2. Open questions\n" +
+      "3. Gaps or assumptions\n" +
+      "4. Contradictions or tensions\n" +
+      "5. Suggested next branches\n\n" +
+      "For each suggested next branch, write the exact question to ask, say which selected source node(s) it should branch from, and explain why answering it would improve the map. Keep it actionable so the reader can open the next branches directly.\n\n" +
+      "Selected source nodes:\n\n" + sourceText;
+  }
+
+  function synthesisPrompt(prompt, sourceText){
+    return "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+  }
+
+  function synthesizeSelected(source, prompt, outputMode){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];
     if (!root) return;
@@ -367,15 +413,17 @@ export function synthesize(source){
     }
     var sourceText = selected.map(function(n, i){ return selectedNodeMarkdown(n, i + 1); }).join("\n\n---\n\n");
     if (sourceText.length > 30000) sourceText = sourceText.slice(0, 30000).trimEnd() + "\n\n[remaining selected-node content truncated]";
-    var q = "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+    outputMode = outputMode === "question_map" ? "question_map" : "synthesis";
+    var q = outputMode === "question_map" ? questionMapPrompt(prompt, sourceText) : synthesisPrompt(prompt, sourceText);
     var kid = sendFollowup(root, q, null, true, {
-      title: "Selected synthesis",
-      selectedText: "Synthesis requested from " + selected.length + " selected nodes.",
+      title: outputMode === "question_map" ? "Question map" : "Selected synthesis",
+      selectedText: (outputMode === "question_map" ? "Question map" : "Synthesis") + " requested from " + selected.length + " selected nodes.",
+      synthesisMode: outputMode,
       synthesisSources: selected.map(function(n){ return n.id; })
     });
     clearCanvasSelection();
     if (mode === "canvas") revealNode(kid, source);
-    flashHint("✦ Synthesizing " + selected.length + " selected nodes.");
+    flashHint(outputMode === "question_map" ? "✦ Mapping questions from " + selected.length + " selected nodes." : "✦ Synthesizing " + selected.length + " selected nodes.");
   }
 
   // ===========================================================================

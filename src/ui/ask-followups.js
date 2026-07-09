@@ -237,7 +237,7 @@ export function sendFollowup(parent, question, lens, synthesis, opts){
 	      base_url: parent.base_url || null,
 	      base_url_source: parent.base_url ? "inherited" : null,
 	      read: false,
-      origin: { selected_text: opts.selectedText || "", question: question, lens: lens, synthesis: !!synthesis, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      origin: { selected_text: opts.selectedText || "", question: question, lens: lens, synthesis: !!synthesis, synthesis_mode: opts.synthesisMode || null, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
@@ -255,6 +255,7 @@ export function sendFollowup(parent, question, lens, synthesis, opts){
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
+    if (opts.synthesisMode) payload.synthesis_mode = opts.synthesisMode;
     if (opts.synthesisSources) payload.synthesis_sources = opts.synthesisSources;
     askHooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
     refreshAmbient();

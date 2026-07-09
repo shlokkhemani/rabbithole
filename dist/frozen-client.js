@@ -2501,7 +2501,7 @@ var RabbitholeFrozenClient = (() => {
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
       if (node.origin.synthesis) {
-        ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
+        ctx.innerHTML = node.origin.synthesis_mode === "question_map" ? '<span class="rc-label">Question Map</span>Gaps, open questions, and next branches' : '<span class="rc-label">Synthesis</span>Selected nodes, distilled';
       } else if (node.origin.selected_text) {
         var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + esc(node.origin.question) : "";
         ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
@@ -2662,7 +2662,7 @@ var RabbitholeFrozenClient = (() => {
     var html2 = "<h3>Branches (" + kids.length + ")</h3>";
     kids.forEach(function(k, i2) {
       var pending = k.status !== "answered";
-      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : esc(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
+      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 ' + (k.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + "</span>" : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : esc(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
       var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
       html2 += '<div class="side-item' + (pending ? " pending" : "") + '" data-child="' + k.id + '">';
@@ -3277,7 +3277,7 @@ var RabbitholeFrozenClient = (() => {
     if (node.origin && node.origin.synthesis) {
       var sq = document.createElement("div");
       sq.className = "origin-quote";
-      sq.textContent = "\u2726 Synthesis of this Rabbithole";
+      sq.textContent = node.origin.synthesis_mode === "question_map" ? "\u2726 Question Map from selected nodes" : "\u2726 Synthesis from selected nodes";
       body.appendChild(sq);
     } else if (node.origin && node.origin.selected_text) {
       var q = document.createElement("div");
@@ -4028,7 +4028,7 @@ var RabbitholeFrozenClient = (() => {
       base_url: parent.base_url || null,
       base_url_source: parent.base_url ? "inherited" : null,
       read: false,
-      origin: { selected_text: opts.selectedText || "", question, lens, synthesis: !!synthesis, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      origin: { selected_text: opts.selectedText || "", question, lens, synthesis: !!synthesis, synthesis_mode: opts.synthesisMode || null, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x,
       y: pos.y,
       w: DEFAULT_CHILD.w,
@@ -4066,6 +4066,7 @@ var RabbitholeFrozenClient = (() => {
       size: { w: node.w, h: node.h }
     };
     if (synthesis) payload.synthesis = true;
+    if (opts.synthesisMode) payload.synthesis_mode = opts.synthesisMode;
     if (opts.synthesisSources) payload.synthesis_sources = opts.synthesisSources;
     askHooks.post(payload).then(function(res) {
       if (!res || !res.ok) rollbackBranch(node);
@@ -4588,7 +4589,7 @@ var RabbitholeFrozenClient = (() => {
       }
       var n2 = nodes[item.id];
       if (!n2) return;
-      var badge = n2.origin && n2.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : n2.origin && n2.origin.lens ? lensBadgeHtml(n2.origin.lens) : "";
+      var badge = n2.origin && n2.origin.synthesis ? '<span class="lens-badge">\u2726 ' + (n2.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + "</span>" : n2.origin && n2.origin.lens ? lensBadgeHtml(n2.origin.lens) : "";
       var flags = n2.status === "pending" ? '<span class="pal-writing">writing\u2026</span>' : isUnread(n2) ? '<span class="pal-dot"></span>' : "";
       html2 += '<div class="pal-item' + (i3 === palSel ? " sel" : "") + '" data-idx="' + i3 + '">';
       html2 += '<div class="pal-t">' + flags + '<span class="pal-title">' + esc(n2.title || "Untitled") + "</span>" + badge + "</div>";
@@ -4758,6 +4759,11 @@ var RabbitholeFrozenClient = (() => {
 <div id="synth-panel">
   <div class="synth-head"><span>Selected synthesis</span><button id="synth-close" title="Close" aria-label="Close">\xD7</button></div>
   <div class="synth-meta"><span id="synth-count">0</span> selected nodes will be used as sources.</div>
+  <label class="synth-mode-label" for="synth-mode">Output</label>
+  <select id="synth-mode">
+    <option value="synthesis">Synthesis</option>
+    <option value="question_map">Question Map</option>
+  </select>
   <textarea id="synth-text" rows="3" placeholder="What should the synthesis focus on? e.g. Turn these nodes into one thesis architecture proposal, keep tradeoffs and next steps."></textarea>
   <div class="synth-actions"><button class="tool-btn" id="synth-cancel">Cancel</button><button class="send-btn" id="synth-send" title="Create synthesis" aria-label="Create synthesis" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 </div>
@@ -5009,6 +5015,7 @@ var RabbitholeFrozenClient = (() => {
     document.getElementById("synth-cancel").addEventListener("click", closeSynthesisPrompt);
     document.getElementById("synth-close").addEventListener("click", closeSynthesisPrompt);
     document.getElementById("synth-text").addEventListener("input", updateSynthesisPromptState);
+    document.getElementById("synth-mode").addEventListener("change", updateSynthesisModeCopy);
     document.getElementById("synth-text").addEventListener("keydown", function(e) {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -5051,7 +5058,7 @@ var RabbitholeFrozenClient = (() => {
     var kid = nodes[mark.dataset.child];
     if (!kid || kid.status !== "answered") return;
     peekFor = kid.id;
-    var badge = kid.origin && kid.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : kid.origin && kid.origin.lens ? lensBadgeHtml(kid.origin.lens) : "";
+    var badge = kid.origin && kid.origin.synthesis ? '<span class="lens-badge">\u2726 ' + (kid.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + "</span>" : kid.origin && kid.origin.lens ? lensBadgeHtml(kid.origin.lens) : "";
     peekEl.innerHTML = '<div class="peek-title">' + (isUnread(kid) ? '<span class="pal-dot"></span>' : "") + "<span>" + esc(kid.title || "Untitled") + "</span>" + badge + '</div><div class="peek-body md">' + (kid.html || "") + '</div><div class="peek-hint">Click to open</div>';
     if (typeof mountVisuals === "function") {
       var peekBody = peekEl.querySelector(".peek-body");
@@ -5153,7 +5160,7 @@ var RabbitholeFrozenClient = (() => {
   }
   function originLine(n) {
     if (!n.origin) return "";
-    if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
+    if (n.origin.synthesis) return n.origin.synthesis_mode === "question_map" ? "> \u2726 Question Map from selected nodes\n\n" : "> \u2726 Synthesis from selected nodes\n\n";
     var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
     if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
     return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
@@ -5274,8 +5281,11 @@ var RabbitholeFrozenClient = (() => {
     var panel = document.getElementById("synth-panel");
     var count = document.getElementById("synth-count");
     var text2 = document.getElementById("synth-text");
+    var modeSelect = document.getElementById("synth-mode");
     if (count) count.textContent = String(selected.length);
-    if (text2 && !text2.value.trim()) text2.value = "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+    if (modeSelect && !modeSelect.value) modeSelect.value = "synthesis";
+    updateSynthesisModeCopy();
+    if (text2 && !text2.value.trim()) text2.value = defaultSynthesisPrompt(synthesisMode());
     panel.classList.add("visible");
     updateSynthesisPromptState();
     if (text2) text2.focus();
@@ -5290,6 +5300,26 @@ var RabbitholeFrozenClient = (() => {
     var send = document.getElementById("synth-send");
     if (send) send.disabled = selected.length < 2 || !text2 || !text2.value.trim();
   }
+  function synthesisMode() {
+    var modeSelect = document.getElementById("synth-mode");
+    return modeSelect && modeSelect.value === "question_map" ? "question_map" : "synthesis";
+  }
+  function defaultSynthesisPrompt(mode2) {
+    if (mode2 === "question_map") return "Map what these nodes answer, what remains unclear, and which next branches should be opened to close the gaps.";
+    return "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+  }
+  function updateSynthesisModeCopy() {
+    var text2 = document.getElementById("synth-text");
+    var mode2 = synthesisMode();
+    if (text2) {
+      text2.placeholder = mode2 === "question_map" ? "What should this question map focus on? e.g. Find gaps, tensions, and next branches for this research direction." : "What should the synthesis focus on? e.g. Turn these nodes into one thesis architecture proposal, keep tradeoffs and next steps.";
+      var value = text2.value.trim();
+      if (!value || value === defaultSynthesisPrompt("synthesis") || value === defaultSynthesisPrompt("question_map")) text2.value = defaultSynthesisPrompt(mode2);
+    }
+    var send = document.getElementById("synth-send");
+    if (send) send.title = mode2 === "question_map" ? "Create question map" : "Create synthesis";
+    updateSynthesisPromptState();
+  }
   function submitSelectedSynthesis(source2) {
     var text2 = document.getElementById("synth-text");
     var prompt = text2 ? text2.value.trim() : "";
@@ -5297,7 +5327,7 @@ var RabbitholeFrozenClient = (() => {
       updateSynthesisPromptState();
       return;
     }
-    synthesizeSelected(source2, prompt);
+    synthesizeSelected(source2, prompt, synthesisMode());
     closeSynthesisPrompt();
     if (text2) text2.value = "";
   }
@@ -5306,7 +5336,13 @@ var RabbitholeFrozenClient = (() => {
     if (body.length > 8e3) body = body.slice(0, 8e3).trimEnd() + "\n\n[truncated]";
     return "## Source " + index + ": " + (n.title || "Untitled") + "\n\nNode ID: " + n.id + "\n\n" + (body || "_(no markdown content)_");
   }
-  function synthesizeSelected(source2, prompt) {
+  function questionMapPrompt(prompt, sourceText) {
+    return "Build a Question Map ONLY from the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman focus prompt:\n" + prompt + "\n\nOrganize the result into these sections:\n1. Answered questions\n2. Open questions\n3. Gaps or assumptions\n4. Contradictions or tensions\n5. Suggested next branches\n\nFor each suggested next branch, write the exact question to ask, say which selected source node(s) it should branch from, and explain why answering it would improve the map. Keep it actionable so the reader can open the next branches directly.\n\nSelected source nodes:\n\n" + sourceText;
+  }
+  function synthesisPrompt(prompt, sourceText) {
+    return "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+  }
+  function synthesizeSelected(source2, prompt, outputMode) {
     if (closed) {
       flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
       return;
@@ -5328,17 +5364,19 @@ var RabbitholeFrozenClient = (() => {
       return selectedNodeMarkdown(n, i2 + 1);
     }).join("\n\n---\n\n");
     if (sourceText.length > 3e4) sourceText = sourceText.slice(0, 3e4).trimEnd() + "\n\n[remaining selected-node content truncated]";
-    var q = "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+    outputMode = outputMode === "question_map" ? "question_map" : "synthesis";
+    var q = outputMode === "question_map" ? questionMapPrompt(prompt, sourceText) : synthesisPrompt(prompt, sourceText);
     var kid = sendFollowup(root, q, null, true, {
-      title: "Selected synthesis",
-      selectedText: "Synthesis requested from " + selected.length + " selected nodes.",
+      title: outputMode === "question_map" ? "Question map" : "Selected synthesis",
+      selectedText: (outputMode === "question_map" ? "Question map" : "Synthesis") + " requested from " + selected.length + " selected nodes.",
+      synthesisMode: outputMode,
       synthesisSources: selected.map(function(n) {
         return n.id;
       })
     });
     clearCanvasSelection();
     if (mode === "canvas") revealNode(kid, source2);
-    flashHint("\u2726 Synthesizing " + selected.length + " selected nodes.");
+    flashHint(outputMode === "question_map" ? "\u2726 Mapping questions from " + selected.length + " selected nodes." : "\u2726 Synthesizing " + selected.length + " selected nodes.");
   }
   var confirmFor = null;
   function confirmDelete(node, anchor) {

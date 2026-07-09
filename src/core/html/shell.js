@@ -64,6 +64,11 @@ export const CANVAS_SHELL = `
 <div id="synth-panel">
   <div class="synth-head"><span>Selected synthesis</span><button id="synth-close" title="Close" aria-label="Close">×</button></div>
   <div class="synth-meta"><span id="synth-count">0</span> selected nodes will be used as sources.</div>
+  <label class="synth-mode-label" for="synth-mode">Output</label>
+  <select id="synth-mode">
+    <option value="synthesis">Synthesis</option>
+    <option value="question_map">Question Map</option>
+  </select>
   <textarea id="synth-text" rows="3" placeholder="What should the synthesis focus on? e.g. Turn these nodes into one thesis architecture proposal, keep tradeoffs and next steps."></textarea>
   <div class="synth-actions"><button class="tool-btn" id="synth-cancel">Cancel</button><button class="send-btn" id="synth-send" title="Create synthesis" aria-label="Create synthesis" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 </div>

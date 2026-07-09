@@ -414,6 +414,9 @@ body.mode-canvas #toolbar { display: flex; }
 #synth-close { border: none; background: none; color: var(--fg-faint); cursor: pointer; border-radius: 5px; padding: 2px 5px; }
 #synth-close:hover { color: var(--fg-bold); background: var(--hl); }
 .synth-meta { color: var(--fg-dim); font-size: 11.5px; margin-bottom: 8px; }
+.synth-mode-label { display: block; color: var(--fg-dim); font-size: 11.5px; margin-bottom: 4px; }
+#synth-mode { width: 100%; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--node-bg); color: var(--fg); font-family: var(--font-ui); font-size: 12.5px; padding: 7px 9px; outline: none; }
+#synth-mode:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent); }
 #synth-text { width: 100%; min-height: 76px; max-height: 180px; resize: vertical; border: 1px solid var(--border); border-radius: 9px; background: var(--node-bg); color: var(--fg); font-family: var(--font-ui); font-size: 13px; line-height: 1.45; padding: 9px 10px; outline: none; }
 #synth-text:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent); }
 #synth-text::placeholder { color: var(--fg-faint); }

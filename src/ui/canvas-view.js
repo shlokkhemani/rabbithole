@@ -402,7 +402,7 @@ export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
-      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";
+      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = node.origin.synthesis_mode === "question_map" ? "✦ Question Map from selected nodes" : "✦ Synthesis from selected nodes";
       body.appendChild(sq);
     } else if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";

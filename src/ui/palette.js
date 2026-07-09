@@ -109,7 +109,7 @@ export function closePalette(){
       }
       var n = nodes[item.id];
       if (!n) return;
-      var badge = (n.origin && n.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
+      var badge = (n.origin && n.origin.synthesis) ? '<span class="lens-badge">✦ ' + (n.origin.synthesis_mode === "question_map" ? "Question Map" : "Synthesis") + '</span>'
         : (n.origin && n.origin.lens) ? lensBadgeHtml(n.origin.lens) : "";
       var flags = (n.status === "pending") ? '<span class="pal-writing">writing…</span>' : (isUnread(n) ? '<span class="pal-dot"></span>' : "");
       html += '<div class="pal-item' + (i === palSel ? " sel" : "") + '" data-idx="' + i + '">';

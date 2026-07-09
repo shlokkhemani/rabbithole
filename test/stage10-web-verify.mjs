@@ -93,6 +93,8 @@ try {
   await page.waitForSelector(".katex");
   await page.waitForSelector(".hljs");
   await page.waitForSelector(".viz-show");
+  const synthModes = await page.$$eval("#synth-mode option", (options) => options.map((option) => option.value));
+  assert.deepEqual(synthModes, ["synthesis", "question_map"]);
 
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");

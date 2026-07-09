@@ -97,6 +97,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   const question = String(payload.question ?? "").trim();
   const lens = normalizeLens(payload.lens);
   const synthesis = payload.synthesis === true;
+  const synthesisMode = synthesis && payload.synthesis_mode === "question_map" ? "question_map" : synthesis ? "synthesis" : null;
   const synthesisSources = Array.isArray(payload.synthesis_sources)
     ? payload.synthesis_sources.map((id) => String(id).slice(0, 128)).filter(Boolean)
     : null;
@@ -108,11 +109,11 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   return {
     id: nodeId,
     parent_id: String(payload.parent_id || ""),
-    title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : question ? truncate(question, 48) : "…",
+    title: synthesisMode === "question_map" ? "Question map" : synthesis ? "Synthesis" : lens ? lensLabel(lens) : question ? truncate(question, 48) : "…",
     markdown: "",
     base_url: inheritedBase.base_url,
     base_url_source: inheritedBase.base_url_source,
-    origin: { selected_text: selectedText, question, lens, synthesis, synthesis_sources: synthesisSources, anchor, branch_type: branchType },
+    origin: { selected_text: selectedText, question, lens, synthesis, synthesis_mode: synthesisMode, synthesis_sources: synthesisSources, anchor, branch_type: branchType },
     position: normalizePosition(payload.position),
     size: normalizeSize(payload.size),
     font_scale: 1,

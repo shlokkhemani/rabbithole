@@ -330,6 +330,7 @@ export class DirectRabbitholeHost {
       question: node.origin?.question || "",
       lens: node.origin?.lens || null,
       synthesis: !!node.origin?.synthesis,
+      synthesis_mode: node.origin?.synthesis_mode || null,
       synthesis_sources: node.origin?.synthesis_sources || null,
     };
   }

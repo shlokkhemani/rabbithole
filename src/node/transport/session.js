@@ -631,6 +631,7 @@ export class RabbitHoleSession {
         question: node.origin.question || "",
         lens: node.origin.lens || null,
         ...(node.origin.synthesis ? { synthesis: true } : {}),
+        ...(node.origin.synthesis_mode ? { synthesis_mode: node.origin.synthesis_mode } : {}),
         ...(node.origin.synthesis_sources ? { synthesis_sources: node.origin.synthesis_sources } : {}),
         lineage: this.lineageTitles(node.parent_id),
         saved: true, // asked while the agent was away; answer it like any other
@@ -670,6 +671,7 @@ export class RabbitHoleSession {
       question: node.origin.question,
       lens: node.origin.lens,
       ...(node.origin.synthesis ? { synthesis: true } : {}),
+      ...(node.origin.synthesis_mode ? { synthesis_mode: node.origin.synthesis_mode } : {}),
       ...(node.origin.synthesis_sources ? { synthesis_sources: node.origin.synthesis_sources } : {}),
       lineage: this.lineageTitles(parentId),
     };

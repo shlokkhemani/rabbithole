@@ -3524,35 +3524,37 @@ var RabbitholeFrozenClient = (() => {
     }
     for (var id in nodes) {
       var n = nodes[id];
-      if (!n.parent_id || !n.el) continue;
-      var p = nodes[n.parent_id];
-      if (!p || !p.el) continue;
-      if (!vis(n) || !vis(p)) continue;
-      live[n.id] = true;
-      var sides = edgeSides(p, n);
-      var start = edgeStart(p, n, sides[0]);
-      var end = edgeEnd(n, sides[1]);
-      var horiz = sides[0] === "left" || sides[0] === "right";
-      var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
-      var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var geom = {
-        d,
-        cx: String(start.x),
-        cy: String(start.y),
-        anchored: !!start.anchored
-      };
-      var els = ensureEdgeEls(n.id, n.id, "");
-      var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
-      if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
-      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
-      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
-      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
-      else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
-      edgeGeometry[n.id] = geom;
+      if (!n.el || !vis(n)) continue;
       var sources = n.origin && n.origin.synthesis_sources || [];
+      var hidePrimaryEdge = sources.length > 0;
+      if (n.parent_id && !hidePrimaryEdge) {
+        var p = nodes[n.parent_id];
+        if (p && p.el && vis(p)) {
+          live[n.id] = true;
+          var sides = edgeSides(p, n);
+          var start = edgeStart(p, n, sides[0]);
+          var end = edgeEnd(n, sides[1]);
+          var horiz = sides[0] === "left" || sides[0] === "right";
+          var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
+          var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
+          var geom = {
+            d,
+            cx: String(start.x),
+            cy: String(start.y),
+            anchored: !!start.anchored
+          };
+          var els = ensureEdgeEls(n.id, n.id, "");
+          var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
+          if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
+          if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+          if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+          if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+          else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+          edgeGeometry[n.id] = geom;
+        }
+      }
       for (var si = 0; si < sources.length; si++) {
         var sourceId = sources[si];
-        if (sourceId === n.parent_id) continue;
         var sp = nodes[sourceId];
         if (!sp || !sp.el || !vis(sp)) continue;
         var edgeId = sourceId + "->" + n.id;
@@ -4018,7 +4020,7 @@ var RabbitholeFrozenClient = (() => {
   function sendFollowup(parent, question, lens, synthesis, opts) {
     opts = opts || {};
     var requestId = uuid(), childId = uuid();
-    var pos = placeChild2(parent, BRANCH_FOLLOWUP);
+    var pos = opts.position || placeChild2(parent, BRANCH_FOLLOWUP);
     var node = {
       id: childId,
       parent_id: parent.id,
@@ -5336,6 +5338,17 @@ var RabbitholeFrozenClient = (() => {
     if (body.length > 8e3) body = body.slice(0, 8e3).trimEnd() + "\n\n[truncated]";
     return "## Source " + index + ": " + (n.title || "Untitled") + "\n\nNode ID: " + n.id + "\n\n" + (body || "_(no markdown content)_");
   }
+  function selectedSynthesisPosition(selected) {
+    var minY = Infinity, maxY = -Infinity, maxX = -Infinity;
+    for (var i2 = 0; i2 < selected.length; i2++) {
+      var n = selected[i2];
+      minY = Math.min(minY, n.y || 0);
+      maxY = Math.max(maxY, (n.y || 0) + (n.h || DEFAULT_CHILD.h));
+      maxX = Math.max(maxX, (n.x || 0) + (n.w || DEFAULT_CHILD.w));
+    }
+    if (!isFinite(minY) || !isFinite(maxY) || !isFinite(maxX)) return null;
+    return { x: maxX + 90, y: (minY + maxY - DEFAULT_CHILD.h) / 2 };
+  }
   function questionMapPrompt(prompt, sourceText) {
     return "Build a Question Map ONLY from the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman focus prompt:\n" + prompt + "\n\nOrganize the result into these sections:\n1. Answered questions\n2. Open questions\n3. Gaps or assumptions\n4. Contradictions or tensions\n5. Suggested next branches\n\nFor each suggested next branch, write the exact question to ask, say which selected source node(s) it should branch from, and explain why answering it would improve the map. Keep it actionable so the reader can open the next branches directly.\n\nSelected source nodes:\n\n" + sourceText;
   }
@@ -5372,7 +5385,8 @@ var RabbitholeFrozenClient = (() => {
       synthesisMode: outputMode,
       synthesisSources: selected.map(function(n) {
         return n.id;
-      })
+      }),
+      position: selectedSynthesisPosition(selected)
     });
     clearCanvasSelection();
     if (mode === "canvas") revealNode(kid, source2);

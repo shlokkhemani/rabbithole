@@ -229,7 +229,7 @@ export function updateComposerState(){
 export function sendFollowup(parent, question, lens, synthesis, opts){
     opts = opts || {};
     var requestId = uuid(), childId = uuid();
-    var pos = placeChild(parent, BRANCH_FOLLOWUP);
+    var pos = opts.position || placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
 	      id: childId, parent_id: parent.id,
 	      title: opts.title || (synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48)),

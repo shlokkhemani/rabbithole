@@ -582,33 +582,37 @@ export function drawEdges(){
     var visCache = {};
     function vis(node){ var k = node.id; if (k in visCache) return visCache[k]; return (visCache[k] = isVisible(node)); }
     for (var id in nodes){
-      var n = nodes[id]; if (!n.parent_id || !n.el) continue; var p = nodes[n.parent_id]; if (!p || !p.el) continue;
-      if (!vis(n) || !vis(p)) continue;
-      live[n.id] = true;
-      var sides = edgeSides(p, n);
-      var start = edgeStart(p, n, sides[0]);
-      var end = edgeEnd(n, sides[1]);
-      var horiz = sides[0] === "left" || sides[0] === "right";
-      var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
-      var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var geom = {
-        d: d,
-        cx: String(start.x),
-        cy: String(start.y),
-        anchored: !!start.anchored
-      };
-      var els = ensureEdgeEls(n.id, n.id, "");
-      var path = els[0], dot = els[1], prev = edgeGeometry[n.id];
-      if (!prev || prev.d !== geom.d) path.setAttribute("d", geom.d);
-      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
-      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
-      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path, dot, geom.anchored);
-      else if (!!edgeHl[n.id] !== path.classList.contains("edge-hl")) applyEdgeClasses(n.id, path, dot, geom.anchored);
-      edgeGeometry[n.id] = geom;
+      var n = nodes[id]; if (!n.el || !vis(n)) continue;
       var sources = (n.origin && n.origin.synthesis_sources) || [];
+      var hidePrimaryEdge = sources.length > 0;
+      if (n.parent_id && !hidePrimaryEdge){
+        var p = nodes[n.parent_id];
+        if (p && p.el && vis(p)){
+          live[n.id] = true;
+          var sides = edgeSides(p, n);
+          var start = edgeStart(p, n, sides[0]);
+          var end = edgeEnd(n, sides[1]);
+          var horiz = sides[0] === "left" || sides[0] === "right";
+          var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
+          var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
+          var geom = {
+            d: d,
+            cx: String(start.x),
+            cy: String(start.y),
+            anchored: !!start.anchored
+          };
+          var els = ensureEdgeEls(n.id, n.id, "");
+          var path = els[0], dot = els[1], prev = edgeGeometry[n.id];
+          if (!prev || prev.d !== geom.d) path.setAttribute("d", geom.d);
+          if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+          if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+          if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path, dot, geom.anchored);
+          else if (!!edgeHl[n.id] !== path.classList.contains("edge-hl")) applyEdgeClasses(n.id, path, dot, geom.anchored);
+          edgeGeometry[n.id] = geom;
+        }
+      }
       for (var si = 0; si < sources.length; si++){
         var sourceId = sources[si];
-        if (sourceId === n.parent_id) continue;
         var sp = nodes[sourceId];
         if (!sp || !sp.el || !vis(sp)) continue;
         var edgeId = sourceId + "->" + n.id;

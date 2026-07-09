@@ -3,6 +3,7 @@ import {
   canvasBuilt,
   childrenOf,
   currentNodeId,
+  DEFAULT_CHILD,
   esc,
   flashHint,
   frozen,
@@ -379,6 +380,18 @@ export function synthesize(source){
       (body || "_(no markdown content)_");
   }
 
+  function selectedSynthesisPosition(selected){
+    var minY = Infinity, maxY = -Infinity, maxX = -Infinity;
+    for (var i = 0; i < selected.length; i++){
+      var n = selected[i];
+      minY = Math.min(minY, n.y || 0);
+      maxY = Math.max(maxY, (n.y || 0) + (n.h || DEFAULT_CHILD.h));
+      maxX = Math.max(maxX, (n.x || 0) + (n.w || DEFAULT_CHILD.w));
+    }
+    if (!isFinite(minY) || !isFinite(maxY) || !isFinite(maxX)) return null;
+    return { x: maxX + 90, y: (minY + maxY - DEFAULT_CHILD.h) / 2 };
+  }
+
   function questionMapPrompt(prompt, sourceText){
     return "Build a Question Map ONLY from the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\n" +
       "Human focus prompt:\n" + prompt + "\n\n" +
@@ -419,7 +432,8 @@ export function synthesize(source){
       title: outputMode === "question_map" ? "Question map" : "Selected synthesis",
       selectedText: (outputMode === "question_map" ? "Question map" : "Synthesis") + " requested from " + selected.length + " selected nodes.",
       synthesisMode: outputMode,
-      synthesisSources: selected.map(function(n){ return n.id; })
+      synthesisSources: selected.map(function(n){ return n.id; }),
+      position: selectedSynthesisPosition(selected)
     });
     clearCanvasSelection();
     if (mode === "canvas") revealNode(kid, source);

@@ -226,17 +226,18 @@ export function updateComposerState(){
   // The thread turn is only appended when the parent is the document currently
   // open in the reader — otherwise it appears on the next open. A synthesis ask
   // rides the same path but renders as a distinct branch node, not a chat turn.
-export function sendFollowup(parent, question, lens, synthesis){
+export function sendFollowup(parent, question, lens, synthesis, opts){
+    opts = opts || {};
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
 	      id: childId, parent_id: parent.id,
-	      title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48),
+	      title: opts.title || (synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48)),
 	      html: "", md: "",
 	      base_url: parent.base_url || null,
 	      base_url_source: parent.base_url ? "inherited" : null,
 	      read: false,
-      origin: { selected_text: "", question: question, lens: lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      origin: { selected_text: opts.selectedText || "", question: question, lens: lens, synthesis: !!synthesis, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
@@ -250,10 +251,11 @@ export function sendFollowup(parent, question, lens, synthesis){
       }
     }
     var payload = { type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
-           selected_text: "", question: question, lens: lens, anchor: null,
+           selected_text: opts.selectedText || "", question: question, lens: lens, anchor: null,
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
+    if (opts.synthesisSources) payload.synthesis_sources = opts.synthesisSources;
     askHooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
     refreshAmbient();
     return node;

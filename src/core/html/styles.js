@@ -45,6 +45,8 @@ body {
 
 .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: none; border: none; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; transition: background-color 120ms ease, color 120ms ease; }
 .tool-btn:hover { color: var(--fg-bold); background: var(--hl); }
+.tool-btn:disabled { opacity: 0.45; cursor: default; }
+.tool-btn:disabled:hover { color: var(--fg-dim); background: none; }
 .tool-btn:focus { outline: none; }
 .tool-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tool-btn svg { display: block; width: 16px; height: 16px; flex-shrink: 0; }
@@ -280,11 +282,13 @@ body.mode-canvas #viewport { display: block; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
+#edges path.source-edge { stroke: color-mix(in srgb, var(--accent) 34%, var(--edge)); stroke-dasharray: 5 5; }
 /* Hover wakes an edge gently — a lean toward the accent, not a costume change. */
 #edges path.edge-hl { stroke: color-mix(in srgb, var(--accent) 45%, var(--edge)); }
 #edges circle { fill: var(--edge); transition: fill 0.22s ease; }
 #edges circle.anchored { fill: color-mix(in srgb, var(--accent) 65%, var(--edge)); }
 #edges circle.edge-hl { fill: color-mix(in srgb, var(--accent) 60%, var(--edge)); }
+#edges circle.source-edge { fill: color-mix(in srgb, var(--accent) 48%, var(--edge)); }
 /* overflow stays visible so the follow-up drawer can slide out below the card;
    the head carries its own top radius instead. */
 .node { position: absolute; display: flex; flex-direction: column; background: var(--node-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
@@ -292,12 +296,16 @@ body.mode-canvas #viewport { display: block; }
 .node.node-enter { opacity: 0; transform: translateY(8px); transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
 .node.node-enter.entered { opacity: 1; transform: translateY(0); }
 .node.root { border-color: var(--border-focus); }
+.node.selected { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* The head stays minimal — just the title — so the card reads like a document.
    Controls sit in a right-edge overlay with secondary text sizing de-emphasized. */
 .node-head { position: relative; display: flex; align-items: center; padding: 8px 12px; background: var(--node-head); border-bottom: 1px solid var(--border); border-radius: 9px 9px 0 0; cursor: grab; user-select: none; flex-shrink: 0; }
 .node-head:active { cursor: grabbing; }
 .node-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; color: var(--fg-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .node-badge { font-size: 12px; line-height: 1; margin-right: 7px; flex-shrink: 0; cursor: default; }
+.node-select { width: 28px; height: 28px; margin-right: 8px; border: 1.5px solid color-mix(in srgb, var(--fg) 30%, var(--border)); border-radius: 8px; color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 7%, transparent); font-size: 15px; font-weight: 700; }
+.node-select:hover { color: var(--fg-bold); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.node-select.active { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
 .node-acts { position: absolute; top: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 7px 0 30px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--node-head) 28%); border-radius: 0 9px 0 0; }
 @media (hover: none) { .node-acts { position: static; padding: 0 0 0 8px; background: none; } }
 .node-act-divider { width: 1px; height: 14px; margin: 0 3px; background: var(--border); flex-shrink: 0; opacity: 0; transition: opacity 150ms ease; }
@@ -306,6 +314,8 @@ body.mode-canvas #viewport { display: block; }
 .node-btn.danger, .node-font-btn { opacity: 0; transition: opacity 150ms ease, background-color 120ms ease, color 120ms ease; }
 .node${""}:hover .node-btn.danger, .node${""}:hover .node-font-btn, .node${""}:hover .node-act-divider, .node-acts:focus-within .node-btn.danger, .node-acts:focus-within .node-font-btn, .node-acts:focus-within .node-act-divider { opacity: 1; }
 .tool-icon:hover, .node-btn:hover { color: var(--fg-bold); background-color: color-mix(in srgb, currentColor 8%, transparent); }
+.node-copy-btn { color: var(--fg-dim); background-color: color-mix(in srgb, var(--fg) 5%, transparent); }
+.node-copy-btn:hover { color: var(--accent); background-color: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tool-icon:active, .node-btn:active { background-color: color-mix(in srgb, currentColor 13%, transparent); }
 .tool-icon:focus, .node-btn:focus { outline: none; }
 .tool-icon:focus-visible, .node-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -394,6 +404,20 @@ body.mode-canvas #toolbar { display: flex; }
 .lens kbd { font-family: var(--font-ui); font-size: 9px; font-weight: 500; color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
 .lens:hover kbd { color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 13%, transparent); }
+
+#synth-panel { position: fixed; top: 62px; left: 14px; z-index: 85; width: min(420px, calc(100vw - 28px)); visibility: hidden; opacity: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--bar-bg) 92%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 10px; transform: translateY(-6px) scale(0.98);
+  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 140ms; }
+#synth-panel.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0s; }
+.synth-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--fg-bold); font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+#synth-close { border: none; background: none; color: var(--fg-faint); cursor: pointer; border-radius: 5px; padding: 2px 5px; }
+#synth-close:hover { color: var(--fg-bold); background: var(--hl); }
+.synth-meta { color: var(--fg-dim); font-size: 11.5px; margin-bottom: 8px; }
+#synth-text { width: 100%; min-height: 76px; max-height: 180px; resize: vertical; border: 1px solid var(--border); border-radius: 9px; background: var(--node-bg); color: var(--fg); font-family: var(--font-ui); font-size: 13px; line-height: 1.45; padding: 9px 10px; outline: none; }
+#synth-text:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent); }
+#synth-text::placeholder { color: var(--fg-faint); }
+.synth-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
 
 /* ---------- ⌘K palette — search the whole hole ---------- */
 #palette { position: fixed; inset: 0; z-index: 120; display: none; background: color-mix(in srgb, var(--bg) 35%, transparent); }

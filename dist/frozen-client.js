@@ -1900,7 +1900,7 @@ var RabbitholeFrozenClient = (() => {
     actCanvas.addEventListener("click", onActivityClick);
     document.getElementById("since-show").addEventListener("click", function(e) {
       var un = unreadNodes();
-      if (un.length) goToNode2(un[0], motionSourceFromEvent(e));
+      if (un.length) goToNode(un[0], motionSourceFromEvent(e));
     });
     document.getElementById("since-x").addEventListener("click", function() {
       sinceDismissed = true;
@@ -2105,7 +2105,7 @@ var RabbitholeFrozenClient = (() => {
     });
     return out;
   }
-  function goToNode2(node, source2) {
+  function goToNode(node, source2) {
     if (!node) return;
     if (mode === "canvas") {
       coreHooks.ensureCanvasBuilt();
@@ -2138,7 +2138,7 @@ var RabbitholeFrozenClient = (() => {
   function onActivityClick(e) {
     var source2 = motionSourceFromEvent(e);
     var pend = pendingNodes();
-    if (pend.length) goToNode2(pend[pend.length - 1], source2);
+    if (pend.length) goToNode(pend[pend.length - 1], source2);
   }
   var sinceDismissed = false;
   var sinceArmed = false;
@@ -2827,10 +2827,41 @@ var RabbitholeFrozenClient = (() => {
     persistNodesBulk: function() {
     },
     scheduleViewSave: function() {
+    },
+    onSelectionChange: function() {
     }
   };
+  var selectedNodeIds = {};
   function registerCanvasHooks(hooks) {
     Object.assign(canvasHooks, hooks || {});
+  }
+  function selectedCanvasNodes() {
+    var out = [];
+    for (var id in selectedNodeIds) {
+      if (selectedNodeIds[id] && nodes[id] && nodes[id].status !== "pending") out.push(nodes[id]);
+    }
+    out.sort(nodeOrder2);
+    return out;
+  }
+  function clearCanvasSelection() {
+    for (var id in selectedNodeIds) {
+      if (nodes[id] && nodes[id].el) nodes[id].el.classList.remove("selected");
+      if (nodes[id] && nodes[id].selectBtn) {
+        nodes[id].selectBtn.classList.remove("active");
+        nodes[id].selectBtn.textContent = "\u25A1";
+        nodes[id].selectBtn.setAttribute("aria-pressed", "false");
+      }
+    }
+    selectedNodeIds = {};
+    notifySelectionChange();
+  }
+  function notifySelectionChange() {
+    var count = selectedCanvasNodes().length;
+    canvasHooks.onSelectionChange(count);
+    try {
+      document.dispatchEvent(new CustomEvent("rh-selection-change", { detail: { count } }));
+    } catch (_e) {
+    }
   }
   function initCanvasView() {
     registerCoreHooks({
@@ -2912,6 +2943,7 @@ var RabbitholeFrozenClient = (() => {
   }
   var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
   var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
+  var NODE_COPY_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="5" y="4" width="7" height="9" rx="1.2"/><path d="M4 11.5H3.7c-.7 0-1.2-.5-1.2-1.2V3.7c0-.7.5-1.2 1.2-1.2h5.6c.7 0 1.2.5 1.2 1.2V4"/></svg>';
   function createNodeEl(node, enter) {
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
@@ -2926,6 +2958,9 @@ var RabbitholeFrozenClient = (() => {
       badge.title = "Where this Rabbithole begins";
       head.appendChild(badge);
     }
+    var selectBtn = mkBtn("\u25A1", "Select for synthesis");
+    selectBtn.classList.add("node-select");
+    selectBtn.setAttribute("aria-pressed", "false");
     var titleEl = document.createElement("span");
     titleEl.className = "node-title";
     titleEl.textContent = node.title || "\u2026";
@@ -2934,6 +2969,8 @@ var RabbitholeFrozenClient = (() => {
     var aUp = mkBtn("A+", "Larger text");
     aDown.classList.add("node-font-btn");
     aUp.classList.add("node-font-btn");
+    var copyBtn = mkIconBtn(NODE_COPY_ICON, "Copy Markdown");
+    copyBtn.classList.add("node-copy-btn");
     var collapseBtn = mkIconBtn(NODE_COLLAPSE_ICON, "Collapse");
     var openBtn = mkIconBtn(NODE_EXPAND_ICON, "Expand");
     var divider = document.createElement("span");
@@ -2954,7 +2991,9 @@ var RabbitholeFrozenClient = (() => {
     acts.appendChild(aUp);
     acts.appendChild(divider);
     acts.appendChild(collapseBtn);
+    acts.appendChild(copyBtn);
     acts.appendChild(openBtn);
+    head.appendChild(selectBtn);
     head.appendChild(titleEl);
     head.appendChild(acts);
     var body = document.createElement("div");
@@ -2970,6 +3009,7 @@ var RabbitholeFrozenClient = (() => {
     node.el = el;
     node.bodyEl = body;
     node.titleEl = titleEl;
+    node.selectBtn = selectBtn;
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
@@ -2978,6 +3018,14 @@ var RabbitholeFrozenClient = (() => {
     enableResize(node, resize);
     head.addEventListener("dblclick", function() {
       openNode(node.id);
+    });
+    selectBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      toggleNodeSelected(node);
+    });
+    copyBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      copyNodeMarkdown(node);
     });
     openBtn.addEventListener("click", function(e) {
       e.stopPropagation();
@@ -3018,6 +3066,20 @@ var RabbitholeFrozenClient = (() => {
     }
     return node;
   }
+  function toggleNodeSelected(node) {
+    if (!node || node.status === "pending") return;
+    var on = !selectedNodeIds[node.id];
+    if (on) selectedNodeIds[node.id] = true;
+    else delete selectedNodeIds[node.id];
+    if (node.el) node.el.classList.toggle("selected", on);
+    if (node.selectBtn) {
+      node.selectBtn.classList.toggle("active", on);
+      node.selectBtn.textContent = on ? "\u2713" : "\u25A1";
+      node.selectBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    flashHint(on ? "Selected for synthesis" : "Removed from synthesis selection");
+    notifySelectionChange();
+  }
   function diveToNode(node, source2) {
     var vw = viewport.clientWidth, vh = viewport.clientHeight;
     var ts = Math.min(1, Math.max(0.75, Math.min((vw - 120) / node.w, (vh - 120) / effH(node))));
@@ -3037,6 +3099,36 @@ var RabbitholeFrozenClient = (() => {
     b.innerHTML = svg;
     b.setAttribute("aria-label", title);
     return b;
+  }
+  function copyNodeMarkdown(node) {
+    var title = node.title || "Untitled";
+    var body = (node.md || "").trim();
+    var text2 = "# " + title + (body ? "\n\n" + body : "");
+    function done() {
+      flashHint("Copied \u201C" + title.slice(0, 40) + (title.length > 40 ? "\u2026" : "") + "\u201D as Markdown");
+    }
+    function legacy() {
+      var ta = document.createElement("textarea");
+      ta.value = text2;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (_err) {
+      }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text2).then(done, function() {
+        legacy();
+        done();
+      });
+    } else {
+      legacy();
+      done();
+    }
   }
   var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function autoGrowEl(ta, max) {
@@ -3387,27 +3479,29 @@ var RabbitholeFrozenClient = (() => {
   }
   var edgeEls = {};
   var edgeGeometry = {};
-  function ensureEdgeEls(childId) {
-    var els = edgeEls[childId];
+  function ensureEdgeEls(edgeId, childId, className) {
+    var els = edgeEls[edgeId];
     if (els) return els;
     var path2 = document.createElementNS(SVGNS, "path");
     path2.setAttribute("data-child", childId);
+    if (className) path2.classList.add(className);
     var dot = document.createElementNS(SVGNS, "circle");
     dot.setAttribute("r", "3");
     dot.setAttribute("data-child", childId);
+    if (className) dot.classList.add(className);
     edgesSvg.appendChild(path2);
     edgesSvg.appendChild(dot);
-    edgeEls[childId] = [path2, dot];
-    return edgeEls[childId];
+    edgeEls[edgeId] = [path2, dot];
+    return edgeEls[edgeId];
   }
-  function removeEdge(childId) {
-    var els = edgeEls[childId];
+  function removeEdge(edgeId) {
+    var els = edgeEls[edgeId];
     if (els) {
       for (var i2 = 0; i2 < els.length; i2++) if (els[i2].parentNode) els[i2].parentNode.removeChild(els[i2]);
     }
-    delete edgeEls[childId];
-    delete edgeGeometry[childId];
-    delete edgeHl[childId];
+    delete edgeEls[edgeId];
+    delete edgeGeometry[edgeId];
+    delete edgeHl[edgeId];
   }
   function applyEdgeClasses(childId, path2, dot, anchored) {
     path2.classList.toggle("edge-hl", !!edgeHl[childId]);
@@ -3447,7 +3541,7 @@ var RabbitholeFrozenClient = (() => {
         cy: String(start.y),
         anchored: !!start.anchored
       };
-      var els = ensureEdgeEls(n.id);
+      var els = ensureEdgeEls(n.id, n.id, "");
       var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
       if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
       if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
@@ -3455,9 +3549,31 @@ var RabbitholeFrozenClient = (() => {
       if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
       else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
       edgeGeometry[n.id] = geom;
+      var sources = n.origin && n.origin.synthesis_sources || [];
+      for (var si = 0; si < sources.length; si++) {
+        var sourceId = sources[si];
+        if (sourceId === n.parent_id) continue;
+        var sp = nodes[sourceId];
+        if (!sp || !sp.el || !vis(sp)) continue;
+        var edgeId = sourceId + "->" + n.id;
+        live[edgeId] = true;
+        var ssides = edgeSides(sp, n);
+        var sstart = edgeStart(sp, n, ssides[0]);
+        var send = edgeEnd(n, ssides[1]);
+        var shoriz = ssides[0] === "left" || ssides[0] === "right";
+        var sreach = Math.max(40, (shoriz ? Math.abs(send.x - sstart.x) : Math.abs(send.y - sstart.y)) / 2);
+        var sd = "M " + sstart.x + " " + sstart.y + " C " + ctrlPt(sstart, ssides[0], sreach) + " " + ctrlPt(send, ssides[1], sreach) + " " + send.x + " " + send.y;
+        var sgeom = { d: sd, cx: String(sstart.x), cy: String(sstart.y), anchored: false };
+        var sels = ensureEdgeEls(edgeId, n.id, "source-edge");
+        var spath = sels[0], sdot = sels[1], sprev = edgeGeometry[edgeId];
+        if (!sprev || sprev.d !== sgeom.d) spath.setAttribute("d", sgeom.d);
+        if (!sprev || sprev.cx !== sgeom.cx) sdot.setAttribute("cx", sgeom.cx);
+        if (!sprev || sprev.cy !== sgeom.cy) sdot.setAttribute("cy", sgeom.cy);
+        edgeGeometry[edgeId] = sgeom;
+      }
     }
-    for (var childId in edgeEls) {
-      if (!live[childId]) removeEdge(childId);
+    for (var edgeId in edgeEls) {
+      if (!live[edgeId]) removeEdge(edgeId);
     }
   }
   var edgeHl = {};
@@ -3899,19 +4015,20 @@ var RabbitholeFrozenClient = (() => {
   function autoGrowComposer() {
     autoGrowEl(composerText, 140);
   }
-  function sendFollowup(parent, question, lens, synthesis) {
+  function sendFollowup(parent, question, lens, synthesis, opts) {
+    opts = opts || {};
     var requestId = uuid(), childId = uuid();
     var pos = placeChild2(parent, BRANCH_FOLLOWUP);
     var node = {
       id: childId,
       parent_id: parent.id,
-      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate2(question, 48),
+      title: opts.title || (synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate2(question, 48)),
       html: "",
       md: "",
       base_url: parent.base_url || null,
       base_url_source: parent.base_url ? "inherited" : null,
       read: false,
-      origin: { selected_text: "", question, lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      origin: { selected_text: opts.selectedText || "", question, lens, synthesis: !!synthesis, synthesis_sources: opts.synthesisSources || null, anchor: null, branch_type: BRANCH_FOLLOWUP },
       x: pos.x,
       y: pos.y,
       w: DEFAULT_CHILD.w,
@@ -3940,7 +4057,7 @@ var RabbitholeFrozenClient = (() => {
       request_id: requestId,
       node_id: childId,
       parent_id: parent.id,
-      selected_text: "",
+      selected_text: opts.selectedText || "",
       question,
       lens,
       anchor: null,
@@ -3949,6 +4066,7 @@ var RabbitholeFrozenClient = (() => {
       size: { w: node.w, h: node.h }
     };
     if (synthesis) payload.synthesis = true;
+    if (opts.synthesisSources) payload.synthesis_sources = opts.synthesisSources;
     askHooks.post(payload).then(function(res) {
       if (!res || !res.ok) rollbackBranch(node);
     });
@@ -4559,7 +4677,7 @@ var RabbitholeFrozenClient = (() => {
     }
     var node = nodes[item.id];
     closePalette();
-    if (node) goToNode2(node, source2);
+    if (node) goToNode(node, source2);
   }
   function onPaletteClick(e) {
     var it = e.target.closest(".pal-item");
@@ -4616,6 +4734,7 @@ var RabbitholeFrozenClient = (() => {
   <button class="tool-btn tool-icon" id="t-frame" title="Frame everything \xB7 F" aria-label="Frame everything \xB7 F"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/></svg></button>
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-tidy" title="Tidy up layout \xB7 T" aria-label="Tidy up layout \xB7 T"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/></svg></button>
+  <button class="tool-btn" id="t-synth-prompt" title="Synthesize selected nodes" disabled>\u25EB Synthesize <span id="t-synth-count">0</span></button>
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">\u2197</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">\u25D1</button>
@@ -4636,6 +4755,13 @@ var RabbitholeFrozenClient = (() => {
   </div>
 </div>
 
+<div id="synth-panel">
+  <div class="synth-head"><span>Selected synthesis</span><button id="synth-close" title="Close" aria-label="Close">\xD7</button></div>
+  <div class="synth-meta"><span id="synth-count">0</span> selected nodes will be used as sources.</div>
+  <textarea id="synth-text" rows="3" placeholder="What should the synthesis focus on? e.g. Turn these nodes into one thesis architecture proposal, keep tradeoffs and next steps."></textarea>
+  <div class="synth-actions"><button class="tool-btn" id="synth-cancel">Cancel</button><button class="send-btn" id="synth-send" title="Create synthesis" aria-label="Create synthesis" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+</div>
+
 <div id="palette"><div id="palette-panel">
   <div class="pal-input">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -4652,8 +4778,10 @@ var RabbitholeFrozenClient = (() => {
   <button class="sm-item" id="sm-doc"><span class="sm-ic">\u29C9</span>Copy document as Markdown</button>
   <div class="sm-sep"></div>
   <button class="sm-item" id="sm-export"><span class="sm-ic">\u21E9</span>Download snapshot (.html)</button>
+  <button class="sm-item" id="sm-json"><span class="sm-ic">{}</span>Download session JSON (.json)</button>
   <button class="sm-item" id="sm-portable"><span class="sm-ic">\u21E3</span>Export Rabbithole (.rabbithole)</button>
   <div class="sm-sep" id="sm-sep2"></div>
+  <button class="sm-item" id="sm-synth-selected"><span class="sm-ic">\u25EB</span>Synthesize selected nodes</button>
   <button class="sm-item" id="sm-synth"><span class="sm-ic">\u2726</span>Synthesize this journey</button>
 </div>
 
@@ -4795,6 +4923,18 @@ var RabbitholeFrozenClient = (() => {
     var slug = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
     return "rabbithole-" + (slug || "export") + ".html";
   }
+  function exportJsonFilename(title) {
+    var slug = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+    return "rabbithole-" + (slug || "export") + ".json";
+  }
+  function buildSnapshotJson(snapshotHydration) {
+    return {
+      format: "rabbithole-session-json",
+      format_version: 1,
+      exported_at: (/* @__PURE__ */ new Date()).toISOString(),
+      session: snapshotHydration
+    };
+  }
   async function downloadSnapshot() {
     var snapshotHydration = await buildSnapshotHydration();
     var html2 = buildSnapshotHtml(snapshotHydration);
@@ -4810,6 +4950,23 @@ var RabbitholeFrozenClient = (() => {
       URL.revokeObjectURL(url);
     }, 3e4);
     return html2;
+  }
+  async function downloadSnapshotJson() {
+    var snapshotHydration = await buildSnapshotHydration();
+    var payload = buildSnapshotJson(snapshotHydration);
+    var json2 = JSON.stringify(payload, null, 2) + "\n";
+    var blob = new Blob([json2], { type: "application/json;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = exportJsonFilename(snapshotHydration.title);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() {
+      URL.revokeObjectURL(url);
+    }, 3e4);
+    return payload;
   }
 
   // src/ui/branch-surfaces.js
@@ -4843,10 +5000,33 @@ var RabbitholeFrozenClient = (() => {
       e.stopPropagation();
       toggleShare(e.currentTarget);
     });
+    document.getElementById("t-synth-prompt").addEventListener("click", function(e) {
+      openSynthesisPrompt(motionSourceFromEvent(e));
+    });
+    document.getElementById("synth-send").addEventListener("click", function(e) {
+      submitSelectedSynthesis(motionSourceFromEvent(e));
+    });
+    document.getElementById("synth-cancel").addEventListener("click", closeSynthesisPrompt);
+    document.getElementById("synth-close").addEventListener("click", closeSynthesisPrompt);
+    document.getElementById("synth-text").addEventListener("input", updateSynthesisPromptState);
+    document.getElementById("synth-text").addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submitSelectedSynthesis("keyboard");
+      } else if (e.key === "Escape") {
+        closeSynthesisPrompt();
+      }
+    });
+    document.addEventListener("rh-selection-change", updateSelectedSynthesisUi);
     document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
     document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
     document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
+    document.getElementById("sm-json").addEventListener("click", onExportSnapshotJson);
     document.getElementById("sm-portable").addEventListener("click", onExportPortable);
+    document.getElementById("sm-synth-selected").addEventListener("click", function(e) {
+      closeShare();
+      openSynthesisPrompt(motionSourceFromEvent(e));
+    });
     document.getElementById("sm-synth").addEventListener("click", function(e) {
       closeShare();
       synthesize(motionSourceFromEvent(e));
@@ -4857,6 +5037,7 @@ var RabbitholeFrozenClient = (() => {
       hideConfirm();
       if (node) deleteBranch(node);
     });
+    updateSelectedSynthesisUi();
   }
   function hidePeek() {
     if (peekTimer) {
@@ -4915,8 +5096,13 @@ var RabbitholeFrozenClient = (() => {
     }
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-json").style.display = frozen ? "none" : "";
     document.getElementById("sm-portable").style.display = !frozen && typeof branchHooks.exportPortable === "function" ? "" : "none";
+    var selected = selectedCanvasNodes();
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth-selected").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth-selected").disabled = selected.length < 2;
+    document.getElementById("sm-synth-selected").querySelector(".sm-ic").textContent = selected.length >= 2 ? String(selected.length) : "\u25EB";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var r2 = anchor.getBoundingClientRect();
     shareMenu.style.left = Math.min(window.innerWidth - shareMenu.offsetWidth - 10, Math.max(10, r2.right - shareMenu.offsetWidth)) + "px";
@@ -5003,6 +5189,15 @@ var RabbitholeFrozenClient = (() => {
       flashHint("Couldn't prepare the snapshot.");
     });
   }
+  function onExportSnapshotJson() {
+    closeShare();
+    flashHint("Preparing session JSON...");
+    downloadSnapshotJson().then(function() {
+      flashHint("Session JSON downloading.");
+    }, function() {
+      flashHint("Couldn't prepare the session JSON.");
+    });
+  }
   function onExportPortable() {
     closeShare();
     if (typeof branchHooks.exportPortable !== "function") {
@@ -5038,6 +5233,112 @@ var RabbitholeFrozenClient = (() => {
     var kid = sendFollowup(root, q, null, true);
     if (mode === "canvas") revealNode(kid, source2);
     flashHint("\u2726 Synthesizing this journey \u2014 it will appear as a branch of the root document.");
+  }
+  function hasPendingSynthesis() {
+    for (var k in nodes) {
+      var n = nodes[k];
+      if (n.status === "pending" && n.origin && n.origin.synthesis) return n;
+    }
+    return null;
+  }
+  function updateSelectedSynthesisUi() {
+    var selected = selectedCanvasNodes();
+    var btn = document.getElementById("t-synth-prompt");
+    var count = document.getElementById("t-synth-count");
+    if (count) count.textContent = String(selected.length);
+    if (btn) btn.disabled = closed || selected.length < 2;
+    var panel = document.getElementById("synth-panel");
+    if (panel && panel.classList.contains("visible")) {
+      var sc = document.getElementById("synth-count");
+      if (sc) sc.textContent = String(selected.length);
+      updateSynthesisPromptState();
+      if (selected.length < 2) closeSynthesisPrompt();
+    }
+  }
+  function openSynthesisPrompt(source2) {
+    if (closed) {
+      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
+      return;
+    }
+    var selected = selectedCanvasNodes();
+    if (selected.length < 2) {
+      flashHint("Select at least two nodes on the canvas first.");
+      return;
+    }
+    var pending = hasPendingSynthesis();
+    if (pending) {
+      flashHint("A synthesis is already being written\u2026");
+      goToNode(pending, source2);
+      return;
+    }
+    var panel = document.getElementById("synth-panel");
+    var count = document.getElementById("synth-count");
+    var text2 = document.getElementById("synth-text");
+    if (count) count.textContent = String(selected.length);
+    if (text2 && !text2.value.trim()) text2.value = "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+    panel.classList.add("visible");
+    updateSynthesisPromptState();
+    if (text2) text2.focus();
+  }
+  function closeSynthesisPrompt() {
+    var panel = document.getElementById("synth-panel");
+    if (panel) panel.classList.remove("visible");
+  }
+  function updateSynthesisPromptState() {
+    var selected = selectedCanvasNodes();
+    var text2 = document.getElementById("synth-text");
+    var send = document.getElementById("synth-send");
+    if (send) send.disabled = selected.length < 2 || !text2 || !text2.value.trim();
+  }
+  function submitSelectedSynthesis(source2) {
+    var text2 = document.getElementById("synth-text");
+    var prompt = text2 ? text2.value.trim() : "";
+    if (!prompt) {
+      updateSynthesisPromptState();
+      return;
+    }
+    synthesizeSelected(source2, prompt);
+    closeSynthesisPrompt();
+    if (text2) text2.value = "";
+  }
+  function selectedNodeMarkdown(n, index) {
+    var body = (n.md || "").trim();
+    if (body.length > 8e3) body = body.slice(0, 8e3).trimEnd() + "\n\n[truncated]";
+    return "## Source " + index + ": " + (n.title || "Untitled") + "\n\nNode ID: " + n.id + "\n\n" + (body || "_(no markdown content)_");
+  }
+  function synthesizeSelected(source2, prompt) {
+    if (closed) {
+      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
+      return;
+    }
+    var root = nodes[rootId];
+    if (!root) return;
+    var pending = hasPendingSynthesis();
+    if (pending) {
+      flashHint("A synthesis is already being written\u2026");
+      goToNode(pending, source2);
+      return;
+    }
+    var selected = selectedCanvasNodes();
+    if (selected.length < 2) {
+      flashHint("Select at least two nodes on the canvas first.");
+      return;
+    }
+    var sourceText = selected.map(function(n, i2) {
+      return selectedNodeMarkdown(n, i2 + 1);
+    }).join("\n\n---\n\n");
+    if (sourceText.length > 3e4) sourceText = sourceText.slice(0, 3e4).trimEnd() + "\n\n[remaining selected-node content truncated]";
+    var q = "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+    var kid = sendFollowup(root, q, null, true, {
+      title: "Selected synthesis",
+      selectedText: "Synthesis requested from " + selected.length + " selected nodes.",
+      synthesisSources: selected.map(function(n) {
+        return n.id;
+      })
+    });
+    clearCanvasSelection();
+    if (mode === "canvas") revealNode(kid, source2);
+    flashHint("\u2726 Synthesizing " + selected.length + " selected nodes.");
   }
   var confirmFor = null;
   function confirmDelete(node, anchor) {

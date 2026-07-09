@@ -4,9 +4,9 @@ import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { activateFocusTrap } from "../ui/focus-trap.js";
-import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
+import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml, buildSnapshotJson } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
-import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
+import { downloadRabbitholeExport, importRabbitholeFile, importSessionJsonFile, rabbitholeFilename } from "./portable.js";
 import { testedModelHint } from "./brain/tested-models.js";
 
 const SETTINGS_KEY = "rh-web-settings";
@@ -80,7 +80,7 @@ async function renderHome() {
             <p>Paste markdown, drop a PDF, or open a URL.</p>
           </div>
           <label class="drop-md" id="drop-md">
-            <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json">
+            <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,.json,text/markdown,text/plain,application/pdf,application/json">
             <span>Choose file</span>
           </label>
         </div>
@@ -247,12 +247,16 @@ async function createFromFile(file) {
     await createFromRabbitholeFile(file);
     return;
   }
+  if (isSessionJsonFile(file)) {
+    await createFromSessionJsonFile(file);
+    return;
+  }
   if (isPdfFile(file)) {
     await createFromPdfFile(file);
     return;
   }
   if (!isMarkdownFile(file)) {
-    setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
+    setIngestStatus("Choose a markdown, PDF, .rabbithole, or session JSON file.", "error");
     return;
   }
   try {
@@ -271,6 +275,19 @@ async function createFromFile(file) {
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
     setIngestStatus(`Markdown import failed. ${err?.message || String(err)}`, "error");
+  }
+}
+
+async function createFromSessionJsonFile(file) {
+  try {
+    setIngestStatus("Importing Rabbithole session JSON...", "busy");
+    const imported = await importSessionJsonFile(store, file);
+    setIngestStatus("");
+    const hole = await store.loadHole(imported.hole_id);
+    if (!hole) throw new Error("Imported session JSON could not be loaded.");
+    await startHole(hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
   }
 }
 
@@ -462,6 +479,7 @@ async function startHole(hole, { replace = false } = {}) {
   window.__rhWebApp = {
     store,
     exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
+    exportSnapshotJsonForTest: async () => buildSnapshotJson(await buildSnapshotHydration()),
     exportRabbitholeForTest: async (id = currentHoleId) => {
       await currentHost?.flushSave();
       return downloadRabbitholeExport(store, id);
@@ -705,6 +723,10 @@ function isPdfFile(file) {
 
 function isRabbitholeFile(file) {
   return /\.rabbithole$/i.test(file?.name || "");
+}
+
+function isSessionJsonFile(file) {
+  return /(\.json$|application\/json)/i.test(`${file?.name || ""} ${file?.type || ""}`);
 }
 
 function isMarkdownFile(file) {

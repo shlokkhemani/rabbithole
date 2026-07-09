@@ -7,6 +7,7 @@ import {
   flashHint,
   frozen,
   closed,
+  goToNode,
   isUnread,
   lensBadgeHtml,
   lensLabel,
@@ -28,9 +29,11 @@ import {
 import { sendFollowup } from "./ask-followups.js";
 import {
   clearEdgeHighlight,
+  clearCanvasSelection,
   drawEdges,
   renderVisibility,
-  revealNode
+  revealNode,
+  selectedCanvasNodes
 } from "./canvas-view.js";
 import {
   openNode,
@@ -40,7 +43,7 @@ import {
   renderSidebar
 } from "./reader.js";
 import { mountVisuals } from "./visuals.js";
-import { downloadSnapshot } from "./snapshot.js";
+import { downloadSnapshot, downloadSnapshotJson } from "./snapshot.js";
 import { activateFocusTrap } from "./focus-trap.js";
 
 var branchHooks = {
@@ -67,10 +70,25 @@ export function initBranchSurfaces(){
   });
   document.getElementById("r-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
   document.getElementById("t-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
+  document.getElementById("t-synth-prompt").addEventListener("click", function(e){ openSynthesisPrompt(motionSourceFromEvent(e)); });
+  document.getElementById("synth-send").addEventListener("click", function(e){ submitSelectedSynthesis(motionSourceFromEvent(e)); });
+  document.getElementById("synth-cancel").addEventListener("click", closeSynthesisPrompt);
+  document.getElementById("synth-close").addEventListener("click", closeSynthesisPrompt);
+  document.getElementById("synth-text").addEventListener("input", updateSynthesisPromptState);
+  document.getElementById("synth-text").addEventListener("keydown", function(e){
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); submitSelectedSynthesis("keyboard"); }
+    else if (e.key === "Escape"){ closeSynthesisPrompt(); }
+  });
+  document.addEventListener("rh-selection-change", updateSelectedSynthesisUi);
   document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
   document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
   document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
+  document.getElementById("sm-json").addEventListener("click", onExportSnapshotJson);
   document.getElementById("sm-portable").addEventListener("click", onExportPortable);
+  document.getElementById("sm-synth-selected").addEventListener("click", function(e){
+    closeShare();
+    openSynthesisPrompt(motionSourceFromEvent(e));
+  });
   document.getElementById("sm-synth").addEventListener("click", function(e){
     closeShare();
     synthesize(motionSourceFromEvent(e));
@@ -81,6 +99,7 @@ export function initBranchSurfaces(){
     hideConfirm();
     if (node) deleteBranch(node);
   });
+  updateSelectedSynthesisUi();
 }
 
 export function hidePeek(){
@@ -136,8 +155,13 @@ export function toggleShare(anchor){
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-json").style.display = frozen ? "none" : "";
     document.getElementById("sm-portable").style.display = (!frozen && typeof branchHooks.exportPortable === "function") ? "" : "none";
+    var selected = selectedCanvasNodes();
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth-selected").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth-selected").disabled = selected.length < 2;
+    document.getElementById("sm-synth-selected").querySelector(".sm-ic").textContent = selected.length >= 2 ? String(selected.length) : "◫";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var r = anchor.getBoundingClientRect();
     shareMenu.style.left = Math.min(window.innerWidth - shareMenu.offsetWidth - 10, Math.max(10, r.right - shareMenu.offsetWidth)) + "px";
@@ -211,6 +235,15 @@ export function closeShare(){
 	      flashHint("Couldn't prepare the snapshot.");
 	    });
 	  }
+  function onExportSnapshotJson(){
+    closeShare();
+    flashHint("Preparing session JSON...");
+    downloadSnapshotJson().then(function(){
+      flashHint("Session JSON downloading.");
+    }, function(){
+      flashHint("Couldn't prepare the session JSON.");
+    });
+  }
   function onExportPortable(){
     closeShare();
     if (typeof branchHooks.exportPortable !== "function"){
@@ -243,6 +276,106 @@ export function synthesize(source){
     var kid = sendFollowup(root, q, null, true);
     if (mode === "canvas") revealNode(kid, source);
     flashHint("✦ Synthesizing this journey — it will appear as a branch of the root document.");
+  }
+
+  function hasPendingSynthesis(){
+    for (var k in nodes){
+      var n = nodes[k];
+      if (n.status === "pending" && n.origin && n.origin.synthesis) return n;
+    }
+    return null;
+  }
+
+  function updateSelectedSynthesisUi(){
+    var selected = selectedCanvasNodes();
+    var btn = document.getElementById("t-synth-prompt");
+    var count = document.getElementById("t-synth-count");
+    if (count) count.textContent = String(selected.length);
+    if (btn) btn.disabled = closed || selected.length < 2;
+    var panel = document.getElementById("synth-panel");
+    if (panel && panel.classList.contains("visible")){
+      var sc = document.getElementById("synth-count");
+      if (sc) sc.textContent = String(selected.length);
+      updateSynthesisPromptState();
+      if (selected.length < 2) closeSynthesisPrompt();
+    }
+  }
+
+  function openSynthesisPrompt(source){
+    if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
+    var selected = selectedCanvasNodes();
+    if (selected.length < 2){ flashHint("Select at least two nodes on the canvas first."); return; }
+    var pending = hasPendingSynthesis();
+    if (pending){
+      flashHint("A synthesis is already being written…");
+      goToNode(pending, source);
+      return;
+    }
+    var panel = document.getElementById("synth-panel");
+    var count = document.getElementById("synth-count");
+    var text = document.getElementById("synth-text");
+    if (count) count.textContent = String(selected.length);
+    if (text && !text.value.trim()) text.value = "Synthesize only these nodes: connect them into one coherent argument, remove repetition, and close with practical next steps.";
+    panel.classList.add("visible");
+    updateSynthesisPromptState();
+    if (text) text.focus();
+  }
+
+  function closeSynthesisPrompt(){
+    var panel = document.getElementById("synth-panel");
+    if (panel) panel.classList.remove("visible");
+  }
+
+  function updateSynthesisPromptState(){
+    var selected = selectedCanvasNodes();
+    var text = document.getElementById("synth-text");
+    var send = document.getElementById("synth-send");
+    if (send) send.disabled = selected.length < 2 || !text || !text.value.trim();
+  }
+
+  function submitSelectedSynthesis(source){
+    var text = document.getElementById("synth-text");
+    var prompt = text ? text.value.trim() : "";
+    if (!prompt){ updateSynthesisPromptState(); return; }
+    synthesizeSelected(source, prompt);
+    closeSynthesisPrompt();
+    if (text) text.value = "";
+  }
+
+  function selectedNodeMarkdown(n, index){
+    var body = (n.md || "").trim();
+    if (body.length > 8000) body = body.slice(0, 8000).trimEnd() + "\n\n[truncated]";
+    return "## Source " + index + ": " + (n.title || "Untitled") + "\n\n" +
+      "Node ID: " + n.id + "\n\n" +
+      (body || "_(no markdown content)_");
+  }
+
+  function synthesizeSelected(source, prompt){
+    if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
+    var root = nodes[rootId];
+    if (!root) return;
+    var pending = hasPendingSynthesis();
+    if (pending){
+      flashHint("A synthesis is already being written…");
+      goToNode(pending, source);
+      return;
+    }
+    var selected = selectedCanvasNodes();
+    if (selected.length < 2){
+      flashHint("Select at least two nodes on the canvas first.");
+      return;
+    }
+    var sourceText = selected.map(function(n, i){ return selectedNodeMarkdown(n, i + 1); }).join("\n\n---\n\n");
+    if (sourceText.length > 30000) sourceText = sourceText.slice(0, 30000).trimEnd() + "\n\n[remaining selected-node content truncated]";
+    var q = "Synthesize ONLY the selected Rabbithole nodes below. Do not summarize unrelated nodes.\n\nHuman synthesis prompt:\n" + prompt + "\n\nSelected source nodes:\n\n" + sourceText;
+    var kid = sendFollowup(root, q, null, true, {
+      title: "Selected synthesis",
+      selectedText: "Synthesis requested from " + selected.length + " selected nodes.",
+      synthesisSources: selected.map(function(n){ return n.id; })
+    });
+    clearCanvasSelection();
+    if (mode === "canvas") revealNode(kid, source);
+    flashHint("✦ Synthesizing " + selected.length + " selected nodes.");
   }
 
   // ===========================================================================

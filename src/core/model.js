@@ -97,6 +97,9 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   const question = String(payload.question ?? "").trim();
   const lens = normalizeLens(payload.lens);
   const synthesis = payload.synthesis === true;
+  const synthesisSources = Array.isArray(payload.synthesis_sources)
+    ? payload.synthesis_sources.map((id) => String(id).slice(0, 128)).filter(Boolean)
+    : null;
   const anchor = normalizeAnchor(payload.anchor);
   const branchType = normalizeBranchType(payload.branch_type, selectedText);
   const inheritedBase = inheritedNodeBaseUrl(parent);
@@ -109,7 +112,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
     markdown: "",
     base_url: inheritedBase.base_url,
     base_url_source: inheritedBase.base_url_source,
-    origin: { selected_text: selectedText, question, lens, synthesis, anchor, branch_type: branchType },
+    origin: { selected_text: selectedText, question, lens, synthesis, synthesis_sources: synthesisSources, anchor, branch_type: branchType },
     position: normalizePosition(payload.position),
     size: normalizeSize(payload.size),
     font_scale: 1,

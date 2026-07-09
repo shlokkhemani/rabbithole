@@ -184,6 +184,24 @@ function exportFilename(title) {
   return "rabbithole-" + (slug || "export") + ".html";
 }
 
+function exportJsonFilename(title) {
+  var slug = String(title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return "rabbithole-" + (slug || "export") + ".json";
+}
+
+export function buildSnapshotJson(snapshotHydration) {
+  return {
+    format: "rabbithole-session-json",
+    format_version: 1,
+    exported_at: new Date().toISOString(),
+    session: snapshotHydration
+  };
+}
+
 export async function downloadSnapshot() {
   var snapshotHydration = await buildSnapshotHydration();
   var html = buildSnapshotHtml(snapshotHydration);
@@ -197,4 +215,20 @@ export async function downloadSnapshot() {
   document.body.removeChild(a);
   setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
   return html;
+}
+
+export async function downloadSnapshotJson() {
+  var snapshotHydration = await buildSnapshotHydration();
+  var payload = buildSnapshotJson(snapshotHydration);
+  var json = JSON.stringify(payload, null, 2) + "\n";
+  var blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = exportJsonFilename(snapshotHydration.title);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  return payload;
 }

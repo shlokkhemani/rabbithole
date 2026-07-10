@@ -15,7 +15,7 @@
     "build:publish": "node scripts/build-publish.mjs",
     "check:dist": "node scripts/check-dist.mjs",
     "check:purity": "node scripts/check-ui-purity.mjs",
-    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7 && npm run test:stage8 && npm run test:stage9 && npm run test:stage9-idb && npm run test:stage10 && npm run test:stage11 && npm run test:stage12",
+    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7 && npm run test:stage8 && npm run test:stage9 && npm run test:stage9-idb && npm run test:stage10 && npm run test:stage11 && npm run test:stage12 && npm run test:stage13",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
     "test:stage3": "node test/stage3-base-url-verify.mjs",
@@ -29,6 +29,7 @@
     "test:stage10": "node test/stage10-web-verify.mjs",
     "test:stage11": "node test/fetch-proxy-worker-verify.mjs && node test/stage11-web-ingest-verify.mjs",
     "test:stage12": "node test/stage12-portability-verify.mjs",
+    "test:stage13": "node test/stage13-obsidian-export-verify.mjs",
     "eval": "node test/evals/run-eval.mjs"
   },
   "keywords": [
@@ -41,7 +42,8 @@
     "agent"
   ],
   "bin": {
-    "rabbithole-mcp": "./bin/mcp-server.js"
+    "rabbithole-mcp": "./bin/mcp-server.js",
+    "rabbithole-export": "./bin/export.js"
   },
   "files": [
     "bin",

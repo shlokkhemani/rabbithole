@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
 import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } from "../fs-store.js";
+import { maybeAutoSyncHole } from "../vault-export.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/reducer.js";
@@ -478,6 +479,7 @@ export class RabbitHoleSession {
     this.savingChain = this.savingChain
       .catch(() => {})
       .then(() => defaultFsStore.saveHole(snapshot))
+      .then(() => maybeAutoSyncHole(snapshot.hole_id))
       .catch((err) => logError(`Save failed: ${err.message}`));
     return this.savingChain;
   }

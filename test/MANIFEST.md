@@ -177,7 +177,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
-| all corpus fixtures are normalized fixed points and export-idempotent | C1 | Protects portable migration, assets, durable asks, and filesystem persistence across repeated import/export projections. | Data: portable compatibility; `schema_version: null`; unicode/emoji/RTL; very wide holes; durable asks per host semantics |
+| all corpus fixtures are normalized fixed points and export-idempotent | C1 | Protects portable migration, assets, durable asks, and filesystem persistence across repeated import/export projections. Exports are anchored to the source file (not merely to each other), so a field silently dropped by the export path cannot cancel out; the two legacy fixtures are exempt from source-anchoring because import deliberately migrates them. | Data: portable compatibility; `schema_version: null`; unicode/emoji/RTL; very wide holes; durable asks per host semantics |
 | import collision mints a fresh hole_id and preserves content | C1 | Protects collision-safe identity generation without content or asset loss. | Data: import ID collision |
 
 ## `stage14-reducer-conformance.mjs`
@@ -276,6 +276,16 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 - Removed deployed provider IDs `anthropic` and `openai` are not migrated: `presetFor()` silently selects OpenRouter behavior while `rh-web-settings.preset` keeps the stale ID and historical endpoint/model fields stay stored, incompatible with the selected provider. Phase 3's settings slice must ship an explicit provider-ID migration. Pinned as C4 in stage15.
 - The legacy single `rh-web-api-key` remains usable as the OpenRouter fallback but is never migrated into the `rh-web-api-keys` map — there is no canonical rewrite pass on load. Phase 3 must resolve alongside the provider-ID migration. Covered by stage15's single-key-era fixture.
 - `base64ToBlob()` (`src/web/portable.js`) creates an untyped Blob, so a directly imported asset snapshots to an `application/octet-stream` data URL that the frozen image sanitizer rejects. Typed asset handling lands with the store port (Phase 5) / artifact unification (Phase 7). Pinned as C4 in stage15.
+
+## Smoke-detector proof (Phase 1 exit criterion)
+
+Run at commit 0853e1b (2026-07-10): five deliberate regressions, one per instrument class, each planted in `src/` and reverted after the verdict.
+
+- Reducer semantics (node_progress append instead of replace) → **caught** by stage14 goldens.
+- Export field drop (`font_scale` removed from the persisted projection) → **initially missed**: the round-trip test compared exports only against other exports, so the drop cancelled out. Fixed by anchoring `export(import(source))` to the source file; the re-planted regression now fails on the first fixture.
+- Sanitizer loosening (event handlers allowed through show fences) → **caught** by stage15.
+- Theme restoration ignored on load → **caught** by stage15's migration fixtures.
+- 100 KiB bundle bloat → **caught** by stage16's `bundle_client_bytes` ceiling.
 
 ## Gap analysis
 

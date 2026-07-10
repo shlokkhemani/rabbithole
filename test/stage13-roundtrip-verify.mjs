@@ -40,11 +40,24 @@ function normalized(payload) {
   return copy;
 }
 
+// Fixtures 10 and 11 are legacy-era shapes whose import deliberately migrates
+// them to the modern schema, so export cannot reproduce their source bytes.
+// Their modern projection is still pinned by the exported2/exported3
+// idempotence assertions below.
+const MIGRATION_FIXTURES = new Set(["10-schema-null-legacy.rabbithole", "11-v02-legacy.rabbithole"]);
+
 for (const name of fixtureNames) {
   const text = await fs.readFile(new URL(name, corpusDir), "utf8");
   const first = await storeAt("first");
   const imported1 = await importRabbitholeFile(first.store, text);
   const exported1 = await buildRabbitholeExport(first.store, imported1.hole_id);
+  // Anchor the projection to the source file, not merely to itself: comparing
+  // exports against exports lets a field silently dropped by the export path
+  // cancel out on both sides (proven by a smoke-detector probe).
+  if (!MIGRATION_FIXTURES.has(name)) {
+    assert.deepEqual(normalized(exported1), normalized(JSON.parse(text)),
+      `${name}: export(import(source)) must reproduce the source file without dropping or rewriting fields`);
+  }
 
   const second = await storeAt("second");
   const imported2 = await importRabbitholeFile(second.store, JSON.stringify(exported1));

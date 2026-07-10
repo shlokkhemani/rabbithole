@@ -1,7 +1,7 @@
 # THESEUS — replacing the engine mid-flight
 
 **The plan for rebuilding Rabbithole into its from-scratch ideal, shipped as a sequence of invisible engine swaps.**
-**Version 2.1 — approved for execution.** v2 corrected the five P0 findings from adversarial review (baseline governance, TypeScript packaging, orchestrator boundary, title protocol, forward-compatible learner state); v2.1 applies the four final pre-flight amendments (normative bridge release, store wording, settings deletion target, test-case-level classification). Amendments to this document go through Part VII's decisions table.
+**Version 2.2 — approved for execution.** v2 corrected the five P0 findings from adversarial review (baseline governance, TypeScript packaging, orchestrator boundary, title protocol, forward-compatible learner state); v2.1 applies the four final pre-flight amendments (normative bridge release, store wording, settings deletion target, test-case-level classification); v2.2 adds the evergreen-hygiene amendment (Rule 10, D9, the Phase 9 remnant audit) — this is a public, evergreen open-source codebase, and migration scaffolding must not outlive its phase. Amendments to this document go through Part VII's decisions table.
 
 This document designs the system we would build if we were starting from zero — unburdened by the existing code, bound absolutely by the existing product — and then sequences the rebuild so that a user on rabbithole.ing, a reader of a frozen snapshot, and an agent mid-session over MCP never notice that the plane they're flying in has been rebuilt around them.
 
@@ -11,7 +11,7 @@ This document designs the system we would build if we were starting from zero �
 
 ## Part I — Philosophy
 
-Nine rules govern every phase. When a phase decision is ambiguous, these break the tie, in order.
+Ten rules govern every phase. When a phase decision is ambiguous, these break the tie, in order.
 
 1. **Every commit flies.** `main` is always shippable and deployed. There is no rewrite branch, no integration hell, no "big merge." Every phase is a strangler move: build the new organ beside the old, wire it in behind identical behavior, prove parity, delete the old organ. If a phase can't land in shippable slices, the phase is designed wrong.
 2. **The data is the program.** Code is disposable; formats are forever. A `.rabbithole` file or frozen snapshot minted today must open in the final system and in every intermediate system. The persisted schema is the most important interface in the product; it changes last, most carefully, only with migrations proven against a fixture corpus — and *device-local preferences and credentials are user data too* (see the compatibility matrix).
@@ -22,6 +22,7 @@ Nine rules govern every phase. When a phase decision is ambiguous, these break t
 7. **Do the riskiest part of each phase first.** Prove the scary bit with a spike before building the comfortable scaffolding around it. Where this plan asserts an architectural unification (shared orchestration, unified content types), the unification is a *hypothesis the spike tests*, never a mandate the code must obey.
 8. **When in doubt, measure.** Disagreements about regressions are settled by the parity harness and the budgets — with tolerances, not zealotry. Budgets ratchet: the measured current value becomes the ceiling, and worsening it requires an explicit, recorded trade-off.
 9. **Invisible engine, visible craft.** Engine and data swaps must be imperceptible. Interface improvements must NOT be — they are deliberate, designed against the experience standard (Part III), reviewed in a real browser, and allowed to be seen. A flawless refactor that perfectly preserves an awkward settings panel has failed half its mission.
+10. **Evergreen, not excavated.** This is a public open-source codebase, not a migration diary — a reader cloning the repo after Phase 9 should find no archaeology. Phase-transitional scaffolding (parallel old organs past their parity window, migration shims, temporary flags, phase-labeled comments) is debt the moment its phase exits, and each phase removes its own. Test instruments live in `test/`; shipped source may expose at most **one small, documented test seam**, each entry justified by a flow that genuinely cannot be driven through the product's real surface — undocumented ad-hoc `*ForTest` hooks are forbidden from here on (existing ones are D9). C4 known-defect tripwires retire in the phase that fixes their defect; the scenario manifest carries no stale rows past a phase exit.
 
 ---
 
@@ -289,7 +290,7 @@ Eleven phases. Each names **Goal · Build · Wire-in · Delete · Exit criteria 
 
 ### Phase 9 — The refactor audit *(S–M, low risk)*
 
-**Goal:** certify the swap before new capabilities muddy attribution. **Verify:** deletion ledger complete or explicitly deferred; dead-code sweep; budgets ratcheted where phases banked improvements; accessibility pass over the manifest; packaging audit (`npx` on Node 18/20, publish contents, `check:dist`/`check:purity` green); security review of import paths; the end-to-end: author over MCP → open on web → branch with BYOK → snapshot → import → export `.rabbithole` → reopen over MCP with rehydration — one hole, no seams; and the temporal test: a v0.1-era hole flies the whole journey. **Exit:** all green; the refactor is *done* and declared so.
+**Goal:** certify the swap before new capabilities muddy attribution. **Verify:** deletion ledger complete or explicitly deferred; dead-code sweep; **the remnant audit (Rule 10): grep-verifiable absence of `*ForTest` hooks, phase-labeled scaffolding, temporary flags, and migration shims in shipped source (`src/`, `bin/`, `dist/`); the one test seam reviewed entry-by-entry with each entry's justification recorded; C4 tripwires all retired or still guarding a live defect; the scenario manifest free of stale rows**; budgets ratcheted where phases banked improvements; accessibility pass over the manifest; packaging audit (`npx` on Node 18/20, publish contents, `check:dist`/`check:purity` green); security review of import paths; the end-to-end: author over MCP → open on web → branch with BYOK → snapshot → import → export `.rabbithole` → reopen over MCP with rehydration — one hole, no seams; and the temporal test: a v0.1-era hole flies the whole journey. **Exit:** all green; the refactor is *done* and declared so.
 
 ### Phase 10 — The product roadmap *(ongoing — visible by design)*
 
@@ -311,6 +312,7 @@ Now the features, with clean attribution:
 | D6 | Split fence/visual registries; hardcoded `VISUAL_FENCE_LANGUAGES`; contract speculation invalidated by the first primitive | Phase 8 |
 | D7 | Everything the audit sweep finds dead | Phase 9 |
 | D8 | Bespoke single-shot delete-undo plumbing (re-backed by history) | Phase 10 |
+| D9 | Ad-hoc test scaffolding in shipped source: the `window.__rhWebApp` grab-bag (store exposure + eight `*ForTest` methods, `src/web/app.js:1728-1742`) and `readRawHoleForTest`/`writeRawHoleForTest` (`src/web/store/idb-store.js:206,214`) — consolidated into the one documented test seam or replaced by driving the real surface; no new ad-hoc hooks from v2.2 onward (Rule 10) | Consolidated as touched in Phases 3–7; ledger proven empty by the Phase 9 remnant audit |
 
 ## Part VI — The scenario ledger
 
@@ -343,6 +345,7 @@ Each maps to an instrument; new scenarios are added here first, instrumented, th
 | **Portable `.rabbithole` backups: include progress, offer an option, or sidecar file?** | **open** | export ≠ share — a portable file may be a personal backup or device transfer; decided before the first stateful primitive ships |
 | **Learning primitives are hydratable blocks** | **provisional** | finalized by the Phase 8 retrospective |
 | MCP wire protocol frozen, additive-only | settled | major version with explicit CLI migration |
+| **Evergreen hygiene: each phase removes its own scaffolding at exit; shipped source carries at most one documented test seam; no new ad-hoc `*ForTest` hooks (v2.2 amendment)** | settled | Phase 9 remnant audit proves the ledger empty; violations block the offending phase's exit |
 | Where this plan is tracked | settled — public `docs/architecture/THESEUS.md`, versioned beside the code it governs | — |
 
 ---

@@ -1,0 +1,238 @@
+# Scenario-to-test manifest
+
+This manifest classifies each logical test case, not each assertion. Categories are: **C1 compatibility contract** (external formats, wire protocols, migrations), **C2 behavioral product contract** (user-visible behavior changed only intentionally), **C3 implementation snapshot** (migration-disposable implementation detail), **C4 known defect** (a tripwire for behavior intended to be replaced), and **C5 design target** (new intended behavior written ahead of implementation). C4 cases are deliberately marked so they never become golden truth. Update this file whenever a test case is added, removed, split, renamed, or materially changed.
+
+Scenario references use the Part VI group and shortened ledger wording. `—` means the case protects behavior outside the current ledger. Cases in the unwired eval are inventoried even though `npm test` does not run them.
+
+## `stage1-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| all four math delimiters | C2 | Defines supported math syntax. | Rendering: KaTeX parse errors (happy-path side) |
+| inline dollar boundary rules reject prices and spacing | C2 | Protects user-visible math parsing rules. | — |
+| code spans shield dollars | C2 | Protects markdown/code interaction. | — |
+| highlight known languages and keep unknown plain | C2 | Defines highlighting and fallback behavior. | Rendering: unknown fence language |
+| math inside lists and blockquotes | C2 | Protects composed markdown rendering. | — |
+| bad TeX falls back to source code | C2 | Defines recoverable inline math errors. | Rendering: KaTeX parse errors |
+| unclosed display math is pending and source is held | C2 | Defines streaming-pending presentation. | Rendering: unclosed fence mid-stream (math analogue) |
+| raw HTML remains escaped | C2 | Protects rendered-content safety. | Rendering: injection via imported/rendered payloads (raw-HTML subset) |
+| live/export page assembly and KaTeX bundling | C3 | Pins bundling counts, hydration keys, and transport strings rather than only semantics. | Rendering: frozen viewing fully offline (structural evidence only) |
+
+## `stage2-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| visual placeholders, pending show/math, raw HTML escaping | C2 | Defines visible pending and safe markdown behavior. | Rendering: unclosed fence mid-stream; injection via fences/imported payloads (raw-HTML subset) |
+| visual mount identity/cache pruning | C3 | Pins the current cache-and-replace implementation. | — |
+| visual sanitizer policy and leading styles | C2 | Protects the `show` security policy and allowed styling. | Rendering: injection via fences/imported payloads (live path) |
+| DOMPurify/page assembly order and script parse | C3 | Pins one-script assembly and library placement. | — |
+
+## `stage3-base-url-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| explicit markdown URL resolution and sanitizer gates | C2 | Defines link/image resolution and unsafe-URL rejection. | Rendering: injection via fences/imported payloads (URL subset) |
+| GitHub image raw rewrite | C2 | Protects user-visible GitHub rendering/link behavior. | — |
+| frontmatter inference and precedence | C2 | Defines source/base URL semantics. | — |
+| child inheritance, streaming fallback, frontmatter upgrade | C2 | Protects base URLs across branch streaming. | — |
+| legacy resume backfill persists inferred fields | C1 | A persisted legacy document migration must remain readable and idempotent. | Migration/deploy: new code, old storage/idempotent migrations (filesystem projection) |
+| MCP tool validation rejects invalid `base_url` | C1 | Protects the public MCP input boundary. | Migration/deploy: CLI version skew (validation compatibility subset) |
+
+## `stage4-assets-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| asset storage copy/overwrite/delete and validation | C1 | Protects persisted asset operations and the 20 MB limit. | Data: 20MB asset boundary (over-limit side only); malformed JSON/base64 (asset-name/path subset only) |
+| markdown asset images/link rejection/base isolation | C2 | Defines visible asset-reference rendering. | Data: missing asset (rejection behavior, not frozen `data:,` fallback) |
+| MCP asset manifest validation | C1 | Protects public tool shapes and validation. | Migration/deploy: CLI version skew (additive-wire subset) |
+| asset route safety, export inlining, and SSE progress | C1 | Spans live routes, portable frozen assets, and MCP event payloads. | Rendering: frozen viewing fully offline (structural); Generation: durable streaming wire (happy path) |
+
+## `stage5-pdf-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| PDF happy path: staged PNGs, manifest, and text | C2 | Protects the PDF-ingest product flow. | — |
+| PDF page range and `include_text=false` | C2 | Defines user-facing ingest options. | — |
+| staged assets adopted by `open_rabbithole` | C1 | Protects MCP staging and adoption contracts. | — |
+| direct `hole_id` ingestion | C1 | Protects direct persisted asset ingestion. | — |
+| invalid PDF/path/ingest/range/hole-id rejection | C1 | Protects trust-boundary validation. | Data: malformed JSON/base64 (malformed-input analogue only) |
+| optional real-paper performance/quality probe | C3 | Environment-specific timing/size observations have no enforced budget. | Data: very large holes (weak proxy only) |
+
+## `stage6-image-ux-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| plain markdown images and show placeholders | C2 | Defines which images receive document image UX. | — |
+| served/export image UX source and CSS sentinels | C3 | Searches function names, formulas, zoom constants, and selectors rather than behavior. | Rendering: dark parity (CSS-presence subset only) |
+
+## `stage7-rearm-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| keep-listening shape, grace, live reattach, waiter cleanup | C1 | Protects frozen MCP lifecycle responses and reattachment. | Migration/deploy: CLI version skew; Generation: abort mid-stream (MCP waiter cancellation only) |
+| saved pending ask requeues once after resume | C1 | Protects MCP durable-ask/rehydration semantics. | Generation: error mid-stream → durable ask per host semantics (MCP re-ask behavior, without inducing an error) |
+
+## `stage8-md-wire-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| renderer fixture: math | C2 | Protects shared math output. | Rendering: KaTeX parse errors (happy-path side) |
+| renderer fixture: code | C2 | Protects shared code highlighting. | — |
+| renderer fixture: show fence | C2 | Protects shared hydratable-block placeholders. | — |
+| renderer fixture: asset reference | C2 | Protects shared asset URL resolution. | — |
+| renderer fixture: hostile raw HTML | C2 | Protects raw-HTML escaping. | Rendering: injection via fences/imported payloads (raw-HTML subset) |
+| renderer fixture: JavaScript links | C2 | Protects unsafe-link stripping. | Rendering: injection via fences/imported payloads (URL subset) |
+| browser-bundle renderer sentinel | C3 | Pins a literal implementation marker. | — |
+| markdown-only hydration/SSE and absence of `contentHtml` | C3 | Pins the current projection/event representation. | — |
+| MCP tool response shapes and late-answer closure | C1 | Protects public MCP response/event shapes. | Migration/deploy: CLI version skew |
+| partial-to-final streaming accumulation | C2 | Protects observable streaming completion. | Generation: durable streaming happy path |
+| frozen export assets and renderer capabilities | C2 | Protects frozen rendering of math/code/show/assets. | Rendering: frozen viewing fully offline (structural evidence only) |
+
+## `stage9-store-contract.mjs` (filesystem store)
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| hole save/load/list/delete and schema stamping | C1 | Defines the filesystem store contract. | — |
+| v0.2 fixture migrates, saves, reloads as schema v1 | C1 | Protects persisted legacy migration. | Migration/deploy: new code, old storage/idempotent migrations (filesystem) |
+| asset put/get/list/delete | C1 | Defines persisted asset operations. | — |
+| staging create/put/adopt | C1 | Defines PDF staging operations. | — |
+| bad IDs/names/traversal rejected | C1 | Protects storage trust boundaries. | — |
+| shared asset GC and final-reference deletion | C2 | Protects deletion asset semantics. | — |
+
+## `stage9-idb-store-contract.mjs` (IndexedDB store)
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| hole save/load/list/delete and schema stamping | C1 | Defines the browser store contract. | — |
+| v0.2 fixture migrates, saves, reloads as schema v1 | C1 | Protects old IndexedDB data under new code. | Migration/deploy: new code, old IndexedDB/idempotent migrations |
+| asset put/get/list/delete | C1 | Defines browser binary-asset operations. | — |
+| staging create/put/adopt | C1 | Defines browser PDF staging operations. | — |
+| bad IDs/names/traversal rejected | C1 | Protects browser storage trust boundaries. | — |
+| shared asset GC and final-reference deletion | C2 | Protects deletion asset semantics. | — |
+
+`support/store-contract.mjs` is an unwired helper, not an independently executed suite; its six exported cases are the six rows instantiated for each Stage 9 backend above.
+
+## `stage10-web-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| calm landing, three-path composer, path copy, dismiss-without-create | C2 | Protects first-run navigation and empty state. | — |
+| blank-state centering and composer initial focus | C2 | Protects visible placement and initial keyboard focus. | Chrome: keyboard-only completion (small opening/closing subset) |
+| warm re-entry, hash precedence, rail delete fallback | C2 | Protects saved-hole navigation and recovery. | — |
+| first ask key validation and streamed root creation | C2 | Protects BYOK first-run streaming behavior. | Generation: 401/403 (pre-stream validation only); title never arrives (non-sentinel root title path only) |
+| rail content/geometry exact values | C4 | Pins per-screen magic CSS values Phase 2 intends to replace with tokens. | — |
+| credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
+| settings native provider select width/arrow/theme | C4 | Explicitly fossilizes the native select Phase 3 replaces. | — |
+| provider switch, local model field, OpenRouter picker | C4 | Pins bespoke controls and provider id `custom` that Phase 3 replaces/migrates. | Chrome: Combobox catalogs (successful catalog only); settings during active stream (no active stream) |
+| session-only key opt-out | C2 | Protects credential persistence choice. | Data: preference/credential storage (current behavior only) |
+| settings trigger/panel exact alignment and 14px surface geometry | C4 | Pins per-surface positioning and magic values targeted by Phases 2–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| live math/code/show document rendering | C2 | Protects core authoring rendering. | — |
+| share popover exact surface/padding/anchor geometry | C4 | Pins bespoke surface CSS and positioning targeted by Phases 2–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
+| reader whole-document follow-up | C2 | Protects document chat branching. | — |
+| streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
+
+## `fetch-proxy-worker-verify.mjs` (run by Stage 11)
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| reject non-GET requests | C2 | Defines relay access policy. | — |
+| reject unallowlisted hosts | C2 | Defines relay host policy. | — |
+| strip request/response credentials and preserve CORS/content | C2 | Protects proxy security behavior. | — |
+| enforce streaming 25 MB response cap | C2 | Protects resource limits while streaming. | — |
+
+## `stage11-web-ingest-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| browser PDF ingest is local and stores rendered pages/text | C2 | Protects offline browser PDF ingestion. | — |
+| arXiv direct-fetch failure falls back to configured proxy | C2 | Protects URL/arXiv recovery behavior. | — |
+| dead proxy produces actionable recovery copy | C2 | Protects designed ingest failure recovery. | — |
+| relay rejection produces arXiv-specific guidance | C2 | Protects designed unsupported-host recovery. | — |
+
+## `stage12-portability-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| shell/settings polish including native select width | C4 | Repeats the native-select and magic-width fossil targeted by Phase 3. | — |
+| improve-structure invokes author stream once | C2 | Protects document authoring generation. | — |
+| PDF-backed `.rabbithole` export shape and credential exclusion | C1 | Protects the portable format and secret isolation. | Data: preference/credential storage (isolation only) |
+| rail export filename | C2 | Protects user-visible download behavior. | — |
+| portable import recreates document and binary asset | C1 | Protects cross-context portable import/export. | Data: import ID collision (fresh import only; no collision) |
+| publish artifact files, redirects, and public copy | C1 | Protects deployment/package website output and URLs. | Migration/deploy: URLs/deploy compatibility (outside the four named ledger cases) |
+
+## Unwired: `evals/run-eval.mjs`
+
+These live-provider eval cases run only through `npm run eval`; their regex/heuristic scoring makes them behavioral probes, not deterministic golden masters.
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| `math_derivation` | C2 | Evaluates useful, parseable math output. | Rendering: KaTeX parse errors (generated-source side) |
+| `diagram_show` | C2 | Evaluates safe generated `show` content. | Rendering: injection via fences (generated-output side) |
+| `eli5_lens` | C2 | Evaluates ELI5 lens behavior. | — |
+| `example_lens` | C2 | Evaluates example lens behavior. | — |
+| `deeper_lens` | C2 | Evaluates deeper lens behavior. | — |
+| `code_explain` | C2 | Evaluates code-aware answers. | — |
+| `empty_followup` | C2 | Evaluates a follow-up with empty selection, not an empty provider answer. | — |
+| `synthesis` | C2 | Evaluates synthesis across nodes. | — |
+| `long_doc_pack` | C2 | Evaluates answer length on a long context. | Data: very large holes (content-quality proxy only) |
+| `title_sentinel` | C3 | Pins the current sentinel protocol Phase 6 contains and may later retire. | Generation: title never arrives (success side only) |
+| `hostile_selection` | C2 | Evaluates safety under prompt-like selected text. | Rendering: injection via imported payloads (model-output side only) |
+| `plain_factual` | C2 | Evaluates baseline factual response quality. | — |
+
+## Counts
+
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both.
+
+| Category | Count |
+|---|---:|
+| C1 compatibility contract | 25 |
+| C2 behavioral product contract | 58 |
+| C3 implementation snapshot | 8 |
+| C4 known defect | 6 |
+| C5 design target | 0 |
+| **Total** | **97** |
+
+## Known-defect fossils
+
+- `stage10-web-verify.mjs:235-260` requires a native `<select>`, measures label-dependent width and label-to-arrow spacing, and checks native option theming. This is the exact Phase 3 native-select fossil.
+- `stage10-web-verify.mjs:261-285` requires the bespoke local text input and OpenRouter picker and persists provider id `custom`; Phase 3 replaces these controls and includes provider-id migration.
+- `stage12-portability-verify.mjs:182-191` independently requires the native provider `<select>` and an exact OpenRouter-label width band.
+- `stage10-web-verify.mjs:179-224` pins rail padding (`12px`, `7px`, `8px`), bottom gap (`14px`), and width (`<=226px`): per-screen magic design values Phase 2 intends to centralize.
+- `stage10-web-verify.mjs:336-379` pins settings alignment, edge fallback, toolbar gap, and optical SVG offsets; `stage10-web-verify.mjs:408-445` pins share surface equality and exact shell/item padding. These fossilize bespoke anchoring/surface geometry that Phases 2–4 replace.
+- No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
+
+## Gap analysis
+
+### Scenario-ledger entries with no covering test
+
+“No covering test” means no case directly drives the stated scenario end to end; happy-path, structural, or analogous checks noted in tables do not count. Ordered by the phase that first needs the gap.
+
+**Phase 1 — instruments/data/security baseline**
+
+- Data: future `format_version` clear refusal; `schema_version: null` legacy backfill; exact 20 MB asset boundary generated in-test; malformed portable JSON/base64; unicode/emoji/RTL titles; genuinely very large holes with a budget; hand-edited snapshot payload runtime rejection; new-format document through an old build with extension-bag survival/refusal; preference/credential storage through every migration; export-vs-debounce timing per projection.
+- Rendering: fence/payload script, iframe, and handler injection exercised on both live and frozen paths; KaTeX parse failure with proof trusted MathML is not sanitizer-damaged; reduced motion; semantic dark parity; frozen viewer opened offline with zero fetches.
+- Migration/deploy: a real mid-session deploy (new code opening old IndexedDB, with migration rerun/idempotence); CLI version skew with an older CLI against additive wire changes; `npx` publish-install smoke on Node 18 and 20; a v0.1-era hole retained through Phase 9. (The IDB v0.2 fixture is useful migration coverage, but does not exercise deployment during a session.)
+
+**Phase 3 — settings vertical slice**
+
+- Chrome: focus restoration on every overlay close; Escape/outside-click ordering with stacked overlays; anchored surfaces at every viewport edge; keyboard-only completion of every manifest flow; settings opened/changed during an active stream; Combobox behavior for slow, failed, and empty catalogs.
+
+**Phase 6 — generation normalization**
+
+- Generation: real stream abort; error mid-stream with browser-partial persistence and MCP-partial dropping/re-ask; stale progress after newer `{id,seq}` progress; empty provider answer; missing title fallback; N concurrent streams; delete while streaming; provider/model switch mid-stream; 401/403 during a stream with prompt-and-retry closure; rate limits; tab close mid-stream bounded by the save budget.
+
+**Phase 7 — artifacts**
+
+- Data: actual import-ID collision producing a fresh ID; frozen missing-asset `data:,` fallback. These belong with Phase 1 fixtures but become release gates no later than artifact unification.
+
+### Part III instruments
+
+| Instrument | Assessment | Evidence / missing work | First needed |
+|---|---|---|---|
+| Fixture corpus | **Partially exists** | Small inline fixtures cover math, show, assets, PDFs, and one v0.2 migration; there is no curated ~20-file corpus, explicit `schema_version:null`, Unicode/RTL, deep lineage, both durable-ask semantics, or generated exact-boundary fixture. | Phase 1 |
+| Golden-master harness | **Partially exists** | Stage 8 calls renderer cases “golden,” but asserts substrings; Stage 10 asserts geometry. There are no per-node semantic DOM projections, targeted screenshots, volatile-field normalization, or reasoned bless workflow. | Phase 1 |
+| Round-trip property tests | **Partially exists** | Stage 12 performs one browser portable export/import example and compares a hand projection. No property generation, fixed points for every projection, repeated round trips, or normalization rules for timestamps/collision IDs. | Phase 1 |
+| Live/frozen parity harness | **Partially exists** | Stages 1/4/6/8 inspect both outputs and Stage 8 separately renders frozen content, but there is no per-content-type semantic equivalence harness. | Phase 1 |
+| Behavioral probes | **Partially exists** | Playwright covers composer, happy-path stream, settings basics, branching, ingestion, and portability; nearly all required stream/abort/retry, delete/undo/assets, mid-stream switching, focus, keyboard-only, and per-host durable-ask probes are missing. | Phase 1, expanded in Phases 3/6 |
+| Budget gauges with tolerances | **Missing** | Stage 1 prints CSS/page bytes and optional Stage 5 prints timing/size, while Stage 10 uses sleeps and hardcoded geometry; none records baseline ceilings with tolerances for rAF update count/duration, layout cost, snapshot bytes/build time, cold open, save window, or bundle sizes. | Phase 1 |

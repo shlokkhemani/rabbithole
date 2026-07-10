@@ -122,6 +122,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | first ask key validation and streamed root creation | C2 | Protects BYOK first-run streaming behavior. | Generation: 401/403 (pre-stream validation only); title never arrives (non-sentinel root title path only) |
 | rail content/geometry exact values | C4 | Pins per-screen magic CSS values Phase 2 intends to replace with tokens. | — |
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
+| web snapshot export ships an empty style block | C4 | Records that web-exported frozen HTML is unstyled (`snapshot.js` serializes the page's inline `<style>`, which the web build does not emit; the styled export path lives in the canvas host). Phase 7's snapshot boundary fixes this and retires the tripwire. | Data: snapshot export styling |
 | settings native provider select width/arrow/theme | C4 | Explicitly fossilizes the native select Phase 3 replaces. | — |
 | provider switch, local model field, OpenRouter picker | C4 | Pins bespoke controls and provider id `custom` that Phase 3 replaces/migrates. | Chrome: Combobox catalogs (successful catalog only); settings during active stream (no active stream) |
 | session-only key opt-out | C2 | Protects credential persistence choice. | Data: preference/credential storage (current behavior only) |
@@ -255,9 +256,9 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | C1 compatibility contract | 38 |
 | C2 behavioral product contract | 78 |
 | C3 implementation snapshot | 10 |
-| C4 known defect | 10 |
+| C4 known defect | 11 |
 | C5 design target | 0 |
-| **Total** | **136** |
+| **Total** | **137** |
 
 ## Known-defect fossils
 
@@ -276,6 +277,7 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 - Removed deployed provider IDs `anthropic` and `openai` are not migrated: `presetFor()` silently selects OpenRouter behavior while `rh-web-settings.preset` keeps the stale ID and historical endpoint/model fields stay stored, incompatible with the selected provider. Phase 3's settings slice must ship an explicit provider-ID migration. Pinned as C4 in stage15.
 - The legacy single `rh-web-api-key` remains usable as the OpenRouter fallback but is never migrated into the `rh-web-api-keys` map — there is no canonical rewrite pass on load. Phase 3 must resolve alongside the provider-ID migration. Covered by stage15's single-key-era fixture.
 - `base64ToBlob()` (`src/web/portable.js`) creates an untyped Blob, so a directly imported asset snapshots to an `application/octet-stream` data URL that the frozen image sanitizer rejects. Typed asset handling lands with the store port (Phase 5) / artifact unification (Phase 7). Pinned as C4 in stage15.
+- Web-exported frozen snapshots carry no styles at all: `buildSnapshotHtml()` (`src/ui/snapshot.js:145`) serializes the page's first inline `<style>`, which exists in the canvas host (`src/node/html/canvas.js:30-33` inlines `CANVAS_STYLES` + KaTeX) but not in the web build, whose CSS arrives via an external `<link>`. Discovered during Phase 2 slice B review when an attempted inline-style injection moved the snapshot byte gauge +51KB. Fix lands with the Phase 7 snapshot boundary (styled, self-contained web exports incl. KaTeX) plus a snapshot-budget recalibration. Pinned as C4 in stage10.
 
 ## Smoke-detector proof (Phase 1 exit criterion)
 

@@ -237,7 +237,8 @@ async function verifyAskKeyUxAndRail() {
     true,
     "Escape with the rail focused must close only the rail, not fall through to the canvas client's open-the-reader shortcut"
   );
-  assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), MOCK_KEY, "remembered key should stay local to this browser");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").openrouter), MOCK_KEY, "remembered key should stay in this browser's provider-key map");
+  assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "legacy single-key storage should stay retired");
   const snapshotHtml = await page.evaluate(() => window.__rhWebApp.exportSnapshotForTest());
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
   assert(
@@ -322,6 +323,7 @@ async function verifyAskKeyUxAndRail() {
   await sessionPage.fill("#composer-key", MOCK_KEY);
   await waitForCanvasText(sessionPage, "This root verifies session-only storage");
   assert.equal(await sessionPage.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "opting out of remember must keep the key out of localStorage");
+  assert.equal(await sessionPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").openrouter), undefined, "opting out of remember must keep the provider-key map clean");
   await sessionContext.close();
 }
 

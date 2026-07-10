@@ -70,12 +70,12 @@ async function verifyLiveAndBuildSnapshot() {
   assert.deepEqual(external, [], "live hostile content must not initiate external requests");
   // Portable base64 intentionally carries bytes, not MIME metadata. Give the
   // asset-bearing offline corpus the same typed Blob produced by real ingest.
-  const importedAssetType = await page.evaluate(async (name) => (await window.__rhWebApp.store.getAsset(window.__rhWebApp.currentHoleId(), name))?.type, ASSET);
+  const importedAssetType = await page.evaluate(async (name) => (await window.__rabbitholeTest.store.getAsset(window.__rabbitholeTest.currentHoleId(), name))?.type, ASSET);
   assert.equal(importedAssetType, "", "known defect tripwire: portable import currently loses asset MIME metadata");
   await page.evaluate(async ({ name, encoded }) => {
     const bin = atob(encoded);
     const bytes = Uint8Array.from(bin, (char) => char.charCodeAt(0));
-    await window.__rhWebApp.store.putAsset(window.__rhWebApp.currentHoleId(), name, new Blob([bytes], { type: "image/gif" }));
+    await window.__rabbitholeTest.store.putAsset(window.__rabbitholeTest.currentHoleId(), name, new Blob([bytes], { type: "image/gif" }));
   }, { name: ASSET, encoded: ASSET_BASE64 });
 
   await page.evaluate((secret) => {
@@ -83,7 +83,7 @@ async function verifyLiveAndBuildSnapshot() {
     localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: secret }));
     localStorage.setItem("rh-web-settings", JSON.stringify({ preset: "openrouter", session_only: false }));
   }, SECRET);
-  const snapshot = await page.evaluate(() => window.__rhWebApp.exportSnapshotForTest());
+  const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   assert(!snapshot.includes(SECRET), "credentials must not occur in frozen HTML");
   assert(!snapshot.includes("rh-web-settings"), "preferences must not occur in frozen HTML");
   await context.close();
@@ -148,39 +148,53 @@ async function verifyPreferenceFixtures() {
   const fixtures = [
     {
       name: "current provider-key map",
-      seed: { settings: { preset: "openrouter", answer_model: "test/model", author_model: "test/author", session_only: false }, key: SECRET, keys: { openrouter: SECRET }, theme: "dark", last: "missing-hole" },
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "test/model", author_model: "test/author", session_only: false }, key: SECRET, keys: { openrouter: SECRET }, theme: "dark", last: "missing-hole" },
       selected: "openrouter",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "test/model", author_model: "test/author", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "single-key era",
-      seed: { settings: { preset: "openrouter", answer_model: "legacy/model", author_model: "legacy/author", session_only: false }, key: SECRET, theme: "dark", last: "legacy-hole" },
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "legacy/model", author_model: "legacy/author", session_only: false }, key: SECRET, theme: "dark", last: "legacy-hole" },
       selected: "openrouter",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "legacy/model", author_model: "legacy/author", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "pre-popover custom/local settings",
       seed: { settings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", answer_model: "qwen2.5", author_model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, key: SECRET, theme: "light", last: "local-hole" },
       selected: "custom",
+      expectedSettings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", answer_model: "qwen2.5", author_model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "removed Anthropic-direct provider",
       seed: { settings: { preset: "anthropic", base_url: "https://api.anthropic.com/v1", answer_model: "claude-sonnet-5", author_model: "claude-sonnet-5", session_only: false }, key: SECRET, theme: "dark", last: "anthropic-hole" },
       selected: "openrouter",
-      knownDefect: "removed provider falls back to OpenRouter and is not rewritten",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "anthropic/claude-sonnet-5", author_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "removed OpenAI provider",
       seed: { settings: { preset: "openai", base_url: "https://api.openai.com/v1", answer_model: "gpt-5", author_model: "gpt-5", session_only: false }, key: SECRET, theme: "light", last: "openai-hole" },
       selected: "openrouter",
-      knownDefect: "removed provider falls back to OpenRouter and is not rewritten",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "anthropic/claude-sonnet-5", author_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
+    },
+    {
+      name: "malformed settings JSON",
+      seed: { rawSettings: "{not-json", theme: "dark", last: "malformed-settings-hole" }, selected: "openrouter",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
+    },
+    {
+      name: "array credential map",
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, rawKeys: "[]", theme: "light", last: "malformed-keys-hole" }, selected: "openrouter",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
     },
   ];
   for (const fixture of fixtures) {
     const context = await browser.newContext();
     await context.addInitScript(({ seed }) => {
       localStorage.clear();
-      localStorage.setItem("rh-web-settings", JSON.stringify(seed.settings));
+      localStorage.setItem("rh-web-settings", seed.rawSettings || JSON.stringify(seed.settings));
       if (seed.key) localStorage.setItem("rh-web-api-key", seed.key);
       if (seed.keys) localStorage.setItem("rh-web-api-keys", JSON.stringify(seed.keys));
+      if (seed.rawKeys) localStorage.setItem("rh-web-api-keys", seed.rawKeys);
       if (seed.theme) localStorage.setItem("rh-theme", seed.theme);
       if (seed.last) localStorage.setItem("rh-last-hole", seed.last);
     }, { seed: fixture.seed });
@@ -200,8 +214,8 @@ async function verifyPreferenceFixtures() {
     await settleKeyCommit(page);
     assert.deepEqual(await storageState(page), once, `${fixture.name}: migration/load must be idempotent`);
     const artifact = await page.evaluate(async () => {
-      await window.__rhWebApp.createDocumentForTest("# Credential-free export");
-      return window.__rhWebApp.exportSnapshotForTest();
+      await window.__rabbitholeTest.createDocument("# Credential-free export");
+      return window.__rabbitholeTest.exportSnapshot();
     });
     assert(!artifact.includes(SECRET), `${fixture.name}: credentials must never enter exported HTML`);
     await context.close();
@@ -225,14 +239,15 @@ async function settleKeyCommit(page) {
 
 async function assertPreferenceState(page, fixture) {
   assert.equal(await page.inputValue("#provider-select"), fixture.selected, `${fixture.name}: provider behavior survives`);
+  const state = await storageState(page);
   assert.equal(await page.getAttribute("html", "data-theme"), fixture.seed.theme, `${fixture.name}: theme survives`);
-  assert.equal(await page.evaluate(() => localStorage.getItem("rh-last-hole")), fixture.seed.last, `${fixture.name}: last-hole preference survives`);
-  const settings = JSON.parse(await page.evaluate(() => localStorage.getItem("rh-web-settings")));
-  assert.equal(settings.answer_model, fixture.seed.settings.answer_model, `${fixture.name}: answer model survives`);
-  assert.equal(settings.preset, fixture.seed.settings.preset, `${fixture.name}: load currently leaves the stored provider id untouched`);
-  if (fixture.seed.settings.session_only === false) {
+  assert.equal(state["rh-last-hole"], fixture.seed.last, `${fixture.name}: last-hole preference survives`);
+  assert.deepEqual(JSON.parse(state["rh-web-settings"]), fixture.expectedSettings, `${fixture.name}: settings are canonical`);
+  assert.deepEqual(state["rh-web-api-keys"] === null ? null : JSON.parse(state["rh-web-api-keys"]), fixture.expectedKeys, `${fixture.name}: credential map is canonical`);
+  assert.equal(state["rh-web-api-key"], null, `${fixture.name}: legacy key slot is removed`);
+  if (fixture.expectedSettings.session_only === false && fixture.expectedKeys?.openrouter) {
     assert.equal(await page.inputValue("#api-key"), SECRET, `${fixture.name}: remembered key remains usable`);
-  } else {
+  } else if (fixture.expectedSettings.preset === "custom") {
     assert.equal(await page.locator("#api-key").count(), 0, `${fixture.name}: keyless local provider remains keyless`);
   }
 }

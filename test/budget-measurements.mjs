@@ -120,7 +120,7 @@ async function measureColdOpen(browser, baseUrl) {
 
 async function measureStreamAndSave(browser, baseUrl) {
   const context = await browser.newContext();
-  await context.addInitScript((key) => localStorage.setItem("rh-web-api-key", key), MOCK_KEY);
+  await context.addInitScript((key) => localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key })), MOCK_KEY);
   const page = await context.newPage();
   await routeProvider(page);
   try {

@@ -1,5 +1,8 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
-import { createBrain, defaultBrainSettings, presetFor, settingsForPreset, BRAIN_PRESETS } from "./brain/index.js";
+import { createBrain, providerFor, settingsForProvider, PROVIDERS } from "./brain/index.js";
+import { ensureCanonical, loadSettings, saveSettings } from "./settings/preferences-store.js";
+import { getApiKey } from "./settings/credential-store.js";
+import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
@@ -17,17 +20,11 @@ import {
   RECOMMENDED_MODEL_ID,
 } from "./brain/model-catalog.js";
 
-const SETTINGS_KEY = "rh-web-settings";
-const KEY_KEY = "rh-web-api-key";
-const KEYS_KEY = "rh-web-api-keys";
 const LAST_HOLE_KEY = "rh-last-hole";
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
 const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
-const DEFAULT_FETCH_PROXY_URL =
-  typeof __RABBITHOLE_DEFAULT_PROXY_URL__ === "string" ? __RABBITHOLE_DEFAULT_PROXY_URL__ : "";
 
 const store = new IdbStore();
-let memoryKeys = Object.create(null);
 let currentHost = null;
 let currentHoleId = null;
 let uiStarted = false;
@@ -43,6 +40,7 @@ let modelCatalogCache = null;
 let closeSettingsPickerFn = null;
 let settingsKeyToken = 0;
 
+ensureCanonical();
 applyInitialWebTheme();
 
 boot().catch((err) => {
@@ -65,6 +63,12 @@ async function boot() {
     showBlankCanvas({ openComposer: true });
   }
   exposeTestApi();
+  installTestSeam({
+    store,
+    currentHoleId: () => currentHoleId,
+    createDocument: createFromComposerDocument,
+    exportSnapshot: async () => buildSnapshotHtml(await buildSnapshotHydration()),
+  });
 }
 
 function renderShell() {
@@ -526,7 +530,7 @@ async function maybeAuthorMarkdown({
 
 async function ensureKeyForComposerAction(action) {
   const settings = loadSettings();
-  const preset = presetFor(settings.preset);
+  const preset = providerFor(settings.preset);
   if (!preset.requires_key || getApiKey(settings)) return true;
   pendingComposerAction = action;
   showComposerKeyPanel({ afterValidated: action });
@@ -581,7 +585,7 @@ async function startHole(hole, { replace = false } = {}) {
 
   const settings = loadSettings();
   const key = getApiKey(settings);
-  const brain = key || !presetFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
   currentHost = new DirectRabbitholeHost({
     store,
     hole,
@@ -825,13 +829,13 @@ function closeSettingsModal() {
 
 function warmModelCatalog() {
   const settings = loadSettings();
-  if (presetFor(settings.preset).model_source !== "catalog") return;
+  if (providerFor(settings.preset).model_source !== "catalog") return;
   loadModelCatalog().then((models) => {
     modelCatalogCache = models;
     const nameEl = document.getElementById("model-select-name");
     if (nameEl) {
       const current = loadSettings();
-      nameEl.textContent = modelDisplayName(current.answer_model || presetFor(current.preset).answer_model);
+      nameEl.textContent = modelDisplayName(current.answer_model || providerFor(current.preset).answer_model);
     }
   }).catch(() => {});
 }
@@ -846,9 +850,9 @@ function initSettingsPanel() {
   if (!panel) return;
   closeSettingsPickerFn = null;
   const settings = loadSettings();
-  const preset = presetFor(settings.preset);
+  const preset = providerFor(settings.preset);
   const currentModel = settings.answer_model || preset.answer_model;
-  const providerOptions = Object.values(BRAIN_PRESETS).map((provider) =>
+  const providerOptions = Object.values(PROVIDERS).map((provider) =>
     `<option value="${escapeAttr(provider.id)}" ${provider.id === preset.id ? "selected" : ""}>${escapeHtml(provider.label)}</option>`
   ).join("");
   panel.dataset.preset = preset.id;
@@ -1005,7 +1009,7 @@ function wireProviderSelect(panel) {
     const current = loadSettings();
     if (!id || id === current.preset) return;
     saveSettings({ ...current, api_key: getApiKey(current) });
-    applySettingsPatch(settingsForPreset(id, current));
+    applySettingsPatch(settingsForProvider(id, current));
     initSettingsPanel();
     warmModelCatalog();
     document.getElementById("provider-select")?.focus({ preventScroll: true });
@@ -1049,7 +1053,7 @@ function wireModelPicker(panel) {
 
   const renderList = () => {
     const settings = loadSettings();
-    const current = settings.answer_model || presetFor(settings.preset).answer_model;
+    const current = settings.answer_model || providerFor(settings.preset).answer_model;
     const query = search.value.trim();
     if (!modelCatalogCache) {
       list.innerHTML = catalogFailed
@@ -1155,7 +1159,7 @@ function customModelRowHtml(query) {
 
 function syncModelSelectLabel(panel) {
   const settings = loadSettings();
-  const current = settings.answer_model || presetFor(settings.preset).answer_model;
+  const current = settings.answer_model || providerFor(settings.preset).answer_model;
   const nameEl = panel.querySelector("#model-select-name");
   if (nameEl) nameEl.textContent = modelDisplayName(current);
   const select = panel.querySelector("#model-select");
@@ -1165,7 +1169,7 @@ function syncModelSelectLabel(panel) {
 function applySettingsPatch(patch) {
   const current = loadSettings();
   const merged = { ...current, ...patch };
-  const providerChanged = presetFor(merged.preset).id !== presetFor(current.preset).id;
+  const providerChanged = providerFor(merged.preset).id !== providerFor(current.preset).id;
   const apiKey = Object.prototype.hasOwnProperty.call(patch, "api_key")
     ? patch.api_key
     : getApiKey(providerChanged ? merged : current);
@@ -1179,7 +1183,7 @@ async function commitSettingsKey(panel, { required = false } = {}) {
   if (!input || !status) return false;
   const value = input.value.trim();
   const settings = loadSettings();
-  const preset = presetFor(settings.preset);
+  const preset = providerFor(settings.preset);
   const token = ++settingsKeyToken;
 
   if (!value) {
@@ -1193,7 +1197,7 @@ async function commitSettingsKey(panel, { required = false } = {}) {
   }
   if (await maybeSwitchProviderFromKey(value, panel, async () => {
     const freshStatus = document.querySelector("#settings-panel #api-key-status");
-    setKeyStatus(freshStatus, `Saved for ${presetFor(loadSettings().preset).label}.`, "valid");
+    setKeyStatus(freshStatus, `Saved for ${providerFor(loadSettings().preset).label}.`, "valid");
   })) return false;
   const hint = providerKeyHint(value, preset.id);
   if (hint) {
@@ -1250,73 +1254,10 @@ function toggleKeyReveal(input, button) {
   button.setAttribute("aria-pressed", showing ? "false" : "true");
 }
 
-function loadSettings() {
-  const defaults = defaultWebSettings();
-  try {
-    return { ...defaults, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-  } catch {
-    return defaults;
-  }
-}
-
-function defaultWebSettings() {
-  return { ...defaultBrainSettings(), fetch_proxy_url: DEFAULT_FETCH_PROXY_URL || "" };
-}
-
-function saveSettings(settings) {
-  const { api_key, ...persistable } = settings;
-  const providerId = presetFor(settings.preset).id;
-  if (persistable.fetch_proxy_url === DEFAULT_FETCH_PROXY_URL) delete persistable.fetch_proxy_url;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistable));
-  if (settings.session_only === false) {
-    const keys = readRememberedKeys();
-    if (api_key) keys[providerId] = api_key;
-    else delete keys[providerId];
-    writeRememberedKeys(keys);
-    localStorage.setItem(KEY_KEY, api_key || "");
-    delete memoryKeys[providerId];
-  } else {
-    const keys = readRememberedKeys();
-    delete keys[providerId];
-    writeRememberedKeys(keys);
-    localStorage.removeItem(KEY_KEY);
-    memoryKeys[providerId] = api_key || "";
-  }
-}
-
-function getApiKey(settings) {
-  const providerId = presetFor(settings.preset).id;
-  if (settings.session_only === false) {
-    const keys = readRememberedKeys();
-    if (Object.prototype.hasOwnProperty.call(keys, providerId)) return keys[providerId] || "";
-    if (providerId === "openrouter") {
-      try { return localStorage.getItem(KEY_KEY) || ""; } catch { return ""; }
-    }
-    return "";
-  }
-  return memoryKeys[providerId] || "";
-}
-
-function readRememberedKeys() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(KEYS_KEY) || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeRememberedKeys(keys) {
-  try {
-    if (Object.keys(keys).length) localStorage.setItem(KEYS_KEY, JSON.stringify(keys));
-    else localStorage.removeItem(KEYS_KEY);
-  } catch {}
-}
-
 function refreshCurrentBrain(settings = loadSettings()) {
   if (!currentHost) return;
   const key = getApiKey(settings);
-  currentHost.brain = key || !presetFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  currentHost.brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
 }
 
 function handleBranchAuthRequired({ node, error, retry }) {
@@ -1342,7 +1283,7 @@ function handleBranchAuthRequired({ node, error, retry }) {
 
 function renderInlineKeyPanel(container, { idPrefix, title = "", note = "", status = "", afterValidated = null } = {}) {
   const settings = loadSettings();
-  const preset = presetFor(settings.preset);
+  const preset = providerFor(settings.preset);
   const remember = settings.session_only === false;
   const heading = title || "Add a key to ask";
   const body = note || (preset.id === "openrouter"
@@ -1425,7 +1366,7 @@ async function maybeSwitchProviderFromKey(key, container, continueOnce) {
 
 async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
   const value = String(key || "").trim();
-  const preset = presetFor(presetId);
+  const preset = providerFor(presetId);
   if (!preset.requires_key) {
     setKeyStatus(statusEl, "No key required for this provider.", "valid");
     return true;
@@ -1646,7 +1587,7 @@ function blobToDataUrl(blob) {
 }
 
 function apiKeyPlaceholder(presetId) {
-  switch (presetFor(presetId).id) {
+  switch (providerFor(presetId).id) {
     case "openrouter": return "sk-or-v1-...";
     default: return "optional";
   }
@@ -1732,15 +1673,9 @@ function bunnyMarkSvg() {
 function exposeTestApi() {
   window.__rhWebApp = {
     store,
-    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
-    exportRabbitholeForTest: async (id = currentHoleId) => {
-      await currentHost?.flushSave();
-      return downloadRabbitholeExport(store, id);
-    },
     exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
     currentHoleId: () => currentHoleId,
     readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
-    renderRailForTest: renderRail,
     createDocumentForTest: createFromComposerDocument,
     deleteHoleForTest: deleteHoleFromRail,
     exportHoleFromRailForTest: exportHoleFromRail,

@@ -209,9 +209,11 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | imported and show-fence injection on live/frozen paths | C2 | Protects the user-visible security boundary for imported markdown and hydratable show content, including script, iframe, handler, JavaScript-URL, and SVG vectors. | Rendering: script/iframe/handler injection via fences and imported payloads, both paths |
 | KaTeX errors and trusted structural markup | C2 | Requires invalid math to degrade safely while valid KaTeX MathML, semantics, annotations, and fraction structure survive both render paths. | Rendering: KaTeX parse errors; trusted MathML sanitizer parity |
 | frozen asset-bearing document with all requests blocked | C1 | Frozen snapshots are a self-contained external artifact and must render their document and embedded assets without attempting network access. | Rendering: frozen viewing fully offline, zero fetches |
-| current provider-key map and single-key-era storage | C1 | Protects current remembered credentials and the readable legacy OpenRouter single-key fallback across repeated loads. | Data: preference/credential storage through every migration |
-| pre-popover custom/local preferences | C1 | Protects the deployed local-provider settings shape, models, endpoint, session-only behavior, theme, and last-hole state. | Data: preference/credential storage through every migration |
-| removed Anthropic/OpenAI provider IDs currently fall back without rewrite | C4 | Records the migration defect without blessing it: removed deployed provider IDs silently select OpenRouter while stale IDs and incompatible settings remain stored. | Data: preference/credential storage through every migration; provider-id renames |
+| current provider-key map canonical cleanup (`stage15-security-migrations-verify.mjs:150-153`) | C1 | Preserves current settings and key-map data while removing the retired single-key slot. | Data: preference/credential storage through every migration |
+| single-key-era credential adoption (`stage15-security-migrations-verify.mjs:156-159`) | C1 | Requires lossless adoption into the provider-key map and retirement of the legacy slot. | Data: preference/credential storage through every migration |
+| pre-popover custom/local canonical migration (`stage15-security-migrations-verify.mjs:162-165`) | C1 | Preserves local settings and session-only choice while adopting the stray OpenRouter-era credential without assigning it to Local. | Data: preference/credential storage through every migration |
+| removed Anthropic/OpenAI provider canonical rewrite (`stage15-security-migrations-verify.mjs:168-177`) | C1 | Requires aliases to rewrite to OpenRouter defaults while preserving unrelated preferences and credentials. | Data: preference/credential storage through every migration; provider-id renames |
+| malformed settings and credential-map normalization (`stage15-security-migrations-verify.mjs:180-187`) | C1 | Invalid settings JSON loads canonical defaults and an array key map normalizes to empty without throwing. | Data: malformed JSON/hand-edited preference storage; Migration/deploy: idempotent migrations |
 | preference migration/load idempotence | C1 | Repeated application loads must not drift settings, credential keys, theme, or last-hole state. | Migration/deploy: new code opening old storage, idempotent migrations |
 | credential exclusion from frozen exports | C1 | Device credentials and settings must never enter exported artifacts. | Data: preference/credential storage through every migration; artifact credential non-leakage |
 | portable-import asset MIME metadata loss | C4 | Pins the known defect where base64 import creates an untyped Blob, preventing direct frozen reuse without a typed ingest asset. | Rendering: frozen viewing fully offline; Data: portable asset migration |
@@ -254,12 +256,12 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 38 |
+| C1 compatibility contract | 41 |
 | C2 behavioral product contract | 79 |
 | C3 implementation snapshot | 10 |
-| C4 known defect | 11 |
+| C4 known defect | 10 |
 | C5 design target | 0 |
-| **Total** | **138** |
+| **Total** | **140** |
 
 ## Known-defect fossils
 
@@ -275,8 +277,6 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 ## Baseline defects on record (found by instruments, not fixed)
 
 - `FsStore.getAsset()` returns a `Buffer`, but `buildRabbitholeExport()` assumes Blob and calls `blob.arrayBuffer()` (`src/web/portable.js:139`) — exporting an asset-bearing hole directly from the filesystem store throws. Unreachable in today's product (web export runs against the IDB store, which returns Blobs), but it is a store-port contract violation; the typed store port (Phase 5) and artifact unification (Phase 7) must resolve it. stage13's round-trip test documents this with a test-local Blob-converting subclass.
-- Removed deployed provider IDs `anthropic` and `openai` are not migrated: `presetFor()` silently selects OpenRouter behavior while `rh-web-settings.preset` keeps the stale ID and historical endpoint/model fields stay stored, incompatible with the selected provider. Phase 3's settings slice must ship an explicit provider-ID migration. Pinned as C4 in stage15.
-- The legacy single `rh-web-api-key` remains usable as the OpenRouter fallback but is never migrated into the `rh-web-api-keys` map — there is no canonical rewrite pass on load. Phase 3 must resolve alongside the provider-ID migration. Covered by stage15's single-key-era fixture.
 - `base64ToBlob()` (`src/web/portable.js`) creates an untyped Blob, so a directly imported asset snapshots to an `application/octet-stream` data URL that the frozen image sanitizer rejects. Typed asset handling lands with the store port (Phase 5) / artifact unification (Phase 7). Pinned as C4 in stage15.
 - Web-exported frozen snapshots carry no styles at all: `buildSnapshotHtml()` (`src/ui/snapshot.js:145`) serializes the page's first inline `<style>`, which exists in the canvas host (`src/node/html/canvas.js:30-33` inlines `CANVAS_STYLES` + KaTeX) but not in the web build, whose CSS arrives via an external `<link>`. Discovered during Phase 2 slice B review when an attempted inline-style injection moved the snapshot byte gauge +51KB. Fix lands with the Phase 7 snapshot boundary (styled, self-contained web exports incl. KaTeX) plus a snapshot-budget recalibration. Pinned as C4 in stage10.
 

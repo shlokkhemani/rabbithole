@@ -5,7 +5,7 @@
 
 This document designs the system we would build if we were starting from zero — unburdened by the existing code, bound absolutely by the existing product — and then sequences the rebuild so that a user on rabbithole.ing, a reader of a frozen snapshot, and an agent mid-session over MCP never notice that the plane they're flying in has been rebuilt around them.
 
-**Baseline policy:** code citations below reflect the working tree of 2026-07-10 (HEAD `56a85ca` + uncommitted browser-polish work). Phase 0 lands that work, pins this plan to the resulting commit, and re-verifies every citation. Until then, citations are directional, not gospel. The current baseline is healthy: the full 12-stage `npm test` suite passes on the working tree.
+**Baseline policy:** code citations below are pinned to and verified against baseline commit `419cc09`. That commit is the governing reference for Phase 0 and for every cited implementation detail in this plan. The baseline is healthy: the full 12-stage `npm test` suite passes on `419cc09`.
 
 ---
 
@@ -75,7 +75,7 @@ Two honest corrections to v1's claims:
 
 **2. Generation — adapters, controllers, and one shared run.** Brains generate; they never know node IDs, document shapes, or persistence. But the two hosts are *not* the same machine wearing different hats, and the architecture must say so:
 
-- The **browser host is active**: it initiates streams, owns AbortControllers, handles provider auth (401 → key prompt → retry closure), and deliberately persists partial markdown for durable asks (`src/web/transport/direct-host.js:391`).
+- The **browser host is active**: it initiates streams, owns AbortControllers, handles provider auth (401 → key prompt → retry closure), and deliberately persists partial markdown for durable asks (`src/web/transport/direct-host.js:371-388`).
 - The **MCP host is passive**: an external agent calls `answer_branch`; the server never initiates generation, has no credentials, and deliberately *drops* half-streamed markdown when persisting pending nodes — on resume, the question is re-asked fresh (`src/node/transport/session.js:452-462`, by design and documented in-code).
 
 These divergences are product decisions, not accidents. So the shared unit is the smallest honest one:
@@ -265,7 +265,7 @@ Eleven phases. Each names **Goal · Build · Wire-in · Delete · Exit criteria 
 ### Phase 6 — Generation normalization *(L, high risk — the heart transplant)*
 
 **Goal:** browser providers speak `GenerationEvent`; the host is sentinel-free; the shared `GenerationRun` exists; hosts keep their own controllers.
-**Build:** `ProviderAdapter`/`Brain` (all three surfaces: `answerBranch`, `authorExplainer`, `authorDocument`) for OpenRouter and Ollama; `TitleSentinelParser` relocated inside the adapters, emitting `{type:"title"}` — prompt protocol preserved verbatim; `GenerationRun` extracted (accumulation, `{id, seq}` order guard, transition construction) and adopted by a new `BrowserGenerationController` (auth flow, retry, abort registry, mid-stream switching, save policy) and by `McpGenerationIngress` (passive `answer_branch` acceptance behind the frozen wire, preserving `session.js:452` durable-ask semantics exactly).
+**Build:** `ProviderAdapter`/`Brain` (all three surfaces: `answerBranch`, `authorExplainer`, `authorDocument`) for OpenRouter and Ollama; `TitleSentinelParser` relocated inside the adapters, emitting `{type:"title"}` — prompt protocol preserved verbatim; `GenerationRun` extracted (accumulation, `{id, seq}` order guard, transition construction) and adopted by a new `BrowserGenerationController` (auth flow, retry, abort registry, mid-stream switching, save policy) and by `McpGenerationIngress` (passive `answer_branch` acceptance behind the frozen wire, preserving `session.js:452-462` durable-ask semantics exactly).
 **Wire-in:** three shippable swaps — OpenRouter, Ollama, then the MCP ingress — each gated by fault-injection probes (error mid-stream → durable ask per host semantics; abort during delete; 401 → prompt → retry) and, for MCP, a pre-recorded session replayed identically. **Spike first:** the recorded-session replay harness.
 **Then, separately:** the title-replacement spike (structured outputs vs derivation vs second call) judged on latency/cost/quality gates; sentinel prompt protocol retired only on a pass.
 **Delete (D4):** host knowledge of the sentinel (`direct-host.js:319-338`); bespoke per-provider settings code (now capability-derived); *deferred, gated:* the sentinel protocol itself.

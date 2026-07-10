@@ -170,13 +170,12 @@ export const toolDefinitions = [
     name: "export_to_obsidian",
     description:
       "Export a saved Rabbithole into an Obsidian vault as a JSON Canvas plus one markdown note per " +
-      "document, so the hole becomes searchable, linkable vault knowledge. Each answer becomes a note " +
-      "under <folder>/<slug>/notes/, questions become text cards, and the canvas wires them together " +
-      "with role annotations that Obsidian AI-canvas plugins (e.g. Caret) can continue chatting from. " +
-      "Re-exporting the same hole SYNCS instead of clobbering: positions and edits the " +
-      "human made in Obsidian win (edited notes are skipped and listed as conflicts). vault_path is " +
-      "remembered as the default after the first call. Pass continuous=true to also export automatically " +
-      "on every future save of any hole (continuous=false turns that off).",
+      "document, so the hole becomes searchable, crosslinkable vault knowledge. Each answer becomes a " +
+      "note under <folder>/<slug>/notes/ with frontmatter provenance, questions become text cards, and " +
+      "the canvas wires them together. Re-exporting the same hole SYNCS instead of clobbering: positions " +
+      "and edits the human made in Obsidian win (edited notes are skipped and listed as conflicts). " +
+      "vault_path is remembered as the default after the first call. Pass continuous=true to also export " +
+      "automatically on every future save of any hole (continuous=false turns that off).",
     input: obj({
       hole_id: str("Hole to export (use list_rabbitholes to find it)"),
       vault_path: str("Absolute path to the Obsidian vault; optional after the first export", {
@@ -184,8 +183,9 @@ export const toolDefinitions = [
       }),
       folder: str('Vault-relative folder to export into (default "Rabbitholes")', { optional: true }),
       roles: str(
-        'Role-stamping mode: "caret" (default; questions are user turns, documents attach as context — ' +
-          'works with stock Caret), "chat" (documents stamped user/assistant too), or "none"',
+        'Role annotations for AI-canvas plugins (invisible in native Obsidian): "context" (default; ' +
+          'questions are user turns, documents stay plain), "turns" (documents stamped user/assistant ' +
+          'too), or "none"',
         { optional: true }
       ),
       continuous: bool("Turn continuous vault sync on (true) or off (false) for future saves", {

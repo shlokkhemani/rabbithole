@@ -162,7 +162,7 @@ async function writeFileAtomic(filePath, content) {
  * @param {string} [params.vaultPath] absolute path to the vault; remembered as the default
  * @param {string} [params.folder] vault-relative folder (default "Rabbitholes")
  * @param {boolean} [params.continuous] also flip continuous sync on/off for future saves
- * @param {"caret"|"chat"|"none"} [params.roles] role-stamping mode (default "caret")
+ * @param {"context"|"turns"|"none"} [params.roles] role-annotation mode (default "context")
  */
 export async function exportHoleToVault({ holeId, vaultPath, folder, continuous, roles } = {}) {
   if (!holeId) throw new Error("holeId is required");
@@ -172,7 +172,7 @@ export async function exportHoleToVault({ holeId, vaultPath, folder, continuous,
   const resolvedVault = await resolveVaultPath(vaultPath);
   const config = await readExportConfig();
   const resolvedFolder = folder ?? config.folder ?? DEFAULT_VAULT_FOLDER;
-  const resolvedRoles = roles ?? config.roles ?? "caret";
+  const resolvedRoles = roles ?? config.roles ?? "context";
 
   const state = await readSyncState();
   const slug = await pickSlug({ hole, state, vaultPath: resolvedVault, folder: resolvedFolder });

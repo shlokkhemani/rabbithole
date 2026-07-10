@@ -3,18 +3,21 @@ import { extractAssetRefsFromMarkdown } from "./assets.js";
 
 /**
  * Project a persisted hole onto an Obsidian vault: a JSON Canvas of file nodes
- * (one markdown note per document) plus question text-nodes, annotated so
- * Obsidian AI-canvas plugins (Caret and friends) can continue the conversation.
+ * (one markdown note per document) plus question text-cards, so a hole becomes
+ * ordinary vault knowledge — searchable, crosslinkable, and referenceable.
  *
- * Role modes (verified against Caret 0.2.80 on Obsidian 1.12.7):
- * - "caret" (default): question cards get role "user"; document file-nodes stay
- *   unstamped. Caret treats role-less nodes attached to a lineage as context and
- *   reads file-node content through that path — so "continue the conversation"
- *   works out of the box. (Caret's chat lineage itself cannot read file nodes,
- *   so stamping documents user/assistant would break it.)
- * - "chat": documents are stamped too (root "user", answers "assistant") — the
- *   semantically faithful mapping, for tools that read file-node chat turns.
+ * Role modes control the optional `role` annotations on canvas nodes. They are
+ * invisible in native Obsidian; some AI-canvas plugins read them to continue
+ * the conversation:
+ * - "context" (default): question cards get role "user"; document file-nodes
+ *   stay unstamped, so they read as a plain canvas (plugins that walk the
+ *   graph pick them up as attached context).
+ * - "turns": documents are stamped too (root "user", answers "assistant") —
+ *   the mapping for tools that read file-node chat turns.
  * - "none": no role fields at all.
+ * Compatibility note: the default shape was verified to keep conversations
+ * continuable in Caret 0.2.80 on Obsidian 1.12.7; "turns" breaks that plugin,
+ * whose chat lineage cannot read file-node content.
  *
  * Pure data transform — hosts apply the returned plan to a real filesystem.
  * JSON Canvas spec: https://jsoncanvas.org/spec/1.0/. The `role` and
@@ -123,7 +126,7 @@ function nodeSize(node, fallbackWidth, fallbackHeight) {
  * @param {string} [options.folder] vault-relative folder holding all exports
  * @param {string} [options.slug] pinned slug; defaults to slugify(title)
  * @param {string[]} [options.assetNames] asset filenames available for this hole
- * @param {"caret"|"chat"|"none"} [options.roles] role-stamping mode (default "caret")
+ * @param {"context"|"turns"|"none"} [options.roles] role-annotation mode (default "context")
  * @returns {{
  *   slug: string,
  *   dir: string,
@@ -133,12 +136,12 @@ function nodeSize(node, fallbackWidth, fallbackHeight) {
  *   assets: Array<{ name: string, path: string }>,
  * }}
  */
-export function holeToVaultPlan(hole, { folder = DEFAULT_VAULT_FOLDER, slug = null, assetNames = [], roles = "caret" } = {}) {
+export function holeToVaultPlan(hole, { folder = DEFAULT_VAULT_FOLDER, slug = null, assetNames = [], roles = "context" } = {}) {
   if (!hole || !Array.isArray(hole.nodes)) throw new Error("holeToVaultPlan requires a persisted hole");
-  if (!["caret", "chat", "none"].includes(roles)) {
-    throw new Error(`roles must be "caret", "chat", or "none", got ${JSON.stringify(roles)}`);
+  if (!["context", "turns", "none"].includes(roles)) {
+    throw new Error(`roles must be "context", "turns", or "none", got ${JSON.stringify(roles)}`);
   }
-  const stampDocs = roles === "chat";
+  const stampDocs = roles === "turns";
   const stampQuestions = roles !== "none";
   const holeSlug = slug || slugify(hole.title, { fallback: String(hole.hole_id || "rabbithole").slice(0, 12) });
   const dir = folder ? `${folder}/${holeSlug}` : holeSlug;

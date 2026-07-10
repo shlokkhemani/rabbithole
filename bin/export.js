@@ -22,7 +22,7 @@ function usage() {
       "  --all                 Export every saved Rabbithole",
       "  --vault <path>        Obsidian vault path (remembered as the default)",
       "  --folder <name>       Vault-relative folder (default: Rabbitholes)",
-      "  --roles <mode>        caret (default) | chat | none — see export_to_obsidian docs",
+      "  --roles <mode>        context (default) | turns | none — role annotations for AI-canvas plugins",
       "  --continuous on|off   Toggle auto-export on every future save",
       "  --list                List saved Rabbitholes with their ids",
       "  --help                Show this help",

@@ -132,9 +132,9 @@ assert.equal(slugify("  ***  "), "untitled");
   const child = plan.canvas.nodes.find((n) => n.id === CHILD_ID);
   const question = plan.canvas.nodes.find((n) => n.id === `q-${CHILD_ID}`);
   const pendingQuestion = plan.canvas.nodes.find((n) => n.id === `q-${PENDING_ID}`);
-  // Default "caret" mode: documents stay unstamped (Caret reads them as
-  // attached context; its chat lineage cannot read file nodes), questions are
-  // user turns.
+  // Default "context" mode: documents stay unstamped (a plain canvas; plugins
+  // that walk the graph pick them up as attached context), questions are user
+  // turns.
   assert.equal(root.role, undefined);
   assert.equal(child.role, undefined);
   assert.equal(question.role, "user");
@@ -155,13 +155,13 @@ assert.equal(slugify("  ***  "), "untitled");
   assert.match(rootNote.content, /..\/assets\/diagram-1\.png/);
   assert.deepEqual(plan.assets.map((a) => a.name), ["diagram-1.png"]);
 
-  const chatMode = holeToVaultPlan(fixtureHole(), { roles: "chat" });
-  assert.equal(chatMode.canvas.nodes.find((n) => n.id === ROOT_ID).role, "user");
-  assert.equal(chatMode.canvas.nodes.find((n) => n.id === CHILD_ID).role, "assistant");
+  const turnsMode = holeToVaultPlan(fixtureHole(), { roles: "turns" });
+  assert.equal(turnsMode.canvas.nodes.find((n) => n.id === ROOT_ID).role, "user");
+  assert.equal(turnsMode.canvas.nodes.find((n) => n.id === CHILD_ID).role, "assistant");
   assert.match(
-    chatMode.notes.find((n) => n.nodeId === CHILD_ID).content,
+    turnsMode.notes.find((n) => n.nodeId === CHILD_ID).content,
     /role: "assistant"/,
-    "chat mode stamps note frontmatter too"
+    "turns mode stamps note frontmatter too"
   );
 
   const noRoles = holeToVaultPlan(fixtureHole(), { roles: "none" });

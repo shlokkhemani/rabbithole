@@ -140,7 +140,7 @@ cached. If the browser must not auto-open (headless), set
 | `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`, optional `ingest_id`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
 | `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. |
 | `ingest_pdf` | Extract a local PDF into page PNGs (`page-001.png`...), opportunistic embedded rasters (`embed-p001-01.png`...), metadata, and per-page text. Author the markdown yourself, reference returned asset names with `asset:`, then pass `ingest_id` to `open_rabbithole`; or pass `hole_id` to ingest directly into an existing hole. |
-| `export_to_obsidian` | Export a saved hole into an Obsidian vault as a JSON Canvas plus one markdown note per document. Re-exporting syncs instead of clobbering; pass `continuous: true` to auto-export on every save. |
+| `export_to_obsidian` | Export a saved hole into an Obsidian vault as a JSON Canvas plus one markdown note per document — vault-native, crosslinkable knowledge. Re-exporting syncs instead of clobbering; pass `continuous: true` to auto-export on every save. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 
 The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.
@@ -186,12 +186,15 @@ assets base64-encoded into the single JSON file for portability.
 
 ## Export to Obsidian
 
-Turn any hole into vault-native knowledge: a folder with a `.canvas` file
-wiring together one markdown note per document, plus question cards and the
-hole's image assets. Notes carry frontmatter provenance (`rabbithole_hole`,
-`rabbithole_node`, the question, the lens), so everything is searchable and
-linkable, and the canvas is annotated so Obsidian AI-canvas plugins (e.g.
-Caret) can keep the conversation going right where it left off.
+Go down rabbit holes for spontaneous research, then bake the results into your
+vault where they can be crosslinked and referred to. Each hole exports as a
+folder: a `.canvas` file wiring together one markdown note per document, plus
+question cards and the hole's image assets. Notes carry frontmatter provenance
+(`rabbithole_hole`, `rabbithole_node`, the question, the lens), so everything
+is searchable, wiki-linkable, and shows up in the graph like any other note.
+Question cards also carry conversation-role annotations that AI-canvas plugins
+can read (invisible in native Obsidian; the default shape was verified to keep
+conversations continuable in the Caret plugin).
 
 ```bash
 # ask your agent:  "export this rabbithole to my vault"

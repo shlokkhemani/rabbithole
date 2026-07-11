@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
-import http from "node:http";
 import path from "node:path";
 import { chromium } from "playwright";
+import { ensureWebDist } from "./build.mjs";
+import { routeProvider, seedConfiguredOpenRouter } from "./provider-mock.mjs";
+import { serveStatic } from "./static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const FIXTURES = ["02-math-heavy.rabbithole", "04-assets-png-svg.rabbithole"];
-const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const KEY_URL = "https://openrouter.ai/api/v1/key";
-const MODEL_URL = "https://openrouter.ai/api/v1/models";
-const MOCK_KEY = `sk-or-v1-${"b".repeat(64)}`;
 const STREAM_CHUNKS = Array.from({ length: 40 }, (_, i) => `${i ? " " : "# Budget stream\n\n"}token-${i}`);
 
 export const budgetDefinitions = [
@@ -29,7 +26,7 @@ export const budgetDefinitions = [
 
 export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) {
   assert(samples >= 3, "budget measurements require at least three samples");
-  runBuild();
+  ensureWebDist();
   const exact = {
     bundle_client_bytes: (await fs.stat(path.join(ROOT, "dist/client.js"))).size,
     bundle_frozen_client_bytes: (await fs.stat(path.join(ROOT, "dist/frozen-client.js"))).size,
@@ -61,11 +58,6 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
     value: Math.min(...list),
     samples: list,
   }]));
-}
-
-function runBuild() {
-  const build = spawnSync(process.execPath, ["build.mjs"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) throw new Error(build.stderr || build.stdout || "build failed");
 }
 
 async function measureSnapshots(browser, baseUrl, samples, onSample) {
@@ -120,19 +112,9 @@ async function measureColdOpen(browser, baseUrl) {
 
 async function measureStreamAndSave(browser, baseUrl) {
   const context = await browser.newContext();
-  await context.addInitScript((key) => {
-    localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key }));
-    localStorage.setItem("rh-web-settings", JSON.stringify({
-      preset: "openrouter",
-      base_url: "https://openrouter.ai/api/v1",
-      answer_model: "anthropic/claude-sonnet-5",
-      author_model: "anthropic/claude-sonnet-5",
-      session_only: false,
-      generation_setup: { version: 1, preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5" },
-    }));
-  }, MOCK_KEY);
+  await seedConfiguredOpenRouter(context);
   const page = await context.newPage();
-  await routeProvider(page);
+  await routeProvider(page, { streams: [STREAM_CHUNKS], keyLabel: "budget" });
   try {
     await page.goto(`${baseUrl}/?stream-budget=${Date.now()}`, { waitUntil: "networkidle" });
     await page.click("#blank-start-new");
@@ -171,44 +153,4 @@ async function measureStreamAndSave(browser, baseUrl) {
   } finally {
     await context.close();
   }
-}
-
-async function routeProvider(page) {
-  await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: corsHeaders(), body: JSON.stringify({ data: [] }) }));
-  await page.route(KEY_URL, (route) => route.fulfill({ status: 200, headers: corsHeaders(), body: JSON.stringify({ data: { label: "budget" } }) }));
-  await page.route(PROVIDER_URL, async (route) => {
-    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders() });
-    const body = STREAM_CHUNKS.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`).join("") + "data: [DONE]\n\n";
-    await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body });
-  });
-}
-
-function corsHeaders() {
-  return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type" };
-}
-
-async function serveStatic(dir) {
-  const server = http.createServer(async (req, res) => {
-    try {
-      const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-      const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-      const file = path.join(dir, relative);
-      if (!file.startsWith(`${dir}${path.sep}`)) throw new Error("bad path");
-      const body = await fs.readFile(file);
-      res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
-      res.end(body);
-    } catch {
-      res.writeHead(404).end("not found");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
-}
-
-function contentType(file) {
-  if (file.endsWith(".html")) return "text/html; charset=utf-8";
-  if (file.endsWith(".js") || file.endsWith(".mjs")) return "text/javascript; charset=utf-8";
-  if (file.endsWith(".css")) return "text/css; charset=utf-8";
-  if (file.endsWith(".svg")) return "image/svg+xml";
-  return "application/octet-stream";
 }

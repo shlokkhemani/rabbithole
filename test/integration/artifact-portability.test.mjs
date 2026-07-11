@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import { ensureWebDist } from "../support/build.mjs";
+import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -15,11 +16,7 @@ const KEY_URL = "https://openrouter.ai/api/v1/key";
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
 } catch {
-  const build = spawnSync(process.execPath, ["build.mjs"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) {
-    process.stderr.write(build.stderr || build.stdout || "build failed\n");
-    process.exit(build.status || 1);
-  }
+  try { ensureWebDist(); } catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 }
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-artifact-portability-"));
@@ -301,35 +298,4 @@ async function verifyPublishOutput() {
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   const llms = await fs.readFile(path.join(publishDir, "llms.txt"), "utf8");
   assert(!llms.includes("rabbithole.ing/app"));
-}
-
-async function serveStatic(rootDir) {
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    const rel = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
-    const file = path.resolve(rootDir, rel);
-    if (!file.startsWith(rootDir)) {
-      res.writeHead(403).end("Forbidden");
-      return;
-    }
-    try {
-      const bytes = await fs.readFile(file);
-      res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
-      res.end(bytes);
-    } catch {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
-}
-
-function contentType(file) {
-  if (file.endsWith(".html")) return "text/html; charset=utf-8";
-  if (file.endsWith(".js") || file.endsWith(".mjs")) return "text/javascript; charset=utf-8";
-  if (file.endsWith(".css")) return "text/css; charset=utf-8";
-  if (file.endsWith(".woff2")) return "font/woff2";
-  if (file.endsWith(".ttf")) return "font/ttf";
-  return "application/octet-stream";
 }

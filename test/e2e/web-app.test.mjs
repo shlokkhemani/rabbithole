@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { serializeForInlineScript } from "../../src/core/utils.js";
+import { ensureWebDist } from "../support/build.mjs";
+import { MOCK_MODEL, corsHeaders, routeProvider, seedConfiguredOpenRouter } from "../support/provider-mock.mjs";
+import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -26,11 +27,7 @@ assert.deepEqual(JSON.parse(hostilePayloadJson), hostilePayloadValue, "escaped i
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
 } catch {
-  const build = spawnSync(process.execPath, ["build.mjs"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) {
-    process.stderr.write(build.stderr || build.stdout || "build failed\n");
-    process.exit(build.status || 1);
-  }
+  try { ensureWebDist(); } catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 }
 
 const server = await serveStatic(WEB_DIST);
@@ -358,7 +355,7 @@ async function verifyLandingAndComposer() {
 
 async function verifyComboboxCatalogStates() {
   const fixture = { data: [
-    { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: MOCK_MODEL, name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
     { id: "openai/gpt-5", name: "OpenAI: GPT-5", pricing: { prompt: "0.00000125", completion: "0.00001" } },
   ] };
 
@@ -435,7 +432,7 @@ async function verifyComboboxCatalogStates() {
 
 async function verifySetupReadinessInvalidation() {
   const catalog = { data: [
-    { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: MOCK_MODEL, name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
     { id: "openai/gpt-5", name: "OpenAI: GPT-5", pricing: { prompt: "0.00000125", completion: "0.00001" } },
   ] };
   const context = await browser.newContext();
@@ -459,8 +456,8 @@ async function verifySetupReadinessInvalidation() {
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing model should invalidate completed setup");
   assert.equal(await page.locator("#complete-model-setup").count(), 1, "model invalidation should immediately offer setup completion");
   await page.click("#model-select");
-  await page.waitForSelector(".model-option[data-value='anthropic/claude-sonnet-5']");
-  await page.click(".model-option[data-value='anthropic/claude-sonnet-5']");
+  await page.waitForSelector(`.model-option[data-value='${MOCK_MODEL}']`);
+  await page.click(`.model-option[data-value='${MOCK_MODEL}']`);
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "restoring the completed model fingerprint should restore readiness");
   await context.close();
 
@@ -747,7 +744,7 @@ async function verifyAskKeyUxAndRail() {
   await page.click('[data-provider="openrouter"]');
   assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "returning to a provider should restore only that provider's local key");
   await page.click("#model-select");
-  await page.waitForSelector(".model-option[data-value='anthropic/claude-sonnet-5'] .model-chip");
+  await page.waitForSelector(`.model-option[data-value='${MOCK_MODEL}'] .model-chip`);
   await page.fill("#model-select-input", "gpt");
   assert.equal(
     await page.locator(".model-option[data-value='openai/gpt-5'] .model-option-price").innerText(),
@@ -1503,71 +1500,6 @@ async function verifySharedCanvasDialogs() {
   await context.close();
 }
 
-async function routeProvider(page, { keyStatus, streams, onProviderCall = null, providerDelayMs = 0 }) {
-  await page.route(LOCAL_MODEL_URL, async (route) => {
-    await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [
-      { id: "llama3.2", name: "llama3.2" }, { id: "deepseek-r1:7b", name: "deepseek-r1:7b" },
-    ] }) });
-  });
-  await page.route(MODEL_URL, async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ data: [
-        { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", context_length: 1000000, pricing: { prompt: "0.000003", completion: "0.000015" } },
-        { id: "openai/gpt-5", name: "OpenAI: GPT-5", context_length: 400000, pricing: { prompt: "0.00000125", completion: "0.00001" } },
-        { id: "deepseek/deepseek-v4-flash", name: "DeepSeek: DeepSeek V4 Flash", context_length: 164000, pricing: { prompt: "0", completion: "0" } },
-      ] }),
-    });
-  });
-  await page.route(KEY_URL, async (route) => {
-    if (route.request().method() === "OPTIONS") {
-      await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
-      return;
-    }
-    const auth = route.request().headers().authorization || "";
-    const key = auth.replace(/^Bearer\s+/i, "");
-    const status = keyStatus ? keyStatus(key) : 200;
-    await route.fulfill({
-      status,
-      headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
-      body: status === 200 ? JSON.stringify({ data: { label: "test key" } }) : JSON.stringify({ error: { message: "invalid key" } }),
-    });
-  });
-  await page.route(PROVIDER_URL, async (route) => {
-    if (route.request().method() === "OPTIONS") {
-      await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
-      return;
-    }
-    onProviderCall?.();
-    const chunks = streams.shift() || ["# Fallback\n\nFallback streamed document."];
-    if (providerDelayMs) await new Promise((resolve) => setTimeout(resolve, providerDelayMs));
-    await route.fulfill({
-      status: 200,
-      headers: {
-        ...corsHeaders(),
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
-      body: sse(chunks),
-    });
-  });
-}
-
-async function seedConfiguredOpenRouter(context) {
-  await context.addInitScript(({ key }) => {
-    localStorage.setItem("rh-web-settings", JSON.stringify({
-      preset: "openrouter",
-      base_url: "https://openrouter.ai/api/v1",
-      answer_model: "anthropic/claude-sonnet-5",
-      author_model: "anthropic/claude-sonnet-5",
-      session_only: false,
-      generation_setup: { version: 1, preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5" },
-    }));
-    localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key }));
-  }, { key: MOCK_KEY });
-}
-
 async function createDocument(page, markdown) {
   const previous = await page.evaluate(() => window.__rabbitholeTest?.currentHoleId?.() || "");
   await page.evaluate((value) => window.__rabbitholeTest.createDocument(value), markdown);
@@ -1590,18 +1522,6 @@ async function waitForCanvasText(page, text) {
   await page.locator(".node", { hasText: text }).first().waitFor();
 }
 
-function sse(chunks) {
-  return chunks.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`).join("") + "data: [DONE]\n\n";
-}
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, content-type, accept, http-referer, x-title",
-  };
-}
-
 async function selectText(page, needle) {
   await page.evaluate((text) => {
     const root = document.querySelector(".node .doc-content[data-node-id]");
@@ -1621,35 +1541,4 @@ async function selectText(page, needle) {
     }
     throw new Error(`Text not found: ${text}`);
   }, needle);
-}
-
-async function serveStatic(rootDir) {
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    const rel = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
-    const file = path.resolve(rootDir, rel);
-    if (!file.startsWith(rootDir)) {
-      res.writeHead(403).end("Forbidden");
-      return;
-    }
-    try {
-      const bytes = await fs.readFile(file);
-      res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
-      res.end(bytes);
-    } catch {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
-}
-
-function contentType(file) {
-  if (file.endsWith(".html")) return "text/html; charset=utf-8";
-  if (file.endsWith(".js")) return "text/javascript; charset=utf-8";
-  if (file.endsWith(".css")) return "text/css; charset=utf-8";
-  if (file.endsWith(".svg")) return "image/svg+xml";
-  if (file.endsWith(".woff2")) return "font/woff2";
-  return "application/octet-stream";
 }

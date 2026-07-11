@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { getGenerationSetupStatus, setupFingerprint } from "../../src/web/settings/setup-readiness.js";
+import { ensureWebDist } from "../support/build.mjs";
+import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -35,7 +35,7 @@ const HOSTILE = [
 ].join("\n");
 
 verifySetupReadinessFingerprint();
-await ensureBuild();
+ensureWebDist();
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-compatibility-security-"));
 const hostilePath = path.join(tmp, "hostile.rabbithole");
 await fs.writeFile(hostilePath, JSON.stringify(portableFixture()), "utf8");
@@ -305,28 +305,4 @@ function portableFixture() {
     },
     assets: { [ASSET]: ASSET_BASE64 },
   };
-}
-
-async function ensureBuild() {
-  const build = spawnSync(process.execPath, ["build.mjs"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) throw new Error(build.stderr || build.stdout || "build failed");
-}
-
-async function serveStatic(rootDir) {
-  const server = http.createServer(async (req, res) => {
-    try {
-      const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-      const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-      const file = path.resolve(rootDir, relative);
-      if (!file.startsWith(path.resolve(rootDir) + path.sep) && file !== path.join(path.resolve(rootDir), "index.html")) throw new Error("outside root");
-      const body = await fs.readFile(file);
-      const type = file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : "text/html";
-      res.writeHead(200, { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-store" });
-      res.end(body);
-    } catch {
-      res.writeHead(404); res.end("not found");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
 }

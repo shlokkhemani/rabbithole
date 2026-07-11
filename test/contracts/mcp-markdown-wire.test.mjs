@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createMarkdownRenderer, encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
@@ -332,7 +333,7 @@ try {
   await fs.writeFile(path.join(process.env.RABBITHOLE_DIR, "future-mcp.json"), JSON.stringify({ schema_version: 3 }));
   await assert.rejects(
     () => openRabbithole({ holeId: "future-mcp" }),
-    (error) => error?.message === "This Rabbithole was saved by a newer version of Rabbithole — update to open it.",
+    (error) => error?.message === NEWER_SCHEMA_MESSAGE,
   );
   console.log("ok MCP markdown wire: resume refuses newer schemas with the update-to-open message");
 } finally {

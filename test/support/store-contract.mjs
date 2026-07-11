@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { CURRENT_SCHEMA_VERSION } from "../../src/core/schema.js";
-
-const NEWER_SCHEMA_MESSAGE = "This Rabbithole was saved by a newer version of Rabbithole — update to open it.";
+import { CURRENT_SCHEMA_VERSION, NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
 const PNG_BYTES_2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 8, 8, 8, 8]);

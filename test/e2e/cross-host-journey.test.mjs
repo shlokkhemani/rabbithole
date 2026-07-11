@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import { serveStatic } from "../support/static-server.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
@@ -252,23 +252,4 @@ function assertHole(hole, title, rootMarkdown, branchMarkdown) {
 
 function assertNoCredentials(text, label) {
   for (const key of SECRET_KEYS) assert.equal(text.includes(key), false, `${label} contains credential marker ${key}`);
-}
-
-async function serveStatic(root) {
-  const server = http.createServer(async (req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-    const file = path.join(root, relative);
-    try { res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" }); res.end(await fs.readFile(file)); } catch { res.statusCode = 404; res.end("not found"); }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
-}
-
-function contentType(file) {
-  if (file.endsWith(".html")) return "text/html; charset=utf-8";
-  if (file.endsWith(".js") || file.endsWith(".mjs")) return "text/javascript; charset=utf-8";
-  if (file.endsWith(".css")) return "text/css; charset=utf-8";
-  if (file.endsWith(".woff2")) return "font/woff2";
-  return "application/octet-stream";
 }

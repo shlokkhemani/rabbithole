@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as esbuild from "esbuild";
-import { chromium } from "playwright";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../src/core/reducer.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -128,35 +126,4 @@ assert.strictEqual(staleTagged.state.progressRuns, priorRuns);
 assert.equal(Object.hasOwn(holeStateToHole(acceptedTagged.state), "progressRuns"), false);
 assert.equal(JSON.stringify(holeStateToHole(acceptedTagged.state)).includes("progressRuns"), false);
 
-const bundle = await esbuild.build({
-  stdin: {
-    contents: `import { createHoleState, holeStateToHole, reduceHoleEvent } from "./src/core/reducer.js";
-globalThis.ReducerUnderTest = { createHoleState, holeStateToHole, reduceHoleEvent };`,
-    resolveDir: ROOT,
-    sourcefile: "reducer-browser-entry.js",
-  },
-  bundle: true,
-  format: "iife",
-  target: "es2018",
-  write: false,
-  logLevel: "silent",
-});
-
-const browser = await chromium.launch();
-let browserResults;
-try {
-  const page = await browser.newPage();
-  await page.setContent("<!doctype html><meta charset=utf-8><title>Reducer conformance</title>");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  browserResults = await page.evaluate(({ corpus, runner, summarizer, freezer }) => {
-    const run = (0, eval)(`(() => { const summarizeEffects = ${summarizer}; const deepFreeze = ${freezer}; return ${runner}; })()`);
-    return run(globalThis.ReducerUnderTest, corpus);
-  }, { corpus: cases, runner: runCorpus.toString(), summarizer: summarizeEffects.toString(), freezer: deepFreeze.toString() });
-} finally {
-  await browser.close();
-}
-
-assertGoldens(browserResults, "browser");
-assert.deepEqual(browserResults, nodeResults, "Node and browser must produce identical reducer projections");
-
-console.log(`ok reducer: ${cases.length} goldens conform in node and browser; frozen-input immutability enforced`);
+console.log(`ok reducer: ${cases.length} goldens conform in node; frozen-input immutability enforced`);

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { MAX_ASSET_BYTES } from "../../src/core/assets.js";
+import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 import {
   extractSnapshotPayload,
   MAX_IMPORT_FILE_BYTES,
@@ -171,7 +172,7 @@ console.log("ok data boundaries: future format_version is clearly refused");
 
 await assert.rejects(
   () => importRabbitholeFile(new FsStore(), portable(validHole({ schema_version: 3 }))),
-  /This Rabbithole was saved by a newer version of Rabbithole — update to open it\./,
+  (error) => error?.message === NEWER_SCHEMA_MESSAGE,
 );
 console.log("ok data boundaries: future schema_version is legibly refused");
 

@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import http from "node:http";
 import path from "node:path";
 import { chromium, firefox, webkit } from "playwright";
+import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
-const server = await serveRoot(ROOT);
+const server = await serveStatic(ROOT, { routes: { "/": (_req, res) => { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><html><head></head><body></body></html>"); } } });
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
 try {
@@ -152,17 +151,4 @@ async function verifyFormPrimitivesAndButtons(page, engine) {
   assert.equal(await page.getAttribute("#key", "aria-describedby"), "key-hint", `${engine}: Field connects hint description`);
   await page.click("#toggle");
   assert.deepEqual(await page.locator("#toggle").evaluate((el) => [document.getElementById("key").type, el.getAttribute("aria-pressed")]), ["text", "true"], `${engine}: Field password toggle stays synchronized`);
-}
-
-async function serveRoot(rootDir) {
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (url.pathname === "/") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><html><head></head><body></body></html>"); return; }
-    const file = path.resolve(rootDir, decodeURIComponent(url.pathname.slice(1)));
-    if (!file.startsWith(rootDir)) { res.writeHead(403).end("Forbidden"); return; }
-    try { const bytes = await fs.readFile(file); res.writeHead(200, { "Content-Type": file.endsWith(".js") ? "text/javascript; charset=utf-8" : "application/octet-stream", "Cache-Control": "no-store" }); res.end(bytes); }
-    catch { res.writeHead(404).end("Not Found"); }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
 }

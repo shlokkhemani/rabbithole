@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
+import { ensureWebDist } from "../support/build.mjs";
+import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -11,15 +12,15 @@ const WEB_DIST = path.join(ROOT, "web/dist");
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
 } catch {
-  const build = spawnSync(process.execPath, ["build.mjs"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) {
-    process.stderr.write(build.stderr || build.stdout || "build failed\n");
-    process.exit(build.status || 1);
-  }
+  try { ensureWebDist(); } catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 }
 
 let proxyCalls = 0;
-const server = await serveStatic(WEB_DIST);
+const server = await serveStatic(WEB_DIST, { routes: {
+  "/proxy": (_req, res) => { proxyCalls += 1; res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" }); res.end(articleHtml("Proxy fallback article")); },
+  "/dead-proxy": (_req, res) => { res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("proxy unavailable"); },
+  "/reject-proxy": (_req, res) => { res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("Host is not allowlisted: arxiv.org"); },
+} });
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 const context = await browser.newContext();
@@ -167,7 +168,7 @@ try {
   await page.waitForSelector("#ingest-status.error");
   assert.equal(
     await page.textContent("#ingest-status"),
-    "This Rabbithole was saved by a newer version of Rabbithole — update to open it.",
+    NEWER_SCHEMA_MESSAGE,
     "web import should surface the exact newer-version refusal",
   );
 
@@ -246,56 +247,4 @@ function articleHtml(title) {
       <img src="/html/assets/figure.png" alt="Relative figure">
     </article>
   </body></html>`;
-}
-
-async function serveStatic(rootDir) {
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (url.pathname === "/proxy") {
-      proxyCalls += 1;
-      res.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store",
-      });
-      res.end(articleHtml("Proxy fallback article"));
-      return;
-    }
-    if (url.pathname === "/dead-proxy") {
-      res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-      res.end("proxy unavailable");
-      return;
-    }
-    if (url.pathname === "/reject-proxy") {
-      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-      res.end("Host is not allowlisted: arxiv.org");
-      return;
-    }
-
-    const rel = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
-    const file = path.resolve(rootDir, rel);
-    if (!file.startsWith(rootDir)) {
-      res.writeHead(403).end("Forbidden");
-      return;
-    }
-    try {
-      const bytes = await fs.readFile(file);
-      res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
-      res.end(bytes);
-    } catch {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
-    }
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return server;
-}
-
-function contentType(file) {
-  if (file.endsWith(".html")) return "text/html; charset=utf-8";
-  if (file.endsWith(".js") || file.endsWith(".mjs")) return "text/javascript; charset=utf-8";
-  if (file.endsWith(".css")) return "text/css; charset=utf-8";
-  if (file.endsWith(".woff2")) return "font/woff2";
-  if (file.endsWith(".ttf")) return "font/ttf";
-  return "application/octet-stream";
 }

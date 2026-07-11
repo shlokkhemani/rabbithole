@@ -3,8 +3,6 @@ import {
   base64ToBytes,
   binaryToBase64,
   createPortableProjection,
-  RABBITHOLE_FILE_FORMAT,
-  RABBITHOLE_FILE_FORMAT_VERSION,
 } from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
 import { normalizeBlockIds } from "../core/blocks.js";
@@ -13,8 +11,6 @@ import {
   MAX_IMPORT_FILE_BYTES,
   parsePortableImportPayload,
 } from "../core/portable-import.js";
-
-export { RABBITHOLE_FILE_FORMAT, RABBITHOLE_FILE_FORMAT_VERSION };
 
 export async function buildRabbitholeExport(store, holeId) {
   if (!store) throw new Error("Export needs a store.");

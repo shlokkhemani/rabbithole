@@ -3,7 +3,6 @@ import {
   flashHint,
   mode,
   nodes,
-  toggleTheme,
 } from "./core.js";
 import { focusedMark, jumpToOrigin, openNode, stepMark } from "./reader.js";
 import { frameAll, tidy } from "./canvas-view.js";

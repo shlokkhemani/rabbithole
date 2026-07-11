@@ -50,9 +50,7 @@ import {
 } from "./canvas-view.js";
 import { updateComposerState } from "./ask-followups.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
-import { mountDocImages } from "./image-ux.js";
 import { refreshNodeHtml } from "./renderer.js";
-import { mountVisuals } from "./visuals.js";
 
   // ===========================================================================
   // transport

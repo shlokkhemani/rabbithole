@@ -15,7 +15,6 @@ const PDF_MAGIC = "%PDF";
 export async function ingestPdf(source, {
   pages,
   includeText = true,
-  extractEmbeddedImages = false,
   onProgress = null,
 } = {}) {
   const { data, name } = await readPdfSource(source);
@@ -40,9 +39,7 @@ export async function ingestPdf(source, {
     }
 
     const notes = [];
-    if (extractEmbeddedImages) {
-      notes.push("Embedded raster extraction is disabled in the browser importer; page render PNGs were created instead.");
-    }
+    notes.push("Embedded raster extraction is disabled in the browser importer; page render PNGs were created instead.");
     const metadata = await doc.getMetadata().catch((err) => {
       notes.push(`PDF metadata could not be read: ${err instanceof Error ? err.message : String(err)}`);
       return null;
@@ -94,11 +91,10 @@ export async function ingestPdfToStoredHole({
   pages,
   onProgress = null,
   includeText = true,
-  extractEmbeddedImages = false,
   baseUrl = null,
 } = {}) {
   if (!store) throw new Error("PDF import needs a store.");
-  const result = await ingestPdf(source, { pages, includeText, extractEmbeddedImages, onProgress });
+  const result = await ingestPdf(source, { pages, includeText, onProgress });
   const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
   const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
   const markdown = buildPdfMarkdown({

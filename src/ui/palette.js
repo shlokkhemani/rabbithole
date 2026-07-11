@@ -154,7 +154,6 @@ export function closePalette(settings){
       row.hidden = false;
       row.dataset.idx = i;
       row.classList.toggle("sel", i === palSel);
-      row.classList.toggle("pal-command", item.type === "command");
       row._flag.textContent = "";
       row._flag.className = "";
       row._badge.hidden = true;

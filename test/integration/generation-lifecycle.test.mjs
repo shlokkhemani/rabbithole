@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { GenerationRun } from "../../src/core/generation-run.js";
 import { createHoleState, reduceHoleEvent } from "../../src/core/reducer.js";
-import { AnthropicDirectBrain, parseAnthropicSseEvent } from "../../src/web/brain/anthropic-messages.js";
 import { ProviderError, normalizeProviderError } from "../../src/web/brain/errors.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "../../src/web/brain/generation-events.js";
 import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } from "../../src/web/brain/openai-compatible.js";
@@ -55,28 +54,6 @@ try {
 assert.equal(parseOpenAISseEvent('data: {"choices":[{"message":{"content":"one"}}]}\ndata: {"choices":[{"delta":{"content":" two"}}]}'), "one two");
 assert.equal(parseOpenAISseEvent("data: [DONE]"), "");
 console.log("ok generation lifecycle: OpenAI SSE arbitrary fragmentation, multi-event chunks, CRLF, and DONE");
-
-const anthropicEvent = 'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}';
-assert.equal(parseAnthropicSseEvent(anthropicEvent), "hello");
-assert.equal(parseAnthropicSseEvent('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}'), "ab");
-assert.equal(parseAnthropicSseEvent("data: [DONE]"), "");
-console.log("ok generation lifecycle: Anthropic SSE multi-data events, CRLF, and DONE");
-
-const anthropicWire = [
-  'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"alpha"}}',
-  'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":" beta"}}',
-  "data: [DONE]",
-].join("\r\n\r\n") + "\r\n\r\n";
-const rawAnthropic = new AnthropicDirectBrain({ apiKey: "fixture" });
-try {
-  for (let offset = 0; offset <= anthropicWire.length; offset += 1) {
-    globalThis.fetch = async () => responseFromChunks(chunksOf(anthropicWire, [offset]));
-    assert.deepEqual(await collect(rawAnthropic.streamMessagesApi({ messages: [], model: "fixture" })), ["alpha", " beta"]);
-  }
-} finally {
-  globalThis.fetch = originalFetch;
-}
-console.log("ok generation lifecycle: Anthropic SSE arbitrary fragmentation and multi-event chunks");
 
 function parseTitle(chunks, fallbackTitle = "Fallback") {
   const parser = new TitleSentinelParser({ fallbackTitle });
@@ -147,19 +124,6 @@ try {
 } finally {
   globalThis.fetch = originalFetch;
 }
-
-class FixtureAnthropicBrain extends AnthropicDirectBrain {
-  async *streamMessagesApi() { yield "TITLE: Direct title\nBody"; }
-}
-const anthropic = new FixtureAnthropicBrain({ apiKey: "fixture" });
-assert.deepEqual(await collect(anthropic.answerBranchMessagesApi({ fallbackTitle: "Fallback" })), [
-  { type: "title", title: "Direct title" }, { type: "text", delta: "Body" },
-]);
-for (const events of [
-  await collect(anthropic.authorExplainerMessagesApi({ question: "why" })),
-  await collect(anthropic.authorDocumentMessagesApi({ markdown: "source" })),
-]) assert.equal(events.some((event) => event.type === "title"), false);
-console.log("ok generation lifecycle: both brain implementations expose GenerationEvent on all surfaces");
 
 const run = new GenerationRun({ id: "run-a", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
 assert.deepEqual(run.accept({ type: "text", delta: "one" }, { nodeId: "node-a" }), {

@@ -4,8 +4,6 @@ import { disposeImageUx, mountDocImages } from "./image-ux.js";
 import { disposeReader, initReader, openNode, registerReaderHooks } from "./reader.js";
 import {
   disposeCanvasView,
-  diveToNode,
-  effH,
   initCanvasView,
   registerCanvasHooks,
   setMode
@@ -64,10 +62,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       post: post,
       openNode: openNode,
       mountVisuals: mountVisuals,
-      mountDocImages: mountDocImages,
-      ensureCanvasBuilt: noop,
-      diveToNode: diveToNode,
-      effH: effH
+      mountDocImages: mountDocImages
     });
     registerReaderHooks({
       hideAsk: hideAsk,

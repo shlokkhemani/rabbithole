@@ -136,19 +136,15 @@ async function verifyFormPrimitivesAndButtons(page, engine) {
   assert.match(buttonContracts.iconError, /requires aria-label/, `${engine}: IconButton rejects unnamed icons`);
 
   await page.evaluate(async (base) => {
-    const [{ selectMarkup, wireSelect }, { comboboxMarkup, wireCombobox }, { fieldMarkup, wireField }] = await Promise.all([
-      import(base + "/src/ui/primitives/select.js"), import(base + "/src/ui/primitives/combobox.js"), import(base + "/src/ui/primitives/field.js")
+    const [{ comboboxMarkup, wireCombobox }, { fieldMarkup, wireField }] = await Promise.all([
+      import(base + "/src/ui/primitives/combobox.js"), import(base + "/src/ui/primitives/field.js")
     ]);
     const root = document.getElementById("root");
-    root.innerHTML = '<span id="select-label">Provider</span>' + selectMarkup({ id: "select", labelledBy: "select-label", value: "a", options: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }] }) +
-      '<span id="combo-label">Model</span>' + comboboxMarkup({ id: "combo", labelledBy: "combo-label", value: "", label: "Choose" }) +
+    root.innerHTML = '<span id="combo-label">Model</span>' + comboboxMarkup({ id: "combo", labelledBy: "combo-label", value: "", label: "Choose" }) +
       fieldMarkup({ id: "key", label: "Key", type: "password", toggleId: "toggle", toggleHtml: "Show", hint: "Private" });
-    wireSelect(root, { id: "select", labelledBy: "select-label", options: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }] });
     wireCombobox(root, { id: "combo", labelledBy: "combo-label", source: { load: () => [{ value: "m1", label: "Model One" }, { value: "m2", label: "Model Two" }], filter: (items, query) => items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())), renderOption: (item, meta) => `<div role="option" data-value="${item.value}" data-label="${item.label}" data-item-index="${meta.index}">${item.label}</div>`, loading: () => "Loading", empty: () => "Empty", error: (retry) => retry } });
     wireField(root, { id: "key", toggleId: "toggle", renderToggle: (visible) => visible ? "Hide" : "Show" });
   }, baseUrl);
-  await page.locator("#select").focus(); await page.keyboard.press("ArrowDown"); await page.waitForTimeout(20); await page.keyboard.press("Enter");
-  assert.equal(await page.locator("#select-value").innerText(), "Beta", `${engine}: Select keyboard open and commit`);
   await page.locator("#combo").focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(20);
   assert.equal(await page.getAttribute("#combo-input", "aria-expanded"), "true", `${engine}: Combobox opens with owned input semantics`);
   await page.keyboard.type("two"); await page.keyboard.press("Enter");

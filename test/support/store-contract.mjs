@@ -3,10 +3,10 @@ import { CURRENT_SCHEMA_VERSION } from "../../src/core/schema.js";
 
 const NEWER_SCHEMA_MESSAGE = "This Rabbithole was saved by a newer version of Rabbithole — update to open it.";
 
-export const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
-export const PNG_BYTES_2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 8, 8, 8, 8]);
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
+const PNG_BYTES_2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 8, 8, 8, 8]);
 
-export function node(overrides = {}) {
+function node(overrides = {}) {
   return {
     id: "root",
     parent_id: null,
@@ -27,7 +27,7 @@ export function node(overrides = {}) {
   };
 }
 
-export function hole(overrides = {}) {
+function hole(overrides = {}) {
   return {
     hole_id: "contract-hole",
     title: "Contract Hole",
@@ -39,7 +39,7 @@ export function hole(overrides = {}) {
   };
 }
 
-export async function assertBytes(actual, expected, message) {
+async function assertBytes(actual, expected, message) {
   assert(actual, message || "expected bytes");
   let bytes = actual;
   if (typeof Blob !== "undefined" && actual instanceof Blob) {
@@ -48,7 +48,7 @@ export async function assertBytes(actual, expected, message) {
   assert.deepEqual(Buffer.from(bytes), Buffer.from(expected));
 }
 
-export async function runHoleContract(store, hooks) {
+async function runHoleContract(store, hooks) {
   await store.saveHole(hole());
   const loaded = await store.loadHole("contract-hole");
   assert.equal(loaded.schema_version, CURRENT_SCHEMA_VERSION);
@@ -68,14 +68,14 @@ export async function runHoleContract(store, hooks) {
   console.log("ok store contract: hole save/load/list/delete and schema stamping");
 }
 
-export async function runNewerSchemaRefusalContract(store, hooks) {
+async function runNewerSchemaRefusalContract(store, hooks) {
   const future = { ...hole({ hole_id: "future-hole" }), schema_version: 3, updated_at: "2026-01-01T00:00:00.000Z" };
   await hooks.writeRawHole("future-hole", future);
   await assert.rejects(() => store.loadHole("future-hole"), (error) => error?.message === NEWER_SCHEMA_MESSAGE);
   console.log("ok store contract: newer schema is refused with the update-to-open message");
 }
 
-export async function runMigrationContract(store, hooks) {
+async function runMigrationContract(store, hooks) {
   const fixture = {
     hole_id: "legacy-hole",
     title: "Legacy Hole",
@@ -116,7 +116,7 @@ export async function runMigrationContract(store, hooks) {
   console.log("ok store contract: v0.2 fixture migrates, saves, and reloads as schema v2");
 }
 
-export async function runAssetContract(store) {
+async function runAssetContract(store) {
   await store.putAsset("asset-hole", "diagram-1.png", PNG_BYTES);
   assert.deepEqual(await store.listAssets("asset-hole"), ["diagram-1.png"]);
   await assertBytes(await store.getAsset("asset-hole", "diagram-1.png"), PNG_BYTES);
@@ -128,7 +128,7 @@ export async function runAssetContract(store) {
   console.log("ok store contract: asset put/get/list/delete");
 }
 
-export async function runStagingContract(store) {
+async function runStagingContract(store) {
   const staged = await store.createStaging();
   assert.match(staged.ingest_id, /^ingest-/);
   await store.putStagedAsset(staged.ingest_id, "page-001.png", PNG_BYTES);
@@ -139,7 +139,7 @@ export async function runStagingContract(store) {
   console.log("ok store contract: staging create/put/adopt");
 }
 
-export async function runSafetyContract(store) {
+async function runSafetyContract(store) {
   for (const bad of ["../bad", ".staging", "/tmp/bad", "bad/slash", "bad%2fslash"]) {
     await assert.rejects(() => store.saveHole(hole({ hole_id: bad })), /Invalid hole id/);
     await assert.rejects(() => store.putAsset(bad, "safe.png", PNG_BYTES), /Invalid hole id/);
@@ -153,7 +153,7 @@ export async function runSafetyContract(store) {
   console.log("ok store contract: safety validation rejects bad ids, names, and traversal");
 }
 
-export async function runAssetGcFixture(store, makeDeleteHost) {
+async function runAssetGcFixture(store, makeDeleteHost) {
   await store.putAsset("gc-hole", "shared.png", PNG_BYTES);
   const root = node({ id: "root", title: "Root", markdown: "Root" });
   const childA = node({

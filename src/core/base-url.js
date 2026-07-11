@@ -125,22 +125,6 @@ export function maybeUpgradeBaseUrlFromFrontmatter(node) {
   return true;
 }
 
-/** @param {LooseObject} node */
-export function backfillLegacyNodeBaseUrl(node) {
-  if (Object.prototype.hasOwnProperty.call(node, "base_url") && Object.prototype.hasOwnProperty.call(node, "base_url_source")) {
-    const normalized = normalizeStoredBaseUrlFields(node);
-    const changed = node.base_url !== normalized.base_url || node.base_url_source !== normalized.base_url_source;
-    node.base_url = normalized.base_url;
-    node.base_url_source = normalized.base_url_source;
-    return changed;
-  }
-
-  const frontmatter = inferBaseUrlFromFrontmatter(node?.markdown ?? "");
-  node.base_url = frontmatter;
-  node.base_url_source = frontmatter ? "frontmatter" : null;
-  return true;
-}
-
 /** @param {LooseObject | null | undefined} hole */
 export function backfillLegacyHoleBaseUrls(hole) {
   if (!Array.isArray(hole?.nodes)) return false;

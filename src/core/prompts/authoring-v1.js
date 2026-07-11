@@ -19,8 +19,6 @@ export const AUTHORING_VOCABULARY_V1 = [
   "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
 ].join("\n");
 
-export const AUTHORING_VOCABULARY = AUTHORING_VOCABULARY_V1;
-
 export const AUTHORING_SYSTEM_PROMPT_V1 = [
   "You are the document authoring Brain for Rabbithole, a branching-document canvas.",
   "Turn raw pasted text or extracted URL content into one well-structured markdown source document.",

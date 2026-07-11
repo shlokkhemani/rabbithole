@@ -2,8 +2,7 @@
  * Shared generation adapter vocabulary.
  *
  * Runtime authority for the browser brain surfaces and their current raw-text
- * streams: {@link ../../web/brain/openai-compatible.js},
- * {@link ../../web/brain/anthropic-messages.js}, and
+ * streams: {@link ../../web/brain/openai-compatible.js} and
  * {@link ../../web/brain/index.js}. Current consumers and title extraction are
  * {@link ../../web/transport/direct-host.js},
  * {@link ../../web/brain/title-sentinel.js}, and {@link ../../web/app.js}.

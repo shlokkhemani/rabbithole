@@ -5,7 +5,6 @@ import { normalizePosition, normalizeSize, normalizeViewState } from "./model.js
 /** @typedef {import("./contracts/artifact.js").PersistedNode} PersistedNode */
 
 export const CURRENT_SCHEMA_VERSION = 2;
-export const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 export const NEWER_SCHEMA_MESSAGE = "This Rabbithole was saved by a newer version of Rabbithole — update to open it.";
 
 /** @template T @param {T} value @returns {T} */

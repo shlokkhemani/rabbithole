@@ -25,7 +25,6 @@ let currentHoleId = null;
 let currentUi = null;
 let currentAssetLease = null;
 let holeTransition = Promise.resolve();
-let uiStarted = false;
 let railOpen = false;
 let blankZoom = 1;
 let composerDialog = null;
@@ -69,7 +68,6 @@ async function boot() {
 }
 
 function renderShell() {
-  document.documentElement.classList.remove("web-home-active");
   document.documentElement.classList.add("web-canvas-active");
   document.body.classList.add("mode-canvas", "web-shell");
   document.body.innerHTML = `<div id="canvas-root">${CANVAS_SHELL}</div>
@@ -123,7 +121,7 @@ function renderShell() {
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
   document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
     `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${bunnyMarkSvg()}</span><span class="sep toolbar-brand-sep"></span>`);
-  railOpen = loadRailOpen();
+  railOpen = false;
   applyRailState();
   syncRailPosition();
   requestAnimationFrame(syncRailPosition);
@@ -353,10 +351,6 @@ function openComposer({ source = "button", value = "", trigger } = {}) {
     initialFocus: value ? input : card,
     onClose: finishClosingComposer,
   });
-}
-
-function closeComposer() {
-  composerDialog?.close("programmatic");
 }
 
 function finishClosingComposer() {
@@ -589,7 +583,6 @@ function startHole(hole, options = {}) {
 async function mountHole(hole, { replace = false } = {}) {
   await disposeCurrentHole();
   resetHoleSurface();
-  uiStarted = true;
   currentHoleId = hole.hole_id;
   document.body.classList.remove("web-blank-canvas");
   document.getElementById("blank-start").hidden = true;
@@ -655,7 +648,6 @@ async function disposeCurrentHole() {
   currentUi = null;
   currentHost = null;
   currentAssetLease = null;
-  uiStarted = false;
   currentHoleId = null;
   const errors = [];
   if (ui) {
@@ -692,8 +684,7 @@ function closeComposerSilently() {
   composerDialog = null;
 }
 
-function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
-  uiStarted = false;
+function showBlankCanvas() {
   currentHost = null;
   currentHoleId = null;
   document.body.classList.add("mode-canvas", "web-blank-canvas");
@@ -704,7 +695,6 @@ function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
   history.replaceState(null, "", location.pathname);
   document.getElementById("blank-start").hidden = false;
   syncGenerationSetupUi();
-  if (shouldOpenComposer) openComposer({ source: "empty" });
 }
 
 async function exportCurrentRabbithole() {
@@ -850,10 +840,6 @@ function applyRailState() {
     toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
     toggle.classList.toggle("rail-on", railOpen);
   }
-}
-
-function loadRailOpen() {
-  return false;
 }
 
 function eyeSvg(open) {
@@ -1074,9 +1060,9 @@ function holeIdFromHash() {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-function formatRelativeDate(value, { compact = false } = {}) {
+function formatRelativeDate(value) {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return compact ? "unknown" : "Updated at an unknown time";
+  if (!date || Number.isNaN(date.getTime())) return "Updated at an unknown time";
   const deltaSeconds = Math.round((date.getTime() - Date.now()) / 1000);
   const abs = Math.abs(deltaSeconds);
   const ranges = [
@@ -1091,7 +1077,7 @@ function formatRelativeDate(value, { compact = false } = {}) {
     const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
     const [, unit, divisor] = ranges.find(([limit]) => abs < limit);
     const formatted = formatter.format(Math.round(deltaSeconds / divisor), unit);
-    return compact ? formatted : `Updated ${formatted}`;
+    return `Updated ${formatted}`;
   } catch {
     return date.toLocaleString(undefined, { month: "short", day: "numeric" });
   }
@@ -1129,27 +1115,6 @@ function applyInitialWebTheme() {
     if (!savedTheme && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) savedTheme = "dark";
     if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
   } catch {}
-}
-
-async function copyText(text, message) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    fallbackCopyText(text);
-  }
-  showToast({ message });
-}
-
-function fallbackCopyText(text) {
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.left = "-999px";
-  document.body.append(area);
-  area.select();
-  try { document.execCommand("copy"); } catch {}
-  area.remove();
 }
 
 function safeLocalStorageGet(key) {

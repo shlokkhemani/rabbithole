@@ -31,10 +31,6 @@ export const LENSES = Object.freeze({
   }),
 });
 
-export const LENS_LABELS = Object.freeze(
-  Object.fromEntries(Object.entries(LENSES).map(([key, value]) => [key, value.label]))
-);
-
 /** @param {unknown} value @param {number} length */
 export function truncate(value, length) {
   const s = String(value ?? "");
@@ -150,16 +146,6 @@ export function applyNodeUpdateFields(node, payload) {
   if (Number.isFinite(payload.font_scale)) next.font_scale = /** @type {number} */ (payload.font_scale);
   if (typeof payload.read === "boolean") next.read = payload.read;
   return next;
-}
-
-/** @param {NodeCollection} nodes @param {string} parentId @returns {ModelHoleNode[]} */
-export function childrenOfNode(nodes, parentId) {
-  /** @type {ModelHoleNode[]} */
-  const out = [];
-  for (const node of valuesOfNodes(nodes)) {
-    if (node.parent_id === parentId) out.push(node);
-  }
-  return out;
 }
 
 /** @param {NodeCollection} nodes @param {string} rootId @returns {string[]} */

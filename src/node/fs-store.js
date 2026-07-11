@@ -228,16 +228,6 @@ export class FsStore {
 
 export const defaultFsStore = new FsStore();
 
-export async function addAsset(holeId, { name, file_path: filePath }) {
-  const [entry] = await validateAssetEntries([{ name, file_path: filePath }]);
-  const dir = await ensureAssetDir(holeId);
-  const dest = path.join(dir, entry.name);
-  if (path.resolve(entry.file_path) !== path.resolve(dest)) {
-    await fs.copyFile(entry.file_path, dest);
-  }
-  return { name: entry.name, path: dest };
-}
-
 export async function addAssetsToHole(holeId, assets) {
   const entries = await validateAssetEntries(assets);
   if (!entries.length) return [];

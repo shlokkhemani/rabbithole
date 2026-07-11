@@ -158,8 +158,6 @@ export function createSettingsPopover(options) {
       filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })), renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().answer_model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Looking for installed models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching installed models." : "No models are installed yet."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach the local model endpoint. ${retry}</div>` }, onChange: commit });
   }
 
-  function syncModelSelectLabel() { const settings = loadSettings(); const current = settings.answer_model || providerFor(settings.preset).answer_model; const name = surface?.querySelector("#model-select-name"); if (name) name.textContent = modelDisplayName(current); const select = surface?.querySelector("#model-select"); if (select) select.title = current; }
-
   async function commitSettingsKey({ required = false } = {}) {
     const input = surface?.querySelector("#api-key"); const status = surface?.querySelector("#api-key-status");
     if (!input || !status) return false;
@@ -201,7 +199,7 @@ export function createSettingsPopover(options) {
     readyCallback = null; options.onClose?.();
   }
 
-  return { open, close, refresh: renderConditionalSections };
+  return { open, close };
 }
 
 function keyIdleWhisper(preset) { return `Stored only in this browser, sent directly to ${preset.label}.`; }

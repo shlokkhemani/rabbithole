@@ -34,15 +34,10 @@ export function createHoleState({ hole_id, title, root_id, created_at = null, vi
     view_state,
     nodes: new Map([...entries].map(([id, node]) => [id, {
       ...node,
-      ...(Object.prototype.hasOwnProperty.call(node, "extensions") ? { extensions: structuredJsonClone(node.extensions) } : {}),
+      ...(Object.prototype.hasOwnProperty.call(node, "extensions") ? { extensions: cloneJson(node.extensions) } : {}),
     }])),
     progressRuns: new Map(),
   };
-}
-
-/** @param {unknown} value @returns {Record<string, unknown>} */
-function structuredJsonClone(value) {
-  return JSON.parse(JSON.stringify(value));
 }
 
 /** @param {HoleState} state */
@@ -79,7 +74,7 @@ export function holeStateToHydrationNodes(state, { suppressRootOrigin = false } 
     collapsed: !!node.collapsed,
     status: node.status ?? "answered",
     read: !!node.read,
-    extensions: structuredJsonClone(node.extensions ?? {}),
+    extensions: cloneJson(node.extensions ?? {}),
   }));
 }
 

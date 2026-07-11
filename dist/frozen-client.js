@@ -1695,9 +1695,6 @@ var RabbitholeFrozenClient = (() => {
       q: "Go one level deeper than this document does: the underlying mechanism, the important edge cases, and what experts know about this that introductory treatments gloss over."
     })
   });
-  var LENS_LABELS = Object.freeze(
-    Object.fromEntries(Object.entries(LENSES).map(([key, value]) => [key, value.label]))
-  );
   function truncate(value, length) {
     const s = String(value != null ? value : "");
     return s.length > length ? `${s.slice(0, length).trimEnd()}\u2026` : s;
@@ -5588,7 +5585,6 @@ var RabbitholeFrozenClient = (() => {
       row.hidden = false;
       row.dataset.idx = i3;
       row.classList.toggle("sel", i3 === palSel);
-      row.classList.toggle("pal-command", item.type === "command");
       row._flag.textContent = "";
       row._flag.className = "";
       row._badge.hidden = true;
@@ -32840,10 +32836,7 @@ ${text2}</tr>
         post,
         openNode,
         mountVisuals,
-        mountDocImages,
-        ensureCanvasBuilt: noop,
-        diveToNode,
-        effH
+        mountDocImages
       });
       registerReaderHooks({
         hideAsk,

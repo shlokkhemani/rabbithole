@@ -9,10 +9,10 @@ const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
+  constructor({ store, hole, brain = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
     this.store = store;
     this.brain = brain;
-    this.onEvent = onEvent;
+    this.onEvent = null;
     this.onToast = onToast;
     this.onDone = onDone;
     this.onRestore = onRestore;

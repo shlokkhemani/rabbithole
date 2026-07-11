@@ -1,5 +1,4 @@
 import {
-  BRANCH_SELECTION,
   CANVAS_BASE,
   MAX_FS,
   MIN_FS,
@@ -10,8 +9,6 @@ import {
   buildLoading,
   childrenOf,
   closed,
-  composerSend,
-  composerText,
   connLost,
   currentNodeId,
   esc,
@@ -29,7 +26,6 @@ import {
   nodes,
   playLandingCue,
   readerMain,
-  rootId,
   setCurrentNodeId,
   setModeValue,
   sideEl,

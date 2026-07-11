@@ -83,7 +83,7 @@ async function resumeRabbithole(holeId, signal, assets) {
   // Guard against schema drift / partial files: a hole with no root_id or no
   // root node would open a session the browser can't render and the tool would
   // block on. Fail fast with an actionable error instead.
-  if (!hole || !hole.root_id || !Array.isArray(hole.nodes)) {
+  if (!hole.root_id || !Array.isArray(hole.nodes)) {
     throw new Error(`Hole ${holeId} is missing a root_id or nodes; cannot resume.`);
   }
   if (!hole.nodes.some((n) => n && n.id === hole.root_id)) {

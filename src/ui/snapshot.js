@@ -140,9 +140,25 @@ export async function buildSnapshotHydration() {
   };
 }
 
+function collectStyleText() {
+  var chunks = [];
+  var sheets = document.styleSheets || [];
+  for (var i = 0; i < sheets.length; i++) {
+    try {
+      var rules = sheets[i].cssRules || [];
+      var ruleText = [];
+      for (var j = 0; j < rules.length; j++) ruleText.push(rules[j].cssText);
+      if (ruleText.length) chunks.push(ruleText.join("\n"));
+    } catch (_) {
+      // Cross-origin stylesheets do not expose cssRules.
+    }
+  }
+  return chunks.join("\n") || document.querySelector("style")?.textContent || "";
+}
+
 export function buildSnapshotHtml(snapshotHydration) {
   var title = (snapshotHydration && snapshotHydration.title) || "Rabbithole";
-  var styleText = document.querySelector("style")?.textContent || "";
+  var styleText = collectStyleText();
   var dompurifySource = extractDompurifySource();
   var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function"
     ? snapshotHooks.getFrozenClientSource()

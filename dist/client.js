@@ -5386,10 +5386,24 @@ var RabbitholeClient = (() => {
       nodes: snapshotNodes
     };
   }
-  function buildSnapshotHtml(snapshotHydration) {
+  function collectStyleText() {
     var _a2;
+    var chunks = [];
+    var sheets = document.styleSheets || [];
+    for (var i2 = 0; i2 < sheets.length; i2++) {
+      try {
+        var rules = sheets[i2].cssRules || [];
+        var ruleText = [];
+        for (var j = 0; j < rules.length; j++) ruleText.push(rules[j].cssText);
+        if (ruleText.length) chunks.push(ruleText.join("\n"));
+      } catch (_) {
+      }
+    }
+    return chunks.join("\n") || ((_a2 = document.querySelector("style")) == null ? void 0 : _a2.textContent) || "";
+  }
+  function buildSnapshotHtml(snapshotHydration) {
     var title = snapshotHydration && snapshotHydration.title || "Rabbithole";
-    var styleText = ((_a2 = document.querySelector("style")) == null ? void 0 : _a2.textContent) || "";
+    var styleText = collectStyleText();
     var dompurifySource = extractDompurifySource();
     var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function" ? snapshotHooks.getFrozenClientSource() : window.__RABBITHOLE_FROZEN_CLIENT__;
     if (!frozenClient) throw new Error("Frozen client bundle is unavailable");

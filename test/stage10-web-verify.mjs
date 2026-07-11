@@ -478,10 +478,6 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "legacy single-key storage should stay retired");
   const snapshotHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
-  assert(
-    snapshotHtml.includes("<style>\n\n</style>"),
-    "known defect tripwire (C4): web-exported snapshots serialize the page's inline <style>, which the web build does not emit, so they ship unstyled; the styled export path lives in the canvas host. Phase 7's snapshot boundary makes web exports styled and self-contained — retire this tripwire there and recalibrate the snapshot byte budgets."
-  );
   const rawJson = JSON.stringify(hole);
   assert(!rawJson.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
 
@@ -927,6 +923,12 @@ async function verifyCanvasBranching() {
   const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const frozenPage = await context.newPage();
   await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
+  const frozenStyles = await frozenPage.evaluate(() => ({
+    surfaceGap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap")),
+    toolbarPosition: getComputedStyle(document.getElementById("toolbar")).position,
+  }));
+  assert(frozenStyles.surfaceGap > 0, "web-exported snapshots should preserve positive shared surface spacing");
+  assert.equal(frozenStyles.toolbarPosition, "fixed", "web-exported snapshots should apply structural toolbar styling");
   await frozenPage.focus("#t-share");
   await frozenPage.keyboard.press("Enter");
   await frozenPage.waitForSelector("#sharemenu.visible");

@@ -28,20 +28,20 @@
       "description": "Frozen HTML size for the math-heavy reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size.",
-      "baseline": 1074897,
-      "ceiling": 1128641.85,
-      "measured_at_commit": "761c56c"
+      "rationale": "Exact UTF-8 snapshot size. Ratcheted from 1074897: that baseline measured the retired C4 defect (web exports shipped an empty style block); styled self-contained exports embed the serialized web stylesheet (~457KB incl. fonts and KaTeX).",
+      "baseline": 1554504,
+      "ceiling": 1632229.2,
+      "measured_at_commit": "94f05d7"
     },
     {
       "id": "snapshot_assets_bytes",
       "description": "Frozen HTML size for the PNG/SVG reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size including assets.",
-      "baseline": 1075004,
-      "ceiling": 1128754.2,
-      "measured_at_commit": "761c56c"
+      "rationale": "Exact UTF-8 snapshot size including assets. Ratcheted from 1075004: that baseline measured the retired C4 defect (web exports shipped an empty style block); styled self-contained exports embed the serialized web stylesheet (~457KB incl. fonts and KaTeX).",
+      "baseline": 1554611,
+      "ceiling": 1632341.55,
+      "measured_at_commit": "94f05d7"
     },
     {
       "id": "snapshot_math_build_ms",

@@ -127,7 +127,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | rail content/geometry exact values | C4 | Pins the Phase 2 semantic rail width, panel padding, and symmetric row-padding geometry. | — |
 | keyboard-opened rail holds focus without a container ring; Escape closes only the rail | C2 | Focus policy: the panel takes focus so keys flow into rows, container emphasis must not impersonate the keyboard ring (was a UA `outline: auto` around the whole panel), and Escape must not fall through to the canvas client's open-the-reader shortcut (it did — the rail handler leaked propagation). | Chrome: keyboard-only completion (rail subset) |
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
-| web snapshot export ships an empty style block | C4 | Records that web-exported frozen HTML is unstyled (`snapshot.js` serializes the page's inline `<style>`, which the web build does not emit; the styled export path lives in the canvas host). Phase 7's snapshot boundary fixes this and retires the tripwire. | Data: snapshot export styling |
+| web-exported frozen snapshots apply self-contained styles | C2 | Requires linked same-origin web CSS to be serialized into exports, with shared tokens and structural toolbar styling active after offline hydration. | Rendering: frozen viewing fully offline; Data: snapshot export styling |
 | owned provider Select ARIA, keyboard, token anchor, nested Escape, and focus restoration | C2 | Pins the single-select trigger/listbox contract, roving option focus, token-derived anchoring, child-before-parent dismissal, and focus continuity (`stage10-web-verify.mjs:262-292`, `stage10-web-verify.mjs:331-334`). | Chrome: anchored transient surfaces; keyboard-only completion; focus restoration |
 | provider switch preserves conditional settings and provider-local credentials | C2 | Preserves live provider persistence and the Local/OpenRouter conditional settings surfaces through the owned Select. | Chrome: settings during active stream (no active stream) |
 | OpenRouter Combobox ARIA, keyboard, token anchor, focus, and designed async states | C2 | Pins the editable-combobox/listbox/option contract, `aria-activedescendant` navigation with input focus retained, token-derived anchoring, loading/empty/error-retry states, exact-id fallback, dual model commit, and trigger focus restoration. | Chrome: Combobox catalogs; anchored transient surfaces; keyboard-only completion; focus restoration |
@@ -306,9 +306,9 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 128 |
+| C2 behavioral product contract | 129 |
 | C3 implementation snapshot | 10 |
-| C4 known defect | 5 |
+| C4 known defect | 4 |
 | C5 design target | 0 |
 | **Total** | **184** |
 
@@ -324,7 +324,6 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 
 - `FsStore.getAsset()` returns a `Buffer`, but `buildRabbitholeExport()` assumes Blob and calls `blob.arrayBuffer()` (`src/web/portable.js:139`) — exporting an asset-bearing hole directly from the filesystem store throws. Unreachable in today's product (web export runs against the IDB store, which returns Blobs), but it is a store-port contract violation; the typed store port (Phase 5) and artifact unification (Phase 7) must resolve it. stage13's round-trip test documents this with a test-local Blob-converting subclass.
 - `base64ToBlob()` (`src/web/portable.js`) creates an untyped Blob, so a directly imported asset snapshots to an `application/octet-stream` data URL that the frozen image sanitizer rejects. Typed asset handling lands with the store port (Phase 5) / artifact unification (Phase 7). Pinned as C4 in stage15.
-- Web-exported frozen snapshots carry no styles at all: `buildSnapshotHtml()` (`src/ui/snapshot.js:145`) serializes the page's first inline `<style>`, which exists in the canvas host (`src/node/html/canvas.js:30-33` inlines `CANVAS_STYLES` + KaTeX) but not in the web build, whose CSS arrives via an external `<link>`. Discovered during Phase 2 slice B review when an attempted inline-style injection moved the snapshot byte gauge +51KB. Fix lands with the Phase 7 snapshot boundary (styled, self-contained web exports incl. KaTeX) plus a snapshot-budget recalibration. Pinned as C4 in stage10.
 
 ## Smoke-detector proof (Phase 1 exit criterion)
 

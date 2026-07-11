@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { renderMarkdownToHtml } from "../src/core/markdown.js";
+import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import {
   deriveNodeBaseUrl,
   inferBaseUrlFromFrontmatter,
   normalizeBaseUrl,
-} from "../src/core/base-url.js";
-import { RabbitHoleSession } from "../src/node/transport/session.js";
-import { loadHole } from "../src/node/fs-store.js";
-import { toolDefinitions } from "../src/node/tools/manifest.js";
+} from "../../src/core/base-url.js";
+import { RabbitHoleSession } from "../../src/node/transport/session.js";
+import { loadHole } from "../../src/node/fs-store.js";
+import { toolDefinitions } from "../../src/node/tools/manifest.js";
 
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage3-"));
 

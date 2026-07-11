@@ -3,10 +3,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { renderMarkdownToHtml } from "../src/core/markdown.js";
-import { buildCanvasHtml } from "../src/node/html/canvas.js";
-import { getKatexCss } from "../src/node/html/built-assets.js";
-import { createSession, closeAllSessions } from "../src/node/sessions.js";
+import { renderMarkdownToHtml } from "../../src/core/markdown.js";
+import { buildCanvasHtml } from "../../src/node/html/canvas.js";
+import { getKatexCss } from "../../src/node/html/built-assets.js";
+import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage1-"));

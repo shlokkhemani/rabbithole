@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { assertRabbitholeStore } from "../src/core/store.js";
-import { FsStore } from "../src/node/fs-store.js";
-import { RabbitHoleSession } from "../src/node/transport/session.js";
-import { runStoreContract } from "./support/store-contract.mjs";
+import { assertRabbitholeStore } from "../../src/core/store.js";
+import { FsStore } from "../../src/node/fs-store.js";
+import { RabbitHoleSession } from "../../src/node/transport/session.js";
+import { runStoreContract } from "../support/store-contract.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage9-"));

@@ -7,9 +7,9 @@ process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage7-"));
 
-const { openRabbithole, answerBranch } = await import("../src/node/index.js");
-const { closeAllSessions, getSession } = await import("../src/node/sessions.js");
-const { saveHole } = await import("../src/node/fs-store.js");
+const { openRabbithole, answerBranch } = await import("../../src/node/index.js");
+const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
+const { saveHole } = await import("../../src/node/fs-store.js");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

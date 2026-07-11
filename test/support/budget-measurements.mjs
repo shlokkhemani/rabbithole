@@ -5,7 +5,7 @@ import http from "node:http";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const FIXTURES = ["02-math-heavy.rabbithole", "04-assets-png-svg.rabbithole"];
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";

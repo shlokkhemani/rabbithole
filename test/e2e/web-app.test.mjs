@@ -4,10 +4,10 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { extractSnapshotPayload } from "../src/core/portable-import.js";
-import { serializeForInlineScript } from "../src/core/utils.js";
+import { extractSnapshotPayload } from "../../src/core/portable-import.js";
+import { serializeForInlineScript } from "../../src/core/utils.js";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const MOCK_KEY = `sk-or-v1-${"x".repeat(64)}`;
 const BAD_KEY = `sk-or-v1-${"y".repeat(64)}`;

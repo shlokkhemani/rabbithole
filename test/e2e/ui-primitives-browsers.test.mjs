@@ -4,7 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import { chromium, firefox, webkit } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const server = await serveRoot(ROOT);
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 

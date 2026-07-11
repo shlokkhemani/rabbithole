@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { MAX_ASSET_BYTES } from "../src/core/assets.js";
+import { MAX_ASSET_BYTES } from "../../src/core/assets.js";
 import {
   extractSnapshotPayload,
   MAX_IMPORT_FILE_BYTES,
@@ -10,29 +10,29 @@ import {
   SNAPSHOT_PAYLOAD_CLOSE,
   SNAPSHOT_PAYLOAD_OPEN,
   validatePortableImportCaps,
-} from "../src/core/portable-import.js";
+} from "../../src/core/portable-import.js";
 import {
   base64ToBytes,
   binaryToBase64,
   createPortableProjection,
   validatePortableProjection,
-} from "../src/core/portable-projection.js";
-import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../src/core/schema.js";
-import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../src/core/store.js";
-import { FsStore } from "../src/node/fs-store.js";
-import { importRabbitholeFile, importSnapshotFile, parseRabbitholeFile } from "../src/web/portable.js";
+} from "../../src/core/portable-projection.js";
+import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../../src/core/schema.js";
+import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../../src/core/store.js";
+import { FsStore } from "../../src/node/fs-store.js";
+import { importRabbitholeFile, importSnapshotFile, parseRabbitholeFile } from "../../src/web/portable.js";
 import {
   nullSchemaLegacyFixture,
   persistedHoleFixture,
   portableArtifactFixture,
-} from "./fixtures/contracts/artifact-fixture.js";
-import { storeFixture } from "./fixtures/contracts/store-fixture.js";
-import { brainFixture, generationEventFixtures } from "./fixtures/contracts/generation-fixture.js";
+} from "../fixtures/contracts/artifact-fixture.js";
+import { storeFixture } from "../fixtures/contracts/store-fixture.js";
+import { brainFixture, generationEventFixtures } from "../fixtures/contracts/generation-fixture.js";
 import {
   hydratableBlockFixture,
   markdownExtensionFixture,
   primitiveFixture,
-} from "./fixtures/contracts/content-fixture.js";
+} from "../fixtures/contracts/content-fixture.js";
 
 const stamp = "2026-01-01T00:00:00.000Z";
 const validNode = (overrides = {}) => ({
@@ -177,7 +177,7 @@ console.log("ok stage13: future schema_version is legibly refused");
 
 {
   const store = await newStore();
-  const legacyText = await fs.readFile(new URL("./fixtures/corpus/10-schema-null-legacy.rabbithole", import.meta.url), "utf8");
+  const legacyText = await fs.readFile(new URL("../fixtures/corpus/10-schema-null-legacy.rabbithole", import.meta.url), "utf8");
   const result = await importRabbitholeFile(store, legacyText);
   const loaded = await store.loadHole(result.hole_id);
   assert.equal(loaded.schema_version, 2);

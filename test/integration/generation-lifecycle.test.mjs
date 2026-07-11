@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import { GenerationRun } from "../src/core/generation-run.js";
-import { createHoleState, reduceHoleEvent } from "../src/core/reducer.js";
-import { AnthropicDirectBrain, parseAnthropicSseEvent } from "../src/web/brain/anthropic-messages.js";
-import { ProviderError, normalizeProviderError } from "../src/web/brain/errors.js";
-import { adaptBranchGeneration, adaptTextGeneration } from "../src/web/brain/generation-events.js";
-import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } from "../src/web/brain/openai-compatible.js";
-import { TitleSentinelParser } from "../src/web/brain/title-sentinel.js";
-import { GenerationIngress } from "../src/node/transport/generation-ingress.js";
-import { RabbitHoleSession } from "../src/node/transport/session.js";
-import { DirectRabbitholeHost, createHoleFromMarkdown, generationDocEvents } from "../src/web/transport/direct-host.js";
+import { GenerationRun } from "../../src/core/generation-run.js";
+import { createHoleState, reduceHoleEvent } from "../../src/core/reducer.js";
+import { AnthropicDirectBrain, parseAnthropicSseEvent } from "../../src/web/brain/anthropic-messages.js";
+import { ProviderError, normalizeProviderError } from "../../src/web/brain/errors.js";
+import { adaptBranchGeneration, adaptTextGeneration } from "../../src/web/brain/generation-events.js";
+import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } from "../../src/web/brain/openai-compatible.js";
+import { TitleSentinelParser } from "../../src/web/brain/title-sentinel.js";
+import { GenerationIngress } from "../../src/node/transport/generation-ingress.js";
+import { RabbitHoleSession } from "../../src/node/transport/session.js";
+import { DirectRabbitholeHost, createHoleFromMarkdown, generationDocEvents } from "../../src/web/transport/direct-host.js";
 
 async function collect(iterable) {
   const out = [];
@@ -318,14 +318,14 @@ assert.equal(failedAuthoringHost.saveTimer, 0);
 console.log("ok stage18: document authoring saves only once on completion and saves nothing on failure");
 
 const productionGenerationSources = await Promise.all([
-  new URL("../src/web/brain/generation-events.js", import.meta.url),
-  new URL("../src/web/transport/direct-host.js", import.meta.url),
-  new URL("../src/web/app.js", import.meta.url),
+  new URL("../../src/web/brain/generation-events.js", import.meta.url),
+  new URL("../../src/web/transport/direct-host.js", import.meta.url),
+  new URL("../../src/web/app.js", import.meta.url),
 ].map((url) => fs.readFile(url, "utf8")));
 assert.equal(productionGenerationSources.join("\n").includes("textDeltaFromGenerationEvent"), false);
 console.log("ok stage18: retired GenerationEvent text-delta seam is absent from production sources");
 
-const appSource = await fs.readFile(new URL("../src/web/app.js", import.meta.url), "utf8");
+const appSource = await fs.readFile(new URL("../../src/web/app.js", import.meta.url), "utf8");
 assert.match(appSource, /document\.addEventListener\("visibilitychange"[\s\S]*document\.visibilityState === "hidden"[\s\S]*currentHost\?\.flushSave\(\)/);
 assert.match(appSource, /window\.addEventListener\("pagehide"[\s\S]*currentHost\?\.flushSave\(\)/);
 console.log("ok stage18: hidden visibility and pagehide flush the existing host save pipeline");

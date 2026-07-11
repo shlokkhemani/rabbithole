@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { handleFetchProxyRequest, MAX_RESPONSE_BYTES } from "../workers/fetch-proxy/index.js";
+import { handleFetchProxyRequest, MAX_RESPONSE_BYTES } from "../../workers/fetch-proxy/index.js";
 
 await rejectsNonGet();
 await rejectsUnallowlistedHost();

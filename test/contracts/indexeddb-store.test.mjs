@@ -1,7 +1,7 @@
-import { assertRabbitholeStore } from "../src/core/store.js";
-import { IdbStore } from "../src/web/store/idb-store.js";
-import { DirectRabbitholeHost } from "../src/web/transport/direct-host.js";
-import { runStoreContract } from "./support/store-contract.mjs";
+import { assertRabbitholeStore } from "../../src/core/store.js";
+import { IdbStore } from "../../src/web/store/idb-store.js";
+import { DirectRabbitholeHost } from "../../src/web/transport/direct-host.js";
+import { runStoreContract } from "../support/store-contract.mjs";
 
 import "fake-indexeddb/auto";
 

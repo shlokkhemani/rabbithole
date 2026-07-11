@@ -6,11 +6,11 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { extractSnapshotPayload } from "../src/core/portable-import.js";
-import { FsStore } from "../src/node/fs-store.js";
-import { importRabbitholeFile } from "../src/web/portable.js";
+import { extractSnapshotPayload } from "../../src/core/portable-import.js";
+import { FsStore } from "../../src/node/fs-store.js";
+import { importRabbitholeFile } from "../../src/web/portable.js";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const LEGACY = path.join(ROOT, "test/fixtures/corpus/10-schema-null-legacy.rabbithole");
 const SECRET_KEYS = ["api_key", "apiKey", "provider_keys", "rh-web-settings", "sk-or-v1-"];

@@ -4,20 +4,20 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { renderMarkdownToHtml } from "../src/core/markdown.js";
-import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../src/core/portable-import.js";
-import { validatePortableProjection } from "../src/core/portable-projection.js";
-import { buildCanvasHtml } from "../src/node/html/canvas.js";
-import { createSession, closeAllSessions } from "../src/node/sessions.js";
+import { renderMarkdownToHtml } from "../../src/core/markdown.js";
+import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
+import { validatePortableProjection } from "../../src/core/portable-projection.js";
+import { buildCanvasHtml } from "../../src/node/html/canvas.js";
+import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 import {
   MAX_ASSET_BYTES,
   addAssetsToHole,
   deleteAsset,
   listAssets,
   resolveAsset,
-} from "../src/node/fs-store.js";
-import { toolDefinitions } from "../src/node/tools/manifest.js";
-import { buildMcpInputSchema } from "../src/node/mcp/schema.js";
+} from "../../src/node/fs-store.js";
+import { toolDefinitions } from "../../src/node/tools/manifest.js";
+import { buildMcpInputSchema } from "../../src/node/mcp/schema.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage4-"));

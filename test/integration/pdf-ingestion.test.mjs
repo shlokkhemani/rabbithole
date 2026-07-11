@@ -3,15 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { ingestPdf, openRabbithole } from "../src/node/index.js";
-import { closeAllSessions, getSession } from "../src/node/sessions.js";
+import { ingestPdf, openRabbithole } from "../../src/node/index.js";
+import { closeAllSessions, getSession } from "../../src/node/sessions.js";
 import {
   assertSafeHoleId,
   listAssets,
   resolveAsset,
   resolveStagedAssetDir,
   saveHole,
-} from "../src/node/fs-store.js";
+} from "../../src/node/fs-store.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage5-"));

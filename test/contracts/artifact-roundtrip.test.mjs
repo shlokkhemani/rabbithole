@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { FsStore } from "../src/node/fs-store.js";
-import { extractAssetRefsFromMarkdown } from "../src/core/assets.js";
-import { createSnapshotProjection } from "../src/core/snapshot-projection.js";
-import { buildSnapshotHtml } from "../src/core/snapshot-html.js";
-import { binaryToBase64 } from "../src/core/portable-projection.js";
-import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile } from "../src/web/portable.js";
+import { FsStore } from "../../src/node/fs-store.js";
+import { extractAssetRefsFromMarkdown } from "../../src/core/assets.js";
+import { createSnapshotProjection } from "../../src/core/snapshot-projection.js";
+import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
+import { binaryToBase64 } from "../../src/core/portable-projection.js";
+import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile } from "../../src/web/portable.js";
 
-const corpusDir = new URL("./fixtures/corpus/", import.meta.url);
+const corpusDir = new URL("../fixtures/corpus/", import.meta.url);
 const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWith(".rabbithole")).sort();
 assert.equal(fixtureNames.length, 20, "the curated corpus must contain exactly 20 portable fixtures");
 

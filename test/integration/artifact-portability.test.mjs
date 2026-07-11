@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const MOCK_KEY = `sk-or-v1-${"x".repeat(64)}`;
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";

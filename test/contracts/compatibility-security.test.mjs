@@ -5,9 +5,9 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { getGenerationSetupStatus, setupFingerprint } from "../src/web/settings/setup-readiness.js";
+import { getGenerationSetupStatus, setupFingerprint } from "../../src/web/settings/setup-readiness.js";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const SECRET = `sk-or-v1-${"stage15-secret-".repeat(5)}`;
 const ASSET = "pixel.gif";

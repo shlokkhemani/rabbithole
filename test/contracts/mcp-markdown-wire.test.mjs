@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createMarkdownRenderer, encodeBase64Utf8 } from "../src/core/markdown.js";
-import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../src/core/portable-import.js";
-import { snapshotProjectionToFrozenHydration } from "../src/core/snapshot-projection.js";
-import { validatePortableProjection } from "../src/core/portable-projection.js";
-import { openRabbithole, answerBranch } from "../src/node/index.js";
-import { closeAllSessions, getSession } from "../src/node/sessions.js";
-import { FsStore } from "../src/node/fs-store.js";
-import { importSnapshotFile } from "../src/web/portable.js";
+import { createMarkdownRenderer, encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
+import { snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
+import { validatePortableProjection } from "../../src/core/portable-projection.js";
+import { openRabbithole, answerBranch } from "../../src/node/index.js";
+import { closeAllSessions, getSession } from "../../src/node/sessions.js";
+import { FsStore } from "../../src/node/fs-store.js";
+import { importSnapshotFile } from "../../src/web/portable.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
@@ -143,7 +143,7 @@ async function runRendererGoldenFixtures() {
   ];
   for (const fixture of fixtures) fixture.assert(renderer.renderMarkdownToHtml(fixture.markdown));
 
-  const clientBundle = await fs.readFile(new URL("../dist/client.js", import.meta.url), "utf8");
+  const clientBundle = await fs.readFile(new URL("../../dist/client.js", import.meta.url), "utf8");
   assertIncludes(clientBundle, "rabbithole-shared-markdown-renderer-v1", "browser bundle should contain the shared renderer sentinel");
   console.log("ok stage8: shared renderer golden/security fixtures and bundle sentinel");
 }

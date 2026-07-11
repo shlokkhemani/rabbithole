@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { budgetDefinitions, measureBudgets } from "./budget-measurements.mjs";
+import { budgetDefinitions, measureBudgets } from "../support/budget-measurements.mjs";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const recorded = JSON.parse(await fs.readFile(path.join(ROOT, "test/budgets.json"), "utf8"));
 assert.equal(recorded.budgets.length, budgetDefinitions.length, "every defined gauge must have a recorded budget");
 const measured = await measureBudgets({ samples: 3 });

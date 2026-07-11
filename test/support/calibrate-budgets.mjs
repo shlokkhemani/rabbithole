@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { budgetDefinitions, measureBudgets } from "./budget-measurements.mjs";
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const file = path.join(ROOT, "test/budgets.json");
 const previous = JSON.parse(await fs.readFile(file, "utf8").catch(() => "{\"budgets\":[]}"));
 const priorById = new Map(previous.budgets.map((budget) => [budget.id, budget]));

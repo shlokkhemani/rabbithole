@@ -4,12 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { TextDecoder } from "node:util";
-import { encodeBase64Utf8, renderMarkdownToHtml } from "../src/core/markdown.js";
-import { createMarkdownRenderer } from "../src/core/markdown-renderer.js";
-import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../src/core/blocks.js";
-import { buildCanvasHtml } from "../src/node/html/canvas.js";
-import { getDompurifyScript } from "../src/node/html/built-assets.js";
-import { buildCheckVisual, mountVisuals, registerBlockMount } from "../src/ui/visuals.js";
+import { encodeBase64Utf8, renderMarkdownToHtml } from "../../src/core/markdown.js";
+import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
+import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../../src/core/blocks.js";
+import { buildCanvasHtml } from "../../src/node/html/canvas.js";
+import { getDompurifyScript } from "../../src/node/html/built-assets.js";
+import { buildCheckVisual, mountVisuals, registerBlockMount } from "../../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;

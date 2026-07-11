@@ -1,13 +1,14 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
+import { GenerationRun } from "../../core/generation-run.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError, textDeltaFromGenerationEvent } from "../brain/index.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null } = {}) {
+  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = onEvent;
@@ -16,6 +17,7 @@ export class DirectRabbitholeHost {
     this.onRestore = onRestore;
     this.onAuthRequired = onAuthRequired;
     this.onRootAnswered = onRootAnswered;
+    this.mintGenerationRunId = mintGenerationRunId;
     this.state = createHoleState(hole);
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
@@ -297,36 +299,32 @@ export class DirectRabbitholeHost {
       });
     }
 
+    const brain = this.brain;
     const context = this.buildBranchContext(node);
-    let title = fallbackTitleForNode(node);
-    context.fallbackTitle = title;
-    let markdown = resetMarkdownForRun(node);
-
-    for await (const event of this.brain.answerBranch(context, controller.signal)) {
+    const fallbackTitle = fallbackTitleForNode(node);
+    context.fallbackTitle = fallbackTitle;
+    // Each attempt, including a retry, gets a fresh run id. The reducer can
+    // therefore reject late progress from the superseded attempt.
+    const run = this.createBranchGenerationRun(node, fallbackTitle);
+    // Capture the brain at attempt start: provider changes affect only later
+    // generations; this in-flight iterator finishes on the old brain.
+    const generation = brain.answerBranch(context, controller.signal);
+    for await (const docEvent of branchGenerationDocEvents(generation, run, {
+      nodeId,
+      progressFields: { base_url: node.base_url, base_url_source: node.base_url_source },
+      answeredFields: () => branchAnsweredFields(this.state.nodes.get(nodeId)),
+    })) {
       if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
-      const delta = textDeltaFromGenerationEvent(event, { onTitle: (value) => { title = value; } });
-      if (!delta) continue;
-      markdown += delta;
-      this.dispatchProgress(nodeId, markdown, { emit: true });
+      this.dispatch(docEvent);
+      if (docEvent.type === "node_progress") {
+        const current = this.state.nodes.get(nodeId);
+        this.emit({ ...docEvent, markdown: current.markdown });
+        this.scheduleSave();
+      }
     }
 
-    if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
-
-    const current = this.state.nodes.get(nodeId);
-    this.dispatch({
-      type: "node_answered",
-      node_id: current.id,
-      parent_id: current.parent_id,
-      title,
-      markdown,
-      base_url: current.base_url,
-      base_url_source: current.base_url_source,
-      origin: current.origin,
-      position: current.position,
-      size: current.size,
-      font_scale: current.font_scale,
-      read: false,
-    });
+    // Branches deliberately accept an empty provider stream: completion uses
+    // the fallback title and empty/reset markdown. Root generation still rejects.
     const finalNode = this.state.nodes.get(nodeId);
     this.abortByNode.delete(nodeId);
     this.emit({
@@ -343,6 +341,14 @@ export class DirectRabbitholeHost {
       font_scale: finalNode.font_scale,
     });
     await this.flushSave();
+  }
+
+  createBranchGenerationRun(node, fallbackTitle = fallbackTitleForNode(node)) {
+    return new GenerationRun({
+      id: this.mintGenerationRunId(),
+      initialMarkdown: resetMarkdownForRun(node),
+      fallbackTitle,
+    });
   }
 
   handleAnswerError(nodeId, err, signal) {
@@ -448,6 +454,39 @@ export class DirectRabbitholeHost {
     }
     this.abortByNode.clear();
   }
+}
+
+/**
+ * Narrow, browser-free branch wiring: GenerationEvent -> GenerationRun -> DocEvent.
+ * Errors are intentionally not DocEvents; provider failures remain host/UI flow.
+ */
+export async function* branchGenerationDocEvents(generation, run, { nodeId, progressFields = {}, answeredFields = {} }) {
+  for await (const event of generation) {
+    const progress = run.accept(event, { nodeId, progressFields });
+    if (progress) yield progress;
+  }
+  const fields = typeof answeredFields === "function" ? answeredFields() : answeredFields;
+  yield run.complete({ nodeId, answeredFields: fields });
+}
+
+function branchAnsweredFields(node) {
+  if (!node) return {};
+  return {
+    parent_id: node.parent_id,
+    base_url: node.base_url,
+    base_url_source: node.base_url_source,
+    origin: node.origin,
+    position: node.position,
+    size: node.size,
+    font_scale: node.font_scale,
+    read: false,
+  };
+}
+
+function defaultGenerationRunId() {
+  return globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `generation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {}) {

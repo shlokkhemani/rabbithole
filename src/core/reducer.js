@@ -129,6 +129,9 @@ function reduceNodeProgress(state, event) {
   const tagged = run && typeof run.id === "string" && typeof run.seq === "number";
   const recorded = tagged ? state.progressRuns.get(nodeId) : null;
   if (recorded && recorded.id === /** @type {import("./contracts/engine.js").ProgressRun} */ (run).id && /** @type {import("./contracts/engine.js").ProgressRun} */ (run).seq <= recorded.seq) return withState(state);
+  // A new run supersedes the current run once. Remember superseded ids so a
+  // late packet from an aborted attempt cannot become "new" again.
+  if (recorded?.superseded?.has(/** @type {import("./contracts/engine.js").ProgressRun} */ (run).id)) return withState(state);
   const nodes = cloneNodes(state);
   const next = {
     ...node,
@@ -137,8 +140,11 @@ function reduceNodeProgress(state, event) {
     base_url_source: event.base_url_source ?? node.base_url_source ?? null,
   };
   nodes.set(nodeId, /** @type {HoleNode} */ (next));
+  const superseded = recorded && recorded.id !== /** @type {import("./contracts/engine.js").ProgressRun} */ (run).id
+    ? new Set([...(recorded.superseded || []), recorded.id])
+    : recorded?.superseded;
   const progressRuns = tagged
-    ? new Map(state.progressRuns).set(nodeId, { id: /** @type {import("./contracts/engine.js").ProgressRun} */ (run).id, seq: /** @type {import("./contracts/engine.js").ProgressRun} */ (run).seq })
+    ? new Map(state.progressRuns).set(nodeId, { id: /** @type {import("./contracts/engine.js").ProgressRun} */ (run).id, seq: /** @type {import("./contracts/engine.js").ProgressRun} */ (run).seq, ...(superseded ? { superseded } : {}) })
     : state.progressRuns;
   return withState({ ...state, nodes, progressRuns }, { node_id: nodeId });
 }

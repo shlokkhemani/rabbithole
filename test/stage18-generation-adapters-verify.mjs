@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { GenerationRun } from "../src/core/generation-run.js";
+import { createHoleState, reduceHoleEvent } from "../src/core/reducer.js";
 import { AnthropicDirectBrain, parseAnthropicSseEvent } from "../src/web/brain/anthropic-messages.js";
 import { ProviderError, normalizeProviderError } from "../src/web/brain/errors.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "../src/web/brain/generation-events.js";
 import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } from "../src/web/brain/openai-compatible.js";
 import { TitleSentinelParser } from "../src/web/brain/title-sentinel.js";
+import { DirectRabbitholeHost, branchGenerationDocEvents } from "../src/web/transport/direct-host.js";
 
 async function collect(iterable) {
   const out = [];
@@ -185,6 +187,47 @@ assert.throws(() => empty.accept({ type: "usage", input_tokens: 1, output_tokens
 assert.throws(() => empty.accept({ type: "text", delta: "no node" }), /requires a non-empty nodeId/);
 assert.equal(JSON.stringify(run.complete(finalContext)).includes("node_error"), false);
 console.log("ok stage18: GenerationRun accumulation, ordering, late title, empty completion, idempotence, and rejection goldens");
+
+const wiringEvents = [{ type: "title", title: "Wired title" }, { type: "text", delta: "one" }, { type: "text", delta: " two" }];
+const wiredRun = new GenerationRun({ id: "wired-run", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
+const wired = await collect(branchGenerationDocEvents(fixtureChunks(wiringEvents), wiredRun, {
+  nodeId: "wired-node",
+  progressFields: { base_url: "https://example.test" },
+  answeredFields: { parent_id: "root", read: false },
+}));
+const manualRun = new GenerationRun({ id: "wired-run", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
+const manual = wiringEvents.flatMap((event) => {
+  const progress = manualRun.accept(event, { nodeId: "wired-node", progressFields: { base_url: "https://example.test" } });
+  return progress ? [progress] : [];
+});
+manual.push(manualRun.complete({ nodeId: "wired-node", answeredFields: { parent_id: "root", read: false } }));
+assert.deepEqual(wired, manual);
+console.log("ok stage18: browser branch wiring matches hand-driven GenerationRun DocEvents");
+
+let minted = 0;
+const mintHost = new DirectRabbitholeHost({
+  store: { saveHole: async () => {} },
+  hole: { hole_id: "hole", root_id: "root", nodes: [{ id: "root", status: "answered", markdown: "" }] },
+  mintGenerationRunId: () => `attempt-${++minted}`,
+});
+const pendingNode = { id: "branch", status: "pending", markdown: "", title: "Fallback" };
+const oldRun = mintHost.createBranchGenerationRun(pendingNode);
+const retryRun = mintHost.createBranchGenerationRun(pendingNode);
+assert.notEqual(oldRun.id, retryRun.id);
+let guarded = createHoleState({ root_id: "branch", nodes: [pendingNode] });
+guarded = reduceHoleEvent(guarded, oldRun.accept({ type: "text", delta: "old" }, { nodeId: "branch" })).state;
+guarded = reduceHoleEvent(guarded, retryRun.accept({ type: "text", delta: "new" }, { nodeId: "branch" })).state;
+guarded = reduceHoleEvent(guarded, oldRun.accept({ type: "text", delta: " late" }, { nodeId: "branch" })).state;
+assert.equal(guarded.nodes.get("branch").markdown, "new");
+console.log("ok stage18: retry mints a new run id and reducer rejects an aborted-run straggler");
+
+const emptyWired = await collect(branchGenerationDocEvents(fixtureChunks([]), new GenerationRun({
+  id: "empty-wired", fallbackTitle: "Branch fallback",
+}), { nodeId: "empty-branch" }));
+assert.deepEqual(emptyWired, [{
+  type: "node_answered", node_id: "empty-branch", title: "Branch fallback", markdown: "",
+}]);
+console.log("ok stage18: browser branch wiring preserves empty-stream completion");
 
 const appSource = await fs.readFile(new URL("../src/web/app.js", import.meta.url), "utf8");
 assert.match(appSource, /document\.addEventListener\("visibilitychange"[\s\S]*document\.visibilityState === "hidden"[\s\S]*currentHost\?\.flushSave\(\)/);

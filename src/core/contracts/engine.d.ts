@@ -44,7 +44,12 @@ export interface HoleState {
   progressRuns: Map<string, ProgressRun>;
 }
 
-export interface ProgressRun { id: string; seq: number; }
+export interface ProgressRun {
+  id: string;
+  seq: number;
+  /** Ephemeral reducer guard; never serialized. */
+  superseded?: Set<string>;
+}
 
 interface NodeTarget { node_id?: unknown; }
 interface BaseUrlFields { base_url?: unknown; base_url_source?: unknown; }

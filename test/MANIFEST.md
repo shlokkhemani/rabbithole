@@ -218,6 +218,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | typed store fixture satisfies the port and missing capabilities are rejected | C1 | Couples the compile-time store vocabulary to the runtime capability authority and proves every required method is enforced. | — |
 | typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary. | Data: malformed JSON/base64; hand-edited payload types |
 | typed generation fixture distinguishes the two-event vocabulary from malformed events | C2 | Exercises both Phase 6 generation variants and rejects wrong fields, wrong value types, and the speculative usage discriminator. | Generation: durable streaming vocabulary; title never arrives |
+| typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values | C2 | Couples today's fence-dispatch vocabulary to its runtime authority while exercising explicitly revisable Phase 8 block and primitive names without freezing a serialized format. | Rendering: content extension and hydration vocabulary |
 | typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v1 fixed points, null-schema backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
 | future format_version is clearly refused | C1 | Protects the public portable-file version boundary and its recoverable refusal. | Data: future `format_version` clear refusal |
 | future schema_version is legibly refused | C1 | Ensures old builds refuse unknown persisted schemas instead of silently dropping fields. | Data: new-format document through an old build refuses; future schema version |
@@ -312,16 +313,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total.
 
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 44 |
-| C2 behavioral product contract | 139 |
+| C2 behavioral product contract | 140 |
 | C3 implementation snapshot | 9 |
 | C4 known defect | 3 |
 | C5 design target | 0 |
-| **Total** | **195** |
+| **Total** | **196** |
 
 ## Known-defect fossils
 

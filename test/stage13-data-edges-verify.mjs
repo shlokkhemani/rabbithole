@@ -14,6 +14,11 @@ import {
 } from "./fixtures/contracts/artifact-fixture.js";
 import { storeFixture } from "./fixtures/contracts/store-fixture.js";
 import { brainFixture, generationEventFixtures } from "./fixtures/contracts/generation-fixture.js";
+import {
+  hydratableBlockFixture,
+  markdownExtensionFixture,
+  primitiveFixture,
+} from "./fixtures/contracts/content-fixture.js";
 
 const stamp = "2026-01-01T00:00:00.000Z";
 const validNode = (overrides = {}) => ({
@@ -68,6 +73,27 @@ const generated = [];
 for await (const event of brainFixture.answerBranch({}, new AbortController().signal)) generated.push(event);
 assert.deepEqual(generated, generationEventFixtures);
 console.log("ok stage13: typed generation fixture distinguishes the two-event vocabulary from malformed events");
+
+const isMarkdownExtension = (value) => value !== null && typeof value === "object" &&
+  typeof value.language === "string" && typeof value.render === "function";
+const isHydratableBlock = (value) => value !== null && typeof value === "object" &&
+  typeof value.type === "string" && Number.isInteger(value.version) &&
+  typeof value.parse === "function" && typeof value.renderStatic === "function" &&
+  typeof value.hydrate === "function";
+const isPrimitive = (value) => value !== null && typeof value === "object" && typeof value.mount === "function";
+assert.equal(isMarkdownExtension(markdownExtensionFixture), true);
+assert.equal(isHydratableBlock(hydratableBlockFixture), true);
+assert.equal(isPrimitive(primitiveFixture), true);
+for (const malformed of [
+  { language: "show", render: "html" },
+  { type: "check", version: "1", parse() {}, renderStatic() {}, hydrate() {} },
+  { type: "check", version: 1, parse() {}, renderStatic() {} },
+]) {
+  assert.equal(isMarkdownExtension(malformed), false);
+  assert.equal(isHydratableBlock(malformed), false);
+}
+assert.equal(isPrimitive({ mount: null }), false);
+console.log("ok stage13: typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values");
 
 {
   const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persistedHoleFixture)));

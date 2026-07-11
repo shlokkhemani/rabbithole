@@ -3,9 +3,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { MAX_ASSET_BYTES } from "../src/core/assets.js";
-import { migratePersistedHole, toPersistedHole } from "../src/core/schema.js";
+import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../src/core/schema.js";
+import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../src/core/store.js";
 import { FsStore } from "../src/node/fs-store.js";
 import { importRabbitholeFile, parseRabbitholeFile } from "../src/web/portable.js";
+import {
+  nullSchemaLegacyFixture,
+  persistedHoleFixture,
+  portableArtifactFixture,
+} from "./fixtures/contracts/artifact-fixture.js";
+import { storeFixture } from "./fixtures/contracts/store-fixture.js";
 
 const stamp = "2026-01-01T00:00:00.000Z";
 const validNode = (overrides = {}) => ({
@@ -25,6 +32,48 @@ async function newStore() {
   process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage13-"));
   return new FsStore();
 }
+
+assert.equal(assertRabbitholeStore(storeFixture), storeFixture);
+for (const missing of RABBITHOLE_STORE_METHODS) {
+  const invalidStore = { ...storeFixture };
+  delete invalidStore[missing];
+  assert.throws(() => assertRabbitholeStore(invalidStore), new RegExp(`missing ${missing}\\(\\)`));
+}
+console.log("ok stage13: typed store fixture satisfies the port and missing capabilities are rejected");
+
+assert.equal(validatePersistedHole(persistedHoleFixture), true);
+assert.throws(
+  () => validatePersistedHole({ ...persistedHoleFixture, nodes: [{ ...persistedHoleFixture.nodes[0], status: "lost" }] }),
+  /status is invalid/,
+);
+assert.throws(
+  () => parseRabbitholeFile(JSON.stringify({ ...portableArtifactFixture, assets: [] })),
+  /assets must be an object/,
+);
+console.log("ok stage13: typed artifact fixtures validate and invalid persisted/portable shapes are rejected");
+
+{
+  const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persistedHoleFixture)));
+  assert.equal(migrated.changed, false);
+  const repersisted = toPersistedHole(migrated.hole, { updatedAt: migrated.hole.updated_at });
+  assert.deepEqual(repersisted, persistedHoleFixture, "canonical persisted fixture is a schema fixed point");
+
+  const legacy = migratePersistedHole(JSON.parse(JSON.stringify(nullSchemaLegacyFixture)));
+  assert.deepEqual(
+    toPersistedHole(legacy.hole, { updatedAt: legacy.hole.updated_at }),
+    legacy.hole,
+    "null-schema normalization is stable after migration",
+  );
+
+  const parsed = parseRabbitholeFile(JSON.stringify(portableArtifactFixture));
+  const portableHole = migratePersistedHole(parsed.hole).hole;
+  const normalizedPortable = {
+    ...parsed,
+    hole: toPersistedHole(portableHole, { updatedAt: portableHole.updated_at }),
+  };
+  assert.deepEqual(normalizedPortable, portableArtifactFixture, "portable fixture survives parse/migrate/re-persist");
+}
+console.log("ok stage13: typed persisted, legacy, and portable artifacts round-trip with defined normalization");
 
 assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ format: "rabbithole", format_version: 2, hole: {}, assets: {} })),

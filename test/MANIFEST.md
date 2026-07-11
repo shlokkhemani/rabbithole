@@ -215,6 +215,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
+| typed store fixture satisfies the port and missing capabilities are rejected | C1 | Couples the compile-time store vocabulary to the runtime capability authority and proves every required method is enforced. | — |
+| typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary. | Data: malformed JSON/base64; hand-edited payload types |
+| typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v1 fixed points, null-schema backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
 | future format_version is clearly refused | C1 | Protects the public portable-file version boundary and its recoverable refusal. | Data: future `format_version` clear refusal |
 | future schema_version is legibly refused | C1 | Ensures old builds refuse unknown persisted schemas instead of silently dropping fields. | Data: new-format document through an old build refuses; future schema version |
 | schema_version null backfills, persists, and reloads | C1 | Protects forever-readable legacy files and idempotent migration through the filesystem store. | Data: `schema_version: null` legacy backfill; Migration/deploy: old storage/idempotent migrations |
@@ -301,16 +304,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 adds three C1 rows: `41 + 3 = 44`, so `184 + 3 = 187` total.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 41 |
+| C1 compatibility contract | 44 |
 | C2 behavioral product contract | 129 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 4 |
 | C5 design target | 0 |
-| **Total** | **184** |
+| **Total** | **187** |
 
 ## Known-defect fossils
 

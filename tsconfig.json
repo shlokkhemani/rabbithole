@@ -14,6 +14,10 @@
     "src/core/store.js",
     "src/core/utils.js",
     "src/core/prompts/authoring-v1.js",
-    "src/core/prompts/explainer-v1.js"
+    "src/core/prompts/explainer-v1.js",
+    "src/core/contracts/artifact.d.ts",
+    "src/core/contracts/store.d.ts",
+    "test/fixtures/contracts/artifact-fixture.js",
+    "test/fixtures/contracts/store-fixture.js"
   ]
 }

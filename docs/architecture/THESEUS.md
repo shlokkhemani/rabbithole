@@ -117,7 +117,7 @@ interface Brain {                               // browser-side; note ALL THREE 
 3. A separate spike evaluates replacements (structured outputs, deterministic derivation from the markdown, cheap second call) against three gates: latency, cost, title quality on the eval set.
 4. The sentinel itself dies only if a replacement clears all three gates. The MCP path is untouched — its titles already arrive out-of-band in the `answer_branch` call.
 
-**3. The content layer — two kinds of content, not one.** v1's single `ContentType` over-unified unlike things. Code and math are static markdown output; `show`/`walk`/`check`/`play` are hydratable blocks with lifecycle; inline math isn't even a fence. Two contracts:
+**3. The content layer — two kinds of content, not one.** v1's single `ContentType` over-unified unlike things. Code and math are static markdown output; registered fenced blocks are parsed models with client mounts; inline math isn't even a fence. Check v1 validated the split:
 
 ```ts
 interface MarkdownExtension {                    // code, inline+block math — static, synchronous
@@ -125,20 +125,19 @@ interface MarkdownExtension {                    // code, inline+block math — 
   render(source: string, ctx: RenderCtx): string // trusted renderers build safe output directly
 }
 
-interface HydratableBlock<M, S = void> {         // show, walk, check, play
+interface BlockTypeDescriptor<M> {               // runtime authority: core/blocks.js
   type: string; version: number
   parse(source: string): M
-  renderLive(model: M, ctx: LiveCtx): Mount      // Mount = { element, dispose?() }
-  renderFrozen(model: M, ctx: FrozenCtx): string
-  toPlainText(model: M): string                  // search, a11y, synthesize
-  security: "sanitize-html" | "safe-dom"         // explicit per type, not blanket
-  // stateful types only:
-  initialState?(model: M): S
-  migrateState?(old: unknown, fromVersion: number): S
+  toPlainText(model: M): string
+  security: "sanitize-html" | "inert"
+}
+interface BlockMountSpec<M> {                    // runtime authority: ui/visuals.js
+  renderHtml?(model: M): string
+  wire?(root: HTMLElement, model: M, ctx: BlockMountContext): void
 }
 ```
 
-Security is per-type policy, not a blanket pipe: types rendering untrusted HTML source (`show`) pass the DOMPurify profile (`src/ui/visuals.js:8-16`) on both paths; trusted renderers (KaTeX — whose MathML a blanket sanitize could damage) construct DOM through safe APIs and are audited as such. URL/asset policy stays central. Streaming-pending placeholders (`src/core/markdown-renderer.js:266-285`) become contract behavior. Registration is the allowlist — the hardcoded `VISUAL_FENCE_LANGUAGES` set dies. **"Learning primitives are hydratable blocks" is provisional** until the first real primitive validates the contract (Phase 8); the contract is finalized *after* that evidence, not before.
+The registry is the closed allowlist and derives recognition of completed and streaming-pending fences. Mounting dispatches through the same descriptors; for `sanitize-html` types the framework, not the block, owns DOMPurify sanitization and insertion before optional wiring. Registered fence-info IDs are durable identity and are minted when markdown enters persistence, never from fence order or source hashes. Check records learner interaction as `block_state`; the reducer stores it under `node.extensions.learn[block_id]`. Snapshot projection strips that personal state, while portable `.rabbithole` backups keep it with structural JSON fidelity. The descriptor/mount contract is settled by Check v1; lifecycle details unique to unbuilt steppable or parametric blocks (Walk/Play) remain provisional.
 
 **4. The artifact — one logical model, three projections.** The canonical thing is the schema-validated document model (`src/core/schema.js` remains the sole runtime authority — types describe it, never replace it; imported files, MCP inputs, and provider responses stay untrusted regardless of internal types). Its projections:
 
@@ -171,7 +170,7 @@ interface Handle {
 | Kind | Examples | Owner | Persisted? | Exported? |
 |---|---|---|---|---|
 | Document | nodes, view_state, authored block content | engine state | yes (canonical model) | yes |
-| Learner progress | check attempts/answers | versioned extension bag (Phase 8) | yes (device) | excluded from frozen **shares** by default; portable-**backup** policy is a separate open decision (Part VII) |
+| Learner progress | check attempts/answers | `extensions.learn`, keyed by durable block id | yes (device) | excluded from frozen shares/snapshots; included in portable backups |
 | Session | active hole, in-flight runs, abort controllers | host controller | no (except each host's deliberate durable-ask policy) | no |
 | UI ephemera | open popover, focused field | owning primitive | no | no |
 | Preferences | provider id, model per provider, theme, last hole, sidebar | device prefs store (`rh-web-settings` et al.) | yes (device only) | **never** |
@@ -285,13 +284,11 @@ Eleven phases. Each names **Goal · Build · Wire-in · Delete · Exit criteria 
 **Delete (D5), complete:** ad-hoc hydration serialization and export-shape drift.
 **Exit, met:** canonical round-trip fixed points, cross-host snapshot import, legacy viewing, size budgets, leakage matrix, import caps/cleanup, and flush timing are green.
 
-### Phase 8 — The content spike *(M, medium risk — evidence before contract)*
+### Phase 8 — The content spike *(complete; M, medium risk)*
 
-**Goal:** the two-layer content contract validated by real use, and the forward-safety policy for document extensions chosen and proven — *before* any schema change ships.
-**Build:** unify the `show` registries (`registerFenceRenderer` + `registerVisualHandler` → one `HydratableBlock` registration) with per-type security policy and live/frozen parity tests; then prototype the first learning primitive (per the decided Tell/Notate/Show/Walk/Check/Play order) behind a composer flag, resolving with real evidence: **stable block identity** (durable instance IDs minted at parse/author time — fence order and source hashes are unstable under streaming and edits); **state ownership** (authored content — questions, correct answers — belongs to the document; learner attempts are personal, live in the extension bag, and are *excluded from shares/snapshots by default*); **forward safety** — the normative bridge-release sequence, because builds already in the wild can never retroactively preserve unknown fields: (a) schema v2 introduces an *empty*, structurally JSON-faithful extension bag as its **only** change, amending `toPersistedNode`'s field-allowlist reconstruction (`schema.js:27-45`); (b) existing schema-v1 builds refuse v2 documents safely — the refusal branch already exists (`migratePersistedHole` throws on unknown versions, `schema.js:60-62`) and gets a clear user-facing message; (c) the bridge v2 build ships and soaks *before* any learner state exists; (d) every future extension version rides inside the bag and is preserved by all v2+ builds. The proof is two tests: a v1 build refuses a v2 document legibly, and a v2 bridge build round-trips unknown bag contents with structural JSON fidelity through open → modify an unrelated field → save → reopen. Portable backups carry the full learner-progress bag; share snapshots exclude it by default. "Opens without error" proves nothing; v1 builds drop unknown fields silently on save.
-**Delete (D6):** the split registries; the hardcoded fence allowlist; contract speculation the prototype invalidates.
-**Exit:** `show` on the unified contract, goldens green; the primitive passes the full manifest (live/frozen/export/import/stream/dark) plus the old-build round-trip test; the finalized contract recorded in Part VII with its retrospective; XSS suite green on both render paths.
-**Risks:** learner state is the first user-created data inside answers; it rides the same save path as everything else — no side-channel storage, and its loss in *any* supported flow is a P0.
+**Shipped:** schema v2 added a structurally faithful `extensions` bag, preserved by backups and stripped from snapshots, with legible refusal on all three v1 load surfaces. The unified closed block registry now owns parsing, prose projection, security policy, completed/pending recognition, and mount eligibility. The framework sanitizes block HTML at mount. Durable fence-info IDs are minted as markdown enters persistence. Check v1 uses strict-JSON authored content and records learner attempts through `block_state` into `extensions.learn[block_id]`; its live, reload, portable, snapshot, and frozen cycle is proven.
+**Delete (D6), complete:** split fence/visual registries, the hardcoded fence allowlist, and the descriptor/mount speculation invalidated by Check.
+**Exit, met:** unified `show` and Check goldens, structural extension fidelity, three-surface refusal, framework-owned XSS defense, durable identity, and live/reload/export/frozen parity are green. Walk/Play-specific lifecycle design remains deliberately provisional.
 
 ### Phase 9 — The refactor audit *(S–M, low risk)*
 
@@ -314,7 +311,7 @@ Now the features, with clean attribution:
 | D3 | Shape folklore; provably-redundant *internal* normalization (trust boundaries keep runtime validation forever) | Phase 5 |
 | D4 | Host knowledge of the title sentinel; duplicated accumulation across hosts; bespoke per-provider settings code. *Gated:* the sentinel prompt protocol itself (spike must pass latency/cost/quality) | Phase 6 |
 | D5 | Ad-hoc snapshot hydration serialization; export-shape drift | Phase 7 |
-| D6 | Split fence/visual registries; hardcoded `VISUAL_FENCE_LANGUAGES`; contract speculation invalidated by the first primitive | Phase 8 |
+| D6 | Split fence/visual registries; hardcoded `VISUAL_FENCE_LANGUAGES`; speculative hydratable-block contract superseded by the validated descriptor/mount split | Phase 8 |
 | D7 | Everything the audit sweep finds dead | Phase 9 |
 | D8 | Bespoke single-shot delete-undo plumbing (re-backed by history) | Phase 10 |
 | D9 | Ad-hoc test scaffolding in shipped source: the `window.__rhWebApp` grab-bag (store exposure + eight `*ForTest` methods, `src/web/app.js:1728-1742`) and `readRawHoleForTest`/`writeRawHoleForTest` (`src/web/store/idb-store.js:206,214`) — consolidated into the one documented test seam or replaced by driving the real surface; no new ad-hoc hooks from v2.2 onward (Rule 10) | Consolidated as touched in Phases 3–7; ledger proven empty by the Phase 9 remnant audit |
@@ -345,10 +342,11 @@ Each maps to an instrument; new scenarios are added here first, instrumented, th
 | **Boundary typing = `checkJs`/JSDoc/`.d.ts`; runtime `.js` preserved** | settled | full TS requires the dist-node build + repointed bin + Node 18/20 publish smoke tests, decided on its own |
 | Runtime validation at trust boundaries is permanent | settled | — |
 | One canonical model; three projections (portable / local-store / snapshot) | settled | — |
-| **Forward safety = bridge release: schema v2 ships an empty round-trippable extension bag; v1 builds refuse v2 legibly; bridge soaks before learner state** | settled | v1-refusal + v2 byte-for-byte round-trip tests pass before any extension ships |
+| **Forward safety = schema v2 extension bag; v1 builds refuse v2 legibly on MCP resume, filesystem/IndexedDB load, and web import** | settled (proven) | “byte-for-byte” means structural JSON fidelity, not source-text serialization identity |
 | **Learner progress excluded from frozen shares/snapshots by default** | settled | revisit if sharing progress becomes a product feature |
-| **Portable `.rabbithole` backups: include progress, offer an option, or sidecar file?** | **open** | export ≠ share — a portable file may be a personal backup or device transfer; decided before the first stateful primitive ships |
-| **Learning primitives are hydratable blocks** | **provisional** | finalized by the Phase 8 retrospective |
+| **Portable `.rabbithole` backups include learner progress** | settled (proven) | snapshots remain the progress-free sharing projection |
+| **Registered learning blocks use the descriptor/mount contract** | settled by Check v1 | Walk/Play-specific steppable or parametric lifecycle remains provisional until implemented |
+| **Model-feedback loop: learner attempts entering agent context** | deferred beyond Phase 8 | decide with a product slice that can evaluate privacy, context cost, and learning value |
 | MCP wire protocol frozen, additive-only | settled | major version with explicit CLI migration |
 | **Evergreen hygiene: each phase removes its own scaffolding at exit; shipped source carries at most one documented test seam; no new ad-hoc `*ForTest` hooks (v2.2 amendment)** | settled | Phase 9 remnant audit proves the ledger empty; violations block the offending phase's exit |
 | Where this plan is tracked | settled — public `docs/architecture/THESEUS.md`, versioned beside the code it governs | — |

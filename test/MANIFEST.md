@@ -237,7 +237,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | typed store fixture satisfies the port and missing capabilities are rejected | C1 | Couples the compile-time store vocabulary to the runtime capability authority and proves every required method is enforced. | — |
 | typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary, including canonical construction and Blob/Uint8Array binary codec parity. | Data: malformed JSON/base64; hand-edited payload types |
 | typed generation fixture distinguishes the two-event vocabulary from malformed events | C2 | Exercises both Phase 6 generation variants and rejects wrong fields, wrong value types, and the speculative usage discriminator. | Generation: durable streaming vocabulary; title never arrives |
-| typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values | C2 | Couples today's fence-dispatch vocabulary to its runtime authority while exercising explicitly revisable Phase 8 block and primitive names without freezing a serialized format. | Rendering: content extension and hydration vocabulary |
+| typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values | C2 | Couples the settled descriptor/mount vocabulary to its runtime authorities while leaving unbuilt Walk/Play lifecycle names explicitly provisional. | Rendering: content extension and hydration vocabulary |
 | typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v2 fixed points, null/v1 backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
 | non-object node extensions are legibly rejected | C1 | Couples the typed JSON-object extension contract to runtime validation. | Data: hand-edited payload types |
 | v1 open-modify-save-reopen preserves the schema-v2 extension bag | C1 | Proves the THESEUS forward-safety bridge across migration and an unrelated update. | Data: new-format document modify-save-reopen |
@@ -416,7 +416,7 @@ Run at commit 0853e1b (2026-07-10): five deliberate regressions, one per instrum
 
 **Phase 1 — instruments/data/security baseline** (most entries closed by stages 13–16; remaining:)
 
-- Data: genuinely very large holes with a budget (the wide-hole fixture and snapshot gauges only cover reference-sized content); extension-bag survival through an old build (refusal is covered; survival semantics await Phase 8's bridge release).
+- Data: genuinely very large holes with a budget (the wide-hole fixture and snapshot gauges only cover reference-sized content).
 - Rendering: reduced motion; semantic dark parity.
 - Migration/deploy: a real mid-session deploy (new code opening old IndexedDB, with migration rerun/idempotence — stage15 covers localStorage preferences, not the IDB schema during a live session); CLI version skew with an older CLI against additive wire changes; a v0.1-era hole retained through Phase 9.
 

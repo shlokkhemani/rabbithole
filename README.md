@@ -162,6 +162,7 @@ and opening that content with `base_url` instead of ingesting the PDF.
   `show` diagrams, URL-based resolution for relative links/images, and local
   image assets via `asset:name.png`; source stays as Markdown for copy/export,
   while frozen snapshots inline assets into the HTML.
+- **Interactive checks:** answer multiple-choice questions inline; progress survives reloads and portable backups, while shared snapshots start clean.
 - **Lenses:** one-tap presets on the ask popup — Explain · ELI5 · Example ·
   Go Deeper (keys 1–4).
 - **Follow-up chat:** a composer under each document asks about the doc as a

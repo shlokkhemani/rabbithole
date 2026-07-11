@@ -15,12 +15,11 @@
  * DOM. Sanitized descriptors can only supply HTML strings; the framework owns
  * sanitization and insertion before optional wiring.
  *
- * IMPORTANT — PROVISIONAL AND REVISABLE: Phase 8's content spike owns the final
- * hydratable-block, primitive, lifecycle, identity, state, and security formats.
- * A future content-model revision may change these declarations without
- * migration obligations. These names let current code share vocabulary; they
- * do not freeze a serialized format or promise compatibility for authored or
- * learner state.
+ * Check v1 validated the descriptor and mount contracts below. Runtime
+ * registration remains the authority for their exact behavior; authored Check
+ * data and learner state remain guarded by their runtime parsers and reducers.
+ * Steppable/parametric primitive vocabulary is still provisional until Walk or
+ * Play supplies equivalent product evidence.
  */
 
 export interface MarkdownRenderContext {
@@ -36,12 +35,13 @@ export interface BlockTypeDescriptor<Model = unknown> {
   security: "sanitize-html" | "inert";
 }
 
+/** Settled mount shape enforced by `registerBlockMount` in the UI runtime. */
 export interface BlockMountSpec<Model = unknown> {
   renderHtml?(model: Model): string;
   wire?(rootElement: HTMLElement, model: Model, context: BlockMountContext): void;
 }
 
-/** PROVISIONAL plain-text Check v1 model; authored field text is not Markdown. */
+/** Settled strict-JSON Check v1 model; authored field text is not Markdown. */
 export interface CheckModel {
   question: string;
   options: string[];
@@ -64,6 +64,7 @@ export interface MarkdownExtension {
   render(source: string, context: MarkdownRenderContext): string;
 }
 
+/** PROVISIONAL vocabulary for unbuilt steppable/parametric blocks (Walk/Play). */
 export interface HydratableBlock<Model = unknown> {
   type: string;
   /** Declaration version only; no persisted encoding is specified here. */
@@ -75,12 +76,12 @@ export interface HydratableBlock<Model = unknown> {
   hydrate(container: HTMLElement, model: Model): Handle<Model>;
 }
 
-/** PROVISIONAL Phase 8 primitive-kit vocabulary. */
+/** PROVISIONAL primitive vocabulary pending a Walk/Play consumer. */
 export interface Primitive<Props> {
   mount(container: HTMLElement, props: Props): Handle<Props>;
 }
 
-/** PROVISIONAL lifecycle shared by hydratable blocks and primitives. */
+/** PROVISIONAL lifecycle for the unbuilt Walk/Play vocabulary. */
 export interface Handle<Props = unknown> {
   element: HTMLElement;
   update(props: Partial<Props>): void;

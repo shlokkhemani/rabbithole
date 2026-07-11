@@ -1,7 +1,5 @@
 import {
   DEFAULT_CHILD,
-  agentAttached,
-  agentDown,
   agentReason,
   bannerNotice,
   buildLoading,
@@ -27,6 +25,7 @@ import {
   setAgentReason,
   setClosedState,
   setConnLost,
+  sessionPhase,
   sideEl,
   updateSince,
   view,
@@ -51,6 +50,7 @@ import {
 import { updateComposerState } from "./ask-followups.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
 import { refreshNodeHtml } from "./renderer.js";
+import { cancelFrame, nextFrame } from "./lifecycle.js";
 
   // ===========================================================================
   // transport
@@ -190,10 +190,6 @@ export function connectSse(){
   }
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
-  function requestFrame(fn){
-    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(fn);
-    return setTimeout(fn, 16);
-  }
   function cancelQueuedStreamRender(nodeId){
     delete streamRenderQueue[nodeId];
   }
@@ -203,7 +199,7 @@ export function connectSse(){
     var queued = streamRenderQueue[node.id];
     streamRenderQueue[node.id] = { node: node, firstChunk: queued ? queued.firstChunk : firstChunk };
     if (streamRenderRaf) return;
-    streamRenderRaf = requestFrame(function(){
+    streamRenderRaf = nextFrame(function(){
       streamRenderRaf = 0;
       var batch = streamRenderQueue;
       streamRenderQueue = {};
@@ -215,11 +211,6 @@ export function connectSse(){
         renderStreamSurfaces(item.node, item.firstChunk);
       });
     });
-  }
-  function cancelFrame(frame){
-    if (!frame) return;
-    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
-    else clearTimeout(frame);
   }
   function cancelStreamRender(){
     if (streamRenderRaf) cancelFrame(streamRenderRaf);
@@ -417,14 +408,15 @@ export function handleServer(msg){
     return false;
   }
 export function refreshStatus(){
-    document.body.classList.toggle("agent-down", agentDown());
-    document.body.classList.toggle("session-over", closed);
+    var phase = sessionPhase();
+    document.body.classList.toggle("agent-down", phase !== "live");
+    document.body.classList.toggle("session-over", phase === "closed" || phase === "frozen");
     // Once the session is over the server is gone, so new asks can't be taken —
     // but every question already asked is saved and re-queued on reopen.
     var savedNote = hasPendingAsks() ? " Your unanswered questions are saved and will be answered there." : "";
-    if (frozen){
+    if (phase === "frozen"){
       clearBanner(); // a snapshot needs no liveness story — the copy explains itself
-    } else if (closed){
+    } else if (phase === "closed"){
       if (closedReason === "done")
         setBanner("done", false, "Session ended", "This Rabbithole is saved. Reopen it from your terminal any time to keep exploring." + savedNote);
       else if (closedReason === "superseded")
@@ -433,10 +425,10 @@ export function refreshStatus(){
         setBanner("timeout", true, "Session timed out", "Everything is saved. Reopen this Rabbithole from your terminal to continue." + savedNote);
       else
         setBanner("closed", true, "The agent has left", "Everything answered so far is saved. Reopen this Rabbithole from your terminal to keep exploring." + savedNote);
-    } else if (connLost){
-      setBanner("connlost", true, "Connection lost", "Can't reach the agent session — it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
-    } else if (!agentAttached){
-      if (agentReason === "stalled")
+    } else if (phase === "away"){
+      if (connLost)
+        setBanner("connlost", true, "Connection lost", "Can't reach the agent session — it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
+      else if (agentReason === "stalled")
         setBanner("stalled", true, "The agent went quiet", "No response for a while — it may have stopped. You can keep asking: questions are saved and answered when the agent returns.");
       else
         setBanner("cancelled", true, "The agent stopped listening", "The tool call was cancelled. You can keep asking — questions are saved and answered when the agent picks this hole back up.");

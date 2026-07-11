@@ -9,12 +9,9 @@ import {
   buildLoading,
   childrenOf,
   closed,
-  connLost,
   currentNodeId,
   followupsOf,
   fontPx,
-  frozen,
-  agentAttached,
   isFollowup,
   isUnread,
   lensBadgeHtml,
@@ -30,10 +27,12 @@ import {
   sideEl,
   toggleTheme,
   truncate,
-  world
+  world,
+  sessionPhase
 } from "./core.js";
 import { escapeHtml } from "../core/utils.js";
 import { createCleanupScope } from "./lifecycle.js";
+import { mountVisuals } from "./visuals.js";
 
 function defaultReaderHooks(){
   return {
@@ -43,7 +42,6 @@ function defaultReaderHooks(){
     scheduleViewSave: function(){},
     setMode: function(){},
     post: function(){ return Promise.resolve({ ok: true }); },
-    mountVisuals: null,
     mountDocImages: null,
     persistNode: function(){},
     animateScroll: function(){}
@@ -436,19 +434,20 @@ export function renderSidebar(){
     mountSidebarVisuals(newLivePanes);
   }
 export function mountSidebarVisuals(panes){
-    if (typeof readerHooks.mountVisuals !== "function") return;
     for (var i = 0; i < panes.length; i++){
       var key = "reader-side:" + panes[i].node.id;
-      readerHooks.mountVisuals(panes[i].pane, key);
+      mountVisuals(panes[i].pane, key);
       if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
   }
 export function pendingStatusHtml(k){
-    if (frozen) return '<span class="si-muted">unanswered in this snapshot</span>';
-    if (closed) return '<span class="si-muted">saved — answered when you reopen</span>';
-    if (connLost || !agentAttached) return '<span class="si-muted">saved — waiting for the agent</span>';
-    if (k && k.html) return '<span class="shimmer-text">Writing…</span>';
-    return '<span class="shimmer-text">Thinking…</span>';
+    var copy = {
+      frozen: '<span class="si-muted">unanswered in this snapshot</span>',
+      closed: '<span class="si-muted">saved — answered when you reopen</span>',
+      away: '<span class="si-muted">saved — waiting for the agent</span>',
+      live: k && k.html ? '<span class="shimmer-text">Writing…</span>' : '<span class="shimmer-text">Thinking…</span>'
+    };
+    return copy[sessionPhase()];
   }
   function onSidebarClick(e){
     var it = e.target.closest(".side-item");

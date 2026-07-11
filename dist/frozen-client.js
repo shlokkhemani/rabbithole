@@ -1899,18 +1899,13 @@ var RabbitholeFrozenClient = (() => {
       return id;
     }
     function raf(callback) {
-      if (typeof requestAnimationFrame !== "function") {
-        return timeout(function() {
-          callback(typeof performance === "object" ? performance.now() : Date.now());
-        }, 16);
-      }
       var cancel = null;
-      var id = requestAnimationFrame(function(timestamp) {
+      var id = nextFrame(function(timestamp) {
         if (cancel) cancel();
         callback(timestamp);
       });
       cancel = addCleanup(function() {
-        cancelAnimationFrame(id);
+        cancelFrame(id);
       });
       return id;
     }
@@ -1942,649 +1937,15 @@ var RabbitholeFrozenClient = (() => {
       }
     };
   }
-
-  // src/core/layout.js
-  var DEFAULT_ROOT = Object.freeze({ w: 480, h: 580 });
-  var DEFAULT_CHILD = Object.freeze({ w: 420, h: 460 });
-  var TREE_PARENT_GAP = 70;
-  var TREE_STACK_GAP = 30;
-  function nodeOrder(a, b) {
-    return ((a == null ? void 0 : a._order) || 0) - ((b == null ? void 0 : b._order) || 0) || String((a == null ? void 0 : a.id) || "").localeCompare(String((b == null ? void 0 : b.id) || ""));
-  }
-  function nodeX(node) {
-    var _a2, _b;
-    return Number((_b = node == null ? void 0 : node.x) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.x) || 0;
-  }
-  function nodeY(node) {
-    var _a2, _b;
-    return Number((_b = node == null ? void 0 : node.y) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.y) || 0;
-  }
-  function nodeW(node, fallback = DEFAULT_CHILD.w) {
-    var _a2, _b;
-    return Number((_b = node == null ? void 0 : node.w) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.w) || fallback;
-  }
-  function nodeH(node, fallback = DEFAULT_CHILD.h) {
-    var _a2, _b;
-    return Number((_b = node == null ? void 0 : node.h) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.h) || fallback;
-  }
-  function nodeBounds(node, { effH: effH2 = null } = {}) {
-    const x = nodeX(node);
-    const y = nodeY(node);
-    const w = nodeW(node);
-    const h = typeof effH2 === "function" ? effH2(node) : nodeH(node);
-    return { minX: x, minY: y, maxX: x + w, maxY: y + h };
-  }
-  function unionBounds(a, b) {
-    if (!a) return b;
-    if (!b) return a;
-    return {
-      minX: Math.min(a.minX, b.minX),
-      minY: Math.min(a.minY, b.minY),
-      maxX: Math.max(a.maxX, b.maxX),
-      maxY: Math.max(a.maxY, b.maxY)
-    };
-  }
-  function shiftBounds(bounds, dx, dy) {
-    return {
-      minX: bounds.minX + dx,
-      minY: bounds.minY + dy,
-      maxX: bounds.maxX + dx,
-      maxY: bounds.maxY + dy
-    };
-  }
-  function boundsOverlap(a, b) {
-    return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
-  }
-  function subtreeBounds(node, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder } = {}) {
-    let bounds = nodeBounds(node, { effH: effH2 });
-    if (!(node == null ? void 0 : node.collapsed) && typeof childrenOf2 === "function") {
-      for (const child of childrenOf2(node.id).sort(sort)) {
-        bounds = unionBounds(bounds, subtreeBounds(child, { childrenOf: childrenOf2, effH: effH2, sort }));
-      }
-    }
-    return bounds;
-  }
-  function placeChild(parent, branchType, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder, childSize = DEFAULT_CHILD } = {}) {
-    const type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
-    const parentX = nodeX(parent);
-    const parentY = nodeY(parent);
-    const parentW = nodeW(parent);
-    const x = type === BRANCH_SELECTION ? parentX + parentW + TREE_PARENT_GAP : parentX;
-    let y = type === BRANCH_SELECTION ? parentY : parentY + (typeof effH2 === "function" ? effH2(parent) : nodeH(parent)) + TREE_PARENT_GAP;
-    const siblings = typeof childrenOf2 === "function" ? childrenOf2(parent.id).sort(sort) : [];
-    for (const sibling of siblings) {
-      if (branchTypeOfNode(sibling) === type) {
-        y = Math.max(y, subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort }).maxY + TREE_STACK_GAP);
-      }
-    }
-    const blockers = siblings.filter((sibling) => branchTypeOfNode(sibling) !== type).map((sibling) => subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort })).sort((a, b) => a.minY - b.minY || a.minX - b.minX);
-    let candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
-    let bumped = true;
-    let guard = 0;
-    while (bumped && guard++ < 100) {
-      bumped = false;
-      for (const blocker of blockers) {
-        if (boundsOverlap(candidate, blocker)) {
-          y = blocker.maxY + TREE_STACK_GAP;
-          candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
-          bumped = true;
-        }
-      }
-    }
-    return { x, y };
-  }
-
-  // src/ui/core.js
-  var SVGNS = "http://www.w3.org/2000/svg";
-  var MIN_SCALE = 0.15;
-  var MAX_SCALE = 2.5;
-  var READER_BASE = 17;
-  var CANVAS_BASE = 14;
-  var MIN_FS = 0.7;
-  var MAX_FS = 2.4;
-  var hydration = null;
-  var rootId = null;
-  var frozen = false;
-  var nodes = {};
-  var currentNodeId = null;
-  var mode = "reader";
-  var view = { x: 0, y: 0, scale: 1 };
-  var closed = false;
-  var closedReason = null;
-  var agentAttached = true;
-  var agentReason = null;
-  var connLost = false;
-  var sseFails = 0;
-  var canvasBuilt = false;
-  var canvasFramed = false;
-  var viewAdjusted = false;
-  var orderCounter = 0;
-  var readerMain = null;
-  var sideEl = null;
-  var breadcrumbEl = null;
-  var viewport = null;
-  var world = null;
-  var edgesSvg = null;
-  var ask = null;
-  var askText = null;
-  var askGo = null;
-  var zoomLabel = null;
-  var hintEl = null;
-  var bannerEl = null;
-  var hintNotice = null;
-  var bannerNotice = null;
-  var composerInner = null;
-  var composerText = null;
-  var composerSend = null;
-  var actReader = null;
-  var actCanvas = null;
-  var actSep = null;
-  var sinceEl = null;
-  var sinceMsg = null;
-  var paletteEl = null;
-  var palText = null;
-  var palResults = null;
-  var peekEl = null;
-  var shareMenu = null;
-  var confirmEl = null;
-  function defaultCoreHooks() {
-    return {
-      post: function() {
-        return Promise.resolve({ ok: true });
-      },
-      ensureCanvasBuilt: function() {
-      },
-      diveToNode: function() {
-      },
-      openNode: function() {
-      },
-      mountVisuals: null,
-      mountDocImages: null,
-      effH: function(n) {
-        return n.h;
-      }
-    };
-  }
-  var coreHooks = defaultCoreHooks();
-  var coreScope = null;
-  function registerCoreHooks(hooks) {
-    Object.assign(coreHooks, hooks || {});
-  }
-  function initCore(inputHydration) {
-    disposeCore();
-    coreScope = createCleanupScope();
-    hydration = inputHydration || {};
-    rootId = hydration.root_id;
-    frozen = !!hydration.frozen;
-    nodes = {};
-    currentNodeId = rootId;
-    mode = "reader";
-    view = { x: 0, y: 0, scale: 1 };
-    closed = frozen;
-    closedReason = frozen ? "frozen" : null;
-    agentAttached = hydration.agent_attached !== false;
-    agentReason = null;
-    connLost = false;
-    sseFails = 0;
-    canvasBuilt = false;
-    canvasFramed = false;
-    viewAdjusted = false;
-    orderCounter = 0;
-    sinceDismissed = false;
-    sinceArmed = false;
-    readerMain = document.getElementById("reader-main");
-    sideEl = document.getElementById("reader-side");
-    breadcrumbEl = document.getElementById("breadcrumb");
-    viewport = document.getElementById("viewport");
-    world = document.getElementById("world");
-    edgesSvg = document.getElementById("edges");
-    ask = document.getElementById("ask");
-    askText = document.getElementById("ask-text");
-    askGo = document.getElementById("ask-go");
-    zoomLabel = document.getElementById("zoom-label");
-    hintEl = document.getElementById("hint");
-    bannerEl = document.getElementById("banner");
-    hintNotice = wireNotice(hintEl, { variant: "hint" });
-    bannerNotice = wireNotice(bannerEl, { variant: "banner" });
-    composerInner = document.getElementById("composer-inner");
-    composerText = document.getElementById("composer-text");
-    composerSend = document.getElementById("composer-send");
-    actReader = document.getElementById("act-reader");
-    actCanvas = document.getElementById("act-canvas");
-    actSep = document.getElementById("act-sep");
-    sinceEl = document.getElementById("since");
-    sinceMsg = document.getElementById("since-msg");
-    paletteEl = document.getElementById("palette");
-    palText = document.getElementById("pal-text");
-    palResults = document.getElementById("pal-results");
-    peekEl = document.getElementById("peek");
-    shareMenu = document.getElementById("sharemenu");
-    confirmEl = document.getElementById("confirm");
-    initReduceMotion(coreScope);
-    coreScope.listen(actReader, "click", onActivityClick);
-    coreScope.listen(actCanvas, "click", onActivityClick);
-    coreScope.listen(document.getElementById("since-show"), "click", function(e) {
-      var un = unreadNodes();
-      if (un.length) goToNode2(un[0], motionSourceFromEvent(e));
-    });
-    coreScope.listen(document.getElementById("since-x"), "click", function() {
-      sinceDismissed = true;
-      sinceEl.classList.remove("visible");
-    });
-    coreScope.interval(updateLoadingTimers, 1e3);
-    coreScope.addCleanup(function() {
-      hintNotice == null ? void 0 : hintNotice.hide();
-      bannerNotice == null ? void 0 : bannerNotice.hide();
-    });
-    return disposeCore;
-  }
-  function disposeCore() {
-    var scope = coreScope;
-    coreScope = null;
-    try {
-      if (scope) scope.dispose();
-    } finally {
-      resetCoreState();
-    }
-  }
-  function resetCoreState() {
-    hydration = null;
-    rootId = null;
-    frozen = false;
-    nodes = {};
-    currentNodeId = null;
-    mode = "reader";
-    view = { x: 0, y: 0, scale: 1 };
-    closed = false;
-    closedReason = null;
-    agentAttached = true;
-    agentReason = null;
-    connLost = false;
-    sseFails = 0;
-    canvasBuilt = false;
-    canvasFramed = false;
-    viewAdjusted = false;
-    orderCounter = 0;
-    readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
-    ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
-    hintNotice = bannerNotice = null;
-    composerInner = composerText = composerSend = null;
-    actReader = actCanvas = actSep = null;
-    sinceEl = sinceMsg = paletteEl = palText = palResults = null;
-    peekEl = shareMenu = confirmEl = null;
-    sinceDismissed = false;
-    sinceArmed = false;
-    reduceMotion = false;
-    reduceMotionMql = null;
-    coreHooks = defaultCoreHooks();
-  }
-  function setCurrentNodeId(id) {
-    currentNodeId = id;
-  }
-  function setModeValue(value) {
-    mode = value;
-  }
-  function setCanvasBuilt(value) {
-    canvasBuilt = !!value;
-  }
-  function setCanvasFramed(value) {
-    canvasFramed = !!value;
-  }
-  function setViewAdjusted(value) {
-    viewAdjusted = !!value;
-  }
-  function nextOrder() {
-    return orderCounter++;
-  }
-  function armSince() {
-    sinceArmed = true;
-  }
-  function uuid() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-  }
-  function truncate2(s, n) {
-    return truncate(s, n);
-  }
-  function childrenOf(id) {
-    var out = [];
-    for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]);
-    return out;
-  }
-  function anchorStart(n) {
-    return n.origin && n.origin.anchor ? n.origin.anchor.offset_start : 1e9;
-  }
-  function lineageNodes(id) {
-    var arr = [], n = nodes[id], guard = {};
-    while (n && !guard[n.id]) {
-      guard[n.id] = 1;
-      arr.push(n);
-      n = n.parent_id ? nodes[n.parent_id] : null;
-    }
-    return arr.reverse();
-  }
-  function isVisible(node) {
-    var p = node.parent_id ? nodes[node.parent_id] : null;
-    while (p) {
-      if (p.collapsed) return false;
-      p = p.parent_id ? nodes[p.parent_id] : null;
-    }
-    return true;
-  }
-  function fontPx(node, base) {
-    return Math.round(base * (node.font_scale || 1));
-  }
-  function nodeOrder2(a, b) {
-    return nodeOrder(a, b);
-  }
-  function branchTypeOf(n) {
-    return branchTypeOfNode(n);
-  }
-  function isSelectionBranch(n) {
-    return branchTypeOf(n) === BRANCH_SELECTION;
-  }
-  function isFollowup(n) {
-    return branchTypeOf(n) === BRANCH_FOLLOWUP;
-  }
-  function followupsOf(id) {
-    return childrenOf(id).filter(isFollowup).sort(nodeOrder2);
-  }
-  function nodeBounds2(n) {
-    return nodeBounds(n, { effH: coreHooks.effH });
-  }
-  function unionBounds2(a, b) {
-    return unionBounds(a, b);
-  }
-  function shiftBounds2(b, dx, dy) {
-    return shiftBounds(b, dx, dy);
-  }
-  function boundsOverlap2(a, b) {
-    return boundsOverlap(a, b);
-  }
-  function agentDown() {
-    return closed || connLost || !agentAttached;
-  }
-  var reduceMotion = false;
-  var reduceMotionMql = null;
-  function setReduceMotion(e) {
-    reduceMotion = !!(e && e.matches);
-  }
-  function initReduceMotion(scope) {
-    if (window.matchMedia) {
-      reduceMotionMql = window.matchMedia("(prefers-reduced-motion: reduce)");
-      setReduceMotion(reduceMotionMql);
-      if (reduceMotionMql.addEventListener) scope.listen(reduceMotionMql, "change", setReduceMotion);
-      else if (reduceMotionMql.addListener) {
-        reduceMotionMql.addListener(setReduceMotion);
-        scope.addCleanup(function() {
-          reduceMotionMql == null ? void 0 : reduceMotionMql.removeListener(setReduceMotion);
-        });
-      }
-    }
-  }
-  function shouldReduceMotion() {
-    return reduceMotion;
-  }
-  function motionSourceFromEvent(e) {
-    return e && e.detail !== 0 ? "pointer" : "keyboard";
-  }
-  function bezierCoord(t, a, b) {
-    var mt = 1 - t;
-    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
-  }
-  function bezierSlope(t, a, b) {
-    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
-  }
-  function cubicBezier(x1, y1, x2, y2, x) {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    var t = x, i2, xAt, slope;
-    for (i2 = 0; i2 < 5; i2++) {
-      xAt = bezierCoord(t, x1, x2) - x;
-      slope = bezierSlope(t, x1, x2);
-      if (Math.abs(xAt) < 1e-3 || !slope) break;
-      t -= xAt / slope;
-    }
-    if (t < 0 || t > 1) {
-      var lo = 0, hi = 1;
-      t = x;
-      for (i2 = 0; i2 < 8; i2++) {
-        xAt = bezierCoord(t, x1, x2);
-        if (xAt < x) lo = t;
-        else hi = t;
-        t = (lo + hi) / 2;
-      }
-    }
-    return bezierCoord(t, y1, y2);
-  }
-  function easeOutMotion(k) {
-    return cubicBezier(0.23, 1, 0.32, 1, k);
-  }
-  function easeInOutMotion(k) {
-    return cubicBezier(0.77, 0, 0.175, 1, k);
-  }
-  function playLandingCue(el, cls) {
-    if (!el || document.hidden) return;
-    cls = cls || "flash";
-    el.classList.remove(cls);
-    void el.offsetWidth;
-    el.classList.add(cls);
-    if (shouldReduceMotion()) {
-      setTimeout(function() {
-        el.classList.remove(cls);
-      }, 180);
-      return;
-    }
-    requestAnimationFrame(function() {
-      el.classList.remove(cls);
-    });
-  }
-  function setSurfaceOrigin(el, anchorRect) {
-    if (!el || !anchorRect) return;
-    var er = el.getBoundingClientRect();
-    var ax = anchorRect.left + anchorRect.width / 2;
-    var ay = anchorRect.top + anchorRect.height / 2;
-    var ox = Math.max(0, Math.min(er.width, ax - er.left));
-    var oy;
-    if (anchorRect.bottom <= er.top) oy = 0;
-    else if (anchorRect.top >= er.bottom) oy = er.height;
-    else oy = Math.max(0, Math.min(er.height, ay - er.top));
-    el.style.transformOrigin = Math.round(ox) + "px " + Math.round(oy) + "px";
-  }
-  function isUnread(n) {
-    return n.status === "answered" && !n.read && n.id !== rootId;
-  }
-  function markRead(node) {
-    if (!node || node.read) return;
-    node.read = true;
-    if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
-    if (node.el) node.el.classList.remove("unread");
-    refreshAmbient();
-    updateSince();
-  }
-  function unreadNodes() {
-    var out = [];
-    for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
-    out.sort(function(a, b) {
-      return (a._order || 0) - (b._order || 0);
-    });
-    return out;
-  }
-  function pendingNodes() {
-    var out = [];
-    for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
-    out.sort(function(a, b) {
-      return (a._order || 0) - (b._order || 0);
-    });
-    return out;
-  }
-  function goToNode2(node, source2) {
-    if (!node) return;
-    if (mode === "canvas") {
-      coreHooks.ensureCanvasBuilt();
-      coreHooks.diveToNode(node, source2);
-      flashNode(node);
-      if (node.status === "answered") markRead(node);
-    } else {
-      coreHooks.openNode(node.id);
-    }
-  }
-  function flashNode(node) {
-    if (!node.el) return;
-    playLandingCue(node.el, "flash");
-  }
-  function refreshAmbient() {
-    var writing = pendingNodes().length;
-    var label = "", cls = "activity on";
-    if (writing > 0 && !agentDown()) {
-      label = writing + " writing\u2026";
-      cls += " writing";
-    } else cls = "activity";
-    var chips = [actReader, actCanvas];
-    for (var i2 = 0; i2 < chips.length; i2++) {
-      chips[i2].className = cls;
-      var dot = chips[i2].querySelector(".act-dot");
-      var text2 = chips[i2].querySelector(".act-label");
-      if (!dot || !text2) {
-        dot = document.createElement("span");
-        dot.className = "act-dot";
-        text2 = document.createElement("span");
-        text2.className = "act-label";
-        chips[i2].replaceChildren(dot, text2);
-      }
-      text2.textContent = label;
-      chips[i2].title = "Watch it being written";
-    }
-    if (actSep) actSep.style.display = label ? "" : "none";
-  }
-  function onActivityClick(e) {
-    var source2 = motionSourceFromEvent(e);
-    var pend = pendingNodes();
-    if (pend.length) goToNode2(pend[pend.length - 1], source2);
-  }
-  var sinceDismissed = false;
-  var sinceArmed = false;
-  function updateSince() {
-    if (!sinceArmed || sinceDismissed || frozen) {
-      sinceEl.classList.remove("visible");
-      return;
-    }
-    var n = unreadNodes().length;
-    if (!n) {
-      sinceArmed = false;
-      sinceEl.classList.remove("visible");
-      return;
-    }
-    sinceMsg.textContent = n === 1 ? "An answer arrived while you were away" : n + " answers arrived while you were away";
-    sinceEl.classList.add("visible");
-  }
-  function lensLabel2(key) {
-    return lensLabel(key);
-  }
-  function lensBadgeHtml(key) {
-    return '<span class="lens-badge">' + escapeHtml(lensLabel2(key)) + "</span>";
-  }
-  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
-  function buildLoading(node) {
-    if (node && node.error) {
-      var errWrap = document.createElement("div");
-      errWrap.className = "loading provider-error";
-      var title = document.createElement("div");
-      title.className = "provider-error-title";
-      title.textContent = "Provider request failed";
-      var msg = document.createElement("div");
-      msg.className = "provider-error-msg";
-      msg.textContent = node.error.message || "The model provider returned an error.";
-      var retry = document.createElement("button");
-      retry.className = "provider-retry";
-      retry.type = "button";
-      retry.textContent = "Retry";
-      retry.disabled = node.error.retryable === false;
-      retry.addEventListener("click", function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        node.error = null;
-        coreHooks.post({ type: "retry_branch", node_id: node.id });
-      });
-      errWrap.appendChild(title);
-      errWrap.appendChild(msg);
-      errWrap.appendChild(retry);
-      return errWrap;
-    }
-    var wrap = document.createElement("div");
-    wrap.className = "loading";
-    var st = document.createElement("div");
-    st.className = "loading-status";
-    st.innerHTML = LOADING_BUNNY_HTML + '<span class="shimmer-text ll-live">Thinking</span><span class="ll-stalled">Saved \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered when you reopen this hole</span><span class="ll-frozen">Unanswered when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
-    var sk = document.createElement("div");
-    sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
-    wrap.appendChild(st);
-    wrap.appendChild(sk);
-    return wrap;
-  }
-  function visualSurfaceKey(node, base) {
-    return (base === CANVAS_BASE ? "canvas:" : "reader:") + (node && node.id || "unknown");
-  }
-  function mountDocMedia(dc, node, base) {
-    var surfaceKey = visualSurfaceKey(node, base);
-    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
-    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, base, surfaceKey);
-  }
-  function fillStreaming(dc, node, surfaceKey) {
-    dc.innerHTML = node.html || "";
-    var caret = document.createElement("span");
-    caret.className = "stream-caret";
-    var last = dc.lastElementChild;
-    if (last && (last.tagName === "UL" || last.tagName === "OL")) last = last.lastElementChild || last;
-    if (last && /^(P|H[1-6]|LI)$/.test(last.tagName)) last.appendChild(caret);
-    else dc.appendChild(caret);
-    var st = document.createElement("div");
-    st.className = "stream-status";
-    st.innerHTML = '<span class="shimmer-text ll-live">Writing</span><span class="ll-stalled">Paused \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered in full when you reopen this hole</span><span class="ll-frozen">Unfinished when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
-    dc.appendChild(st);
-    surfaceKey = surfaceKey || "stream:" + (node && node.id || "unknown");
-    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
-    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, null, surfaceKey);
-  }
-  function formatElapsed(ms) {
-    var s = Math.floor(ms / 1e3);
-    if (s < 3) return "";
-    if (s < 60) return s + "s";
-    return Math.floor(s / 60) + "m " + s % 60 + "s";
-  }
-  function updateLoadingTimers() {
-    if (closed) return;
-    var els = document.querySelectorAll(".loading-time");
-    for (var i2 = 0; i2 < els.length; i2++) {
-      var t = Number(els[i2].getAttribute("data-start")) || 0;
-      if (t) els[i2].textContent = formatElapsed(Date.now() - t);
-    }
-  }
-  function buildDocContent(node, base) {
-    var dc = document.createElement("div");
-    dc.className = "doc-content md";
-    dc.dataset.nodeId = node.id;
-    dc.style.fontSize = fontPx(node, base) + "px";
-    if (node.status === "pending") {
-      if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
-      else dc.appendChild(buildLoading(node));
-    } else {
-      dc.innerHTML = node.html || "";
-      mountDocMedia(dc, node, base);
-    }
-    return dc;
-  }
-  function toggleTheme() {
-    var cur = document.documentElement.getAttribute("data-theme");
-    var next = cur === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("rh-theme", next);
-    } catch (e) {
-    }
-  }
-  function flashHint(msg) {
-    hintNotice.show({ message: msg, duration: 4e3 });
+  function nextFrame(callback) {
+    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);
+    return setTimeout(function() {
+      callback(typeof performance === "object" ? performance.now() : Date.now());
+    }, 16);
+  }
+  function cancelFrame(handle) {
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle);
+    clearTimeout(handle);
   }
 
   // src/core/blocks.js
@@ -2921,6 +2282,651 @@ var RabbitholeFrozenClient = (() => {
   }
   registerBlockMount("check", { renderHtml: buildCheckVisual, wire: wireCheck });
 
+  // src/core/layout.js
+  var DEFAULT_ROOT = Object.freeze({ w: 480, h: 580 });
+  var DEFAULT_CHILD = Object.freeze({ w: 420, h: 460 });
+  var TREE_PARENT_GAP = 70;
+  var TREE_STACK_GAP = 30;
+  function nodeOrder(a, b) {
+    return ((a == null ? void 0 : a._order) || 0) - ((b == null ? void 0 : b._order) || 0) || String((a == null ? void 0 : a.id) || "").localeCompare(String((b == null ? void 0 : b.id) || ""));
+  }
+  function nodeX(node) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.x) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.x) || 0;
+  }
+  function nodeY(node) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.y) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.y) || 0;
+  }
+  function nodeW(node, fallback = DEFAULT_CHILD.w) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.w) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.w) || fallback;
+  }
+  function nodeH(node, fallback = DEFAULT_CHILD.h) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.h) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.h) || fallback;
+  }
+  function nodeBounds(node, { effH: effH2 = null } = {}) {
+    const x = nodeX(node);
+    const y = nodeY(node);
+    const w = nodeW(node);
+    const h = typeof effH2 === "function" ? effH2(node) : nodeH(node);
+    return { minX: x, minY: y, maxX: x + w, maxY: y + h };
+  }
+  function unionBounds(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    return {
+      minX: Math.min(a.minX, b.minX),
+      minY: Math.min(a.minY, b.minY),
+      maxX: Math.max(a.maxX, b.maxX),
+      maxY: Math.max(a.maxY, b.maxY)
+    };
+  }
+  function shiftBounds(bounds, dx, dy) {
+    return {
+      minX: bounds.minX + dx,
+      minY: bounds.minY + dy,
+      maxX: bounds.maxX + dx,
+      maxY: bounds.maxY + dy
+    };
+  }
+  function boundsOverlap(a, b) {
+    return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
+  }
+  function subtreeBounds(node, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder } = {}) {
+    let bounds = nodeBounds(node, { effH: effH2 });
+    if (!(node == null ? void 0 : node.collapsed) && typeof childrenOf2 === "function") {
+      for (const child of childrenOf2(node.id).sort(sort)) {
+        bounds = unionBounds(bounds, subtreeBounds(child, { childrenOf: childrenOf2, effH: effH2, sort }));
+      }
+    }
+    return bounds;
+  }
+  function placeChild(parent, branchType, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder, childSize = DEFAULT_CHILD } = {}) {
+    const type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    const parentX = nodeX(parent);
+    const parentY = nodeY(parent);
+    const parentW = nodeW(parent);
+    const x = type === BRANCH_SELECTION ? parentX + parentW + TREE_PARENT_GAP : parentX;
+    let y = type === BRANCH_SELECTION ? parentY : parentY + (typeof effH2 === "function" ? effH2(parent) : nodeH(parent)) + TREE_PARENT_GAP;
+    const siblings = typeof childrenOf2 === "function" ? childrenOf2(parent.id).sort(sort) : [];
+    for (const sibling of siblings) {
+      if (branchTypeOfNode(sibling) === type) {
+        y = Math.max(y, subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort }).maxY + TREE_STACK_GAP);
+      }
+    }
+    const blockers = siblings.filter((sibling) => branchTypeOfNode(sibling) !== type).map((sibling) => subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort })).sort((a, b) => a.minY - b.minY || a.minX - b.minX);
+    let candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
+    let bumped = true;
+    let guard = 0;
+    while (bumped && guard++ < 100) {
+      bumped = false;
+      for (const blocker of blockers) {
+        if (boundsOverlap(candidate, blocker)) {
+          y = blocker.maxY + TREE_STACK_GAP;
+          candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
+          bumped = true;
+        }
+      }
+    }
+    return { x, y };
+  }
+
+  // src/ui/core.js
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var MIN_SCALE = 0.15;
+  var MAX_SCALE = 2.5;
+  var READER_BASE = 17;
+  var CANVAS_BASE = 14;
+  var MIN_FS = 0.7;
+  var MAX_FS = 2.4;
+  var hydration = null;
+  var rootId = null;
+  var frozen = false;
+  var nodes = {};
+  var currentNodeId = null;
+  var mode = "reader";
+  var view = { x: 0, y: 0, scale: 1 };
+  var closed = false;
+  var closedReason = null;
+  var agentAttached = true;
+  var agentReason = null;
+  var connLost = false;
+  var sseFails = 0;
+  var canvasBuilt = false;
+  var canvasFramed = false;
+  var viewAdjusted = false;
+  var orderCounter = 0;
+  var readerMain = null;
+  var sideEl = null;
+  var breadcrumbEl = null;
+  var viewport = null;
+  var world = null;
+  var edgesSvg = null;
+  var ask = null;
+  var askText = null;
+  var askGo = null;
+  var zoomLabel = null;
+  var hintEl = null;
+  var bannerEl = null;
+  var hintNotice = null;
+  var bannerNotice = null;
+  var composerInner = null;
+  var composerText = null;
+  var composerSend = null;
+  var actReader = null;
+  var actCanvas = null;
+  var actSep = null;
+  var sinceEl = null;
+  var sinceMsg = null;
+  var paletteEl = null;
+  var palText = null;
+  var palResults = null;
+  var peekEl = null;
+  var shareMenu = null;
+  var confirmEl = null;
+  function defaultCoreHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      ensureCanvasBuilt: function() {
+      },
+      diveToNode: function() {
+      },
+      openNode: function() {
+      },
+      mountDocImages: null,
+      effH: function(n) {
+        return n.h;
+      }
+    };
+  }
+  var coreHooks = defaultCoreHooks();
+  var coreScope = null;
+  function registerCoreHooks(hooks) {
+    Object.assign(coreHooks, hooks || {});
+  }
+  function initCore(inputHydration) {
+    disposeCore();
+    coreScope = createCleanupScope();
+    hydration = inputHydration || {};
+    rootId = hydration.root_id;
+    frozen = !!hydration.frozen;
+    nodes = {};
+    currentNodeId = rootId;
+    mode = "reader";
+    view = { x: 0, y: 0, scale: 1 };
+    closed = frozen;
+    closedReason = frozen ? "frozen" : null;
+    agentAttached = hydration.agent_attached !== false;
+    agentReason = null;
+    connLost = false;
+    sseFails = 0;
+    canvasBuilt = false;
+    canvasFramed = false;
+    viewAdjusted = false;
+    orderCounter = 0;
+    sinceDismissed = false;
+    sinceArmed = false;
+    readerMain = document.getElementById("reader-main");
+    sideEl = document.getElementById("reader-side");
+    breadcrumbEl = document.getElementById("breadcrumb");
+    viewport = document.getElementById("viewport");
+    world = document.getElementById("world");
+    edgesSvg = document.getElementById("edges");
+    ask = document.getElementById("ask");
+    askText = document.getElementById("ask-text");
+    askGo = document.getElementById("ask-go");
+    zoomLabel = document.getElementById("zoom-label");
+    hintEl = document.getElementById("hint");
+    bannerEl = document.getElementById("banner");
+    hintNotice = wireNotice(hintEl, { variant: "hint" });
+    bannerNotice = wireNotice(bannerEl, { variant: "banner" });
+    composerInner = document.getElementById("composer-inner");
+    composerText = document.getElementById("composer-text");
+    composerSend = document.getElementById("composer-send");
+    actReader = document.getElementById("act-reader");
+    actCanvas = document.getElementById("act-canvas");
+    actSep = document.getElementById("act-sep");
+    sinceEl = document.getElementById("since");
+    sinceMsg = document.getElementById("since-msg");
+    paletteEl = document.getElementById("palette");
+    palText = document.getElementById("pal-text");
+    palResults = document.getElementById("pal-results");
+    peekEl = document.getElementById("peek");
+    shareMenu = document.getElementById("sharemenu");
+    confirmEl = document.getElementById("confirm");
+    initReduceMotion(coreScope);
+    coreScope.listen(actReader, "click", onActivityClick);
+    coreScope.listen(actCanvas, "click", onActivityClick);
+    coreScope.listen(document.getElementById("since-show"), "click", function(e) {
+      var un = unreadNodes();
+      if (un.length) goToNode2(un[0], motionSourceFromEvent(e));
+    });
+    coreScope.listen(document.getElementById("since-x"), "click", function() {
+      sinceDismissed = true;
+      sinceEl.classList.remove("visible");
+    });
+    coreScope.interval(updateLoadingTimers, 1e3);
+    coreScope.addCleanup(function() {
+      hintNotice == null ? void 0 : hintNotice.hide();
+      bannerNotice == null ? void 0 : bannerNotice.hide();
+    });
+    return disposeCore;
+  }
+  function disposeCore() {
+    var scope = coreScope;
+    coreScope = null;
+    try {
+      if (scope) scope.dispose();
+    } finally {
+      resetCoreState();
+    }
+  }
+  function resetCoreState() {
+    hydration = null;
+    rootId = null;
+    frozen = false;
+    nodes = {};
+    currentNodeId = null;
+    mode = "reader";
+    view = { x: 0, y: 0, scale: 1 };
+    closed = false;
+    closedReason = null;
+    agentAttached = true;
+    agentReason = null;
+    connLost = false;
+    sseFails = 0;
+    canvasBuilt = false;
+    canvasFramed = false;
+    viewAdjusted = false;
+    orderCounter = 0;
+    readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+    ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
+    hintNotice = bannerNotice = null;
+    composerInner = composerText = composerSend = null;
+    actReader = actCanvas = actSep = null;
+    sinceEl = sinceMsg = paletteEl = palText = palResults = null;
+    peekEl = shareMenu = confirmEl = null;
+    sinceDismissed = false;
+    sinceArmed = false;
+    reduceMotion = false;
+    reduceMotionMql = null;
+    coreHooks = defaultCoreHooks();
+  }
+  function setCurrentNodeId(id) {
+    currentNodeId = id;
+  }
+  function setModeValue(value) {
+    mode = value;
+  }
+  function setCanvasBuilt(value) {
+    canvasBuilt = !!value;
+  }
+  function setCanvasFramed(value) {
+    canvasFramed = !!value;
+  }
+  function setViewAdjusted(value) {
+    viewAdjusted = !!value;
+  }
+  function nextOrder() {
+    return orderCounter++;
+  }
+  function armSince() {
+    sinceArmed = true;
+  }
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  }
+  function truncate2(s, n) {
+    return truncate(s, n);
+  }
+  function childrenOf(id) {
+    var out = [];
+    for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]);
+    return out;
+  }
+  function anchorStart(n) {
+    return n.origin && n.origin.anchor ? n.origin.anchor.offset_start : 1e9;
+  }
+  function lineageNodes(id) {
+    var arr = [], n = nodes[id], guard = {};
+    while (n && !guard[n.id]) {
+      guard[n.id] = 1;
+      arr.push(n);
+      n = n.parent_id ? nodes[n.parent_id] : null;
+    }
+    return arr.reverse();
+  }
+  function isVisible(node) {
+    var p = node.parent_id ? nodes[node.parent_id] : null;
+    while (p) {
+      if (p.collapsed) return false;
+      p = p.parent_id ? nodes[p.parent_id] : null;
+    }
+    return true;
+  }
+  function fontPx(node, base) {
+    return Math.round(base * (node.font_scale || 1));
+  }
+  function nodeOrder2(a, b) {
+    return nodeOrder(a, b);
+  }
+  function branchTypeOf(n) {
+    return branchTypeOfNode(n);
+  }
+  function isSelectionBranch(n) {
+    return branchTypeOf(n) === BRANCH_SELECTION;
+  }
+  function isFollowup(n) {
+    return branchTypeOf(n) === BRANCH_FOLLOWUP;
+  }
+  function followupsOf(id) {
+    return childrenOf(id).filter(isFollowup).sort(nodeOrder2);
+  }
+  function nodeBounds2(n) {
+    return nodeBounds(n, { effH: coreHooks.effH });
+  }
+  function unionBounds2(a, b) {
+    return unionBounds(a, b);
+  }
+  function shiftBounds2(b, dx, dy) {
+    return shiftBounds(b, dx, dy);
+  }
+  function boundsOverlap2(a, b) {
+    return boundsOverlap(a, b);
+  }
+  function agentDown() {
+    return closed || connLost || !agentAttached;
+  }
+  function sessionPhase() {
+    if (frozen) return "frozen";
+    if (closed) return "closed";
+    if (connLost || !agentAttached) return "away";
+    return "live";
+  }
+  var reduceMotion = false;
+  var reduceMotionMql = null;
+  function setReduceMotion(e) {
+    reduceMotion = !!(e && e.matches);
+  }
+  function initReduceMotion(scope) {
+    if (window.matchMedia) {
+      reduceMotionMql = window.matchMedia("(prefers-reduced-motion: reduce)");
+      setReduceMotion(reduceMotionMql);
+      if (reduceMotionMql.addEventListener) scope.listen(reduceMotionMql, "change", setReduceMotion);
+      else if (reduceMotionMql.addListener) {
+        reduceMotionMql.addListener(setReduceMotion);
+        scope.addCleanup(function() {
+          reduceMotionMql == null ? void 0 : reduceMotionMql.removeListener(setReduceMotion);
+        });
+      }
+    }
+  }
+  function shouldReduceMotion() {
+    return reduceMotion;
+  }
+  function motionSourceFromEvent(e) {
+    return e && e.detail !== 0 ? "pointer" : "keyboard";
+  }
+  function bezierCoord(t, a, b) {
+    var mt = 1 - t;
+    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
+  }
+  function bezierSlope(t, a, b) {
+    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
+  }
+  function cubicBezier(x1, y1, x2, y2, x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    var t = x, i2, xAt, slope;
+    for (i2 = 0; i2 < 5; i2++) {
+      xAt = bezierCoord(t, x1, x2) - x;
+      slope = bezierSlope(t, x1, x2);
+      if (Math.abs(xAt) < 1e-3 || !slope) break;
+      t -= xAt / slope;
+    }
+    if (t < 0 || t > 1) {
+      var lo = 0, hi = 1;
+      t = x;
+      for (i2 = 0; i2 < 8; i2++) {
+        xAt = bezierCoord(t, x1, x2);
+        if (xAt < x) lo = t;
+        else hi = t;
+        t = (lo + hi) / 2;
+      }
+    }
+    return bezierCoord(t, y1, y2);
+  }
+  function easeOutMotion(k) {
+    return cubicBezier(0.23, 1, 0.32, 1, k);
+  }
+  function easeInOutMotion(k) {
+    return cubicBezier(0.77, 0, 0.175, 1, k);
+  }
+  function playLandingCue(el, cls) {
+    if (!el || document.hidden) return;
+    cls = cls || "flash";
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+    if (shouldReduceMotion()) {
+      setTimeout(function() {
+        el.classList.remove(cls);
+      }, 180);
+      return;
+    }
+    requestAnimationFrame(function() {
+      el.classList.remove(cls);
+    });
+  }
+  function setSurfaceOrigin(el, anchorRect) {
+    if (!el || !anchorRect) return;
+    var er = el.getBoundingClientRect();
+    var ax = anchorRect.left + anchorRect.width / 2;
+    var ay = anchorRect.top + anchorRect.height / 2;
+    var ox = Math.max(0, Math.min(er.width, ax - er.left));
+    var oy;
+    if (anchorRect.bottom <= er.top) oy = 0;
+    else if (anchorRect.top >= er.bottom) oy = er.height;
+    else oy = Math.max(0, Math.min(er.height, ay - er.top));
+    el.style.transformOrigin = Math.round(ox) + "px " + Math.round(oy) + "px";
+  }
+  function isUnread(n) {
+    return n.status === "answered" && !n.read && n.id !== rootId;
+  }
+  function markRead(node) {
+    if (!node || node.read) return;
+    node.read = true;
+    if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
+    if (node.el) node.el.classList.remove("unread");
+    refreshAmbient();
+    updateSince();
+  }
+  function unreadNodes() {
+    var out = [];
+    for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
+    out.sort(function(a, b) {
+      return (a._order || 0) - (b._order || 0);
+    });
+    return out;
+  }
+  function pendingNodes() {
+    var out = [];
+    for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
+    out.sort(function(a, b) {
+      return (a._order || 0) - (b._order || 0);
+    });
+    return out;
+  }
+  function goToNode2(node, source2) {
+    if (!node) return;
+    if (mode === "canvas") {
+      coreHooks.ensureCanvasBuilt();
+      coreHooks.diveToNode(node, source2);
+      if (node.el) playLandingCue(node.el, "flash");
+      if (node.status === "answered") markRead(node);
+    } else {
+      coreHooks.openNode(node.id);
+    }
+  }
+  function refreshAmbient() {
+    var writing = pendingNodes().length;
+    var label = "", cls = "activity on";
+    if (writing > 0 && !agentDown()) {
+      label = writing + " writing\u2026";
+      cls += " writing";
+    } else cls = "activity";
+    var chips = [actReader, actCanvas];
+    for (var i2 = 0; i2 < chips.length; i2++) {
+      chips[i2].className = cls;
+      var dot = chips[i2].querySelector(".act-dot");
+      var text2 = chips[i2].querySelector(".act-label");
+      if (!dot || !text2) {
+        dot = document.createElement("span");
+        dot.className = "act-dot";
+        text2 = document.createElement("span");
+        text2.className = "act-label";
+        chips[i2].replaceChildren(dot, text2);
+      }
+      text2.textContent = label;
+      chips[i2].title = "Watch it being written";
+    }
+    if (actSep) actSep.style.display = label ? "" : "none";
+  }
+  function onActivityClick(e) {
+    var source2 = motionSourceFromEvent(e);
+    var pend = pendingNodes();
+    if (pend.length) goToNode2(pend[pend.length - 1], source2);
+  }
+  var sinceDismissed = false;
+  var sinceArmed = false;
+  function updateSince() {
+    if (!sinceArmed || sinceDismissed || frozen) {
+      sinceEl.classList.remove("visible");
+      return;
+    }
+    var n = unreadNodes().length;
+    if (!n) {
+      sinceArmed = false;
+      sinceEl.classList.remove("visible");
+      return;
+    }
+    sinceMsg.textContent = n === 1 ? "An answer arrived while you were away" : n + " answers arrived while you were away";
+    sinceEl.classList.add("visible");
+  }
+  function lensLabel2(key) {
+    return lensLabel(key);
+  }
+  function lensBadgeHtml(key) {
+    return '<span class="lens-badge">' + escapeHtml(lensLabel2(key)) + "</span>";
+  }
+  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
+  function buildLoading(node) {
+    if (node && node.error) {
+      var errWrap = document.createElement("div");
+      errWrap.className = "loading provider-error";
+      var title = document.createElement("div");
+      title.className = "provider-error-title";
+      title.textContent = "Provider request failed";
+      var msg = document.createElement("div");
+      msg.className = "provider-error-msg";
+      msg.textContent = node.error.message || "The model provider returned an error.";
+      var retry = document.createElement("button");
+      retry.className = "provider-retry";
+      retry.type = "button";
+      retry.textContent = "Retry";
+      retry.disabled = node.error.retryable === false;
+      retry.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        node.error = null;
+        coreHooks.post({ type: "retry_branch", node_id: node.id });
+      });
+      errWrap.appendChild(title);
+      errWrap.appendChild(msg);
+      errWrap.appendChild(retry);
+      return errWrap;
+    }
+    var wrap = document.createElement("div");
+    wrap.className = "loading";
+    var st = document.createElement("div");
+    st.className = "loading-status";
+    st.innerHTML = LOADING_BUNNY_HTML + '<span class="shimmer-text ll-live">Thinking</span><span class="ll-stalled">Saved \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered when you reopen this hole</span><span class="ll-frozen">Unanswered when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    var sk = document.createElement("div");
+    sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
+    wrap.appendChild(st);
+    wrap.appendChild(sk);
+    return wrap;
+  }
+  function visualSurfaceKey(node, base) {
+    return (base === CANVAS_BASE ? "canvas:" : "reader:") + (node && node.id || "unknown");
+  }
+  function mountDocMedia(dc, node, base) {
+    var surfaceKey = visualSurfaceKey(node, base);
+    mountVisuals(dc, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, base, surfaceKey);
+  }
+  function fillStreaming(dc, node, surfaceKey) {
+    dc.innerHTML = node.html || "";
+    var caret = document.createElement("span");
+    caret.className = "stream-caret";
+    var last = dc.lastElementChild;
+    if (last && (last.tagName === "UL" || last.tagName === "OL")) last = last.lastElementChild || last;
+    if (last && /^(P|H[1-6]|LI)$/.test(last.tagName)) last.appendChild(caret);
+    else dc.appendChild(caret);
+    var st = document.createElement("div");
+    st.className = "stream-status";
+    st.innerHTML = '<span class="shimmer-text ll-live">Writing</span><span class="ll-stalled">Paused \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered in full when you reopen this hole</span><span class="ll-frozen">Unfinished when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    dc.appendChild(st);
+    surfaceKey = surfaceKey || "stream:" + (node && node.id || "unknown");
+    mountVisuals(dc, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, null, surfaceKey);
+  }
+  function formatElapsed(ms) {
+    var s = Math.floor(ms / 1e3);
+    if (s < 3) return "";
+    if (s < 60) return s + "s";
+    return Math.floor(s / 60) + "m " + s % 60 + "s";
+  }
+  function updateLoadingTimers() {
+    if (closed) return;
+    var els = document.querySelectorAll(".loading-time");
+    for (var i2 = 0; i2 < els.length; i2++) {
+      var t = Number(els[i2].getAttribute("data-start")) || 0;
+      if (t) els[i2].textContent = formatElapsed(Date.now() - t);
+    }
+  }
+  function buildDocContent(node, base) {
+    var dc = document.createElement("div");
+    dc.className = "doc-content md";
+    dc.dataset.nodeId = node.id;
+    dc.style.fontSize = fontPx(node, base) + "px";
+    if (node.status === "pending") {
+      if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
+      else dc.appendChild(buildLoading(node));
+    } else {
+      dc.innerHTML = node.html || "";
+      mountDocMedia(dc, node, base);
+    }
+    return dc;
+  }
+  function toggleTheme() {
+    var cur = document.documentElement.getAttribute("data-theme");
+    var next = cur === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("rh-theme", next);
+    } catch (e) {
+    }
+  }
+  function flashHint(msg) {
+    hintNotice.show({ message: msg, duration: 4e3 });
+  }
+
   // src/ui/reader.js
   function defaultReaderHooks() {
     return {
@@ -2937,7 +2943,6 @@ var RabbitholeFrozenClient = (() => {
       post: function() {
         return Promise.resolve({ ok: true });
       },
-      mountVisuals: null,
       mountDocImages: null,
       persistNode: function() {
       },
@@ -3305,19 +3310,20 @@ var RabbitholeFrozenClient = (() => {
     mountSidebarVisuals(newLivePanes);
   }
   function mountSidebarVisuals(panes) {
-    if (typeof readerHooks.mountVisuals !== "function") return;
     for (var i2 = 0; i2 < panes.length; i2++) {
       var key = "reader-side:" + panes[i2].node.id;
-      readerHooks.mountVisuals(panes[i2].pane, key);
+      mountVisuals(panes[i2].pane, key);
       if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
     }
   }
   function pendingStatusHtml(k) {
-    if (frozen) return '<span class="si-muted">unanswered in this snapshot</span>';
-    if (closed) return '<span class="si-muted">saved \u2014 answered when you reopen</span>';
-    if (connLost || !agentAttached) return '<span class="si-muted">saved \u2014 waiting for the agent</span>';
-    if (k && k.html) return '<span class="shimmer-text">Writing\u2026</span>';
-    return '<span class="shimmer-text">Thinking\u2026</span>';
+    var copy = {
+      frozen: '<span class="si-muted">unanswered in this snapshot</span>',
+      closed: '<span class="si-muted">saved \u2014 answered when you reopen</span>',
+      away: '<span class="si-muted">saved \u2014 waiting for the agent</span>',
+      live: k && k.html ? '<span class="shimmer-text">Writing\u2026</span>' : '<span class="shimmer-text">Thinking\u2026</span>'
+    };
+    return copy[sessionPhase()];
   }
   function onSidebarClick(e) {
     var it = e.target.closest(".side-item");
@@ -3486,6 +3492,16 @@ var RabbitholeFrozenClient = (() => {
   function iconButtonMarkup(options2 = {}) {
     const content = options2.svgIconHtml || escapeHtml(String(options2.icon || ""));
     return "<button" + buttonAttributes(options2, true) + ">" + content + "</button>";
+  }
+
+  // src/ui/composer-state.js
+  function applyComposerState(elements, state, copy) {
+    var down = state.phase === "frozen" || state.phase === "closed" || state.pending;
+    elements.text.disabled = down;
+    elements.wrap.classList.toggle("disabled", down);
+    var placeholderPhase = state.pending && state.phase !== "frozen" && state.phase !== "closed" ? "pending" : state.phase;
+    elements.text.placeholder = copy[placeholderPhase];
+    elements.send.disabled = down || !elements.text.value.trim();
   }
 
   // src/ui/canvas-view.js
@@ -3850,16 +3866,18 @@ var RabbitholeFrozenClient = (() => {
   }
   function updateCardComposer(node) {
     if (!node.ncText) return;
-    var down = closed || node.status === "pending";
-    node.ncText.disabled = down;
-    node.ncInner.classList.toggle("disabled", down);
     node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
-    if (frozen) node.ncText.placeholder = "Read-only snapshot";
-    else if (closed) node.ncText.placeholder = "Session ended \u2014 saved";
-    else if (node.status === "pending") node.ncText.placeholder = "Still being written\u2026";
-    else if (connLost || !agentAttached) node.ncText.placeholder = "Asks are saved for the agent\u2026";
-    else node.ncText.placeholder = "Ask a follow-up\u2026";
-    node.ncSend.disabled = down || !node.ncText.value.trim();
+    applyComposerState(
+      { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
+      { phase: sessionPhase(), pending: node.status === "pending" },
+      {
+        frozen: "Read-only snapshot",
+        closed: "Session ended \u2014 saved",
+        pending: "Still being written\u2026",
+        away: "Asks are saved for the agent\u2026",
+        live: "Ask a follow-up\u2026"
+      }
+    );
   }
   function submitCardFollowup(node, source2) {
     if (closed) {
@@ -4449,6 +4467,78 @@ var RabbitholeFrozenClient = (() => {
     }
   }
 
+  // src/ui/overlay/layer-stack.js
+  var layers = [];
+  function focus(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      try {
+        element.focus();
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function onKeydown(event) {
+    if (event.key !== "Escape") return;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnEscape) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layer.onClose("escape");
+  }
+  function onPointerdown(event) {
+    var _a2;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnOutsidePointer) return;
+    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
+    if (layer.preventOutsidePointerDefault) event.preventDefault();
+    layer.onClose("outside-pointer");
+    if (layer.restoreFocus) layer.focusTimer = setTimeout(function() {
+      layer.focusTimer = 0;
+      if (!focus(layer.trigger)) focus(layer.previousFocus);
+    }, 0);
+  }
+  function syncListeners() {
+    var method = layers.length ? "addEventListener" : "removeEventListener";
+    document[method]("keydown", onKeydown, true);
+    document[method]("pointerdown", onPointerdown, true);
+  }
+  function registerLayer(options2) {
+    var layer = {
+      element: options2.element,
+      trigger: options2.trigger || null,
+      onClose: options2.onClose,
+      closeOnEscape: options2.closeOnEscape !== false,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
+      preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
+      restoreFocus: options2.restoreFocus !== false,
+      previousFocus: document.activeElement,
+      focusTimer: 0
+    };
+    layers.push(layer);
+    if (layers.length === 1) syncListeners();
+    var active = true;
+    return function unregisterLayer(settings) {
+      if (!active) return;
+      active = false;
+      var index = layers.indexOf(layer);
+      if (index !== -1) layers.splice(index, 1);
+      if (!layers.length) syncListeners();
+      if (layer.focusTimer) {
+        clearTimeout(layer.focusTimer);
+        layer.focusTimer = 0;
+      }
+      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
+        if (!focus(layer.trigger)) focus(layer.previousFocus);
+      }
+    };
+  }
+
   // src/ui/overlay/anchor.js
   function tokenPx(surface, name) {
     var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
@@ -4534,77 +4624,39 @@ var RabbitholeFrozenClient = (() => {
       mutationObserver == null ? void 0 : mutationObserver.disconnect();
     } };
   }
+  function openAnchoredSurface(options2) {
+    var surface = options2.surface;
+    var anchor = options2.anchor;
+    setSurfaceOrigin(surface, anchor.getBoundingClientRect());
+    var position = anchorSurface(anchor, surface, { placement: options2.placement });
+    var unregister = registerLayer({
+      element: surface,
+      trigger: options2.trigger,
+      restoreFocus: options2.restoreFocus,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer,
+      preventOutsidePointerDefault: options2.preventOutsidePointerDefault,
+      onClose: options2.onClose
+    });
+    return {
+      update: position.update,
+      dispose: function() {
+        position.dispose();
+        unregister({ restoreFocus: false });
+        surface.classList.remove("visible");
+      }
+    };
+  }
 
-  // src/ui/overlay/layer-stack.js
-  var layers = [];
-  function focus(element) {
-    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      try {
-        element.focus();
-      } catch (_error) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function onKeydown(event) {
-    if (event.key !== "Escape") return;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnEscape) return;
-    event.preventDefault();
-    event.stopPropagation();
-    layer.onClose("escape");
-  }
-  function onPointerdown(event) {
-    var _a2;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnOutsidePointer) return;
-    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
-    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
-    if (layer.preventOutsidePointerDefault) event.preventDefault();
-    layer.onClose("outside-pointer");
-    if (layer.restoreFocus) layer.focusTimer = setTimeout(function() {
-      layer.focusTimer = 0;
-      if (!focus(layer.trigger)) focus(layer.previousFocus);
-    }, 0);
-  }
-  function syncListeners() {
-    var method = layers.length ? "addEventListener" : "removeEventListener";
-    document[method]("keydown", onKeydown, true);
-    document[method]("pointerdown", onPointerdown, true);
-  }
-  function registerLayer(options2) {
-    var layer = {
-      element: options2.element,
-      trigger: options2.trigger || null,
-      onClose: options2.onClose,
-      closeOnEscape: options2.closeOnEscape !== false,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
-      preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
-      restoreFocus: options2.restoreFocus !== false,
-      previousFocus: document.activeElement,
-      focusTimer: 0
-    };
-    layers.push(layer);
-    if (layers.length === 1) syncListeners();
-    var active = true;
-    return function unregisterLayer(settings) {
-      if (!active) return;
-      active = false;
-      var index = layers.indexOf(layer);
-      if (index !== -1) layers.splice(index, 1);
-      if (!layers.length) syncListeners();
-      if (layer.focusTimer) {
-        clearTimeout(layer.focusTimer);
-        layer.focusTimer = 0;
-      }
-      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
-        if (!focus(layer.trigger)) focus(layer.previousFocus);
-      }
-    };
+  // src/ui/node-teardown.js
+  function teardownNode(id) {
+    var node = nodes[id];
+    if (!node) return;
+    if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
+    removeMarks(readerMain, id);
+    removeThreadItem(id);
+    var parent = nodes[node.parent_id];
+    if (parent && parent.bodyEl) removeMarks(parent.bodyEl, id);
+    delete nodes[id];
   }
 
   // src/ui/ask-followups.js
@@ -4677,7 +4729,6 @@ var RabbitholeFrozenClient = (() => {
     return e.target && e.target.closest && e.target.closest("#ask");
   }
   var askPosition = null;
-  var askLayer = null;
   var askTabOwner = null;
   var askOwnerCleanup = null;
   function selectionOwner(dc) {
@@ -4732,14 +4783,14 @@ var RabbitholeFrozenClient = (() => {
     var virtualAnchor = { getBoundingClientRect: function() {
       return pendingAsk.range.getBoundingClientRect();
     }, contextElement: dc };
-    setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
-    askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
     askTabOwner = owner;
     askOwnerCleanup = askScope ? askScope.listen(document, "keydown", onAskOwnerKeydown) : function() {
       document.removeEventListener("keydown", onAskOwnerKeydown);
     };
-    askLayer = registerLayer({
-      element: ask,
+    askPosition = openAnchoredSurface({
+      surface: ask,
+      anchor: virtualAnchor,
+      placement: "bottom-start",
       restoreFocus: false,
       preventOutsidePointerDefault: false,
       onClose: function(reason) {
@@ -4755,11 +4806,6 @@ var RabbitholeFrozenClient = (() => {
     if (askPosition) {
       askPosition.dispose();
       askPosition = null;
-    }
-    if (askLayer) {
-      var unregister = askLayer;
-      askLayer = null;
-      unregister({ restoreFocus: false });
     }
     if (askOwnerCleanup) {
       var cleanup = askOwnerCleanup;
@@ -4881,15 +4927,17 @@ var RabbitholeFrozenClient = (() => {
   }
   function updateComposerState() {
     var current = nodes[currentNodeId];
-    var down = closed || !current || current.status === "pending";
-    composerText.disabled = down;
-    composerInner.classList.toggle("disabled", down);
-    if (frozen) composerText.placeholder = "Read-only snapshot \u2014 open the live Rabbithole to keep asking";
-    else if (closed) composerText.placeholder = "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there";
-    else if (current && current.status === "pending") composerText.placeholder = "This answer is still being written\u2026";
-    else if (connLost || !agentAttached) composerText.placeholder = "The agent is away \u2014 questions are saved and answered when it returns\u2026";
-    else composerText.placeholder = "Ask a follow-up about this document\u2026";
-    composerSend.disabled = down || !composerText.value.trim();
+    applyComposerState(
+      { text: composerText, send: composerSend, wrap: composerInner },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" },
+      {
+        frozen: "Read-only snapshot \u2014 open the live Rabbithole to keep asking",
+        closed: "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there",
+        pending: "This answer is still being written\u2026",
+        away: "The agent is away \u2014 questions are saved and answered when it returns\u2026",
+        live: "Ask a follow-up about this document\u2026"
+      }
+    );
   }
   function autoGrowComposer() {
     autoGrowEl(composerText, 140);
@@ -4965,21 +5013,10 @@ var RabbitholeFrozenClient = (() => {
   }
   function scheduleScrollFrame(callback) {
     clearScrollFrame();
-    var id;
-    var cancel;
-    if (typeof requestAnimationFrame === "function") {
-      id = requestAnimationFrame(run);
-      cancel = function() {
-        cancelAnimationFrame(id);
-      };
-    } else {
-      id = setTimeout(function() {
-        run(typeof performance === "object" ? performance.now() : Date.now());
-      }, 16);
-      cancel = function() {
-        clearTimeout(id);
-      };
-    }
+    var id = nextFrame(run);
+    var cancel = function() {
+      cancelFrame(id);
+    };
     scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
     function run(timestamp) {
       var cleanup = scrollFrameCleanup;
@@ -5028,12 +5065,7 @@ var RabbitholeFrozenClient = (() => {
   function rollbackBranch(node) {
     var live = nodes[node.id];
     if (!live || live.status === "answered") return;
-    delete nodes[node.id];
-    if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
-    removeMarks(readerMain, node.id);
-    removeThreadItem(node.id);
-    var p = nodes[node.parent_id];
-    if (p && p.bodyEl) removeMarks(p.bodyEl, node.id);
+    teardownNode(node.id);
     if (canvasBuilt) drawEdges();
     if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
     refreshAmbient();
@@ -5861,7 +5893,6 @@ var RabbitholeFrozenClient = (() => {
   var peekTimer = 0;
   var peekFor = null;
   var peekPosition = null;
-  var peekLayer = null;
   function initBranchSurfaces() {
     disposeBranchSurfaceResources(false);
     branchScope = createCleanupScope();
@@ -5936,10 +5967,6 @@ var RabbitholeFrozenClient = (() => {
       peekPosition.dispose();
       peekPosition = null;
     }
-    if (peekLayer) {
-      peekLayer({ restoreFocus: false });
-      peekLayer = null;
-    }
     peekFor = null;
     peekEl.classList.remove("visible");
     peekEl.setAttribute("aria-hidden", "true");
@@ -5963,10 +5990,10 @@ var RabbitholeFrozenClient = (() => {
     }
     peekEl.classList.add("visible");
     peekEl.setAttribute("aria-hidden", "false");
-    setSurfaceOrigin(peekEl, mark.getBoundingClientRect());
-    peekPosition = anchorSurface(mark, peekEl, { placement: "bottom-start" });
-    peekLayer = registerLayer({
-      element: peekEl,
+    peekPosition = openAnchoredSurface({
+      surface: peekEl,
+      anchor: mark,
+      placement: "bottom-start",
       trigger: mark,
       restoreFocus: false,
       closeOnOutsidePointer: false,
@@ -6257,13 +6284,8 @@ var RabbitholeFrozenClient = (() => {
       var id = ids[i2], n = nodes[id];
       if (!n) continue;
       if (currentNodeId === id) currentGone = true;
-      if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
-      removeMarks(readerMain, id);
-      removeThreadItem(id);
-      var p = nodes[n.parent_id];
-      if (p && p.bodyEl) removeMarks(p.bodyEl, id);
       clearEdgeHighlight(id);
-      delete nodes[id];
+      teardownNode(id);
     }
     if (currentGone) {
       setCurrentNodeId(parentId && nodes[parentId] ? parentId : rootId);
@@ -22756,8 +22778,8 @@ ${text2}</tr>
   };
 
   // node_modules/highlight.js/es/core.js
-  var import_core7 = __toESM(require_core(), 1);
-  var core_default = import_core7.default;
+  var import_core9 = __toESM(require_core(), 1);
+  var core_default = import_core9.default;
 
   // node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {
@@ -32826,7 +32848,6 @@ ${text2}</tr>
       registerCoreHooks({
         post,
         openNode,
-        mountVisuals,
         mountDocImages
       });
       registerReaderHooks({
@@ -32836,7 +32857,6 @@ ${text2}</tr>
         scheduleViewSave: host.scheduleViewSave || noop,
         setMode,
         post,
-        mountVisuals,
         mountDocImages,
         persistNode: host.persistNode || noop,
         animateScroll

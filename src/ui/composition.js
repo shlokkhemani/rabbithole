@@ -1,5 +1,5 @@
 import { disposeCore, initCore, nodes, registerCoreHooks } from "./core.js";
-import { disposeVisuals, mountVisuals, registerVisualHooks } from "./visuals.js";
+import { disposeVisuals, registerVisualHooks } from "./visuals.js";
 import { disposeImageUx, mountDocImages } from "./image-ux.js";
 import { disposeReader, initReader, openNode, registerReaderHooks } from "./reader.js";
 import {
@@ -61,7 +61,6 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     registerCoreHooks({
       post: post,
       openNode: openNode,
-      mountVisuals: mountVisuals,
       mountDocImages: mountDocImages
     });
     registerReaderHooks({
@@ -71,7 +70,6 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       scheduleViewSave: host.scheduleViewSave || noop,
       setMode: setMode,
       post: post,
-      mountVisuals: mountVisuals,
       mountDocImages: mountDocImages,
       persistNode: host.persistNode || noop,
       animateScroll: animateScroll

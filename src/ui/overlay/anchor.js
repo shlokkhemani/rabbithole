@@ -1,3 +1,6 @@
+import { setSurfaceOrigin } from "../core.js";
+import { registerLayer } from "./layer-stack.js";
+
 function tokenPx(surface, name) {
   var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
   return Number.isFinite(value) ? value : 0;
@@ -71,4 +74,30 @@ export function anchorSurface(trigger, surface, options) {
     window.visualViewport?.removeEventListener("scroll", update);
     resizeObserver?.disconnect(); mutationObserver?.disconnect();
   } };
+}
+
+/**
+ * @param {{ surface: Element, anchor: Element | { getBoundingClientRect: () => DOMRect, contextElement?: Element }, placement?: string, trigger?: Element, restoreFocus?: boolean, closeOnOutsidePointer?: boolean, preventOutsidePointerDefault?: boolean, onClose?: (reason: string) => void }} options
+ */
+export function openAnchoredSurface(options) {
+  var surface = options.surface;
+  var anchor = options.anchor;
+  setSurfaceOrigin(surface, anchor.getBoundingClientRect());
+  var position = anchorSurface(anchor, surface, { placement: options.placement });
+  var unregister = registerLayer({
+    element: surface,
+    trigger: options.trigger,
+    restoreFocus: options.restoreFocus,
+    closeOnOutsidePointer: options.closeOnOutsidePointer,
+    preventOutsidePointerDefault: options.preventOutsidePointerDefault,
+    onClose: options.onClose
+  });
+  return {
+    update: position.update,
+    dispose: function(){
+      position.dispose();
+      unregister({ restoreFocus: false });
+      surface.classList.remove("visible");
+    }
+  };
 }

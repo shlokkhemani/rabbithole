@@ -32,16 +32,14 @@ import {
 } from "./canvas-view.js";
 import {
   openNode,
-  removeMarks,
-  removeThreadItem,
   renderBreadcrumb,
   renderSidebar
 } from "./reader.js";
 import { mountVisuals } from "./visuals.js";
 import { openPopover } from "./primitives/popover.js";
-import { anchorSurface } from "./overlay/anchor.js";
-import { registerLayer } from "./overlay/layer-stack.js";
+import { openAnchoredSurface } from "./overlay/anchor.js";
 import { createCleanupScope } from "./lifecycle.js";
+import { teardownNode } from "./node-teardown.js";
 
 function defaultBranchHooks(){
   return {
@@ -61,7 +59,7 @@ export function registerBranchHooks(hooks) {
   // ===========================================================================
   // HOVER PEEK — glance at a branch from its mark without leaving the page
   // ===========================================================================
-  var peekTimer = 0, peekFor = null, peekPosition = null, peekLayer = null;
+  var peekTimer = 0, peekFor = null, peekPosition = null;
 export function initBranchSurfaces(){
   disposeBranchSurfaceResources(false);
   branchScope = createCleanupScope();
@@ -125,7 +123,6 @@ function disposeBranchSurfaceResources(resetHooks){
 export function hidePeek(){
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
     if (peekPosition){ peekPosition.dispose(); peekPosition = null; }
-    if (peekLayer){ peekLayer({ restoreFocus: false }); peekLayer = null; }
     peekFor = null;
     peekEl.classList.remove("visible");
     peekEl.setAttribute("aria-hidden", "true");
@@ -149,9 +146,8 @@ export function hidePeek(){
     }
     peekEl.classList.add("visible");
     peekEl.setAttribute("aria-hidden", "false");
-    setSurfaceOrigin(peekEl, mark.getBoundingClientRect());
-    peekPosition = anchorSurface(mark, peekEl, { placement: "bottom-start" });
-    peekLayer = registerLayer({ element: peekEl, trigger: mark, restoreFocus: false,
+    peekPosition = openAnchoredSurface({ surface: peekEl, anchor: mark,
+      placement: "bottom-start", trigger: mark, restoreFocus: false,
       closeOnOutsidePointer: false, onClose: hidePeek });
   }
   function onReaderMarkMouseover(e){
@@ -397,13 +393,8 @@ export function removeNodesLocal(ids, parentId){
       var id = ids[i], n = nodes[id];
       if (!n) continue;
       if (currentNodeId === id) currentGone = true;
-      if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
-      removeMarks(readerMain, id);
-      removeThreadItem(id);
-      var p = nodes[n.parent_id];
-      if (p && p.bodyEl) removeMarks(p.bodyEl, id);
       clearEdgeHighlight(id);
-      delete nodes[id];
+      teardownNode(id);
     }
     if (currentGone){
       setCurrentNodeId((parentId && nodes[parentId]) ? parentId : rootId);

@@ -45,15 +45,12 @@ export function createCleanupScope() {
   }
 
   function raf(callback) {
-    if (typeof requestAnimationFrame !== "function") {
-      return timeout(function(){ callback(typeof performance === "object" ? performance.now() : Date.now()); }, 16);
-    }
     var cancel = null;
-    var id = requestAnimationFrame(function(timestamp){
+    var id = nextFrame(function(timestamp){
       if (cancel) cancel();
       callback(timestamp);
     });
-    cancel = addCleanup(function(){ cancelAnimationFrame(id); });
+    cancel = addCleanup(function(){ cancelFrame(id); });
     return id;
   }
 
@@ -79,4 +76,18 @@ export function createCleanupScope() {
     dispose: dispose,
     get disposed(){ return disposed; }
   };
+}
+
+/** @param {(timestamp: number) => void} callback */
+export function nextFrame(callback) {
+  if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);
+  return setTimeout(function(){
+    callback(typeof performance === "object" ? performance.now() : Date.now());
+  }, 16);
+}
+
+/** @param {number} handle */
+export function cancelFrame(handle) {
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle);
+  clearTimeout(handle);
 }

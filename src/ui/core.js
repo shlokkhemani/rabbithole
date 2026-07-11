@@ -9,6 +9,7 @@ import {
 import { wireNotice } from "./primitives/notice.js";
 import { escapeHtml } from "../core/utils.js";
 import { createCleanupScope } from "./lifecycle.js";
+import { mountVisuals } from "./visuals.js";
 import {
   DEFAULT_CHILD,
   DEFAULT_ROOT,
@@ -81,7 +82,6 @@ function defaultCoreHooks(){
     ensureCanvasBuilt: function(){},
     diveToNode: function(){},
     openNode: function(){},
-    mountVisuals: null,
     mountDocImages: null,
     effH: function(n){ return n.h; }
   };
@@ -260,6 +260,12 @@ export function boundsOverlap(a,b){
     return sharedBoundsOverlap(a, b);
   }
 export function agentDown(){ return closed || connLost || !agentAttached; }
+export function sessionPhase(){
+    if (frozen) return "frozen";
+    if (closed) return "closed";
+    if (connLost || !agentAttached) return "away";
+    return "live";
+  }
   var reduceMotion = false, reduceMotionMql = null;
   function setReduceMotion(e){ reduceMotion = !!(e && e.matches); }
 function initReduceMotion(scope){
@@ -362,15 +368,11 @@ export function goToNode(node, source){
     if (mode === "canvas"){
       coreHooks.ensureCanvasBuilt();
       coreHooks.diveToNode(node, source);
-      flashNode(node);
+      if (node.el) playLandingCue(node.el, "flash");
       if (node.status === "answered") markRead(node);
     } else {
       coreHooks.openNode(node.id);
     }
-  }
-export function flashNode(node){
-    if (!node.el) return;
-    playLandingCue(node.el, "flash");
   }
   // The ambient chip only tracks answers currently being written.
 export function refreshAmbient(){
@@ -472,7 +474,7 @@ export function visualSurfaceKey(node, base){
   }
   function mountDocMedia(dc, node, base){
     var surfaceKey = visualSurfaceKey(node, base);
-    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
+    mountVisuals(dc, surfaceKey);
     if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, base, surfaceKey);
   }
   // A pending node that has streamed content renders it live: the words so far,
@@ -494,7 +496,7 @@ export function fillStreaming(dc, node, surfaceKey){
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
     dc.appendChild(st);
     surfaceKey = surfaceKey || ("stream:" + ((node && node.id) || "unknown"));
-    if (typeof coreHooks.mountVisuals === "function") coreHooks.mountVisuals(dc, surfaceKey);
+    mountVisuals(dc, surfaceKey);
     if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, null, surfaceKey);
   }
   function formatElapsed(ms){

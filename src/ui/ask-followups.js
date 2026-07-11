@@ -12,12 +12,10 @@ import {
   composerInner,
   composerSend,
   composerText,
-  connLost,
   currentNodeId,
   easeOutMotion,
   flashHint,
   frozen,
-  agentAttached,
   lensLabel,
   mode,
   motionSourceFromEvent,
@@ -26,8 +24,8 @@ import {
   nodes,
   readerMain,
   refreshAmbient,
-  setSurfaceOrigin,
   shouldReduceMotion,
+  sessionPhase,
   truncate,
   uuid
 } from "./core.js";
@@ -48,14 +46,13 @@ import {
   buildThreadItem,
   charOffset,
   ensureThread,
-  removeMarks,
-  removeThreadItem,
   renderSidebar,
   wrapInContainer
 } from "./reader.js";
-import { anchorSurface } from "./overlay/anchor.js";
-import { registerLayer } from "./overlay/layer-stack.js";
-import { createCleanupScope } from "./lifecycle.js";
+import { openAnchoredSurface } from "./overlay/anchor.js";
+import { cancelFrame, createCleanupScope, nextFrame } from "./lifecycle.js";
+import { applyComposerState } from "./composer-state.js";
+import { teardownNode } from "./node-teardown.js";
 
 function defaultAskHooks(){
   return {
@@ -105,7 +102,7 @@ export function initAskFollowups(){
 
 function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
 
-  var askPosition = null, askLayer = null, askTabOwner = null, askOwnerCleanup = null;
+  var askPosition = null, askTabOwner = null, askOwnerCleanup = null;
 
   function selectionOwner(dc){
     return dc.closest(".node") || readerMain;
@@ -153,15 +150,14 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     ask.classList.add("visible");
     var owner = selectionOwner(dc);
     var virtualAnchor = { getBoundingClientRect: function(){ return pendingAsk.range.getBoundingClientRect(); }, contextElement: dc };
-    setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
-    askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
     askTabOwner = owner;
     askOwnerCleanup = askScope
       ? askScope.listen(document, "keydown", onAskOwnerKeydown)
       : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
     // The selection bar is non-focus-stealing: only an explicit Tab/click enters
     // it. Escape is layer-owned, preserves the Range, and returns focus here.
-    askLayer = registerLayer({ element: ask, restoreFocus: false,
+    askPosition = openAnchoredSurface({ surface: ask, anchor: virtualAnchor,
+      placement: "bottom-start", restoreFocus: false,
       preventOutsidePointerDefault: false, onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
         hideAsk();
@@ -173,7 +169,6 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
   var pendingAsk = null;
 export function hideAsk(){
     if (askPosition){ askPosition.dispose(); askPosition = null; }
-    if (askLayer){ var unregister = askLayer; askLayer = null; unregister({ restoreFocus: false }); }
     if (askOwnerCleanup){ var cleanup = askOwnerCleanup; askOwnerCleanup = null; cleanup(); }
     askTabOwner = null;
     ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight();
@@ -269,15 +264,15 @@ export function updateComposerState(){
     var current = nodes[currentNodeId];
     // A missing agent doesn't disable asking — questions queue server-side and
     // are answered when it returns. Only a closed session (server gone) does.
-    var down = closed || !current || current.status === "pending";
-    composerText.disabled = down;
-    composerInner.classList.toggle("disabled", down);
-    if (frozen) composerText.placeholder = "Read-only snapshot — open the live Rabbithole to keep asking";
-    else if (closed) composerText.placeholder = "Session ended — reopen this Rabbithole from your terminal; saved questions are answered there";
-    else if (current && current.status === "pending") composerText.placeholder = "This answer is still being written…";
-    else if (connLost || !agentAttached) composerText.placeholder = "The agent is away — questions are saved and answered when it returns…";
-    else composerText.placeholder = "Ask a follow-up about this document…";
-    composerSend.disabled = down || !composerText.value.trim();
+    applyComposerState(
+      { text: composerText, send: composerSend, wrap: composerInner },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" },
+      { frozen: "Read-only snapshot — open the live Rabbithole to keep asking",
+        closed: "Session ended — reopen this Rabbithole from your terminal; saved questions are answered there",
+        pending: "This answer is still being written…",
+        away: "The agent is away — questions are saved and answered when it returns…",
+        live: "Ask a follow-up about this document…" }
+    );
   }
   function autoGrowComposer(){ autoGrowEl(composerText, 140); }
 
@@ -331,15 +326,8 @@ export function cancelScrollAnimation(){ scrollAnimId++; clearScrollFrame(); }
   }
   function scheduleScrollFrame(callback){
     clearScrollFrame();
-    var id;
-    var cancel;
-    if (typeof requestAnimationFrame === "function"){
-      id = requestAnimationFrame(run);
-      cancel = function(){ cancelAnimationFrame(id); };
-    } else {
-      id = setTimeout(function(){ run(typeof performance === "object" ? performance.now() : Date.now()); }, 16);
-      cancel = function(){ clearTimeout(id); };
-    }
+    var id = nextFrame(run);
+    var cancel = function(){ cancelFrame(id); };
     scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
     function run(timestamp){
       var cleanup = scrollFrameCleanup;
@@ -384,12 +372,7 @@ export function animateScroll(el, target, source){
 export function rollbackBranch(node){
     var live = nodes[node.id];
     if (!live || live.status === "answered") return;
-    delete nodes[node.id];
-    if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
-    removeMarks(readerMain, node.id);
-    removeThreadItem(node.id);
-    var p = nodes[node.parent_id];
-    if (p && p.bodyEl) removeMarks(p.bodyEl, node.id);
+    teardownNode(node.id);
     if (canvasBuilt) drawEdges();
     if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
     refreshAmbient();

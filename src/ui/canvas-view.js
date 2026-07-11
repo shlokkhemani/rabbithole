@@ -14,15 +14,12 @@ import {
   canvasFramed,
   childrenOf,
   closed,
-  connLost,
   currentNodeId,
   easeInOutMotion,
   easeOutMotion,
   edgesSvg,
   fontPx,
   flashHint,
-  frozen,
-  agentAttached,
   isFollowup,
   isSelectionBranch,
   isUnread,
@@ -43,6 +40,7 @@ import {
   setViewAdjusted,
   shiftBounds,
   shouldReduceMotion,
+  sessionPhase,
   unionBounds,
   view,
   viewport,
@@ -52,6 +50,7 @@ import {
 import { applyChildHighlights, openNode } from "./reader.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { createCleanupScope } from "./lifecycle.js";
+import { applyComposerState } from "./composer-state.js";
 
 function defaultCanvasHooks(){
   return {
@@ -324,17 +323,15 @@ export function autoGrowEl(ta, max){
   // asking (questions queue server-side); only a pending doc or a dead session does.
 export function updateCardComposer(node){
     if (!node.ncText) return;
-    var down = closed || node.status === "pending";
-    node.ncText.disabled = down;
-    node.ncInner.classList.toggle("disabled", down);
     // A draft in progress keeps the drawer out even when the pointer wanders off.
     node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
-    if (frozen) node.ncText.placeholder = "Read-only snapshot";
-    else if (closed) node.ncText.placeholder = "Session ended — saved";
-    else if (node.status === "pending") node.ncText.placeholder = "Still being written…";
-    else if (connLost || !agentAttached) node.ncText.placeholder = "Asks are saved for the agent…";
-    else node.ncText.placeholder = "Ask a follow-up…";
-    node.ncSend.disabled = down || !node.ncText.value.trim();
+    applyComposerState(
+      { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
+      { phase: sessionPhase(), pending: node.status === "pending" },
+      { frozen: "Read-only snapshot", closed: "Session ended — saved",
+        pending: "Still being written…", away: "Asks are saved for the agent…",
+        live: "Ask a follow-up…" }
+    );
   }
   function submitCardFollowup(node, source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal to continue."); return; }

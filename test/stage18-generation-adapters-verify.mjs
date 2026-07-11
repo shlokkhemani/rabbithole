@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import { GenerationRun } from "../src/core/generation-run.js";
 import { AnthropicDirectBrain, parseAnthropicSseEvent } from "../src/web/brain/anthropic-messages.js";
 import { ProviderError, normalizeProviderError } from "../src/web/brain/errors.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "../src/web/brain/generation-events.js";
@@ -154,3 +156,37 @@ for (const events of [
   await collect(anthropic.authorDocumentMessagesApi({ markdown: "source" })),
 ]) assert.equal(events.some((event) => event.type === "title"), false);
 console.log("ok stage18: both brain implementations expose GenerationEvent on all surfaces");
+
+const run = new GenerationRun({ id: "run-a", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
+assert.deepEqual(run.accept({ type: "text", delta: "one" }, { nodeId: "node-a" }), {
+  type: "node_progress", node_id: "node-a", markdown: "Start one", run: { id: "run-a", seq: 1 },
+});
+assert.deepEqual(run.accept({ type: "text", delta: " two" }, {
+  nodeId: "node-a", progressFields: { base_url: "https://example.test" },
+}), {
+  type: "node_progress", base_url: "https://example.test", node_id: "node-a",
+  markdown: "Start one two", run: { id: "run-a", seq: 2 },
+});
+assert.equal(run.accept({ type: "title", title: "Late title" }), null);
+const finalContext = { nodeId: "node-a", answeredFields: { parent_id: "root", read: false } };
+const finalEvent = {
+  type: "node_answered", parent_id: "root", read: false, node_id: "node-a",
+  title: "Late title", markdown: "Start one two",
+};
+assert.deepEqual(run.complete(finalContext), finalEvent);
+assert.deepEqual(run.complete(finalContext), finalEvent);
+assert.deepEqual(run.snapshot(), { id: "run-a", seq: 2, markdown: "Start one two", title: "Late title" });
+
+const empty = new GenerationRun({ id: "empty", fallbackTitle: "Empty fallback" });
+assert.deepEqual(empty.complete({ nodeId: "empty-node" }), {
+  type: "node_answered", node_id: "empty-node", title: "Empty fallback", markdown: "",
+});
+assert.throws(() => empty.accept({ type: "usage", input_tokens: 1, output_tokens: 2 }), /Unsupported GenerationEvent/);
+assert.throws(() => empty.accept({ type: "text", delta: "no node" }), /requires a non-empty nodeId/);
+assert.equal(JSON.stringify(run.complete(finalContext)).includes("node_error"), false);
+console.log("ok stage18: GenerationRun accumulation, ordering, late title, empty completion, idempotence, and rejection goldens");
+
+const appSource = await fs.readFile(new URL("../src/web/app.js", import.meta.url), "utf8");
+assert.match(appSource, /document\.addEventListener\("visibilitychange"[\s\S]*document\.visibilityState === "hidden"[\s\S]*currentHost\?\.flushSave\(\)/);
+assert.match(appSource, /window\.addEventListener\("pagehide"[\s\S]*currentHost\?\.flushSave\(\)/);
+console.log("ok stage18: hidden visibility and pagehide flush the existing host save pipeline");

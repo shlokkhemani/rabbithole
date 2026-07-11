@@ -1,5 +1,8 @@
 /** @typedef {import("../../../src/core/contracts/generation.js").Brain} Brain */
 /** @typedef {import("../../../src/core/contracts/generation.js").GenerationEvent} GenerationEvent */
+/** @typedef {import("../../../src/core/contracts/generation.js").GenerationRun} GenerationRunContract */
+
+import { GenerationRun } from "../../../src/core/generation-run.js";
 
 /** @type {GenerationEvent[]} */
 export const generationEventFixtures = [
@@ -21,3 +24,10 @@ export const brainFixture = {
     yield { type: "title", title: "Authored" };
   },
 };
+
+/** @type {GenerationRunContract} */
+export const generationRunFixture = new GenerationRun({
+  id: "typed-run",
+  initialMarkdown: "Existing ",
+  fallbackTitle: "Fallback",
+});

@@ -143,6 +143,10 @@ async function chooseInitialHole() {
 function initAppChrome() {
   const rail = document.getElementById("web-rail");
   window.addEventListener("resize", syncRailPosition, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void currentHost?.flushSave();
+  });
+  window.addEventListener("pagehide", () => { void currentHost?.flushSave(); });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", (event) => openComposer({ source: "button", trigger: event.currentTarget }));
   const settingsTrigger = document.getElementById("t-settings");

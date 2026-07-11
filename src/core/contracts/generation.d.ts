@@ -16,7 +16,12 @@
  * separate ingress with its own persistence policy.
  * Transport-level run tagging uses `ProgressRun` from {@link ./engine.js} and
  * begins in Phase 6; it is intentionally not redeclared here.
+ * `GenerationRun` runtime behavior is authoritative in
+ * {@link ../generation-run.js}; `DocEvent` output shapes remain authoritative
+ * in {@link ../reducer.js} and are described by {@link ./engine.js}.
  */
+
+import type { NodeAnsweredEvent, NodeProgressEvent } from "./engine.js";
 
 export interface TextGenerationEvent {
   type: "text";
@@ -40,4 +45,34 @@ export interface Brain {
   answerBranch(context: unknown, signal: AbortSignal): AsyncIterable<GenerationEvent>;
   authorExplainer(context: unknown, signal: AbortSignal): AsyncIterable<GenerationEvent>;
   authorDocument(source: unknown, signal: AbortSignal): AsyncIterable<GenerationEvent>;
+}
+
+export interface GenerationRunOptions {
+  id: string;
+  initialMarkdown?: string;
+  fallbackTitle?: string;
+}
+
+export interface GenerationRunSnapshot {
+  id: string;
+  seq: number;
+  markdown: string;
+  title: string;
+}
+
+export interface ProgressDocContext {
+  nodeId?: string;
+  progressFields?: Record<string, unknown>;
+}
+
+export interface AnsweredDocContext {
+  nodeId: string;
+  answeredFields?: Record<string, unknown>;
+}
+
+export declare class GenerationRun {
+  constructor(options: GenerationRunOptions);
+  accept(event: GenerationEvent, context?: ProgressDocContext): NodeProgressEvent | null;
+  complete(context: AnsweredDocContext): NodeAnsweredEvent;
+  snapshot(): GenerationRunSnapshot;
 }

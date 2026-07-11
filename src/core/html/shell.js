@@ -75,7 +75,11 @@ export const CANVAS_SHELL = `
   <div id="pal-results" role="listbox" aria-label="Search results"></div>
 </div></div>
 
-<div id="peek"></div>
+<div id="peek" aria-hidden="true">
+  <div class="peek-title"><span class="pal-dot" data-peek-unread hidden></span><span data-peek-title></span><span class="lens-badge" data-peek-badge hidden></span></div>
+  <div class="peek-body md" data-peek-body></div>
+  <div class="peek-hint">Open branch</div>
+</div>
 
 <div id="sharemenu" role="menu" aria-label="Share and export">
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-trail", role: "menuitem", tabIndex: -1, label: "Copy trail as Markdown", svgIconHtml: '<span class="sm-ic">⤷</span>' })}

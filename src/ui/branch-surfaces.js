@@ -23,7 +23,8 @@ import {
   setSurfaceOrigin,
   shareMenu,
   truncate,
-  updateSince
+  updateSince,
+  world
 } from "./core.js";
 import { sendFollowup } from "./ask-followups.js";
 import {
@@ -42,6 +43,8 @@ import {
 import { mountVisuals } from "./visuals.js";
 import { downloadSnapshot } from "./snapshot.js";
 import { openPopover } from "./primitives/popover.js";
+import { anchorSurface } from "./overlay/anchor.js";
+import { registerLayer } from "./overlay/layer-stack.js";
 
 var branchHooks = {
   post: function(){ return Promise.resolve({ ok: true }); },
@@ -55,10 +58,16 @@ export function registerBranchHooks(hooks) {
   // ===========================================================================
   // HOVER PEEK — glance at a branch from its mark without leaving the page
   // ===========================================================================
-  var peekTimer = 0, peekFor = null;
+  var peekTimer = 0, peekFor = null, peekPosition = null, peekLayer = null;
 export function initBranchSurfaces(){
   readerMain.addEventListener("mouseover", onReaderMarkMouseover);
   readerMain.addEventListener("mouseout", onReaderMarkMouseout);
+  world.addEventListener("mouseover", onReaderMarkMouseover);
+  world.addEventListener("mouseout", onReaderMarkMouseout);
+  readerMain.addEventListener("focusin", onMarkFocusin);
+  readerMain.addEventListener("focusout", onMarkFocusout);
+  world.addEventListener("focusin", onMarkFocusin);
+  world.addEventListener("focusout", onMarkFocusout);
   peekEl.addEventListener("mouseleave", function(){ hidePeek(); });
   peekEl.addEventListener("click", function(){
     var kid = peekFor && nodes[peekFor];
@@ -86,30 +95,35 @@ export function initBranchSurfaces(){
 
 export function hidePeek(){
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
+    if (peekPosition){ peekPosition.dispose(); peekPosition = null; }
+    if (peekLayer){ peekLayer({ restoreFocus: false }); peekLayer = null; }
     peekFor = null;
     peekEl.classList.remove("visible");
+    peekEl.setAttribute("aria-hidden", "true");
   }
   function showPeek(mark){
     var kid = nodes[mark.dataset.child];
     if (!kid || kid.status !== "answered") return;
+    hidePeek();
     peekFor = kid.id;
-    var badge = (kid.origin && kid.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
-      : (kid.origin && kid.origin.lens) ? lensBadgeHtml(kid.origin.lens) : "";
-    peekEl.innerHTML = '<div class="peek-title">' + (isUnread(kid) ? '<span class="pal-dot"></span>' : "") +
-      '<span>' + esc(kid.title || "Untitled") + '</span>' + badge + '</div>' +
-      '<div class="peek-body md">' + (kid.html || "") + '</div>' +
-      '<div class="peek-hint">Click to open</div>';
+    peekEl.querySelector("[data-peek-unread]").hidden = !isUnread(kid);
+    peekEl.querySelector("[data-peek-title]").textContent = kid.title || "Untitled";
+    var badge = peekEl.querySelector("[data-peek-badge]");
+    var badgeText = (kid.origin && kid.origin.synthesis) ? "✦ Synthesis"
+      : (kid.origin && kid.origin.lens) ? lensLabel(kid.origin.lens) : "";
+    badge.textContent = badgeText; badge.hidden = !badgeText;
+    var peekBody = peekEl.querySelector("[data-peek-body]");
+    var fragment = document.createRange().createContextualFragment(kid.html || "");
+    peekBody.replaceChildren(fragment);
     if (typeof mountVisuals === "function"){
-      var peekBody = peekEl.querySelector(".peek-body");
-      if (peekBody) mountVisuals(peekBody, "peek:" + kid.id);
+      mountVisuals(peekBody, "peek:" + kid.id);
     }
-    var r = mark.getBoundingClientRect();
-    var top = r.bottom + 8;
-    if (top + peekEl.offsetHeight + 10 > window.innerHeight) top = Math.max(10, r.top - peekEl.offsetHeight - 8);
-    peekEl.style.left = Math.min(window.innerWidth - 360, Math.max(10, r.left)) + "px";
-    peekEl.style.top = top + "px";
     peekEl.classList.add("visible");
-    setSurfaceOrigin(peekEl, r);
+    peekEl.setAttribute("aria-hidden", "false");
+    setSurfaceOrigin(peekEl, mark.getBoundingClientRect());
+    peekPosition = anchorSurface(mark, peekEl, { placement: "bottom-start" });
+    peekLayer = registerLayer({ element: peekEl, trigger: mark, restoreFocus: false,
+      closeOnOutsidePointer: false, onClose: hidePeek });
   }
   function onReaderMarkMouseover(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
@@ -126,6 +140,22 @@ export function hidePeek(){
     setTimeout(function(){
       if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
     }, 80);
+  }
+  function onMarkFocusin(e){
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var kid = nodes[m.dataset.child];
+    if (!kid || kid.status !== "answered") return;
+    if (peekTimer) clearTimeout(peekTimer);
+    peekTimer = setTimeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220);
+  }
+  function onMarkFocusout(e){
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
+    setTimeout(function(){
+      if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
+    }, 0);
   }
 
   // ===========================================================================
@@ -282,24 +312,27 @@ export function synthesize(source){
   // ===========================================================================
   // DELETE — remove a branch (and its subtree) after an inline confirm
   // ===========================================================================
-  var confirmFor = null;
+  var confirmFor = null, confirmPopover = null;
 export function confirmDelete(node, anchor){
     if (closed){
       flashHint(frozen ? "This is a read-only snapshot." : "Session ended — changes can't be saved anymore.");
       return;
     }
-    confirmFor = node.id;
     var subCount = countSubtree(node.id) - 1;
     document.getElementById("cf-msg").textContent = subCount > 0
       ? "Remove this branch and " + subCount + " inside it?"
       : "Remove this branch?";
-    var r = anchor.getBoundingClientRect();
-    confirmEl.style.left = Math.min(window.innerWidth - confirmEl.offsetWidth - 10, Math.max(10, r.right - confirmEl.offsetWidth)) + "px";
-    confirmEl.style.top = (r.bottom + 8) + "px";
+    hideConfirm({ restoreFocus: false });
+    confirmFor = node.id;
     confirmEl.classList.add("visible");
-    setSurfaceOrigin(confirmEl, r);
+    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
+    confirmPopover = openPopover({ trigger: anchor, surface: confirmEl, placement: "bottom-end",
+      initialFocus: document.getElementById("cf-keep"), onClose: hideConfirm });
   }
-export function hideConfirm(){ confirmFor = null; confirmEl.classList.remove("visible"); }
+export function hideConfirm(settings){
+    confirmFor = null; confirmEl.classList.remove("visible");
+    if (confirmPopover){ var popover = confirmPopover; confirmPopover = null; popover.close(settings); }
+  }
   function countSubtree(id){
     var c = 1;
     childrenOf(id).forEach(function(k){ c += countSubtree(k.id); });

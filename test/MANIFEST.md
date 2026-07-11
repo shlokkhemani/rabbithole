@@ -151,6 +151,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | share popover token anchor geometry, surface/padding, and focus restore | C2 | Enforces shared-engine trigger-relative placement and stack focus restoration while retaining the shared surface metrics (`stage10-web-verify.mjs:486-526`). | Chrome: anchored surfaces at viewport edges; focus restoration after transient surfaces |
 | share menu keyboard contract | C2 | Requires keyboard-invoked initial focus, a single roving Tab stop, wrapped Arrow navigation, Home/End, activation, Tab departure, and layer-owned Escape restoration. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
 | frozen share menu suppression and traversal | C2 | Requires frozen snapshots to omit export/portable/synthesis from both presentation and the keyboard traversal set. | Rendering: frozen viewing control parity; Chrome: keyboard-only completion |
+| delete confirmation Popover anchor and dismissal contract | C2 | Requires token-gap anchoring, Keep initial focus, layer-owned Escape/outside-pointer dismissal with delete-control focus restoration, and keyboard Remove activation. | Chrome: anchored transient surfaces; keyboard-only completion; focus restoration after transient surfaces |
+| branch-mark link semantics and keyboard navigation | C2 | Requires shared reader/canvas marks to be Tab-reachable links named from the settled branch title, with Enter opening the branch. | Chrome: keyboard-only completion; Rendering: shared live/frozen controls |
+| branch peek non-modal Popover behavior | C2 | Requires hover/focus delayed opening, blur/mouseout dismissal, isolated Escape, stable-shell content patching, token flip/clamp anchoring, no focus theft, and frozen parity. | Chrome: anchored transient surfaces; keyboard-only completion; Rendering: frozen viewing control parity |
 | selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
@@ -279,11 +282,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 106 |
+| C2 behavioral product contract | 109 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **162** |
+| **Total** | **165** |
 
 ## Known-defect fossils
 

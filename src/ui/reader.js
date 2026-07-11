@@ -98,6 +98,8 @@ export function initReader(){
     readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
     readerMain.addEventListener("click", onMarkClick);
     world.addEventListener("click", onMarkClick);
+    readerMain.addEventListener("keydown", onMarkKeydown);
+    world.addEventListener("keydown", onMarkKeydown);
     sideEl.addEventListener("click", onSidebarClick);
     document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
     document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
@@ -261,7 +263,11 @@ export function wrapInContainer(dc, anchor, childId, cls){
 export function upgradeMarks(root, childId){
     if (!root) return;
     var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i = 0; i < marks.length; i++){ marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready"); }
+    var child = nodes[childId], label = "Open branch: " + ((child && child.title) || "Untitled");
+    for (var i = 0; i < marks.length; i++){
+      marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready");
+      marks[i].setAttribute("aria-label", label);
+    }
   }
   // Unwrap a child's marks (used to roll back a failed ask) so offsets stay valid.
 export function removeMarks(root, childId){
@@ -280,6 +286,15 @@ export function removeMarks(root, childId){
     var k = nodes[m.dataset.child];
     // Pending branches open too — the reader shows the answer streaming in live.
     if (k) openNode(k.id);
+  }
+  function onMarkKeydown(e){
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    openNode(k.id);
   }
 export function renderSidebar(){
     var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){
@@ -367,6 +382,9 @@ export function charOffset(container, node, offset){
 export function wrapTextNode(textNode, childId, cls){
     var m = document.createElement("mark");
     m.className = cls; m.dataset.child = childId;
+    m.tabIndex = 0; m.setAttribute("role", "link");
+    var child = nodes[childId];
+    m.setAttribute("aria-label", "Open branch: " + ((child && child.title) || "Untitled"));
     textNode.parentNode.insertBefore(m, textNode);
     m.appendChild(textNode);
   }

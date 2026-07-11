@@ -895,6 +895,93 @@ async function verifyCanvasBranching() {
   await waitForCanvasText(page, "Euler identity connects rotation");
   assert.equal(providerCalls, 1);
 
+  const branchMark = page.locator('mark[data-child].mark-ready').first();
+  assert.deepEqual(await branchMark.evaluate((mark) => ({ tabIndex: mark.tabIndex, role: mark.getAttribute("role"), name: mark.getAttribute("aria-label") })),
+    { tabIndex: 0, role: "link", name: "Open branch: Euler branch" }, "branch marks should expose keyboard navigation semantics and the branch title");
+  await branchMark.hover();
+  await page.waitForSelector("#peek.visible");
+  assert.equal(await page.locator("#peek [data-peek-title]").innerText(), "Euler branch");
+  await page.mouse.move(2, 2);
+  await page.waitForSelector("#peek:not(.visible)", { state: "attached" });
+
+  await page.focus("#r-theme");
+  for (let i = 0; i < 8 && !await page.evaluate(() => document.activeElement?.matches('mark[data-child]')); i += 1) await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "branch marks should be reachable in the shared document Tab order");
+  await page.waitForSelector("#peek.visible");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "keyboard peek must not steal mark focus");
+  assert.notEqual(await branchMark.evaluate((mark) => getComputedStyle(mark).outlineStyle), "none", "focused branch marks should show a keyboard ring");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#peek:not(.visible)", { state: "attached" });
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "peek Escape must not leak to canvas shortcuts or change views");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "peek Escape should leave focus on its mark");
+  await page.focus("#t-reader");
+  assert.equal(await page.locator("#peek.visible").count(), 0, "moving focus away should dismiss peek");
+
+  await branchMark.focus();
+  await page.waitForSelector("#peek.visible");
+  await page.evaluate(() => {
+    const mark = document.querySelector('mark[data-child].mark-ready');
+    mark.__probeRect = mark.getBoundingClientRect;
+    mark.getBoundingClientRect = () => ({ left: 4, right: 84, top: innerHeight - 22, bottom: innerHeight - 2, width: 80, height: 20, x: 4, y: innerHeight - 22 });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await page.waitForTimeout(50);
+  const peekEdge = await page.evaluate(() => {
+    const mark = document.querySelector('mark[data-child].mark-ready').getBoundingClientRect();
+    const peek = document.getElementById("peek").getBoundingClientRect();
+    const edge = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-edge"));
+    return { placement: document.getElementById("peek").dataset.placement, gap: mark.top - peek.bottom,
+      tokenGap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap")), left: peek.left, edge, right: peek.right, width: innerWidth };
+  });
+  assert.equal(peekEdge.placement, "top-start", "peek should flip above a mark at the viewport bottom");
+  assert(Math.abs(peekEdge.gap - peekEdge.tokenGap) < 1, "flipped peek should preserve the token gap");
+  assert(peekEdge.left >= peekEdge.edge - 1 && peekEdge.right <= peekEdge.width - peekEdge.edge + 1, "peek should clamp inside token viewport edges");
+  await page.evaluate(() => {
+    const mark = document.querySelector('mark[data-child].mark-ready');
+    mark.getBoundingClientRect = mark.__probeRect; delete mark.__probeRect;
+  });
+  await branchMark.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("body:not(.mode-canvas)");
+  await page.locator("#reader-main", { hasText: "Euler identity connects rotation" }).waitFor();
+  assert.equal(await page.locator("#peek.visible").count(), 0, "Enter on a mark should open its branch and dismiss peek");
+
+  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
+  const childDelete = page.locator('.node:not(.root) .node-btn.danger').first();
+  await childDelete.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#confirm.visible");
+  await page.waitForFunction(() => document.activeElement?.id === "cf-keep");
+  await page.waitForTimeout(140);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "cf-keep", "delete confirmation should initially focus Keep");
+  const confirmAnchor = await page.evaluate(() => {
+    const trigger = document.querySelector('.node:not(.root) .node-btn.danger').getBoundingClientRect();
+    const confirm = document.getElementById("confirm").getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap"));
+    return { placement: document.getElementById("confirm").dataset.placement, delta: confirm.top - trigger.bottom, gap };
+  });
+  assert.equal(confirmAnchor.placement, "bottom-end");
+  assert(Math.abs(confirmAnchor.delta - confirmAnchor.gap) < 1, "confirmation should use the token gap from the delete control");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('.node:not(.root) .node-btn.danger')), true, "confirmation Escape should restore delete-control focus");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#confirm.visible");
+  await page.mouse.click(3, 300);
+  await page.waitForSelector("#confirm:not(.visible)", { state: "attached" });
+  await page.waitForTimeout(20);
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('.node:not(.root) .node-btn.danger')), true, "outside-pointer dismissal should restore delete-control focus");
+
+  const branchFrozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+  const branchFrozenPage = await context.newPage();
+  await branchFrozenPage.setContent(branchFrozenHtml, { waitUntil: "load" });
+  await branchFrozenPage.click('.node.root .node-acts .node-btn:last-child');
+  const frozenMark = branchFrozenPage.locator('mark[data-child].mark-ready').first();
+  await frozenMark.focus();
+  await branchFrozenPage.waitForSelector("#peek.visible");
+  await branchFrozenPage.keyboard.press("Escape");
+  await branchFrozenPage.waitForSelector("#peek:not(.visible)", { state: "attached" });
+  await branchFrozenPage.close();
+
   await page.click("#t-reader");
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
@@ -909,6 +996,16 @@ async function verifyCanvasBranching() {
   assert(reloadedRaw.includes("Second branch explains the geometric view"));
   assert(!reloadedRaw.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
   assert(!page.url().includes(MOCK_KEY), "URL must not contain provider key");
+
+  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
+  const removeTrigger = page.locator('.node:not(.root) .node-btn.danger').first();
+  await removeTrigger.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.id === "cf-keep");
+  await page.focus("#cf-remove");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".node:not(.root)", { state: "detached" });
+  assert.equal(await page.locator("#confirm.visible").count(), 0, "Enter on Remove should close confirmation and delete the branch subtree");
 
   const external = requests.filter((url) => !url.startsWith(baseUrl));
   assert(external.length > 0, "provider and key validation should have been called");

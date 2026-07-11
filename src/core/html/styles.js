@@ -139,6 +139,7 @@ html[data-theme="dark"] .rh-lightbox-img { padding: 8px; background: #f4f4f1; bo
 .doc-content mark.mark-pending { border-bottom: 2px dotted color-mix(in srgb, var(--accent) 55%, transparent); }
 .doc-content mark.mark-ready { border-bottom: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .doc-content mark.mark-ready:hover, .doc-content mark.mark-pending:hover, .doc-content mark.mark-focus { background: var(--hl-strong); border-bottom-color: var(--accent); }
+.doc-content mark.hl:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 /* Landing flash when a jump (FROM strip, ⌘K, activity chip) brings you to a mark. */
 .doc-content mark.mark-flash::after { opacity: 1; }
 
@@ -411,11 +412,11 @@ body.mode-canvas #toolbar { display: flex; }
 .pal-empty { padding: 18px 12px 14px; text-align: center; font-size: 12px; color: var(--fg-faint); }
 
 /* ---------- hover peek — glance at a branch without leaving the page ---------- */
-#peek { position: fixed; z-index: 90; width: 340px; visibility: hidden; opacity: 0; pointer-events: none;
-  background: color-mix(in srgb, var(--bar-bg) 92%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
-  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 16px 40px -16px rgba(0,0,0,0.4); padding: 12px 14px;
+#peek { position: fixed; z-index: var(--layer-popover); width: var(--surface-width-panel); visibility: hidden; opacity: 0; pointer-events: none;
+  background: var(--surface-popover-bg);
+  -webkit-backdrop-filter: var(--surface-popover-blur); backdrop-filter: var(--surface-popover-blur);
+  border: var(--surface-popover-border); border-radius: var(--surface-popover-radius); overflow: hidden; cursor: pointer;
+  box-shadow: var(--surface-popover-shadow); padding: var(--space-6) var(--space-7);
   transform: scale(0.97) translateY(-4px); transform-origin: top center;
   transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 140ms; }
 #peek.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: scale(1) translateY(0); transition-delay: 0s; }
@@ -440,8 +441,9 @@ body.mode-canvas #toolbar { display: flex; }
 .sm-sep { height: 1px; background: var(--border); margin: 5px 8px; }
 
 /* ---------- delete confirm popover ---------- */
-#confirm { position: fixed; z-index: 110; visibility: hidden; opacity: 0; pointer-events: none; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 12px; box-shadow: var(--shadow); font-family: var(--font-ui); font-size: 12px; color: var(--fg);
+#confirm { position: fixed; z-index: var(--layer-popover); visibility: hidden; opacity: 0; pointer-events: none; background: var(--surface-popover-bg); border: var(--surface-popover-border); border-radius: var(--surface-popover-radius);
+  -webkit-backdrop-filter: var(--surface-popover-blur); backdrop-filter: var(--surface-popover-blur);
+  padding: var(--space-5) var(--space-6); box-shadow: var(--surface-popover-shadow); font-family: var(--font-ui); font-size: var(--text-ui); color: var(--color-text);
   transform: scale(0.97) translateY(-4px); transform-origin: top center;
   transition: opacity 125ms cubic-bezier(0.23, 1, 0.32, 1), transform 125ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 125ms; }
 #confirm.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: scale(1) translateY(0); transition-delay: 0s; }

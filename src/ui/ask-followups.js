@@ -55,11 +55,17 @@ import {
 } from "./reader.js";
 import { anchorSurface } from "./overlay/anchor.js";
 import { registerLayer } from "./overlay/layer-stack.js";
+import { createCleanupScope } from "./lifecycle.js";
 
-var askHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); },
-  hidePeek: function(){}
-};
+function defaultAskHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    hidePeek: function(){}
+  };
+}
+
+var askHooks = defaultAskHooks();
+var askScope = null;
 
 export function registerAskHooks(hooks) {
   Object.assign(askHooks, hooks || {});
@@ -69,34 +75,37 @@ export function registerAskHooks(hooks) {
   // ASK (shared by both views)
   // ===========================================================================
 export function initAskFollowups(){
-  document.addEventListener("mousedown", function(e){
+  disposeAskFollowupResources(false);
+  askScope = createCleanupScope();
+  askScope.listen(document, "mousedown", function(e){
     var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
     if (!c("#peek") && !c("mark[data-child]")) askHooks.hidePeek();
   });
-  document.addEventListener("mouseup", function(e){ if (inAsk(e)) return; setTimeout(maybeShowAsk, 0); });
-  askGo.addEventListener("click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
-  document.getElementById("ask-lenses").addEventListener("click", function(e){
+  askScope.listen(document, "mouseup", function(e){ if (inAsk(e)) return; askScope.timeout(maybeShowAsk, 0); });
+  askScope.listen(askGo, "click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
+  askScope.listen(document.getElementById("ask-lenses"), "click", function(e){
     var b = e.target.closest ? e.target.closest(".lens") : null;
     if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
   });
-  askText.addEventListener("input", function(){ autoGrowEl(askText, 110); });
-  askText.addEventListener("keydown", onAskTextKeydown);
-  ask.addEventListener("transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
-  composerText.addEventListener("input", function(){ autoGrowComposer(); updateComposerState(); });
-  composerText.addEventListener("keydown", function(e){
+  askScope.listen(askText, "input", function(){ autoGrowEl(askText, 110); });
+  askScope.listen(askText, "keydown", onAskTextKeydown);
+  askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
+  askScope.listen(composerText, "input", function(){ autoGrowComposer(); updateComposerState(); });
+  askScope.listen(composerText, "keydown", function(e){
     if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
   });
-  composerSend.addEventListener("click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
-  readerMain.addEventListener("wheel", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("touchstart", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("pointerdown", interruptScrollAnimation, { passive: true });
-  readerMain.addEventListener("scroll", function(){ if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation(); }, { passive: true });
-  document.addEventListener("keydown", interruptScrollAnimation);
+  askScope.listen(composerSend, "click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
+  askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
+  askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
+  askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
+  askScope.listen(readerMain, "scroll", function(){ if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation(); }, { passive: true });
+  askScope.listen(document, "keydown", interruptScrollAnimation);
+  return disposeAskFollowups;
 }
 
 function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
 
-  var askPosition = null, askLayer = null, askTabOwner = null;
+  var askPosition = null, askLayer = null, askTabOwner = null, askOwnerCleanup = null;
 
   function selectionOwner(dc){
     return dc.closest(".node") || readerMain;
@@ -147,7 +156,9 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
     askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
     askTabOwner = owner;
-    document.addEventListener("keydown", onAskOwnerKeydown);
+    askOwnerCleanup = askScope
+      ? askScope.listen(document, "keydown", onAskOwnerKeydown)
+      : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
     // The selection bar is non-focus-stealing: only an explicit Tab/click enters
     // it. Escape is layer-owned, preserves the Range, and returns focus here.
     askLayer = registerLayer({ element: ask, restoreFocus: false,
@@ -163,8 +174,29 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
 export function hideAsk(){
     if (askPosition){ askPosition.dispose(); askPosition = null; }
     if (askLayer){ var unregister = askLayer; askLayer = null; unregister({ restoreFocus: false }); }
-    if (askTabOwner){ document.removeEventListener("keydown", onAskOwnerKeydown); askTabOwner = null; }
+    if (askOwnerCleanup){ var cleanup = askOwnerCleanup; askOwnerCleanup = null; cleanup(); }
+    askTabOwner = null;
     ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight();
+  }
+
+export function disposeAskFollowups(){
+    disposeAskFollowupResources(true);
+  }
+
+  function disposeAskFollowupResources(resetHooks){
+    hideAsk();
+    cancelScrollAnimation();
+    var scope = askScope;
+    askScope = null;
+    if (scope) scope.dispose();
+    pendingAsk = null;
+    askTabOwner = null;
+    askOwnerCleanup = null;
+    scrollAnimId = 0;
+    scrollAnimIgnoreUntil = 0;
+    askText.value = "";
+    composerText.value = "";
+    if (resetHooks) askHooks = defaultAskHooks();
   }
   // Custom Highlight API — keeps the selected text visibly marked while the popup
   // has focus. Best-effort: browsers without it just fall back to today's look.
@@ -289,8 +321,33 @@ export function sendFollowup(parent, question, lens, synthesis){
   // scrollTo({behavior:"smooth"}) proved unreliable here, so the one deliberate
   // scroll in the app (submit → your new question) is driven by hand. rAF never
   // fires in a hidden window — jump instantly there instead of never arriving.
-  var scrollAnimId = 0, scrollAnimIgnoreUntil = 0;
-export function cancelScrollAnimation(){ scrollAnimId++; }
+  var scrollAnimId = 0, scrollAnimIgnoreUntil = 0, scrollFrameCleanup = null;
+export function cancelScrollAnimation(){ scrollAnimId++; clearScrollFrame(); }
+  function clearScrollFrame(){
+    if (!scrollFrameCleanup) return;
+    var cleanup = scrollFrameCleanup;
+    scrollFrameCleanup = null;
+    cleanup();
+  }
+  function scheduleScrollFrame(callback){
+    clearScrollFrame();
+    var id;
+    var cancel;
+    if (typeof requestAnimationFrame === "function"){
+      id = requestAnimationFrame(run);
+      cancel = function(){ cancelAnimationFrame(id); };
+    } else {
+      id = setTimeout(function(){ run(typeof performance === "object" ? performance.now() : Date.now()); }, 16);
+      cancel = function(){ clearTimeout(id); };
+    }
+    scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
+    function run(timestamp){
+      var cleanup = scrollFrameCleanup;
+      scrollFrameCleanup = null;
+      if (cleanup) cleanup();
+      callback(timestamp);
+    }
+  }
   function setAnimatedScrollTop(el, value){
     scrollAnimIgnoreUntil = performance.now() + 80;
     el.scrollTop = value;
@@ -303,9 +360,9 @@ export function animateScroll(el, target, source){
       if (myId !== scrollAnimId) return;
       var p = Math.min(1, (t - t0) / D), k = easeOutMotion(p);
       setAnimatedScrollTop(el, s + (target - s) * k);
-      if (p < 1) requestAnimationFrame(step);
+      if (p < 1) scheduleScrollFrame(step);
     }
-    requestAnimationFrame(step);
+    scheduleScrollFrame(step);
   }
   function interruptScrollAnimation(){ cancelScrollAnimation(); }
   function submitFollowup(source){

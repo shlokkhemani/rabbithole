@@ -8,6 +8,7 @@ import { openDialog } from "./primitives/dialog.js";
   // ===========================================================================
   var imageResizeMemory = {};
   var activeLightbox = null;
+  var activeImageResizeCleanup = null;
   var IMAGE_MIN_WIDTH = 120;
   var LIGHTBOX_MIN_ZOOM = 0.25;
   var LIGHTBOX_MAX_ZOOM = 6;
@@ -75,14 +76,17 @@ export function beginImageResize(e, dc, frame, key){
       imageResizeMemory[key] = next;
       scheduleEdges();
     }
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
     function done(ev){
       if (ev) ev.stopPropagation();
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", done, true);
       window.removeEventListener("pointercancel", done, true);
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(_e){}
+      if (activeImageResizeCleanup === done) activeImageResizeCleanup = null;
       scheduleEdges();
     }
+    activeImageResizeCleanup = done;
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", done, true);
     window.addEventListener("pointercancel", done, true);
@@ -184,6 +188,11 @@ export function closeImageLightbox(){
     var dialog = activeLightbox;
     activeLightbox = null;
     dialog.dispose();
+  }
+export function disposeImageUx(){
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
+    closeImageLightbox();
+    imageResizeMemory = {};
   }
 export function mountDocImages(dc, node, base, surfaceKey){
     if (!dc || !dc.querySelectorAll) return;

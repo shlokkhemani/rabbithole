@@ -5,10 +5,13 @@ import { getBlockType } from "../core/blocks.js";
 
 var visualSurfaceCaches = {};
 var blockMounts = {};
-var visualHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); },
-  getNode: function(){ return null; }
-};
+function defaultVisualHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    getNode: function(){ return null; }
+  };
+}
+var visualHooks = defaultVisualHooks();
 var visualHooksReady = false;
 var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
 export var VISUAL_SANITIZE_CONFIG = {
@@ -43,6 +46,10 @@ export var VISUAL_SANITIZE_CONFIG = {
     ".rh-check-reset{padding:.45em .7em;text-align:center;}";
 export function registerVisualHooks(hooks){
     visualHooks = Object.assign({}, visualHooks, hooks || {});
+  }
+export function disposeVisuals(){
+    visualSurfaceCaches = {};
+    visualHooks = defaultVisualHooks();
   }
 export function registerBlockMount(type, mountSpec){
     var key = String(type || "").toLowerCase();

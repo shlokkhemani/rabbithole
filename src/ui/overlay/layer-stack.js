@@ -18,7 +18,10 @@ function onPointerdown(event) {
   if (path.includes(layer.element) || path.includes(layer.trigger) || layer.element.contains(event.target) || layer.trigger?.contains(event.target)) return;
   if (layer.preventOutsidePointerDefault) event.preventDefault();
   layer.onClose("outside-pointer");
-  if (layer.restoreFocus) setTimeout(function(){ if (!focus(layer.trigger)) focus(layer.previousFocus); }, 0);
+  if (layer.restoreFocus) layer.focusTimer = setTimeout(function(){
+    layer.focusTimer = 0;
+    if (!focus(layer.trigger)) focus(layer.previousFocus);
+  }, 0);
 }
 function syncListeners() {
   var method = layers.length ? "addEventListener" : "removeEventListener";
@@ -29,13 +32,14 @@ export function registerLayer(options) {
   var layer = { element: options.element, trigger: options.trigger || null, onClose: options.onClose,
     closeOnEscape: options.closeOnEscape !== false, closeOnOutsidePointer: options.closeOnOutsidePointer !== false,
     preventOutsidePointerDefault: options.preventOutsidePointerDefault !== false,
-    restoreFocus: options.restoreFocus !== false, previousFocus: document.activeElement };
+    restoreFocus: options.restoreFocus !== false, previousFocus: document.activeElement, focusTimer: 0 };
   layers.push(layer); if (layers.length === 1) syncListeners();
   var active = true;
   return function unregisterLayer(settings) {
     if (!active) return; active = false;
     var index = layers.indexOf(layer); if (index !== -1) layers.splice(index, 1);
     if (!layers.length) syncListeners();
+    if (layer.focusTimer){ clearTimeout(layer.focusTimer); layer.focusTimer = 0; }
     if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
       if (!focus(layer.trigger)) focus(layer.previousFocus);
     }

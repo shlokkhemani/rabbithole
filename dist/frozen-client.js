@@ -36,9 +36,9 @@ var RabbitholeFrozenClient = (() => {
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // node_modules/highlight.js/lib/core.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js
   var require_core = __commonJS({
-    "node_modules/highlight.js/lib/core.js"(exports, module) {
+    "../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js"(exports, module) {
       function deepFreeze(obj) {
         if (obj instanceof Map) {
           obj.clear = obj.delete = obj.set = function() {
@@ -1587,7 +1587,6 @@ var RabbitholeFrozenClient = (() => {
   var ALLOWED_EXTENSIONS = new Set(ALLOWED_ASSET_EXTENSIONS);
   var ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
   var ASSET_URL_RE = /^asset:(.*)$/i;
-  var ASSET_REF_RE = /\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi;
   function getAssetExtension(name) {
     const match = ASSET_NAME_RE.exec(String(name != null ? name : ""));
     if (!match) return null;
@@ -1636,14 +1635,6 @@ var RabbitholeFrozenClient = (() => {
     if (!isValidAssetName(name)) return null;
     if (assetNames && !assetNames.has(name)) return null;
     return resolveAssetUrl2(name);
-  }
-  function extractAssetRefsFromMarkdown(markdown2) {
-    const refs = /* @__PURE__ */ new Set();
-    for (const match of String(markdown2 != null ? markdown2 : "").matchAll(ASSET_REF_RE)) {
-      const name = match[1].toLowerCase();
-      if (isValidAssetName(name)) refs.add(name);
-    }
-    return refs;
   }
 
   // src/core/base-url.js
@@ -1720,6 +1711,27 @@ var RabbitholeFrozenClient = (() => {
     const type = (_a2 = node.origin) == null ? void 0 : _a2.branch_type;
     if (type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP) return type;
     return ((_b = node.origin) == null ? void 0 : _b.selected_text) ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+  }
+
+  // src/core/snapshot-projection.js
+  function snapshotProjectionToFrozenHydration(projection) {
+    const hole = projection.hole;
+    const assetData2 = {};
+    for (const [name, encoded] of Object.entries(projection.assets)) {
+      assetData2[name] = `data:${getAssetContentType(name)};base64,${encoded}`;
+    }
+    return {
+      session_id: `snapshot-${hole.hole_id}`,
+      hole_id: hole.hole_id,
+      title: hole.title,
+      root_id: hole.root_id,
+      last_event_id: 0,
+      agent_attached: false,
+      view_state: hole.view_state,
+      frozen: true,
+      asset_data: assetData2,
+      nodes: hole.nodes
+    };
   }
 
   // src/ui/primitives/notice.js
@@ -1836,6 +1848,95 @@ var RabbitholeFrozenClient = (() => {
     const handle = { show, hide, isVisible: isVisible2 };
     WIRED.set(element, { variant, handle });
     return handle;
+  }
+
+  // src/ui/lifecycle.js
+  function createCleanupScope() {
+    var cleanups = /* @__PURE__ */ new Set();
+    var disposed = false;
+    function addCleanup(cleanup) {
+      if (typeof cleanup !== "function") throw new TypeError("Cleanup must be a function");
+      var active = true;
+      function run() {
+        if (!active) return;
+        active = false;
+        cleanups.delete(run);
+        cleanup();
+      }
+      if (disposed) run();
+      else cleanups.add(run);
+      return run;
+    }
+    function listen(target, type, listener, options2) {
+      if (!target || typeof target.addEventListener !== "function" || typeof target.removeEventListener !== "function") {
+        throw new TypeError("Lifecycle listener target must be an EventTarget");
+      }
+      target.addEventListener(type, listener, options2);
+      return addCleanup(function() {
+        target.removeEventListener(type, listener, options2);
+      });
+    }
+    function interval(callback, delay) {
+      var id = setInterval(callback, delay);
+      addCleanup(function() {
+        clearInterval(id);
+      });
+      return id;
+    }
+    function timeout(callback, delay) {
+      var cancel = null;
+      var id = setTimeout(function() {
+        if (cancel) cancel();
+        callback();
+      }, delay);
+      cancel = addCleanup(function() {
+        clearTimeout(id);
+      });
+      return id;
+    }
+    function raf(callback) {
+      if (typeof requestAnimationFrame !== "function") {
+        return timeout(function() {
+          callback(typeof performance === "object" ? performance.now() : Date.now());
+        }, 16);
+      }
+      var cancel = null;
+      var id = requestAnimationFrame(function(timestamp) {
+        if (cancel) cancel();
+        callback(timestamp);
+      });
+      cancel = addCleanup(function() {
+        cancelAnimationFrame(id);
+      });
+      return id;
+    }
+    function dispose() {
+      if (disposed) return;
+      disposed = true;
+      var pending = Array.from(cleanups);
+      cleanups.clear();
+      var errors = [];
+      for (var i2 = pending.length - 1; i2 >= 0; i2--) {
+        try {
+          pending[i2]();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "Lifecycle cleanup failed");
+    }
+    return {
+      addCleanup,
+      listen,
+      interval,
+      timeout,
+      raf,
+      dispose,
+      get disposed() {
+        return disposed;
+      }
+    };
   }
 
   // src/core/layout.js
@@ -1982,26 +2083,32 @@ var RabbitholeFrozenClient = (() => {
   var peekEl = null;
   var shareMenu = null;
   var confirmEl = null;
-  var coreHooks = {
-    post: function() {
-      return Promise.resolve({ ok: true });
-    },
-    ensureCanvasBuilt: function() {
-    },
-    diveToNode: function() {
-    },
-    openNode: function() {
-    },
-    mountVisuals: null,
-    mountDocImages: null,
-    effH: function(n) {
-      return n.h;
-    }
-  };
+  function defaultCoreHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      ensureCanvasBuilt: function() {
+      },
+      diveToNode: function() {
+      },
+      openNode: function() {
+      },
+      mountVisuals: null,
+      mountDocImages: null,
+      effH: function(n) {
+        return n.h;
+      }
+    };
+  }
+  var coreHooks = defaultCoreHooks();
+  var coreScope = null;
   function registerCoreHooks(hooks) {
     Object.assign(coreHooks, hooks || {});
   }
   function initCore(inputHydration) {
+    disposeCore();
+    coreScope = createCleanupScope();
     hydration = inputHydration || {};
     rootId = hydration.root_id;
     frozen = !!hydration.frozen;
@@ -2049,18 +2156,63 @@ var RabbitholeFrozenClient = (() => {
     peekEl = document.getElementById("peek");
     shareMenu = document.getElementById("sharemenu");
     confirmEl = document.getElementById("confirm");
-    initReduceMotion();
-    actReader.addEventListener("click", onActivityClick);
-    actCanvas.addEventListener("click", onActivityClick);
-    document.getElementById("since-show").addEventListener("click", function(e) {
+    initReduceMotion(coreScope);
+    coreScope.listen(actReader, "click", onActivityClick);
+    coreScope.listen(actCanvas, "click", onActivityClick);
+    coreScope.listen(document.getElementById("since-show"), "click", function(e) {
       var un = unreadNodes();
       if (un.length) goToNode2(un[0], motionSourceFromEvent(e));
     });
-    document.getElementById("since-x").addEventListener("click", function() {
+    coreScope.listen(document.getElementById("since-x"), "click", function() {
       sinceDismissed = true;
       sinceEl.classList.remove("visible");
     });
-    setInterval(updateLoadingTimers, 1e3);
+    coreScope.interval(updateLoadingTimers, 1e3);
+    coreScope.addCleanup(function() {
+      hintNotice == null ? void 0 : hintNotice.hide();
+      bannerNotice == null ? void 0 : bannerNotice.hide();
+    });
+    return disposeCore;
+  }
+  function disposeCore() {
+    var scope = coreScope;
+    coreScope = null;
+    try {
+      if (scope) scope.dispose();
+    } finally {
+      resetCoreState();
+    }
+  }
+  function resetCoreState() {
+    hydration = null;
+    rootId = null;
+    frozen = false;
+    nodes = {};
+    currentNodeId = null;
+    mode = "reader";
+    view = { x: 0, y: 0, scale: 1 };
+    closed = false;
+    closedReason = null;
+    agentAttached = true;
+    agentReason = null;
+    connLost = false;
+    sseFails = 0;
+    canvasBuilt = false;
+    canvasFramed = false;
+    viewAdjusted = false;
+    orderCounter = 0;
+    readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+    ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
+    hintNotice = bannerNotice = null;
+    composerInner = composerText = composerSend = null;
+    actReader = actCanvas = actSep = null;
+    sinceEl = sinceMsg = paletteEl = palText = palResults = null;
+    peekEl = shareMenu = confirmEl = null;
+    sinceDismissed = false;
+    sinceArmed = false;
+    reduceMotion = false;
+    reduceMotionMql = null;
+    coreHooks = defaultCoreHooks();
   }
   function setCurrentNodeId(id) {
     currentNodeId = id;
@@ -2158,12 +2310,17 @@ var RabbitholeFrozenClient = (() => {
   function setReduceMotion(e) {
     reduceMotion = !!(e && e.matches);
   }
-  function initReduceMotion() {
+  function initReduceMotion(scope) {
     if (window.matchMedia) {
       reduceMotionMql = window.matchMedia("(prefers-reduced-motion: reduce)");
       setReduceMotion(reduceMotionMql);
-      if (reduceMotionMql.addEventListener) reduceMotionMql.addEventListener("change", setReduceMotion);
-      else if (reduceMotionMql.addListener) reduceMotionMql.addListener(setReduceMotion);
+      if (reduceMotionMql.addEventListener) scope.listen(reduceMotionMql, "change", setReduceMotion);
+      else if (reduceMotionMql.addListener) {
+        reduceMotionMql.addListener(setReduceMotion);
+        scope.addCleanup(function() {
+          reduceMotionMql == null ? void 0 : reduceMotionMql.removeListener(setReduceMotion);
+        });
+      }
     }
   }
   function shouldReduceMotion() {
@@ -2514,14 +2671,17 @@ var RabbitholeFrozenClient = (() => {
   // src/ui/visuals.js
   var visualSurfaceCaches = {};
   var blockMounts = {};
-  var visualHooks = {
-    post: function() {
-      return Promise.resolve({ ok: true });
-    },
-    getNode: function() {
-      return null;
-    }
-  };
+  function defaultVisualHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      getNode: function() {
+        return null;
+      }
+    };
+  }
+  var visualHooks = defaultVisualHooks();
   var visualHooksReady = false;
   var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
   var VISUAL_SANITIZE_CONFIG = {
@@ -2537,6 +2697,10 @@ var RabbitholeFrozenClient = (() => {
   var CHECK_CSS = ".rh-check{display:grid;gap:.75em;}.rh-check-question{font-weight:650;line-height:1.4;}.rh-check-options{display:grid;gap:.5em;}.rh-check-option,.rh-check-reset{appearance:none;border:1px solid var(--border);border-radius:7px;background:var(--node-bg);color:var(--fg);font:inherit;text-align:left;padding:.62em .75em;cursor:pointer;}.rh-check-option:hover:not(:disabled),.rh-check-option:focus-visible,.rh-check-reset:hover,.rh-check-reset:focus-visible{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);outline-offset:1px;}.rh-check-option:disabled{cursor:default;opacity:1;}.rh-check-option.is-correct{border-color:color-mix(in srgb,#2f9e44 70%,var(--border));background:color-mix(in srgb,#2f9e44 13%,var(--node-bg));}.rh-check-option.is-incorrect{border-color:color-mix(in srgb,#e03131 70%,var(--border));background:color-mix(in srgb,#e03131 12%,var(--node-bg));}.rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}.rh-check-actions{display:flex;justify-content:flex-end;}.rh-check-reset{padding:.45em .7em;text-align:center;}";
   function registerVisualHooks(hooks) {
     visualHooks = Object.assign({}, visualHooks, hooks || {});
+  }
+  function disposeVisuals() {
+    visualSurfaceCaches = {};
+    visualHooks = defaultVisualHooks();
   }
   function registerBlockMount(type, mountSpec) {
     var key = String(type || "").toLowerCase();
@@ -2763,27 +2927,31 @@ var RabbitholeFrozenClient = (() => {
   registerBlockMount("check", { renderHtml: buildCheckVisual, wire: wireCheck });
 
   // src/ui/reader.js
-  var readerHooks = {
-    hideAsk: function() {
-    },
-    hidePeek: function() {
-    },
-    updateComposerState: function() {
-    },
-    scheduleViewSave: function() {
-    },
-    setMode: function() {
-    },
-    post: function() {
-      return Promise.resolve({ ok: true });
-    },
-    mountVisuals: null,
-    mountDocImages: null,
-    persistNode: function() {
-    },
-    animateScroll: function() {
-    }
-  };
+  function defaultReaderHooks() {
+    return {
+      hideAsk: function() {
+      },
+      hidePeek: function() {
+      },
+      updateComposerState: function() {
+      },
+      scheduleViewSave: function() {
+      },
+      setMode: function() {
+      },
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      mountVisuals: null,
+      mountDocImages: null,
+      persistNode: function() {
+      },
+      animateScroll: function() {
+      }
+    };
+  }
+  var readerHooks = defaultReaderHooks();
+  var readerScope = null;
   function registerReaderHooks(hooks) {
     Object.assign(readerHooks, hooks || {});
   }
@@ -2838,39 +3006,59 @@ var RabbitholeFrozenClient = (() => {
     breadcrumbEl.replaceChildren(fragment);
   }
   function initReader() {
-    breadcrumbEl.addEventListener("click", function(e) {
-      var c2 = e.target.closest(".crumb");
-      if (!c2 || c2.classList.contains("current")) return;
-      openNode(c2.dataset.id);
-    });
-    breadcrumbEl.addEventListener("keydown", function(e) {
-      if (e.key !== "Enter") return;
-      var c2 = e.target.closest && e.target.closest('.crumb[role="link"]');
-      if (!c2) return;
-      e.preventDefault();
-      openNode(c2.dataset.id);
-    });
-    readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
-    readerMain.addEventListener("click", onMarkClick);
-    world.addEventListener("click", onMarkClick);
-    readerMain.addEventListener("keydown", onMarkKeydown);
-    world.addEventListener("keydown", onMarkKeydown);
-    sideEl.addEventListener("click", onSidebarClick);
-    sideEl.addEventListener("keydown", onSidebarKeydown);
-    document.getElementById("r-textdown").addEventListener("click", function() {
-      setReaderFontScale(-0.1);
-    });
-    document.getElementById("r-textup").addEventListener("click", function() {
-      setReaderFontScale(0.1);
-    });
-    document.getElementById("r-canvas").addEventListener("click", function() {
-      readerHooks.setMode("canvas");
-    });
-    document.getElementById("r-done").addEventListener("click", function() {
-      if (!closed) readerHooks.post({ type: "done" });
-    });
-    document.getElementById("r-theme").addEventListener("click", toggleTheme);
-    document.getElementById("t-theme").addEventListener("click", toggleTheme);
+    disposeReaderResources(false);
+    readerScope = createCleanupScope();
+    try {
+      readerScope.listen(breadcrumbEl, "click", function(e) {
+        var c2 = e.target.closest(".crumb");
+        if (!c2 || c2.classList.contains("current")) return;
+        openNode(c2.dataset.id);
+      });
+      readerScope.listen(breadcrumbEl, "keydown", function(e) {
+        if (e.key !== "Enter") return;
+        var c2 = e.target.closest && e.target.closest('.crumb[role="link"]');
+        if (!c2) return;
+        e.preventDefault();
+        openNode(c2.dataset.id);
+      });
+      readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
+      readerScope.listen(readerMain, "click", onMarkClick);
+      readerScope.listen(world, "click", onMarkClick);
+      readerScope.listen(readerMain, "keydown", onMarkKeydown);
+      readerScope.listen(world, "keydown", onMarkKeydown);
+      readerScope.listen(sideEl, "click", onSidebarClick);
+      readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+      readerScope.listen(document.getElementById("r-textdown"), "click", function() {
+        setReaderFontScale(-0.1);
+      });
+      readerScope.listen(document.getElementById("r-textup"), "click", function() {
+        setReaderFontScale(0.1);
+      });
+      readerScope.listen(document.getElementById("r-canvas"), "click", function() {
+        readerHooks.setMode("canvas");
+      });
+      readerScope.listen(document.getElementById("r-done"), "click", function() {
+        if (!closed) readerHooks.post({ type: "done" });
+      });
+      readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
+      readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
+      return disposeReader;
+    } catch (error) {
+      disposeReader();
+      throw error;
+    }
+  }
+  function disposeReader() {
+    disposeReaderResources(true);
+  }
+  function disposeReaderResources(resetHooks) {
+    var scope = readerScope;
+    readerScope = null;
+    if (scope) scope.dispose();
+    breadcrumbNodes = {};
+    sidebarNodes = {};
+    kbdMarkIdx = -1;
+    if (resetHooks) readerHooks = defaultReaderHooks();
   }
   function renderReaderBody() {
     var node = nodes[currentNodeId];
@@ -3272,9 +3460,6 @@ var RabbitholeFrozenClient = (() => {
   function escapeHtml(str) {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
-  function serializeForInlineScript(value) {
-    return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(LINE_SEP, "\\u2028").replace(PARA_SEP, "\\u2029");
-  }
 
   // src/core/html/button-markup.js
   var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
@@ -3316,56 +3501,110 @@ var RabbitholeFrozenClient = (() => {
   }
 
   // src/ui/canvas-view.js
-  var canvasHooks = {
-    hideAsk: function() {
-    },
-    hidePeek: function() {
-    },
-    sendFollowup: function() {
-      return null;
-    },
-    confirmDelete: function() {
-    },
-    persistNode: function() {
-    },
-    persistNodesBulk: function() {
-    },
-    scheduleViewSave: function() {
-    }
-  };
+  function defaultCanvasHooks() {
+    return {
+      hideAsk: function() {
+      },
+      hidePeek: function() {
+      },
+      sendFollowup: function() {
+        return null;
+      },
+      confirmDelete: function() {
+      },
+      persistNode: function() {
+      },
+      persistNodesBulk: function() {
+      },
+      scheduleViewSave: function() {
+      }
+    };
+  }
+  var canvasHooks = defaultCanvasHooks();
+  var canvasScope = null;
+  var filmCameraHandle = null;
+  var activePointerGestures = /* @__PURE__ */ new Set();
   function registerCanvasHooks(hooks) {
     Object.assign(canvasHooks, hooks || {});
   }
   function initCanvasView() {
+    cleanupCanvasView(false);
+    canvasScope = createCleanupScope();
     registerCoreHooks({
       ensureCanvasBuilt,
       diveToNode,
       effH
     });
-    world.addEventListener("mouseover", onWorldMouseOver);
-    world.addEventListener("mouseout", onWorldMouseOut);
+    canvasScope.listen(world, "mouseover", onWorldMouseOver);
+    canvasScope.listen(world, "mouseout", onWorldMouseOut);
     initViewportPan();
-    viewport.addEventListener("wheel", onViewportWheel, { passive: false });
-    viewport.addEventListener("dblclick", onViewportDblClick);
-    document.getElementById("t-reader").addEventListener("click", function() {
+    canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
+    canvasScope.listen(viewport, "dblclick", onViewportDblClick);
+    canvasScope.listen(document.getElementById("t-reader"), "click", function() {
       openNode(currentNodeId);
     });
-    document.getElementById("t-frame").addEventListener("click", function(e) {
+    canvasScope.listen(document.getElementById("t-frame"), "click", function(e) {
       frameAll(true, motionSourceFromEvent(e));
     });
-    document.getElementById("t-tidy").addEventListener("click", function(e) {
+    canvasScope.listen(document.getElementById("t-tidy"), "click", function(e) {
       tidy(motionSourceFromEvent(e));
     });
-    document.getElementById("t-zin").addEventListener("click", function() {
+    canvasScope.listen(document.getElementById("t-zin"), "click", function() {
       zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.15);
     });
-    document.getElementById("t-zout").addEventListener("click", function() {
+    canvasScope.listen(document.getElementById("t-zout"), "click", function() {
       zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.87);
     });
-    zoomLabel.addEventListener("click", function() {
+    canvasScope.listen(zoomLabel, "click", function() {
       zoomTo(viewport.clientWidth / 2, viewport.clientHeight / 2, 1);
     });
     exposeFilmCameraHook();
+    return disposeCanvasView;
+  }
+  function disposeCanvasView() {
+    cleanupCanvasView(true);
+  }
+  function cleanupCanvasView(resetHooks) {
+    var _a2;
+    var scope = canvasScope;
+    canvasScope = null;
+    if (scope) scope.dispose();
+    activePointerGestures.forEach(function(cancel) {
+      cancel();
+    });
+    activePointerGestures.clear();
+    cancelViewAnimation();
+    if (edgeRaf) {
+      cancelAnimationFrame(edgeRaf);
+      edgeRaf = 0;
+    }
+    if (filmCameraHandle && window.__rhFilmCamera === filmCameraHandle) {
+      try {
+        delete window.__rhFilmCamera;
+      } catch (_e) {
+      }
+    }
+    filmCameraHandle = null;
+    if (edgesSvg) while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
+    edgeEls = {};
+    edgeGeometry = {};
+    edgeHl = {};
+    wheelKind = null;
+    wheelCard = null;
+    wheelTs = 0;
+    (_a2 = viewport) == null ? void 0 : _a2.classList.remove("panning");
+    if (resetHooks) {
+      canvasHooks = defaultCanvasHooks();
+      registerCoreHooks({
+        ensureCanvasBuilt: function() {
+        },
+        diveToNode: function() {
+        },
+        effH: function(n) {
+          return n.h;
+        }
+      });
+    }
   }
   function applyTransform() {
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
@@ -3379,23 +3618,24 @@ var RabbitholeFrozenClient = (() => {
     } catch (e) {
     }
     if (!enabled) return;
+    filmCameraHandle = {
+      getView: function() {
+        return { x: view.x, y: view.y, scale: view.scale };
+      },
+      setView: function(x, y, scale) {
+        cancelViewAnimation();
+        setViewAdjusted(true);
+        view.x = Number(x);
+        view.y = Number(y);
+        view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
+        applyTransform();
+        drawEdges();
+        return { x: view.x, y: view.y, scale: view.scale };
+      }
+    };
     Object.defineProperty(window, "__rhFilmCamera", {
       configurable: true,
-      value: {
-        getView: function() {
-          return { x: view.x, y: view.y, scale: view.scale };
-        },
-        setView: function(x, y, scale) {
-          viewAnimId++;
-          setViewAdjusted(true);
-          view.x = Number(x);
-          view.y = Number(y);
-          view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
-          applyTransform();
-          drawEdges();
-          return { x: view.x, y: view.y, scale: view.scale };
-        }
-      }
+      value: filmCameraHandle
     });
   }
   function screenToWorld(sx, sy) {
@@ -3406,7 +3646,7 @@ var RabbitholeFrozenClient = (() => {
     zoomTo(sx, sy, next);
   }
   function zoomTo(sx, sy, next) {
-    viewAnimId++;
+    cancelViewAnimation();
     next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
     if (next === view.scale) return;
     setViewAdjusted(true);
@@ -3657,9 +3897,18 @@ var RabbitholeFrozenClient = (() => {
     animateView(tx, ty, view.scale, { source: source2, duration, ease });
   }
   var viewAnimId = 0;
+  var viewAnimRaf = 0;
+  function cancelViewAnimation() {
+    viewAnimId++;
+    if (viewAnimRaf) {
+      cancelAnimationFrame(viewAnimRaf);
+      viewAnimRaf = 0;
+    }
+  }
   function animateView(tx, ty, ts, opts) {
     opts = opts || {};
-    var myId = ++viewAnimId;
+    cancelViewAnimation();
+    var myId = viewAnimId;
     if (document.hidden || shouldReduceMotion() || opts.source !== "pointer") {
       view.x = tx;
       view.y = ty;
@@ -3670,15 +3919,16 @@ var RabbitholeFrozenClient = (() => {
     var sx = view.x, sy = view.y, ss = view.scale, t0 = performance.now(), D2 = opts.duration || 270;
     var easeFn = opts.ease === "inOut" ? easeInOutMotion : easeOutMotion;
     function step(t) {
+      viewAnimRaf = 0;
       if (myId !== viewAnimId) return;
       var p = Math.min(1, (t - t0) / D2), k = easeFn(p);
       view.x = sx + (tx - sx) * k;
       view.y = sy + (ty - sy) * k;
       view.scale = ss + (ts - ss) * k;
       applyTransform();
-      if (p < 1) requestAnimationFrame(step);
+      if (p < 1) viewAnimRaf = requestAnimationFrame(step);
     }
-    requestAnimationFrame(step);
+    viewAnimRaf = requestAnimationFrame(step);
   }
   function fillBody(node) {
     var body = node.bodyEl;
@@ -3722,8 +3972,8 @@ var RabbitholeFrozenClient = (() => {
     el.style.width = node.w + "px";
     if (!node.collapsed) el.style.height = node.h + "px";
   }
-  function onPointerGesture(handle, onDown, onMove, onUp) {
-    handle.addEventListener("pointerdown", function(e) {
+  function onPointerGesture(handle, onDown, onMove, onUp, scope) {
+    function pointerDown(e) {
       if (!onDown(e)) return;
       try {
         handle.setPointerCapture(e.pointerId);
@@ -3732,22 +3982,32 @@ var RabbitholeFrozenClient = (() => {
       function move(ev) {
         onMove(ev);
       }
-      function done() {
+      function finish(commit) {
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", done);
         handle.removeEventListener("pointercancel", done);
         handle.removeEventListener("lostpointercapture", done);
+        activePointerGestures.delete(cancel);
         try {
           handle.releasePointerCapture(e.pointerId);
         } catch (_e) {
         }
-        onUp();
+        if (commit) onUp();
       }
+      function done() {
+        finish(true);
+      }
+      function cancel() {
+        finish(false);
+      }
+      activePointerGestures.add(cancel);
       handle.addEventListener("pointermove", move);
       handle.addEventListener("pointerup", done);
       handle.addEventListener("pointercancel", done);
       handle.addEventListener("lostpointercapture", done);
-    });
+    }
+    if (scope) scope.listen(handle, "pointerdown", pointerDown);
+    else handle.addEventListener("pointerdown", pointerDown);
   }
   function enableDrag(node, handle) {
     var sx, sy, ox, oy;
@@ -3997,7 +4257,7 @@ var RabbitholeFrozenClient = (() => {
       function(e) {
         if (e.button !== 0 || e.target.closest(".node")) return false;
         canvasHooks.hideAsk();
-        viewAnimId++;
+        cancelViewAnimation();
         viewport.classList.add("panning");
         sx = e.clientX;
         sy = e.clientY;
@@ -4013,7 +4273,8 @@ var RabbitholeFrozenClient = (() => {
       },
       function() {
         viewport.classList.remove("panning");
-      }
+      },
+      canvasScope
     );
   }
   function canScroll(el, dx, dy) {
@@ -4042,7 +4303,7 @@ var RabbitholeFrozenClient = (() => {
     wheelTs = e.timeStamp;
     if (wheelKind === "pan") {
       e.preventDefault();
-      viewAnimId++;
+      cancelViewAnimation();
       setViewAdjusted(true);
       view.x -= e.deltaX;
       view.y -= e.deltaY;
@@ -4304,7 +4565,8 @@ var RabbitholeFrozenClient = (() => {
     if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
     if (layer.preventOutsidePointerDefault) event.preventDefault();
     layer.onClose("outside-pointer");
-    if (layer.restoreFocus) setTimeout(function() {
+    if (layer.restoreFocus) layer.focusTimer = setTimeout(function() {
+      layer.focusTimer = 0;
       if (!focus(layer.trigger)) focus(layer.previousFocus);
     }, 0);
   }
@@ -4322,7 +4584,8 @@ var RabbitholeFrozenClient = (() => {
       closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
       preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
       restoreFocus: options2.restoreFocus !== false,
-      previousFocus: document.activeElement
+      previousFocus: document.activeElement,
+      focusTimer: 0
     };
     layers.push(layer);
     if (layers.length === 1) syncListeners();
@@ -4333,6 +4596,10 @@ var RabbitholeFrozenClient = (() => {
       var index = layers.indexOf(layer);
       if (index !== -1) layers.splice(index, 1);
       if (!layers.length) syncListeners();
+      if (layer.focusTimer) {
+        clearTimeout(layer.focusTimer);
+        layer.focusTimer = 0;
+      }
       if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
         if (!focus(layer.trigger)) focus(layer.previousFocus);
       }
@@ -4340,18 +4607,24 @@ var RabbitholeFrozenClient = (() => {
   }
 
   // src/ui/ask-followups.js
-  var askHooks = {
-    post: function() {
-      return Promise.resolve({ ok: true });
-    },
-    hidePeek: function() {
-    }
-  };
+  function defaultAskHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      hidePeek: function() {
+      }
+    };
+  }
+  var askHooks = defaultAskHooks();
+  var askScope = null;
   function registerAskHooks(hooks) {
     Object.assign(askHooks, hooks || {});
   }
   function initAskFollowups() {
-    document.addEventListener("mousedown", function(e) {
+    disposeAskFollowupResources(false);
+    askScope = createCleanupScope();
+    askScope.listen(document, "mousedown", function(e) {
       var c2 = e.target && e.target.closest ? function(sel) {
         return e.target.closest(sel);
       } : function() {
@@ -4359,44 +4632,45 @@ var RabbitholeFrozenClient = (() => {
       };
       if (!c2("#peek") && !c2("mark[data-child]")) askHooks.hidePeek();
     });
-    document.addEventListener("mouseup", function(e) {
+    askScope.listen(document, "mouseup", function(e) {
       if (inAsk(e)) return;
-      setTimeout(maybeShowAsk, 0);
+      askScope.timeout(maybeShowAsk, 0);
     });
-    askGo.addEventListener("click", function(e) {
+    askScope.listen(askGo, "click", function(e) {
       submitAsk(null, motionSourceFromEvent(e));
     });
-    document.getElementById("ask-lenses").addEventListener("click", function(e) {
+    askScope.listen(document.getElementById("ask-lenses"), "click", function(e) {
       var b = e.target.closest ? e.target.closest(".lens") : null;
       if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
     });
-    askText.addEventListener("input", function() {
+    askScope.listen(askText, "input", function() {
       autoGrowEl(askText, 110);
     });
-    askText.addEventListener("keydown", onAskTextKeydown);
-    ask.addEventListener("transitionend", function(e) {
+    askScope.listen(askText, "keydown", onAskTextKeydown);
+    askScope.listen(ask, "transitionend", function(e) {
       if (e.target === ask && askPosition) askPosition.update();
     });
-    composerText.addEventListener("input", function() {
+    askScope.listen(composerText, "input", function() {
       autoGrowComposer();
       updateComposerState();
     });
-    composerText.addEventListener("keydown", function(e) {
+    askScope.listen(composerText, "keydown", function(e) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         submitFollowup("keyboard");
       }
     });
-    composerSend.addEventListener("click", function(e) {
+    askScope.listen(composerSend, "click", function(e) {
       submitFollowup(motionSourceFromEvent(e));
     });
-    readerMain.addEventListener("wheel", interruptScrollAnimation, { passive: true });
-    readerMain.addEventListener("touchstart", interruptScrollAnimation, { passive: true });
-    readerMain.addEventListener("pointerdown", interruptScrollAnimation, { passive: true });
-    readerMain.addEventListener("scroll", function() {
+    askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "scroll", function() {
       if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation();
     }, { passive: true });
-    document.addEventListener("keydown", interruptScrollAnimation);
+    askScope.listen(document, "keydown", interruptScrollAnimation);
+    return disposeAskFollowups;
   }
   function inAsk(e) {
     return e.target && e.target.closest && e.target.closest("#ask");
@@ -4404,6 +4678,7 @@ var RabbitholeFrozenClient = (() => {
   var askPosition = null;
   var askLayer = null;
   var askTabOwner = null;
+  var askOwnerCleanup = null;
   function selectionOwner(dc) {
     return dc.closest(".node") || readerMain;
   }
@@ -4459,7 +4734,9 @@ var RabbitholeFrozenClient = (() => {
     setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
     askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
     askTabOwner = owner;
-    document.addEventListener("keydown", onAskOwnerKeydown);
+    askOwnerCleanup = askScope ? askScope.listen(document, "keydown", onAskOwnerKeydown) : function() {
+      document.removeEventListener("keydown", onAskOwnerKeydown);
+    };
     askLayer = registerLayer({
       element: ask,
       restoreFocus: false,
@@ -4483,13 +4760,33 @@ var RabbitholeFrozenClient = (() => {
       askLayer = null;
       unregister({ restoreFocus: false });
     }
-    if (askTabOwner) {
-      document.removeEventListener("keydown", onAskOwnerKeydown);
-      askTabOwner = null;
+    if (askOwnerCleanup) {
+      var cleanup = askOwnerCleanup;
+      askOwnerCleanup = null;
+      cleanup();
     }
+    askTabOwner = null;
     ask.classList.remove("visible");
     pendingAsk = null;
     clearAskHighlight();
+  }
+  function disposeAskFollowups() {
+    disposeAskFollowupResources(true);
+  }
+  function disposeAskFollowupResources(resetHooks) {
+    hideAsk();
+    cancelScrollAnimation();
+    var scope = askScope;
+    askScope = null;
+    if (scope) scope.dispose();
+    pendingAsk = null;
+    askTabOwner = null;
+    askOwnerCleanup = null;
+    scrollAnimId = 0;
+    scrollAnimIgnoreUntil = 0;
+    askText.value = "";
+    composerText.value = "";
+    if (resetHooks) askHooks = defaultAskHooks();
   }
   function paintAskHighlight(range) {
     try {
@@ -4654,8 +4951,41 @@ var RabbitholeFrozenClient = (() => {
   }
   var scrollAnimId = 0;
   var scrollAnimIgnoreUntil = 0;
+  var scrollFrameCleanup = null;
   function cancelScrollAnimation() {
     scrollAnimId++;
+    clearScrollFrame();
+  }
+  function clearScrollFrame() {
+    if (!scrollFrameCleanup) return;
+    var cleanup = scrollFrameCleanup;
+    scrollFrameCleanup = null;
+    cleanup();
+  }
+  function scheduleScrollFrame(callback) {
+    clearScrollFrame();
+    var id;
+    var cancel;
+    if (typeof requestAnimationFrame === "function") {
+      id = requestAnimationFrame(run);
+      cancel = function() {
+        cancelAnimationFrame(id);
+      };
+    } else {
+      id = setTimeout(function() {
+        run(typeof performance === "object" ? performance.now() : Date.now());
+      }, 16);
+      cancel = function() {
+        clearTimeout(id);
+      };
+    }
+    scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
+    function run(timestamp) {
+      var cleanup = scrollFrameCleanup;
+      scrollFrameCleanup = null;
+      if (cleanup) cleanup();
+      callback(timestamp);
+    }
   }
   function setAnimatedScrollTop(el, value) {
     scrollAnimIgnoreUntil = performance.now() + 80;
@@ -4672,9 +5002,9 @@ var RabbitholeFrozenClient = (() => {
       if (myId !== scrollAnimId) return;
       var p = Math.min(1, (t - t0) / D2), k = easeOutMotion(p);
       setAnimatedScrollTop(el, s + (target - s) * k);
-      if (p < 1) requestAnimationFrame(step);
+      if (p < 1) scheduleScrollFrame(step);
     }
-    requestAnimationFrame(step);
+    scheduleScrollFrame(step);
   }
   function interruptScrollAnimation() {
     cancelScrollAnimation();
@@ -4821,6 +5151,7 @@ var RabbitholeFrozenClient = (() => {
   // src/ui/image-ux.js
   var imageResizeMemory = {};
   var activeLightbox = null;
+  var activeImageResizeCleanup = null;
   var IMAGE_MIN_WIDTH = 120;
   var LIGHTBOX_MIN_ZOOM = 0.25;
   var LIGHTBOX_MAX_ZOOM = 6;
@@ -4890,6 +5221,7 @@ var RabbitholeFrozenClient = (() => {
       imageResizeMemory[key] = next;
       scheduleEdges();
     }
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
     function done(ev) {
       if (ev) ev.stopPropagation();
       window.removeEventListener("pointermove", move, true);
@@ -4899,8 +5231,10 @@ var RabbitholeFrozenClient = (() => {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch (_e) {
       }
+      if (activeImageResizeCleanup === done) activeImageResizeCleanup = null;
       scheduleEdges();
     }
+    activeImageResizeCleanup = done;
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", done, true);
     window.addEventListener("pointercancel", done, true);
@@ -5016,6 +5350,11 @@ var RabbitholeFrozenClient = (() => {
     activeLightbox = null;
     dialog.dispose();
   }
+  function disposeImageUx() {
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
+    closeImageLightbox();
+    imageResizeMemory = {};
+  }
   function mountDocImages(dc, node, base, surfaceKey) {
     if (!dc || !dc.querySelectorAll) return;
     var imgs = dc.querySelectorAll("img");
@@ -5069,16 +5408,20 @@ var RabbitholeFrozenClient = (() => {
   }
 
   // src/ui/palette.js
-  var paletteHooks = {
-    hideAsk: function() {
-    },
-    hidePeek: function() {
-    },
-    closeShare: function() {
-    },
-    hideConfirm: function() {
-    }
-  };
+  function defaultPaletteHooks() {
+    return {
+      hideAsk: function() {
+      },
+      hidePeek: function() {
+      },
+      closeShare: function() {
+      },
+      hideConfirm: function() {
+      }
+    };
+  }
+  var paletteHooks = defaultPaletteHooks();
+  var paletteScope = null;
   function registerPaletteHooks(hooks) {
     Object.assign(paletteHooks, hooks || {});
   }
@@ -5098,14 +5441,37 @@ var RabbitholeFrozenClient = (() => {
   var palDialog = null;
   var palRows = [];
   function initPalette() {
-    palText.setAttribute("role", "combobox");
-    palText.setAttribute("aria-expanded", "false");
-    palText.addEventListener("input", function() {
-      renderPalette(palText.value);
-    });
-    palText.addEventListener("keydown", onPaletteKeydown);
-    palResults.addEventListener("click", onPaletteClick);
-    palResults.addEventListener("mousemove", onPaletteMousemove);
+    disposePaletteResources(false);
+    paletteScope = createCleanupScope();
+    try {
+      palText.setAttribute("role", "combobox");
+      palText.setAttribute("aria-expanded", "false");
+      paletteScope.listen(palText, "input", function() {
+        renderPalette(palText.value);
+      });
+      paletteScope.listen(palText, "keydown", onPaletteKeydown);
+      paletteScope.listen(palResults, "click", onPaletteClick);
+      paletteScope.listen(palResults, "mousemove", onPaletteMousemove);
+      return disposePalette;
+    } catch (error) {
+      disposePalette();
+      throw error;
+    }
+  }
+  function disposePalette() {
+    disposePaletteResources(true);
+  }
+  function disposePaletteResources(resetHooks) {
+    closePalette({ restoreFocus: false });
+    var scope = paletteScope;
+    paletteScope = null;
+    if (scope) scope.dispose();
+    palOpen = false;
+    palSel = 0;
+    palItems = [];
+    palCanvasCommands = false;
+    palRows = [];
+    if (resetHooks) paletteHooks = defaultPaletteHooks();
   }
   function togglePalette() {
     if (palOpen) closePalette();
@@ -5138,8 +5504,8 @@ var RabbitholeFrozenClient = (() => {
     });
     palText.setAttribute("aria-expanded", "true");
   }
-  function closePalette() {
-    if (palDialog) palDialog.close();
+  function closePalette(settings) {
+    if (palDialog) palDialog.close("programmatic", settings);
   }
   function onPaletteKeydown(e) {
     if (e.key === "ArrowDown") {
@@ -5366,214 +5732,556 @@ var RabbitholeFrozenClient = (() => {
     }
   }
 
-  // src/core/schema.js
-  var CURRENT_SCHEMA_VERSION = 2;
-  function validatePersistedHole(hole) {
-    if (!hole || typeof hole !== "object" || Array.isArray(hole)) throw new Error("Persisted Rabbithole must be an object");
-    if (hole.schema_version !== CURRENT_SCHEMA_VERSION) throw new Error(`Persisted Rabbithole must have schema_version ${CURRENT_SCHEMA_VERSION}`);
-    if (typeof hole.hole_id !== "string" || !hole.hole_id) throw new Error("Persisted Rabbithole hole_id must be a non-empty string");
-    if (typeof hole.title !== "string") throw new Error("Persisted Rabbithole title must be a string");
-    if (typeof hole.root_id !== "string" || !hole.root_id) throw new Error("Persisted Rabbithole root_id must be a non-empty string");
-    if (!Array.isArray(hole.nodes)) throw new Error("Persisted Rabbithole nodes must be an array");
-    for (const node of hole.nodes) validatePersistedNode(node);
-    return true;
-  }
-  function validatePersistedNode(node) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) throw new Error("Persisted node must be an object");
-    if (typeof node.id !== "string" || !node.id) throw new Error("Persisted node id must be a non-empty string");
-    if (node.parent_id !== null && typeof node.parent_id !== "string") throw new Error(`Persisted node ${node.id} parent_id must be string or null`);
-    if (typeof node.title !== "string") throw new Error(`Persisted node ${node.id} title must be a string`);
-    if (typeof node.markdown !== "string") throw new Error(`Persisted node ${node.id} markdown must be a string`);
-    if (node.base_url !== null && typeof node.base_url !== "string") throw new Error(`Persisted node ${node.id} base_url must be string or null`);
-    if (node.base_url_source !== null && !["explicit", "frontmatter", "inherited"].includes(node.base_url_source)) {
-      throw new Error(`Persisted node ${node.id} base_url_source is invalid`);
+  // src/ui/focus-trap.js
+  var FOCUSABLE2 = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+  function activateFocusTrap(root, options2) {
+    if (!root) return function() {
+    };
+    options2 = options2 || {};
+    var previous = document.activeElement;
+    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
+    function focusables() {
+      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE2)) : [];
+      return all.filter(function(el) {
+        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
+      });
     }
-    if (!node.position || typeof node.position !== "object") throw new Error(`Persisted node ${node.id} position must be an object`);
-    if (node.size !== null && typeof node.size !== "object") throw new Error(`Persisted node ${node.id} size must be object or null`);
-    if (node.status !== "pending" && node.status !== "answered") throw new Error(`Persisted node ${node.id} status is invalid`);
-    if (!node.extensions || typeof node.extensions !== "object" || Array.isArray(node.extensions)) {
-      throw new Error(`Persisted node ${node.id} extensions must be a JSON object`);
+    function focusInitial() {
+      var target = options2.initialFocus || focusables()[0] || root;
+      try {
+        target.focus({ preventScroll: true });
+      } catch (e) {
+        try {
+          target.focus();
+        } catch (_e) {
+        }
+      }
     }
-    return true;
+    function onKeydown2(e) {
+      if (e.key === "Escape" && typeof options2.onEscape === "function") {
+        e.preventDefault();
+        e.stopPropagation();
+        options2.onEscape(e);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      var items = focusables();
+      if (!items.length) {
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeydown2, true);
+    var initialFocusTimer = setTimeout(function() {
+      initialFocusTimer = 0;
+      focusInitial();
+    }, 0);
+    return function deactivateFocusTrap() {
+      if (initialFocusTimer) {
+        clearTimeout(initialFocusTimer);
+        initialFocusTimer = 0;
+      }
+      document.removeEventListener("keydown", onKeydown2, true);
+      if (options2.restoreFocus !== false && previous && previous.focus) {
+        try {
+          previous.focus({ preventScroll: true });
+        } catch (e) {
+          try {
+            previous.focus();
+          } catch (_e) {
+          }
+        }
+      }
+    };
   }
 
-  // src/core/portable-projection.js
-  var RABBITHOLE_FILE_FORMAT = "rabbithole";
-  var RABBITHOLE_FILE_FORMAT_VERSION = 1;
-  function createPortableProjection(hole, assets) {
-    validatePersistedHole(hole);
-    validatePortableAssets(assets);
+  // src/ui/primitives/popover.js
+  function openPopover(options2) {
+    var trigger = options2.trigger, surface = options2.surface, closed2 = false;
+    trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "true");
+    var position = anchorSurface(trigger, surface, { placement: options2.placement });
+    var trap = activateFocusTrap(options2.trapRoot || surface, {
+      initialFocus: options2.initialFocus,
+      restoreFocus: false
+    });
+    var unregister = registerLayer({
+      element: surface,
+      trigger,
+      onClose: function(reason) {
+        var _a2;
+        (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason);
+      },
+      closeOnEscape: options2.closeOnEscape,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer,
+      restoreFocus: options2.restoreFocus
+    });
+    function close2(settings) {
+      if (closed2) return;
+      closed2 = true;
+      trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "false");
+      trap();
+      position.dispose();
+      unregister(settings);
+    }
+    return { close: close2, dispose: close2, update: position.update };
+  }
+
+  // src/ui/branch-surfaces.js
+  function defaultBranchHooks() {
     return {
-      format: RABBITHOLE_FILE_FORMAT,
-      format_version: RABBITHOLE_FILE_FORMAT_VERSION,
-      hole,
-      assets
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      exportSnapshot: null,
+      exportPortable: null
     };
   }
-  function validatePortableAssets(assets) {
-    if (!assets || typeof assets !== "object" || Array.isArray(assets)) {
-      throw new Error("Import failed: file assets must be an object.");
+  var branchHooks = defaultBranchHooks();
+  var branchScope = null;
+  function registerBranchHooks(hooks) {
+    Object.assign(branchHooks, hooks || {});
+  }
+  var peekTimer = 0;
+  var peekFor = null;
+  var peekPosition = null;
+  var peekLayer = null;
+  function initBranchSurfaces() {
+    disposeBranchSurfaceResources(false);
+    branchScope = createCleanupScope();
+    try {
+      branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
+      branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
+      branchScope.listen(world, "mouseover", onReaderMarkMouseover);
+      branchScope.listen(world, "mouseout", onReaderMarkMouseout);
+      branchScope.listen(readerMain, "focusin", onMarkFocusin);
+      branchScope.listen(readerMain, "focusout", onMarkFocusout);
+      branchScope.listen(world, "focusin", onMarkFocusin);
+      branchScope.listen(world, "focusout", onMarkFocusout);
+      branchScope.listen(peekEl, "mouseleave", function() {
+        hidePeek();
+      });
+      branchScope.listen(peekEl, "click", function() {
+        var kid = peekFor && nodes[peekFor];
+        hidePeek();
+        if (kid) openNode(kid.id);
+      });
+      branchScope.listen(document.getElementById("r-share"), "click", function(e) {
+        e.stopPropagation();
+        toggleShare(e.currentTarget, e.detail === 0);
+      });
+      branchScope.listen(document.getElementById("t-share"), "click", function(e) {
+        e.stopPropagation();
+        toggleShare(e.currentTarget, e.detail === 0);
+      });
+      branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
+      branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
+      branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
+      branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
+      branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
+      branchScope.listen(document.getElementById("sm-synth"), "click", function(e) {
+        closeShare();
+        synthesize(motionSourceFromEvent(e));
+      });
+      branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
+      branchScope.listen(document.getElementById("cf-remove"), "click", function() {
+        var node = confirmFor && nodes[confirmFor];
+        hideConfirm();
+        if (node) deleteBranch(node);
+      });
+      return disposeBranchSurfaces;
+    } catch (error) {
+      disposeBranchSurfaces();
+      throw error;
     }
-    for (const [name, encoded] of Object.entries(assets)) {
-      const safeName = validateAssetName(name);
-      if (typeof encoded !== "string") throw new Error(`Import failed: asset ${safeName} must be base64.`);
-      validateBase64(encoded);
+  }
+  function disposeBranchSurfaces() {
+    disposeBranchSurfaceResources(true);
+  }
+  function disposeBranchSurfaceResources(resetHooks) {
+    hidePeek();
+    closeShare({ restoreFocus: false });
+    hideConfirm({ restoreFocus: false });
+    var scope = branchScope;
+    branchScope = null;
+    if (scope) scope.dispose();
+    peekFor = null;
+    shareOpen = false;
+    shareAnchor = null;
+    confirmFor = null;
+    if (resetHooks) branchHooks = defaultBranchHooks();
+  }
+  function hidePeek() {
+    if (peekTimer) {
+      clearTimeout(peekTimer);
+      peekTimer = 0;
+    }
+    if (peekPosition) {
+      peekPosition.dispose();
+      peekPosition = null;
+    }
+    if (peekLayer) {
+      peekLayer({ restoreFocus: false });
+      peekLayer = null;
+    }
+    peekFor = null;
+    peekEl.classList.remove("visible");
+    peekEl.setAttribute("aria-hidden", "true");
+  }
+  function showPeek(mark) {
+    var kid = nodes[mark.dataset.child];
+    if (!kid || kid.status !== "answered") return;
+    hidePeek();
+    peekFor = kid.id;
+    peekEl.querySelector("[data-peek-unread]").hidden = !isUnread(kid);
+    peekEl.querySelector("[data-peek-title]").textContent = kid.title || "Untitled";
+    var badge = peekEl.querySelector("[data-peek-badge]");
+    var badgeText = kid.origin && kid.origin.synthesis ? "\u2726 Synthesis" : kid.origin && kid.origin.lens ? lensLabel2(kid.origin.lens) : "";
+    badge.textContent = badgeText;
+    badge.hidden = !badgeText;
+    var peekBody = peekEl.querySelector("[data-peek-body]");
+    var fragment = document.createRange().createContextualFragment(kid.html || "");
+    peekBody.replaceChildren(fragment);
+    if (typeof mountVisuals === "function") {
+      mountVisuals(peekBody, "peek:" + kid.id);
+    }
+    peekEl.classList.add("visible");
+    peekEl.setAttribute("aria-hidden", "false");
+    setSurfaceOrigin(peekEl, mark.getBoundingClientRect());
+    peekPosition = anchorSurface(mark, peekEl, { placement: "bottom-start" });
+    peekLayer = registerLayer({
+      element: peekEl,
+      trigger: mark,
+      restoreFocus: false,
+      closeOnOutsidePointer: false,
+      onClose: hidePeek
+    });
+  }
+  function onReaderMarkMouseover(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var kid = nodes[m.dataset.child];
+    if (!kid || kid.status !== "answered") return;
+    if (peekTimer) clearTimeout(peekTimer);
+    peekTimer = branchScope ? branchScope.timeout(function() {
+      peekTimer = 0;
+      showPeek(m);
+    }, 220) : 0;
+  }
+  function onReaderMarkMouseout(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (peekTimer) {
+      clearTimeout(peekTimer);
+      peekTimer = 0;
+    }
+    if (!branchScope) return;
+    branchScope.timeout(function() {
+      if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
+    }, 80);
+  }
+  function onMarkFocusin(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var kid = nodes[m.dataset.child];
+    if (!kid || kid.status !== "answered") return;
+    if (peekTimer) clearTimeout(peekTimer);
+    peekTimer = branchScope ? branchScope.timeout(function() {
+      peekTimer = 0;
+      if (document.activeElement === m) showPeek(m);
+    }, 220) : 0;
+  }
+  function onMarkFocusout(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (peekTimer) {
+      clearTimeout(peekTimer);
+      peekTimer = 0;
+    }
+    if (!branchScope) return;
+    branchScope.timeout(function() {
+      if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
+    }, 0);
+  }
+  var shareOpen = false;
+  var shareAnchor = null;
+  var sharePopover = null;
+  function visibleShareItems() {
+    return Array.prototype.slice.call(shareMenu.querySelectorAll('[role="menuitem"]')).filter(function(item) {
+      return item.style.display !== "none";
+    });
+  }
+  function focusShareItem(item) {
+    visibleShareItems().forEach(function(candidate) {
+      candidate.tabIndex = candidate === item ? 0 : -1;
+    });
+    if (item) item.focus();
+  }
+  function onShareMenuKeydown(e) {
+    var items = visibleShareItems();
+    if (!items.length) return;
+    var index = items.indexOf(document.activeElement), target = null;
+    if (e.key === "ArrowDown") target = items[(index + 1 + items.length) % items.length];
+    else if (e.key === "ArrowUp") target = items[(index - 1 + items.length) % items.length];
+    else if (e.key === "Home") target = items[0];
+    else if (e.key === "End") target = items[items.length - 1];
+    else if (e.key === "Enter" || e.key === " ") {
+      if (index < 0) return;
+      e.preventDefault();
+      items[index].click();
+      return;
+    } else if (e.key === "Tab") {
+      closeShare();
+      return;
+    } else return;
+    e.preventDefault();
+    focusShareItem(target);
+  }
+  function toggleShare(anchor, openedByKeyboard) {
+    if (shareOpen) {
+      closeShare();
+      return;
+    }
+    var noAgent = frozen || closed;
+    document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-portable").style.display = !frozen && typeof branchHooks.exportPortable === "function" ? "" : "none";
+    document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
+    var items = visibleShareItems();
+    items.forEach(function(item, index) {
+      item.tabIndex = index === 0 ? 0 : -1;
+    });
+    shareAnchor = anchor;
+    shareOpen = true;
+    shareMenu.classList.add("visible");
+    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
+    sharePopover = openPopover({
+      trigger: anchor,
+      surface: shareMenu,
+      placement: "bottom-end",
+      initialFocus: openedByKeyboard ? items[0] : null,
+      onClose: closeShare
+    });
+  }
+  function closeShare(settings) {
+    shareOpen = false;
+    shareMenu.classList.remove("visible");
+    if (sharePopover) {
+      sharePopover.close(settings);
+      sharePopover = null;
+    }
+    shareAnchor = null;
+  }
+  function copyText(text2, okMsg) {
+    function done() {
+      flashHint(okMsg);
+    }
+    function legacy() {
+      var previousFocus = document.activeElement;
+      var ta = document.createElement("textarea");
+      ta.value = text2;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (err) {
+      }
+      document.body.removeChild(ta);
+      if (previousFocus && previousFocus.isConnected) {
+        try {
+          previousFocus.focus();
+        } catch (err) {
+        }
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text2).then(done, function() {
+        legacy();
+        done();
+      });
+    } else {
+      legacy();
+      done();
     }
   }
-  function validateBase64(value) {
-    const base64 = value.replace(/\s+/g, "");
-    if (base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-      throw new Error("Import failed: asset data is not valid base64.");
+  function originLine(n) {
+    if (!n.origin) return "";
+    if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
+    var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
+    if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
+    return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
+  }
+  function docMarkdown(n, depth) {
+    var h = "#";
+    for (var i2 = 0; i2 < Math.min(depth, 3); i2++) h += "#";
+    var body = (n.md || "").trim() || "_(still being written)_";
+    return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
+  }
+  function trailMarkdown(id) {
+    var path2 = lineageNodes(id), parts = [];
+    for (var i2 = 0; i2 < path2.length; i2++) parts.push(docMarkdown(path2[i2], i2));
+    return parts.join("\n---\n\n");
+  }
+  function onCopyDoc() {
+    closeShare();
+    var n = nodes[currentNodeId];
+    if (!n) return;
+    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
+  }
+  function onCopyTrail() {
+    closeShare();
+    var path2 = lineageNodes(currentNodeId);
+    copyText(trailMarkdown(currentNodeId), path2.length === 1 ? "Copied this document as Markdown" : "Copied the trail \u2014 " + path2.length + " documents");
+  }
+  function onExportSnapshot() {
+    closeShare();
+    if (typeof branchHooks.exportSnapshot !== "function") {
+      flashHint("This snapshot is already portable.");
+      return;
     }
-    return base64;
+    flashHint("Preparing snapshot...");
+    Promise.resolve(branchHooks.exportSnapshot()).then(function() {
+      flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
+    }, function() {
+      flashHint("Couldn't prepare the snapshot.");
+    });
   }
-  async function binaryToBase64(binary) {
-    const bytes = binary instanceof Uint8Array ? binary : new Uint8Array(await binary.arrayBuffer());
-    let out = "";
-    for (let i2 = 0; i2 < bytes.length; i2 += 32768) {
-      out += String.fromCharCode(...bytes.subarray(i2, i2 + 32768));
+  function onExportPortable() {
+    closeShare();
+    if (typeof branchHooks.exportPortable !== "function") {
+      flashHint("Rabbithole export is only available in the web app.");
+      return;
     }
-    return btoa(out);
+    flashHint("Preparing Rabbithole export...");
+    Promise.resolve().then(function() {
+      return branchHooks.exportPortable();
+    }).then(function(result) {
+      var name = result && result.filename ? " " + result.filename : "";
+      flashHint("Rabbithole export downloading." + name);
+    }, function() {
+      flashHint("Couldn't prepare the Rabbithole export.");
+    });
   }
-
-  // src/core/snapshot-projection.js
-  function createSnapshotProjection(hole, viewState, assets) {
-    const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
-    projection.hole = /** @type {PersistedHole} */
-    /** @type {unknown} */
-    {
-      ...projection.hole,
-      nodes: projection.hole.nodes.map(({ extensions: _extensions, ...node }) => node)
-    };
-    return projection;
-  }
-  function snapshotProjectionToFrozenHydration(projection) {
-    const hole = projection.hole;
-    const assetData2 = {};
-    for (const [name, encoded] of Object.entries(projection.assets)) {
-      assetData2[name] = `data:${getAssetContentType(name)};base64,${encoded}`;
+  function synthesize(source2) {
+    if (closed) {
+      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
+      return;
     }
-    return {
-      session_id: `snapshot-${hole.hole_id}`,
-      hole_id: hole.hole_id,
-      title: hole.title,
-      root_id: hole.root_id,
-      last_event_id: 0,
-      agent_attached: false,
-      view_state: hole.view_state,
-      frozen: true,
-      asset_data: assetData2,
-      nodes: hole.nodes
-    };
+    var root = nodes[rootId];
+    if (!root) return;
+    for (var k in nodes) {
+      var n = nodes[k];
+      if (n.status === "pending" && n.origin && n.origin.synthesis) {
+        flashHint("A synthesis is already being written\u2026");
+        goToNode(n, source2);
+        return;
+      }
+    }
+    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
+    var kid = sendFollowup(root, q, null, true);
+    if (mode === "canvas") revealNode(kid, source2);
+    flashHint("\u2726 Synthesizing this journey \u2014 it will branch from where this Rabbithole began.");
+  }
+  var confirmFor = null;
+  var confirmPopover = null;
+  function confirmDelete(node, anchor) {
+    if (closed) {
+      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 changes can't be saved anymore.");
+      return;
+    }
+    var subCount = countSubtree(node.id) - 1;
+    document.getElementById("cf-msg").textContent = subCount > 0 ? "Remove this branch and " + subCount + " inside it?" : "Remove this branch?";
+    hideConfirm({ restoreFocus: false });
+    confirmFor = node.id;
+    confirmEl.classList.add("visible");
+    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
+    confirmPopover = openPopover({
+      trigger: anchor,
+      surface: confirmEl,
+      placement: "bottom-end",
+      initialFocus: document.getElementById("cf-keep"),
+      onClose: hideConfirm
+    });
+  }
+  function hideConfirm(settings) {
+    confirmFor = null;
+    confirmEl.classList.remove("visible");
+    if (confirmPopover) {
+      var popover = confirmPopover;
+      confirmPopover = null;
+      popover.close(settings);
+    }
+  }
+  function countSubtree(id) {
+    var c2 = 1;
+    childrenOf(id).forEach(function(k) {
+      c2 += countSubtree(k.id);
+    });
+    return c2;
+  }
+  function collectSubtree(id, out) {
+    out.push(id);
+    childrenOf(id).forEach(function(k) {
+      collectSubtree(k.id, out);
+    });
+    return out;
+  }
+  function deleteBranch(node) {
+    var title = node.title || "Untitled";
+    var ids = collectSubtree(node.id, []);
+    branchHooks.post({ type: "delete_node", node_id: node.id });
+    removeNodesLocal(ids, node.parent_id);
+    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
+  }
+  function removeNodesLocal(ids, parentId) {
+    var currentGone = false;
+    for (var i2 = 0; i2 < ids.length; i2++) {
+      var id = ids[i2], n = nodes[id];
+      if (!n) continue;
+      if (currentNodeId === id) currentGone = true;
+      if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
+      removeMarks(readerMain, id);
+      removeThreadItem(id);
+      var p = nodes[n.parent_id];
+      if (p && p.bodyEl) removeMarks(p.bodyEl, id);
+      clearEdgeHighlight(id);
+      delete nodes[id];
+    }
+    if (currentGone) {
+      setCurrentNodeId(parentId && nodes[parentId] ? parentId : rootId);
+      if (mode === "reader") openNode(currentNodeId);
+    }
+    if (canvasBuilt) {
+      renderVisibility();
+      drawEdges();
+    }
+    if (mode === "reader") {
+      renderBreadcrumb();
+      renderSidebar();
+    }
+    refreshAmbient();
+    updateSince();
   }
 
-  // src/core/html/shell.js
-  var CANVAS_SHELL = `
-<div id="reader">
-  <div id="reader-top">
-    <nav id="breadcrumb" aria-label="Breadcrumb"></nav>
-    ${iconButtonMarkup({ bare: true, className: "activity", id: "act-reader", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-    ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A\u2212" })}
-    ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}
-    ${buttonMarkup({ id: "r-canvas", title: "Open the spatial canvas", label: "\u2922 Canvas" })}
-    ${buttonMarkup({ id: "r-share", title: "Share, export, synthesize", label: "\u2197 Share", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false" })}
-    ${iconButtonMarkup({ bare: true, className: "tool-btn", id: "r-theme", title: "Toggle theme", ariaLabel: "Toggle theme", icon: "\u25D1" })}
-    ${buttonMarkup({ id: "r-done", title: "End the session (the hole stays saved)", label: "Done" })}
-  </div>
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "\xD7" })}</div>
-  <div id="reader-cols">
-    <div id="reader-center">
-      <div id="reader-main"></div>
-      <div id="composer">
-        <div class="composer-inner" id="composer-inner">
-          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document\u2026"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (\u21B5)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
-      </div>
-    </div>
-    <div id="reader-side"></div>
-  </div>
-</div>
-
-<div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
-<div id="toolbar">
-  ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes \xB7 S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/><rect class="rail-fill" x="3.55" y="3.8" width="1.65" height="8.4" rx="0.82" fill="currentColor" stroke="none"/></svg>' })}
-  ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole \xB7 N", ariaLabel: "New Rabbithole", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
-  <span class="sep" id="app-sep"></span>
-  ${buttonMarkup({ id: "t-reader", title: "Back to reading", label: "Reader", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>' })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", icon: "\u2212" })}
-  ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
-  ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", icon: "+" })}
-  ${iconButtonMarkup({ id: "t-frame", title: "Frame everything \xB7 F", ariaLabel: "Frame everything \xB7 F", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/></svg>' })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout \xB7 T", ariaLabel: "Tidy up layout \xB7 T", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/></svg>' })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", icon: "\u2197" })}
-  ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", icon: "\u25D1" })}
-  ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><g transform="translate(12 12) scale(0.92) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg>' })}
-  <span class="sep" id="act-sep" style="display:none"></span>
-  ${iconButtonMarkup({ bare: true, className: "activity", id: "act-canvas", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-</div>
-
-<div id="ask">
-  <div class="ask-input">
-    <textarea id="ask-text" rows="1" placeholder="Ask about this\u2026 \u21B5 = Explain"></textarea>
-    ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Ask (\u21B5)", ariaLabel: "Ask", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' })}
-  </div>
-  <div class="ask-lenses" id="ask-lenses">
-    ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "explain" }, label: "Explain ", kbdHint: "1" })}
-    ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "eli5" }, label: "ELI5 ", kbdHint: "2" })}
-    ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "example" }, label: "Example ", kbdHint: "3" })}
-    ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "deeper" }, label: "Go Deeper ", kbdHint: "4" })}
-  </div>
-</div>
-
-<div id="palette" hidden><div id="palette-panel">
-  <div class="pal-input">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <input id="pal-text" placeholder="Search this Rabbithole\u2026" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
-    <kbd>esc</kbd>
-  </div>
-  <div id="pal-results" role="listbox" aria-label="Search results"></div>
-</div></div>
-
-<div id="peek" aria-hidden="true">
-  <div class="peek-title"><span class="pal-dot" data-peek-unread hidden></span><span data-peek-title></span><span class="lens-badge" data-peek-badge hidden></span></div>
-  <div class="peek-body md" data-peek-body></div>
-  <div class="peek-hint">Open branch</div>
-</div>
-
-<div id="sharemenu" role="menu" aria-label="Share and export">
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-trail", role: "menuitem", tabIndex: -1, label: "Copy trail as Markdown", svgIconHtml: '<span class="sm-ic">\u2937</span>' })}
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-doc", role: "menuitem", tabIndex: -1, label: "Copy document as Markdown", svgIconHtml: '<span class="sm-ic">\u29C9</span>' })}
-  <div class="sm-sep"></div>
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-export", role: "menuitem", tabIndex: -1, label: "Download snapshot (.html)", svgIconHtml: '<span class="sm-ic">\u21E9</span>' })}
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Rabbithole (.rabbithole)", svgIconHtml: '<span class="sm-ic">\u21E3</span>' })}
-  <div class="sm-sep" id="sm-sep2"></div>
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-synth", role: "menuitem", tabIndex: -1, label: "Synthesize this journey", svgIconHtml: '<span class="sm-ic">\u2726</span>' })}
-</div>
-
-<div id="confirm">
-  <div class="cf-msg" id="cf-msg"></div>
-  <div class="cf-row">${buttonMarkup({ bare: true, id: "cf-keep", label: "Keep" })}${buttonMarkup({ bare: true, className: "cf-remove", id: "cf-remove", label: "Remove" })}</div>
-</div>
-
-<div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title" data-notice-title></span><span id="banner-msg" data-notice-message></span></div>${iconButtonMarkup({ bare: true, id: "banner-x", title: "Dismiss", ariaLabel: "Dismiss banner", icon: "\xD7", dataAttrs: { noticeDismiss: "" } })}</div>
-<div id="hint" data-notice-message></div>
-`;
-
-  // src/core/snapshot-html.js
-  function buildSnapshotHtml({ title, stylesheetText, dompurifySource, frozenClientSource, snapshotProjection }) {
-    var lt = String.fromCharCode(60);
-    var gt = String.fromCharCode(62);
-    var scriptOpen = lt + "script" + gt;
-    var scriptClose = lt + String.fromCharCode(47) + "script" + gt;
-    var payloadOpen = lt + 'script type="application/vnd.rabbithole+json" id="rabbithole-portable"' + gt;
-    return '<!DOCTYPE html>\n<html lang="en" data-theme="light">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>' + escapeHtml(title) + "</title>\n<style>\n" + stylesheetText + "\n</style>\n</head>\n<body>\n" + CANVAS_SHELL + "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose + "\n" + scriptOpen + "\n" + dompurifySource + '\n(function(){\n  "use strict";\n' + frozenClientSource + '\n  var payload = document.getElementById("rabbithole-portable");\n  RabbitholeFrozenClient.startPortableSnapshot(JSON.parse(payload.textContent));\n})();\n' + scriptClose + "\n</body>\n</html>";
-  }
-
-  // node_modules/marked/lib/marked.esm.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/marked/lib/marked.esm.js
   function _getDefaults() {
     return {
       async: false,
@@ -7719,7 +8427,7 @@ ${text2}</tr>
   var parser = _Parser.parse;
   var lexer = _Lexer.lex;
 
-  // node_modules/katex/dist/katex.mjs
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/katex/dist/katex.mjs
   var ParseError = class _ParseError extends Error {
     // The underlying error message without any context added.
     constructor(message, token) {
@@ -22047,11 +22755,11 @@ ${text2}</tr>
     __domTree
   };
 
-  // node_modules/highlight.js/es/core.js
-  var import_core6 = __toESM(require_core(), 1);
-  var core_default = import_core6.default;
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/core.js
+  var import_core7 = __toESM(require_core(), 1);
+  var core_default = import_core7.default;
 
-  // node_modules/highlight.js/es/languages/bash.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {
     const regex = hljs.regex;
     const VAR = {};
@@ -22445,7 +23153,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/c.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/c.js
   function c(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -22739,7 +23447,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/cpp.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/cpp.js
   function cpp(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -23282,7 +23990,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/csharp.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/csharp.js
   function csharp(hljs) {
     const BUILT_IN_KEYWORDS = [
       "bool",
@@ -23682,7 +24390,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/css.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/css.js
   var MODES = (hljs) => {
     return {
       IMPORTANT: {
@@ -24619,7 +25327,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/diff.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/diff.js
   function diff(hljs) {
     const regex = hljs.regex;
     return {
@@ -24672,7 +25380,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/dockerfile.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/dockerfile.js
   function dockerfile(hljs) {
     const KEYWORDS3 = [
       "from",
@@ -24706,7 +25414,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/go.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/go.js
   function go(hljs) {
     const LITERALS3 = [
       "true",
@@ -24860,7 +25568,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/java.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/java.js
   var decimalDigits = "[0-9](_*[0-9])*";
   var frac = `\\.(${decimalDigits})`;
   var hexDigits = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -25114,7 +25822,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/javascript.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/javascript.js
   var IDENT_RE = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS = [
     "as",
@@ -25815,7 +26523,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/json.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/json.js
   function json(hljs) {
     const ATTRIBUTE = {
       className: "attr",
@@ -25855,7 +26563,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/kotlin.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/kotlin.js
   var decimalDigits2 = "[0-9](_*[0-9])*";
   var frac2 = `\\.(${decimalDigits2})`;
   var hexDigits2 = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -26110,7 +26818,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/latex.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/latex.js
   function latex(hljs) {
     const regex = hljs.regex;
     const KNOWN_CONTROL_WORDS = regex.either(...[
@@ -26381,7 +27089,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/markdown.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/markdown.js
   function markdown(hljs) {
     const regex = hljs.regex;
     const INLINE_HTML = {
@@ -26613,7 +27321,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/php.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/php.js
   function php(hljs) {
     const regex = hljs.regex;
     const NOT_PERL_ETC = /(?![A-Za-z0-9])(?![$])/;
@@ -27214,7 +27922,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/plaintext.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/plaintext.js
   function plaintext(hljs) {
     return {
       name: "Plain text",
@@ -27226,7 +27934,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/python.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/python.js
   function python(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /[\p{XID_Start}_]\p{XID_Continue}*/u;
@@ -27641,7 +28349,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/r.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/r.js
   function r(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /(?:(?:[a-zA-Z]|\.[._a-zA-Z])[._a-zA-Z0-9]*)|\.(?!\d)/;
@@ -27851,7 +28559,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/ruby.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/ruby.js
   function ruby(hljs) {
     const regex = hljs.regex;
     const RUBY_METHOD_RE = "([a-zA-Z_]\\w*[!?=]?|[-+~]@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?)";
@@ -28264,7 +28972,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/rust.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/rust.js
   function rust(hljs) {
     const regex = hljs.regex;
     const RAW_IDENTIFIER = /(r#)?/;
@@ -28577,7 +29285,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/scala.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/scala.js
   function scala(hljs) {
     const regex = hljs.regex;
     const ANNOTATION = {
@@ -28768,7 +29476,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/shell.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/shell.js
   function shell(hljs) {
     return {
       name: "Shell Session",
@@ -28792,7 +29500,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/sql.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/sql.js
   function sql(hljs) {
     const regex = hljs.regex;
     const COMMENT_MODE = hljs.COMMENT("--", "$");
@@ -29435,7 +30143,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/swift.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/swift.js
   function source(re) {
     if (!re) return null;
     if (typeof re === "string") return re;
@@ -30310,7 +31018,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/typescript.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/typescript.js
   var IDENT_RE2 = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS2 = [
     "as",
@@ -31124,7 +31832,7 @@ ${text2}</tr>
     return tsLanguage;
   }
 
-  // node_modules/highlight.js/es/languages/xml.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/xml.js
   function xml(hljs) {
     const regex = hljs.regex;
     const TAG_NAME_RE = regex.concat(/[\p{L}_]/u, regex.optional(/[\p{L}0-9_.-]*:/u), /[\p{L}0-9_.-]*/u);
@@ -31350,7 +32058,7 @@ ${text2}</tr>
     };
   }
 
-  // node_modules/highlight.js/es/languages/yaml.js
+  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/yaml.js
   function yaml(hljs) {
     const LITERALS3 = "true false yes no null";
     const URI_CHARACTERS = "[\\w#;/?:@&=+$,.~*'()[\\]]+";
@@ -31858,21 +32566,21 @@ ${text2}</tr>
         },
         link({ href, title, tokens }) {
           const text2 = this.parser.parseInline(tokens);
-          const resolved = resolveMarkdownUrl(href, { baseUrl: context.baseUrl });
-          const safe = sanitizeUrl(resolved, SAFE_URL);
+          const resolved2 = resolveMarkdownUrl(href, { baseUrl: context.baseUrl });
+          const safe = sanitizeUrl(resolved2, SAFE_URL);
           if (safe === null) return text2;
           const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
           const target = safe.startsWith("#") ? "" : ` target="_blank"`;
           return `<a href="${escapeHtml(safe)}"${titleAttr}${target} rel="noopener noreferrer">${text2}</a>`;
         },
         image({ href, title, text: text2 }) {
-          const resolved = resolveMarkdownUrl(href, {
+          const resolved2 = resolveMarkdownUrl(href, {
             baseUrl: context.baseUrl,
             image: true,
             assetNames: context.assetNames,
             resolveAssetUrl: context.resolveAssetUrl
           });
-          const safe = sanitizeUrl(resolved, SAFE_IMG);
+          const safe = sanitizeUrl(resolved2, SAFE_IMG);
           if (safe === null) return escapeHtml(text2 || "");
           const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
           return `<img src="${escapeHtml(safe)}" alt="${escapeHtml(text2 || "")}"${titleAttr}>`;
@@ -31946,656 +32654,8 @@ ${text2}</tr>
     window.__rhMarkdownRendererSentinel = MARKDOWN_RENDERER_SENTINEL;
   }
 
-  // src/ui/transport-status.js
-  var transportAdapter = null;
-  function post(payload) {
-    if (frozen) return Promise.resolve({ ok: true });
-    if (transportAdapter && typeof transportAdapter.post === "function") {
-      return Promise.resolve(transportAdapter.post(payload)).catch(function() {
-        return null;
-      });
-    }
-    return fetch("/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(function() {
-      return null;
-    });
-  }
-  var viewSaveTimer = 0;
-  function currentViewState() {
-    var cur = nodes[currentNodeId];
-    var scroll = mode === "reader" ? readerMain.scrollTop : cur && cur._scrollTop || 0;
-    var state = { mode, node_id: currentNodeId, scroll };
-    if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
-    return state;
-  }
-  var saveTimers = {};
-  function flushPendingSaves() {
-    var pending = saveTimers;
-    saveTimers = {};
-    var posts = Object.keys(pending).map(function(id) {
-      clearTimeout(pending[id]);
-      var node = nodes[id];
-      if (!node) return Promise.resolve();
-      return post({ type: "node_update", node_id: node.id, position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h }, collapsed: node.collapsed, font_scale: node.font_scale });
-    });
-    if (viewSaveTimer) {
-      clearTimeout(viewSaveTimer);
-      viewSaveTimer = 0;
-      posts.push(post({ type: "view_state", state: currentViewState() }));
-    }
-    return Promise.all(posts);
-  }
-
-  // src/ui/snapshot.js
-  var snapshotHooks = {
-    fetchAssetBinary: null,
-    getSnapshotHole: null,
-    getFrozenClientSource: null,
-    getDompurifySource: null,
-    getStylesheetText: null
-  };
-  function snapshotViewState() {
-    var cur = nodes[currentNodeId];
-    var scroll = mode === "reader" ? readerMain.scrollTop : cur && cur._scrollTop || 0;
-    return {
-      mode,
-      node_id: currentNodeId,
-      scroll,
-      view: { x: view.x, y: view.y, scale: view.scale }
-    };
-  }
-  function collectAssetNames(snapshotNodes) {
-    var names = {};
-    snapshotNodes.forEach(function(node) {
-      extractAssetRefsFromMarkdown(node.markdown).forEach(function(name) {
-        names[name] = true;
-      });
-    });
-    return Object.keys(names).sort();
-  }
-  async function fetchAssetBinary(name) {
-    if (typeof snapshotHooks.fetchAssetBinary === "function") {
-      try {
-        var hooked = await snapshotHooks.fetchAssetBinary(name);
-        if (hooked) return hooked;
-      } catch (e) {
-      }
-    }
-    try {
-      var slash = String.fromCharCode(47);
-      var res = await fetch(slash + "assets" + slash + name, { cache: "no-store" });
-      if (!res.ok) return new Uint8Array();
-      return await res.blob();
-    } catch (e) {
-      return new Uint8Array();
-    }
-  }
-  async function buildAssetData(snapshotNodes) {
-    var out = {};
-    var names = collectAssetNames(snapshotNodes);
-    for (var i2 = 0; i2 < names.length; i2++) out[names[i2]] = await binaryToBase64(await fetchAssetBinary(names[i2]));
-    return out;
-  }
-  function extractDompurifySource() {
-    if (typeof snapshotHooks.getDompurifySource === "function") {
-      return snapshotHooks.getDompurifySource() || "";
-    }
-    var script2 = document.scripts && document.scripts[0] ? document.scripts[0].textContent || "" : "";
-    var marker = "\n(function(){";
-    var idx = script2.indexOf(marker);
-    return idx === -1 ? "" : script2.slice(0, idx);
-  }
-  async function buildSnapshotProjection() {
-    var viewState = snapshotViewState();
-    if (typeof snapshotHooks.getSnapshotHole !== "function") throw new Error("Snapshot document is unavailable");
-    await flushPendingSaves();
-    var hole = await snapshotHooks.getSnapshotHole();
-    return createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
-  }
-  function buildSnapshotHtml2(snapshotProjection) {
-    var title = snapshotProjection && snapshotProjection.hole && snapshotProjection.hole.title || "Rabbithole";
-    var styleText = typeof snapshotHooks.getStylesheetText === "function" ? snapshotHooks.getStylesheetText() : "";
-    if (!styleText) throw new Error("Frozen stylesheet is unavailable");
-    var dompurifySource = extractDompurifySource();
-    var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function" ? snapshotHooks.getFrozenClientSource() : window.__RABBITHOLE_FROZEN_CLIENT__;
-    if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
-    return buildSnapshotHtml({
-      title,
-      stylesheetText: styleText,
-      dompurifySource,
-      frozenClientSource: frozenClient,
-      snapshotProjection
-    });
-  }
-  function exportFilename(title) {
-    var slug = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-    return "rabbithole-" + (slug || "export") + ".html";
-  }
-  async function downloadSnapshot() {
-    var snapshotProjection = await buildSnapshotProjection();
-    var html2 = buildSnapshotHtml2(snapshotProjection);
-    var blob = new Blob([html2], { type: "text/html;charset=utf-8" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = exportFilename(snapshotProjection.hole.title);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function() {
-      URL.revokeObjectURL(url);
-    }, 3e4);
-    return html2;
-  }
-
-  // src/ui/focus-trap.js
-  var FOCUSABLE2 = [
-    "a[href]",
-    "button:not([disabled])",
-    "textarea:not([disabled])",
-    "input:not([disabled])",
-    "select:not([disabled])",
-    "[tabindex]:not([tabindex='-1'])"
-  ].join(",");
-  function activateFocusTrap(root, options2) {
-    if (!root) return function() {
-    };
-    options2 = options2 || {};
-    var previous = document.activeElement;
-    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
-    function focusables() {
-      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE2)) : [];
-      return all.filter(function(el) {
-        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
-      });
-    }
-    function focusInitial() {
-      var target = options2.initialFocus || focusables()[0] || root;
-      try {
-        target.focus({ preventScroll: true });
-      } catch (e) {
-        try {
-          target.focus();
-        } catch (_e) {
-        }
-      }
-    }
-    function onKeydown2(e) {
-      if (e.key === "Escape" && typeof options2.onEscape === "function") {
-        e.preventDefault();
-        e.stopPropagation();
-        options2.onEscape(e);
-        return;
-      }
-      if (e.key !== "Tab") return;
-      var items = focusables();
-      if (!items.length) {
-        e.preventDefault();
-        root.focus();
-        return;
-      }
-      var first = items[0];
-      var last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener("keydown", onKeydown2, true);
-    setTimeout(focusInitial, 0);
-    return function deactivateFocusTrap() {
-      document.removeEventListener("keydown", onKeydown2, true);
-      if (options2.restoreFocus !== false && previous && previous.focus) {
-        try {
-          previous.focus({ preventScroll: true });
-        } catch (e) {
-          try {
-            previous.focus();
-          } catch (_e) {
-          }
-        }
-      }
-    };
-  }
-
-  // src/ui/primitives/popover.js
-  function openPopover(options2) {
-    var trigger = options2.trigger, surface = options2.surface, closed2 = false;
-    trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "true");
-    var position = anchorSurface(trigger, surface, { placement: options2.placement });
-    var trap = activateFocusTrap(options2.trapRoot || surface, {
-      initialFocus: options2.initialFocus,
-      restoreFocus: false
-    });
-    var unregister = registerLayer({
-      element: surface,
-      trigger,
-      onClose: function(reason) {
-        var _a2;
-        (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason);
-      },
-      closeOnEscape: options2.closeOnEscape,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer,
-      restoreFocus: options2.restoreFocus
-    });
-    function close2(settings) {
-      if (closed2) return;
-      closed2 = true;
-      trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "false");
-      trap();
-      position.dispose();
-      unregister(settings);
-    }
-    return { close: close2, dispose: close2, update: position.update };
-  }
-
-  // src/ui/branch-surfaces.js
-  var branchHooks = {
-    post: function() {
-      return Promise.resolve({ ok: true });
-    },
-    exportPortable: null
-  };
-  function registerBranchHooks(hooks) {
-    Object.assign(branchHooks, hooks || {});
-  }
-  var peekTimer = 0;
-  var peekFor = null;
-  var peekPosition = null;
-  var peekLayer = null;
-  function initBranchSurfaces() {
-    readerMain.addEventListener("mouseover", onReaderMarkMouseover);
-    readerMain.addEventListener("mouseout", onReaderMarkMouseout);
-    world.addEventListener("mouseover", onReaderMarkMouseover);
-    world.addEventListener("mouseout", onReaderMarkMouseout);
-    readerMain.addEventListener("focusin", onMarkFocusin);
-    readerMain.addEventListener("focusout", onMarkFocusout);
-    world.addEventListener("focusin", onMarkFocusin);
-    world.addEventListener("focusout", onMarkFocusout);
-    peekEl.addEventListener("mouseleave", function() {
-      hidePeek();
-    });
-    peekEl.addEventListener("click", function() {
-      var kid = peekFor && nodes[peekFor];
-      hidePeek();
-      if (kid) openNode(kid.id);
-    });
-    document.getElementById("r-share").addEventListener("click", function(e) {
-      e.stopPropagation();
-      toggleShare(e.currentTarget, e.detail === 0);
-    });
-    document.getElementById("t-share").addEventListener("click", function(e) {
-      e.stopPropagation();
-      toggleShare(e.currentTarget, e.detail === 0);
-    });
-    shareMenu.addEventListener("keydown", onShareMenuKeydown);
-    document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
-    document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
-    document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
-    document.getElementById("sm-portable").addEventListener("click", onExportPortable);
-    document.getElementById("sm-synth").addEventListener("click", function(e) {
-      closeShare();
-      synthesize(motionSourceFromEvent(e));
-    });
-    document.getElementById("cf-keep").addEventListener("click", hideConfirm);
-    document.getElementById("cf-remove").addEventListener("click", function() {
-      var node = confirmFor && nodes[confirmFor];
-      hideConfirm();
-      if (node) deleteBranch(node);
-    });
-  }
-  function hidePeek() {
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    if (peekPosition) {
-      peekPosition.dispose();
-      peekPosition = null;
-    }
-    if (peekLayer) {
-      peekLayer({ restoreFocus: false });
-      peekLayer = null;
-    }
-    peekFor = null;
-    peekEl.classList.remove("visible");
-    peekEl.setAttribute("aria-hidden", "true");
-  }
-  function showPeek(mark) {
-    var kid = nodes[mark.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    hidePeek();
-    peekFor = kid.id;
-    peekEl.querySelector("[data-peek-unread]").hidden = !isUnread(kid);
-    peekEl.querySelector("[data-peek-title]").textContent = kid.title || "Untitled";
-    var badge = peekEl.querySelector("[data-peek-badge]");
-    var badgeText = kid.origin && kid.origin.synthesis ? "\u2726 Synthesis" : kid.origin && kid.origin.lens ? lensLabel2(kid.origin.lens) : "";
-    badge.textContent = badgeText;
-    badge.hidden = !badgeText;
-    var peekBody = peekEl.querySelector("[data-peek-body]");
-    var fragment = document.createRange().createContextualFragment(kid.html || "");
-    peekBody.replaceChildren(fragment);
-    if (typeof mountVisuals === "function") {
-      mountVisuals(peekBody, "peek:" + kid.id);
-    }
-    peekEl.classList.add("visible");
-    peekEl.setAttribute("aria-hidden", "false");
-    setSurfaceOrigin(peekEl, mark.getBoundingClientRect());
-    peekPosition = anchorSurface(mark, peekEl, { placement: "bottom-start" });
-    peekLayer = registerLayer({
-      element: peekEl,
-      trigger: mark,
-      restoreFocus: false,
-      closeOnOutsidePointer: false,
-      onClose: hidePeek
-    });
-  }
-  function onReaderMarkMouseover(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = setTimeout(function() {
-      peekTimer = 0;
-      showPeek(m);
-    }, 220);
-  }
-  function onReaderMarkMouseout(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    setTimeout(function() {
-      if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
-    }, 80);
-  }
-  function onMarkFocusin(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = setTimeout(function() {
-      peekTimer = 0;
-      if (document.activeElement === m) showPeek(m);
-    }, 220);
-  }
-  function onMarkFocusout(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    setTimeout(function() {
-      if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
-    }, 0);
-  }
-  var shareOpen = false;
-  var shareAnchor = null;
-  var sharePopover = null;
-  function visibleShareItems() {
-    return Array.prototype.slice.call(shareMenu.querySelectorAll('[role="menuitem"]')).filter(function(item) {
-      return item.style.display !== "none";
-    });
-  }
-  function focusShareItem(item) {
-    visibleShareItems().forEach(function(candidate) {
-      candidate.tabIndex = candidate === item ? 0 : -1;
-    });
-    if (item) item.focus();
-  }
-  function onShareMenuKeydown(e) {
-    var items = visibleShareItems();
-    if (!items.length) return;
-    var index = items.indexOf(document.activeElement), target = null;
-    if (e.key === "ArrowDown") target = items[(index + 1 + items.length) % items.length];
-    else if (e.key === "ArrowUp") target = items[(index - 1 + items.length) % items.length];
-    else if (e.key === "Home") target = items[0];
-    else if (e.key === "End") target = items[items.length - 1];
-    else if (e.key === "Enter" || e.key === " ") {
-      if (index < 0) return;
-      e.preventDefault();
-      items[index].click();
-      return;
-    } else if (e.key === "Tab") {
-      closeShare();
-      return;
-    } else return;
-    e.preventDefault();
-    focusShareItem(target);
-  }
-  function toggleShare(anchor, openedByKeyboard) {
-    if (shareOpen) {
-      closeShare();
-      return;
-    }
-    var noAgent = frozen || closed;
-    document.getElementById("sm-export").style.display = frozen ? "none" : "";
-    document.getElementById("sm-portable").style.display = !frozen && typeof branchHooks.exportPortable === "function" ? "" : "none";
-    document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
-    document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
-    var items = visibleShareItems();
-    items.forEach(function(item, index) {
-      item.tabIndex = index === 0 ? 0 : -1;
-    });
-    shareAnchor = anchor;
-    shareOpen = true;
-    shareMenu.classList.add("visible");
-    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
-    sharePopover = openPopover({
-      trigger: anchor,
-      surface: shareMenu,
-      placement: "bottom-end",
-      initialFocus: openedByKeyboard ? items[0] : null,
-      onClose: closeShare
-    });
-  }
-  function closeShare() {
-    shareOpen = false;
-    shareMenu.classList.remove("visible");
-    if (sharePopover) {
-      sharePopover.close();
-      sharePopover = null;
-    }
-    shareAnchor = null;
-  }
-  function copyText(text2, okMsg) {
-    function done() {
-      flashHint(okMsg);
-    }
-    function legacy() {
-      var previousFocus = document.activeElement;
-      var ta = document.createElement("textarea");
-      ta.value = text2;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch (err) {
-      }
-      document.body.removeChild(ta);
-      if (previousFocus && previousFocus.isConnected) {
-        try {
-          previousFocus.focus();
-        } catch (err) {
-        }
-      }
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text2).then(done, function() {
-        legacy();
-        done();
-      });
-    } else {
-      legacy();
-      done();
-    }
-  }
-  function originLine(n) {
-    if (!n.origin) return "";
-    if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
-    var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
-    if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
-    return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
-  }
-  function docMarkdown(n, depth) {
-    var h = "#";
-    for (var i2 = 0; i2 < Math.min(depth, 3); i2++) h += "#";
-    var body = (n.md || "").trim() || "_(still being written)_";
-    return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
-  }
-  function trailMarkdown(id) {
-    var path2 = lineageNodes(id), parts = [];
-    for (var i2 = 0; i2 < path2.length; i2++) parts.push(docMarkdown(path2[i2], i2));
-    return parts.join("\n---\n\n");
-  }
-  function onCopyDoc() {
-    closeShare();
-    var n = nodes[currentNodeId];
-    if (!n) return;
-    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
-  }
-  function onCopyTrail() {
-    closeShare();
-    var path2 = lineageNodes(currentNodeId);
-    copyText(trailMarkdown(currentNodeId), path2.length === 1 ? "Copied this document as Markdown" : "Copied the trail \u2014 " + path2.length + " documents");
-  }
-  function onExportSnapshot() {
-    closeShare();
-    flashHint("Preparing snapshot...");
-    downloadSnapshot().then(function() {
-      flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
-    }, function() {
-      flashHint("Couldn't prepare the snapshot.");
-    });
-  }
-  function onExportPortable() {
-    closeShare();
-    if (typeof branchHooks.exportPortable !== "function") {
-      flashHint("Rabbithole export is only available in the web app.");
-      return;
-    }
-    flashHint("Preparing Rabbithole export...");
-    Promise.resolve().then(function() {
-      return branchHooks.exportPortable();
-    }).then(function(result) {
-      var name = result && result.filename ? " " + result.filename : "";
-      flashHint("Rabbithole export downloading." + name);
-    }, function() {
-      flashHint("Couldn't prepare the Rabbithole export.");
-    });
-  }
-  function synthesize(source2) {
-    if (closed) {
-      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
-      return;
-    }
-    var root = nodes[rootId];
-    if (!root) return;
-    for (var k in nodes) {
-      var n = nodes[k];
-      if (n.status === "pending" && n.origin && n.origin.synthesis) {
-        flashHint("A synthesis is already being written\u2026");
-        goToNode(n, source2);
-        return;
-      }
-    }
-    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
-    var kid = sendFollowup(root, q, null, true);
-    if (mode === "canvas") revealNode(kid, source2);
-    flashHint("\u2726 Synthesizing this journey \u2014 it will branch from where this Rabbithole began.");
-  }
-  var confirmFor = null;
-  var confirmPopover = null;
-  function confirmDelete(node, anchor) {
-    if (closed) {
-      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 changes can't be saved anymore.");
-      return;
-    }
-    var subCount = countSubtree(node.id) - 1;
-    document.getElementById("cf-msg").textContent = subCount > 0 ? "Remove this branch and " + subCount + " inside it?" : "Remove this branch?";
-    hideConfirm({ restoreFocus: false });
-    confirmFor = node.id;
-    confirmEl.classList.add("visible");
-    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
-    confirmPopover = openPopover({
-      trigger: anchor,
-      surface: confirmEl,
-      placement: "bottom-end",
-      initialFocus: document.getElementById("cf-keep"),
-      onClose: hideConfirm
-    });
-  }
-  function hideConfirm(settings) {
-    confirmFor = null;
-    confirmEl.classList.remove("visible");
-    if (confirmPopover) {
-      var popover = confirmPopover;
-      confirmPopover = null;
-      popover.close(settings);
-    }
-  }
-  function countSubtree(id) {
-    var c2 = 1;
-    childrenOf(id).forEach(function(k) {
-      c2 += countSubtree(k.id);
-    });
-    return c2;
-  }
-  function collectSubtree(id, out) {
-    out.push(id);
-    childrenOf(id).forEach(function(k) {
-      collectSubtree(k.id, out);
-    });
-    return out;
-  }
-  function deleteBranch(node) {
-    var title = node.title || "Untitled";
-    var ids = collectSubtree(node.id, []);
-    branchHooks.post({ type: "delete_node", node_id: node.id });
-    removeNodesLocal(ids, node.parent_id);
-    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
-  }
-  function removeNodesLocal(ids, parentId) {
-    var currentGone = false;
-    for (var i2 = 0; i2 < ids.length; i2++) {
-      var id = ids[i2], n = nodes[id];
-      if (!n) continue;
-      if (currentNodeId === id) currentGone = true;
-      if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
-      removeMarks(readerMain, id);
-      removeThreadItem(id);
-      var p = nodes[n.parent_id];
-      if (p && p.bodyEl) removeMarks(p.bodyEl, id);
-      clearEdgeHighlight(id);
-      delete nodes[id];
-    }
-    if (currentGone) {
-      setCurrentNodeId(parentId && nodes[parentId] ? parentId : rootId);
-      if (mode === "reader") openNode(currentNodeId);
-    }
-    if (canvasBuilt) {
-      renderVisibility();
-      drawEdges();
-    }
-    if (mode === "reader") {
-      renderBreadcrumb();
-      renderSidebar();
-    }
-    refreshAmbient();
-    updateSince();
-  }
-
   // src/ui/hydrate.js
-  function hydrateInitialState({ connectSse = null, post: post3 = null, refreshStatus: refreshStatus2 = null } = {}) {
+  function hydrateInitialState({ connectSse = null, post = null, refreshStatus = null } = {}) {
     setRendererAssetData(hydration.asset_data || null);
     if (frozen) document.body.classList.add("frozen");
     (hydration.nodes || []).forEach(function(raw) {
@@ -32637,7 +32697,7 @@ ${text2}</tr>
           legacy.push({ node_id: k, read: true });
         }
       }
-      if (!frozen && legacy.length && typeof post3 === "function") post3({ type: "nodes_update", nodes: legacy });
+      if (!frozen && legacy.length && typeof post === "function") post({ type: "nodes_update", nodes: legacy });
     }
     var vs = hydration.view_state;
     if (vs && vs.node_id && nodes[vs.node_id]) {
@@ -32658,15 +32718,29 @@ ${text2}</tr>
       updateSince();
     }
     refreshAmbient();
-    if (typeof refreshStatus2 === "function") refreshStatus2();
+    if (typeof refreshStatus === "function") refreshStatus();
     if (!frozen && typeof connectSse === "function") connectSse();
   }
 
   // src/ui/chrome-init.js
+  var chromeScope = null;
   function initChrome(options2) {
-    document.addEventListener("keydown", onGlobalKeydown);
-    applyInitialTheme();
-    hydrateInitialState(options2 || {});
+    disposeChrome();
+    chromeScope = createCleanupScope();
+    chromeScope.listen(document, "keydown", onGlobalKeydown);
+    try {
+      applyInitialTheme();
+      hydrateInitialState(options2 || {});
+    } catch (error) {
+      disposeChrome();
+      throw error;
+    }
+    return disposeChrome;
+  }
+  function disposeChrome() {
+    var scope = chromeScope;
+    chromeScope = null;
+    if (scope) scope.dispose();
   }
   function onGlobalKeydown(e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -32719,74 +32793,152 @@ ${text2}</tr>
     }
   }
 
-  // src/ui/frozen-entry.js
-  function post2() {
+  // src/ui/composition.js
+  var activeRuntime = null;
+  function noop() {
+  }
+  function resolved() {
     return Promise.resolve({ ok: true });
   }
-  function refreshStatus() {
-  }
-  function startRabbithole(hydration2) {
-    initCore(hydration2);
-    registerVisualHooks({ post: post2, getNode: function(id) {
-      return nodes[id] || null;
-    } });
-    registerCoreHooks({
-      post: post2,
-      openNode,
-      mountVisuals,
-      mountDocImages,
-      ensureCanvasBuilt: function() {
+  function createRabbitholeUi({ hydration: hydration2, host, capabilities } = {}) {
+    if (activeRuntime && !activeRuntime.disposed) {
+      throw new Error("Dispose the active Rabbithole UI before starting another one");
+    }
+    host = host || {};
+    capabilities = capabilities || {};
+    var post = typeof host.post === "function" ? host.post : resolved;
+    var cleanups = [];
+    var disposed = false;
+    function own(cleanup) {
+      cleanups.push(cleanup);
+    }
+    try {
+      registerVisualHooks({ post, getNode: function(id) {
+        return nodes[id] || null;
+      } });
+      initCore(hydration2);
+      own(disposeCore);
+      own(function() {
+        setRendererAssetData(null);
+      });
+      own(disposeVisuals);
+      own(disposeImageUx);
+      registerCoreHooks({
+        post,
+        openNode,
+        mountVisuals,
+        mountDocImages,
+        ensureCanvasBuilt: noop,
+        diveToNode,
+        effH
+      });
+      registerReaderHooks({
+        hideAsk,
+        hidePeek,
+        updateComposerState,
+        scheduleViewSave: host.scheduleViewSave || noop,
+        setMode,
+        post,
+        mountVisuals,
+        mountDocImages,
+        persistNode: host.persistNode || noop,
+        animateScroll
+      });
+      registerCanvasHooks({
+        hideAsk,
+        hidePeek,
+        sendFollowup,
+        confirmDelete,
+        persistNode: host.persistNode || noop,
+        persistNodesBulk: host.persistNodesBulk || noop,
+        scheduleViewSave: host.scheduleViewSave || noop
+      });
+      registerAskHooks({ post, hideConfirm, hidePeek });
+      registerPaletteHooks({
+        hideAsk,
+        hidePeek,
+        closeShare,
+        hideConfirm
+      });
+      registerBranchHooks({
+        post,
+        exportSnapshot: capabilities.exportSnapshot || null,
+        exportPortable: capabilities.exportPortable || null
+      });
+      initReader();
+      own(disposeReader);
+      initCanvasView();
+      own(disposeCanvasView);
+      initAskFollowups();
+      own(disposeAskFollowups);
+      initPalette();
+      own(disposePalette);
+      initBranchSurfaces();
+      own(disposeBranchSurfaces);
+      if (typeof host.start === "function") host.start();
+      initChrome({
+        connectSse: host.connect || null,
+        post,
+        refreshStatus: host.refreshStatus || noop
+      });
+      own(disposeChrome);
+    } catch (error) {
+      disposeOwned();
+      throw error;
+    }
+    var runtime = {
+      get disposed() {
+        return disposed;
       },
-      diveToNode,
-      effH
-    });
-    registerReaderHooks({
-      hideAsk,
-      hidePeek,
-      updateComposerState,
-      scheduleViewSave: function() {
+      flush: function() {
+        return typeof host.flush === "function" ? Promise.resolve(host.flush()) : Promise.resolve();
       },
-      setMode,
-      post: post2,
-      mountVisuals,
-      mountDocImages,
-      persistNode: function() {
-      },
-      animateScroll
-    });
-    registerCanvasHooks({
-      hideAsk,
-      hidePeek,
-      sendFollowup,
-      confirmDelete,
-      persistNode: function() {
-      },
-      persistNodesBulk: function() {
-      },
-      scheduleViewSave: function() {
+      dispose: async function() {
+        if (disposed) return;
+        disposed = true;
+        if (activeRuntime === runtime) activeRuntime = null;
+        var errors = [];
+        if (typeof host.dispose === "function") {
+          try {
+            await host.dispose();
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        try {
+          disposeOwned();
+        } catch (error) {
+          errors.push(error);
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Rabbithole UI disposal failed");
       }
+    };
+    activeRuntime = runtime;
+    return runtime;
+    function disposeOwned() {
+      var errors = [];
+      while (cleanups.length) {
+        try {
+          cleanups.pop()();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "Rabbithole UI cleanup failed");
+    }
+  }
+
+  // src/ui/frozen-entry.js
+  function startRabbithole(hydration2) {
+    return createRabbitholeUi({
+      hydration: hydration2,
+      capabilities: { exportSnapshot: null, exportPortable: null }
     });
-    registerAskHooks({
-      post: post2,
-      hideConfirm,
-      hidePeek
-    });
-    registerPaletteHooks({
-      hideAsk,
-      hidePeek,
-      closeShare,
-      hideConfirm
-    });
-    registerBranchHooks({ post: post2 });
-    initReader();
-    initCanvasView();
-    initAskFollowups();
-    initPalette();
-    initBranchSurfaces();
-    initChrome({ post: post2, refreshStatus });
   }
   function startPortableSnapshot(projection) {
-    startRabbithole(snapshotProjectionToFrozenHydration(projection));
+    return startRabbithole(snapshotProjectionToFrozenHydration(projection));
   }
   return __toCommonJS(frozen_entry_exports);
 })();

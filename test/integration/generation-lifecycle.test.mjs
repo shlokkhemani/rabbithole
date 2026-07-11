@@ -236,6 +236,34 @@ const mintHost = new DirectRabbitholeHost({
   hole: { hole_id: "hole", root_id: "root", nodes: [{ id: "root", status: "answered", markdown: "" }] },
   mintGenerationRunId: () => `attempt-${++minted}`,
 });
+const lifecycleHost = new DirectRabbitholeHost({
+  store: { saveHole: async () => {} },
+  hole: { hole_id: "lifecycle-hole", root_id: "root", nodes: [{ id: "root", status: "answered", markdown: "" }] },
+});
+let subscriptionOpened = 0;
+const deliveredEvents = [];
+const subscription = lifecycleHost.adapter().connect({
+  onOpen: () => { subscriptionOpened += 1; },
+  onMessage: (event) => deliveredEvents.push(event),
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(subscriptionOpened, 1);
+lifecycleHost.emit({ type: "first" });
+assert.deepEqual(deliveredEvents, [{ type: "first" }]);
+subscription.close();
+subscription.close();
+lifecycleHost.emit({ type: "late" });
+assert.deepEqual(deliveredEvents, [{ type: "first" }], "closed browser subscriptions must not receive host events");
+
+const disposalEvents = [];
+lifecycleHost.adapter().connect({ onMessage: (event) => disposalEvents.push(event) });
+await lifecycleHost.dispose();
+await lifecycleHost.dispose();
+lifecycleHost.emit({ type: "after-dispose" });
+assert.deepEqual(disposalEvents, [], "disposed hosts must detach browser subscriptions");
+assert.equal(lifecycleHost.subscriptions.size, 0);
+console.log("ok generation lifecycle: direct-host subscriptions close and host disposal is idempotent");
+
 const pendingNode = { id: "branch", status: "pending", markdown: "", title: "Fallback" };
 const oldRun = mintHost.createGenerationRun(pendingNode);
 const retryRun = mintHost.createGenerationRun(pendingNode);

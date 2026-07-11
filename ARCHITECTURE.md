@@ -103,25 +103,27 @@ owns the reducer, provider-driven generation, save queue, and transport adapter;
 `IdbStore` owns durable browser data. Provider keys remain in browser storage and
 are sent only to the configured provider origin.
 
-Changing the open hole currently flushes pending saves and reloads the page.
-That reload is the teardown boundary for the shared UI runtime.
+Changing the open hole is an in-document transition. The app serializes hole
+changes, flushes pending UI and host saves, disposes the old UI and transport,
+releases asset object URLs, resets the canvas surface, and mounts the target.
 
 ## Live and frozen UI
 
-`src/ui/entry.js` starts the writable UI and connects persistence, transport,
-and snapshot hooks. The UI is currently composed from module-level state and
-registered hook tables; it does not yet return an owned lifetime or disposal
-function. Consequently, callers must not initialize it twice in one document.
+`src/ui/composition.js` is the shared composition boundary. It creates one
+owned UI lifetime per mounted hole and returns `flush()` and idempotent
+`dispose()` operations. `src/ui/entry.js` supplies live persistence, transport,
+and export capabilities without placing those host modules in shared UI code.
 
-`src/ui/frozen-entry.js` composes the same reader and canvas modules with inert
-transport and persistence functions. It is built as a separate entry so frozen
-HTML does not acquire provider, settings, IndexedDB, or live transport code.
+`src/ui/frozen-entry.js` calls the same composition boundary without writable
+capabilities. It is built as a separate entry so frozen HTML does not acquire
+provider, settings, IndexedDB, snapshot-export, or live transport code.
 
-The intended ownership boundary is one runtime object per mounted hole, with a
-deterministic `dispose()` that releases listeners, timers, overlays, animation
-frames, and subscriptions. Until that contract exists, the reload boundary is
-part of the current design. Any change to composition must keep frozen-only
-imports and the existing bundle and snapshot budgets intact.
+Each module registers listeners, timers, overlays, animation frames, and
+subscriptions beside the code that creates them. Runtime disposal drains those
+resources in dependency order before core DOM references are cleared. A bundle
+contract test prevents frozen artifacts from importing live transport,
+snapshot-export, or web-host modules; byte and snapshot budgets remain separate
+acceptance gates.
 
 ## Build and delivery
 

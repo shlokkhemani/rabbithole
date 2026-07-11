@@ -7,6 +7,7 @@ import {
   truncate as sharedTruncate
 } from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
+import { createCleanupScope } from "./lifecycle.js";
 import {
   DEFAULT_CHILD,
   DEFAULT_ROOT,
@@ -73,21 +74,28 @@ export var peekEl = null;
 export var shareMenu = null;
 export var confirmEl = null;
 
-var coreHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); },
-  ensureCanvasBuilt: function(){},
-  diveToNode: function(){},
-  openNode: function(){},
-  mountVisuals: null,
-  mountDocImages: null,
-  effH: function(n){ return n.h; }
-};
+function defaultCoreHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    ensureCanvasBuilt: function(){},
+    diveToNode: function(){},
+    openNode: function(){},
+    mountVisuals: null,
+    mountDocImages: null,
+    effH: function(n){ return n.h; }
+  };
+}
+
+var coreHooks = defaultCoreHooks();
+var coreScope = null;
 
 export function registerCoreHooks(hooks) {
   Object.assign(coreHooks, hooks || {});
 }
 
 export function initCore(inputHydration) {
+  disposeCore();
+  coreScope = createCleanupScope();
   hydration = inputHydration || {};
   rootId = hydration.root_id;
   frozen = !!hydration.frozen;
@@ -137,18 +145,65 @@ export function initCore(inputHydration) {
   shareMenu = document.getElementById("sharemenu");
   confirmEl = document.getElementById("confirm");
 
-  initReduceMotion();
-  actReader.addEventListener("click", onActivityClick);
-  actCanvas.addEventListener("click", onActivityClick);
-  document.getElementById("since-show").addEventListener("click", function(e){
+  initReduceMotion(coreScope);
+  coreScope.listen(actReader, "click", onActivityClick);
+  coreScope.listen(actCanvas, "click", onActivityClick);
+  coreScope.listen(document.getElementById("since-show"), "click", function(e){
     var un = unreadNodes();
     if (un.length) goToNode(un[0], motionSourceFromEvent(e));
   });
-  document.getElementById("since-x").addEventListener("click", function(){
+  coreScope.listen(document.getElementById("since-x"), "click", function(){
     sinceDismissed = true;
     sinceEl.classList.remove("visible");
   });
-  setInterval(updateLoadingTimers, 1000);
+  coreScope.interval(updateLoadingTimers, 1000);
+  coreScope.addCleanup(function(){
+    hintNotice?.hide();
+    bannerNotice?.hide();
+  });
+  return disposeCore;
+}
+
+export function disposeCore(){
+  var scope = coreScope;
+  coreScope = null;
+  try {
+    if (scope) scope.dispose();
+  } finally {
+    resetCoreState();
+  }
+}
+
+function resetCoreState(){
+  hydration = null;
+  rootId = null;
+  frozen = false;
+  nodes = {};
+  currentNodeId = null;
+  mode = "reader";
+  view = { x: 0, y: 0, scale: 1 };
+  closed = false;
+  closedReason = null;
+  agentAttached = true;
+  agentReason = null;
+  connLost = false;
+  sseFails = 0;
+  canvasBuilt = false;
+  canvasFramed = false;
+  viewAdjusted = false;
+  orderCounter = 0;
+  readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+  ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
+  hintNotice = bannerNotice = null;
+  composerInner = composerText = composerSend = null;
+  actReader = actCanvas = actSep = null;
+  sinceEl = sinceMsg = paletteEl = palText = palResults = null;
+  peekEl = shareMenu = confirmEl = null;
+  sinceDismissed = false;
+  sinceArmed = false;
+  reduceMotion = false;
+  reduceMotionMql = null;
+  coreHooks = defaultCoreHooks();
 }
 
 export function setCurrentNodeId(id){ currentNodeId = id; }
@@ -207,12 +262,15 @@ export function boundsOverlap(a,b){
 export function agentDown(){ return closed || connLost || !agentAttached; }
   var reduceMotion = false, reduceMotionMql = null;
   function setReduceMotion(e){ reduceMotion = !!(e && e.matches); }
-function initReduceMotion(){
+function initReduceMotion(scope){
   if (window.matchMedia){
     reduceMotionMql = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReduceMotion(reduceMotionMql);
-    if (reduceMotionMql.addEventListener) reduceMotionMql.addEventListener("change", setReduceMotion);
-    else if (reduceMotionMql.addListener) reduceMotionMql.addListener(setReduceMotion);
+    if (reduceMotionMql.addEventListener) scope.listen(reduceMotionMql, "change", setReduceMotion);
+    else if (reduceMotionMql.addListener) {
+      reduceMotionMql.addListener(setReduceMotion);
+      scope.addCleanup(function(){ reduceMotionMql?.removeListener(setReduceMotion); });
+    }
   }
 }
 export function shouldReduceMotion(){ return reduceMotion; }

@@ -37,19 +37,25 @@ import {
   truncate,
   world
 } from "./core.js";
+import { createCleanupScope } from "./lifecycle.js";
 
-var readerHooks = {
-  hideAsk: function(){},
-  hidePeek: function(){},
-  updateComposerState: function(){},
-  scheduleViewSave: function(){},
-  setMode: function(){},
-  post: function(){ return Promise.resolve({ ok: true }); },
-  mountVisuals: null,
-  mountDocImages: null,
-  persistNode: function(){},
-  animateScroll: function(){}
-};
+function defaultReaderHooks(){
+  return {
+    hideAsk: function(){},
+    hidePeek: function(){},
+    updateComposerState: function(){},
+    scheduleViewSave: function(){},
+    setMode: function(){},
+    post: function(){ return Promise.resolve({ ok: true }); },
+    mountVisuals: null,
+    mountDocImages: null,
+    persistNode: function(){},
+    animateScroll: function(){}
+  };
+}
+
+var readerHooks = defaultReaderHooks();
+var readerScope = null;
 
 export function registerReaderHooks(hooks) {
   Object.assign(readerHooks, hooks || {});
@@ -115,31 +121,53 @@ export function renderBreadcrumb(){
     breadcrumbEl.replaceChildren(fragment);
   }
 export function initReader(){
-    breadcrumbEl.addEventListener("click", function(e){
+    disposeReaderResources(false);
+    readerScope = createCleanupScope();
+    try {
+    readerScope.listen(breadcrumbEl, "click", function(e){
       var c = e.target.closest(".crumb");
       if (!c || c.classList.contains("current")) return;
       openNode(c.dataset.id);
     });
-    breadcrumbEl.addEventListener("keydown", function(e){
+    readerScope.listen(breadcrumbEl, "keydown", function(e){
       if (e.key !== "Enter") return;
       var c = e.target.closest && e.target.closest('.crumb[role="link"]');
       if (!c) return;
       e.preventDefault();
       openNode(c.dataset.id);
     });
-    readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
-    readerMain.addEventListener("click", onMarkClick);
-    world.addEventListener("click", onMarkClick);
-    readerMain.addEventListener("keydown", onMarkKeydown);
-    world.addEventListener("keydown", onMarkKeydown);
-    sideEl.addEventListener("click", onSidebarClick);
-    sideEl.addEventListener("keydown", onSidebarKeydown);
-    document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
-    document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
-    document.getElementById("r-canvas").addEventListener("click", function(){ readerHooks.setMode("canvas"); });
-    document.getElementById("r-done").addEventListener("click", function(){ if (!closed) readerHooks.post({ type: "done" }); });
-    document.getElementById("r-theme").addEventListener("click", toggleTheme);
-    document.getElementById("t-theme").addEventListener("click", toggleTheme);
+    readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
+    readerScope.listen(readerMain, "click", onMarkClick);
+    readerScope.listen(world, "click", onMarkClick);
+    readerScope.listen(readerMain, "keydown", onMarkKeydown);
+    readerScope.listen(world, "keydown", onMarkKeydown);
+    readerScope.listen(sideEl, "click", onSidebarClick);
+    readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+    readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
+    readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
+    readerScope.listen(document.getElementById("r-canvas"), "click", function(){ readerHooks.setMode("canvas"); });
+    readerScope.listen(document.getElementById("r-done"), "click", function(){ if (!closed) readerHooks.post({ type: "done" }); });
+    readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
+    readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
+    return disposeReader;
+    } catch (error) {
+      disposeReader();
+      throw error;
+    }
+  }
+
+export function disposeReader(){
+    disposeReaderResources(true);
+  }
+
+function disposeReaderResources(resetHooks){
+    var scope = readerScope;
+    readerScope = null;
+    if (scope) scope.dispose();
+    breadcrumbNodes = {};
+    sidebarNodes = {};
+    kbdMarkIdx = -1;
+    if (resetHooks) readerHooks = defaultReaderHooks();
   }
 
 export function renderReaderBody(){

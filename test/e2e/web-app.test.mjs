@@ -152,6 +152,35 @@ async function verifyNoticePrimitive() {
 
 async function verifyLandingAndComposer() {
   const context = await browser.newContext();
+  await context.addInitScript(() => {
+    const documentKeydowns = new Set();
+    const intervals = new Set();
+    const add = EventTarget.prototype.addEventListener;
+    const remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function(type, callback, options) {
+      if (this === document && type === "keydown") documentKeydowns.add(callback);
+      return add.call(this, type, callback, options);
+    };
+    EventTarget.prototype.removeEventListener = function(type, callback, options) {
+      if (this === document && type === "keydown") documentKeydowns.delete(callback);
+      return remove.call(this, type, callback, options);
+    };
+    const createInterval = window.setInterval;
+    const clearInterval = window.clearInterval;
+    window.setInterval = (...args) => {
+      const id = createInterval(...args);
+      intervals.add(id);
+      return id;
+    };
+    window.clearInterval = (id) => {
+      intervals.delete(id);
+      return clearInterval(id);
+    };
+    window.__rabbitholeOwnedResourceCounts = () => ({
+      documentKeydowns: documentKeydowns.size,
+      intervals: intervals.size,
+    });
+  });
   const page = await context.newPage();
   await page.route(KEY_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { label: "test key" } }) }));
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -284,8 +313,31 @@ async function verifyLandingAndComposer() {
   assert.equal(railIcon.expanded, "true");
   assert.equal(railIcon.filled, true, "rail toggle icon should switch to its filled state while the rail is open");
   assert.equal(await page.locator(`.rail-row[data-hole="${second}"] .rail-delete`).count(), 1);
+  let postBaselineLoads = 0;
+  page.on("load", () => { postBaselineLoads += 1; });
+  const documentToken = await page.evaluate(() => {
+    window.__rabbitholeDocumentToken = crypto.randomUUID();
+    return window.__rabbitholeDocumentToken;
+  });
+  const ownedResourceBaseline = await page.evaluate(() => window.__rabbitholeOwnedResourceCounts());
   await page.locator(`.rail-row[data-hole="${first}"] .rail-open`).click();
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
+  await ensureRailOpen(page);
+  await page.locator(`.rail-row[data-hole="${second}"] .rail-open`).click();
+  await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, second);
+  await ensureRailOpen(page);
+  await page.locator(`.rail-row[data-hole="${first}"] .rail-open`).click();
+  await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
+  assert.equal(postBaselineLoads, 0, "rail switching must not navigate or reload the document");
+  assert.equal(await page.evaluate(() => window.__rabbitholeDocumentToken), documentToken, "rail switching must preserve document identity");
+  assert.deepEqual(
+    await page.evaluate(() => window.__rabbitholeOwnedResourceCounts()),
+    ownedResourceBaseline,
+    "repeated switching must retain one stable set of document key handlers and intervals",
+  );
+  assert.equal(ownedResourceBaseline.intervals, 1, "one hole runtime must own exactly one loading-status interval");
+  assert.equal(new URL(page.url()).hash, `#hole=${encodeURIComponent(first)}`);
+  assert.equal(await page.locator(".rail-row.current").getAttribute("data-hole"), first);
   await ensureRailOpen(page);
   await page.locator(`.rail-row[data-hole="${second}"]`).hover();
   await page.locator(`.rail-row[data-hole="${second}"] .rail-delete`).click();
@@ -1518,10 +1570,7 @@ async function seedConfiguredOpenRouter(context) {
 
 async function createDocument(page, markdown) {
   const previous = await page.evaluate(() => window.__rabbitholeTest?.currentHoleId?.() || "");
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle", timeout: 2500 }).catch(() => null),
-    page.evaluate((value) => window.__rabbitholeTest.createDocument(value), markdown).catch(() => null),
-  ]);
+  await page.evaluate((value) => window.__rabbitholeTest.createDocument(value), markdown);
   await page.waitForFunction((oldId) => {
     const id = window.__rabbitholeTest?.currentHoleId?.();
     return id && id !== oldId;

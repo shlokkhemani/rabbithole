@@ -119,7 +119,7 @@ host adapters without owning the broad product journey.
 `test/e2e/` drives shipped user surfaces in a real browser.
 
 - `web-app.test.mjs` covers the landing and composer, setup readiness, saved-hole
-  navigation, deletion and undo, streaming and reload, reader/canvas navigation,
+  in-document hole switching, deletion and undo, streaming and reload recovery, reader/canvas navigation,
   selection and whole-document branching, settings and provider controls,
   accessible dialogs and popovers, keyboard operation, focus restoration,
   Check-state persistence, image preview, canonical snapshot export, and frozen

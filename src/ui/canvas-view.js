@@ -56,39 +56,84 @@ import {
 } from "./core.js";
 import { applyChildHighlights, openNode } from "./reader.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
+import { createCleanupScope } from "./lifecycle.js";
 
-var canvasHooks = {
-  hideAsk: function(){},
-  hidePeek: function(){},
-  sendFollowup: function(){ return null; },
-  confirmDelete: function(){},
-  persistNode: function(){},
-  persistNodesBulk: function(){},
-  scheduleViewSave: function(){}
-};
+function defaultCanvasHooks(){
+  return {
+    hideAsk: function(){},
+    hidePeek: function(){},
+    sendFollowup: function(){ return null; },
+    confirmDelete: function(){},
+    persistNode: function(){},
+    persistNodesBulk: function(){},
+    scheduleViewSave: function(){}
+  };
+}
+
+var canvasHooks = defaultCanvasHooks();
+var canvasScope = null;
+var filmCameraHandle = null;
+var activePointerGestures = new Set();
 
 export function registerCanvasHooks(hooks) {
   Object.assign(canvasHooks, hooks || {});
 }
 
 export function initCanvasView(){
+  cleanupCanvasView(false);
+  canvasScope = createCleanupScope();
   registerCoreHooks({
     ensureCanvasBuilt: ensureCanvasBuilt,
     diveToNode: diveToNode,
     effH: effH
   });
-  world.addEventListener("mouseover", onWorldMouseOver);
-  world.addEventListener("mouseout", onWorldMouseOut);
+  canvasScope.listen(world, "mouseover", onWorldMouseOver);
+  canvasScope.listen(world, "mouseout", onWorldMouseOut);
   initViewportPan();
-  viewport.addEventListener("wheel", onViewportWheel, { passive: false });
-  viewport.addEventListener("dblclick", onViewportDblClick);
-  document.getElementById("t-reader").addEventListener("click", function(){ openNode(currentNodeId); });
-  document.getElementById("t-frame").addEventListener("click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
-  document.getElementById("t-tidy").addEventListener("click", function(e){ tidy(motionSourceFromEvent(e)); });
-  document.getElementById("t-zin").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
-  document.getElementById("t-zout").addEventListener("click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 0.87); });
-  zoomLabel.addEventListener("click", function(){ zoomTo(viewport.clientWidth/2, viewport.clientHeight/2, 1); });
+  canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
+  canvasScope.listen(viewport, "dblclick", onViewportDblClick);
+  canvasScope.listen(document.getElementById("t-reader"), "click", function(){ openNode(currentNodeId); });
+  canvasScope.listen(document.getElementById("t-frame"), "click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
+  canvasScope.listen(document.getElementById("t-tidy"), "click", function(e){ tidy(motionSourceFromEvent(e)); });
+  canvasScope.listen(document.getElementById("t-zin"), "click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
+  canvasScope.listen(document.getElementById("t-zout"), "click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 0.87); });
+  canvasScope.listen(zoomLabel, "click", function(){ zoomTo(viewport.clientWidth/2, viewport.clientHeight/2, 1); });
   exposeFilmCameraHook();
+  return disposeCanvasView;
+}
+
+export function disposeCanvasView(){
+  cleanupCanvasView(true);
+}
+
+function cleanupCanvasView(resetHooks){
+  var scope = canvasScope;
+  canvasScope = null;
+  if (scope) scope.dispose();
+  activePointerGestures.forEach(function(cancel){ cancel(); });
+  activePointerGestures.clear();
+  cancelViewAnimation();
+  if (edgeRaf){ cancelAnimationFrame(edgeRaf); edgeRaf = 0; }
+  if (filmCameraHandle && window.__rhFilmCamera === filmCameraHandle) {
+    try { delete window.__rhFilmCamera; } catch(_e){}
+  }
+  filmCameraHandle = null;
+  if (edgesSvg) while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
+  edgeEls = {};
+  edgeGeometry = {};
+  edgeHl = {};
+  wheelKind = null;
+  wheelCard = null;
+  wheelTs = 0;
+  viewport?.classList.remove("panning");
+  if (resetHooks) {
+    canvasHooks = defaultCanvasHooks();
+    registerCoreHooks({
+      ensureCanvasBuilt: function(){},
+      diveToNode: function(){},
+      effH: function(n){ return n.h; }
+    });
+  }
 }
 
   // ===========================================================================
@@ -103,23 +148,24 @@ export function applyTransform(){
     var enabled = false;
     try { enabled = localStorage.getItem("rh-film") === "1"; } catch(e){}
     if (!enabled) return;
+    filmCameraHandle = {
+      getView: function(){
+        return { x: view.x, y: view.y, scale: view.scale };
+      },
+      setView: function(x, y, scale){
+        cancelViewAnimation();
+        setViewAdjusted(true);
+        view.x = Number(x);
+        view.y = Number(y);
+        view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
+        applyTransform();
+        drawEdges();
+        return { x: view.x, y: view.y, scale: view.scale };
+      }
+    };
     Object.defineProperty(window, "__rhFilmCamera", {
       configurable: true,
-      value: {
-        getView: function(){
-          return { x: view.x, y: view.y, scale: view.scale };
-        },
-        setView: function(x, y, scale){
-          viewAnimId++;
-          setViewAdjusted(true);
-          view.x = Number(x);
-          view.y = Number(y);
-          view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
-          applyTransform();
-          drawEdges();
-          return { x: view.x, y: view.y, scale: view.scale };
-        }
-      }
+      value: filmCameraHandle
     });
   }
 export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
@@ -128,7 +174,7 @@ export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y
     zoomTo(sx, sy, next);
   }
   function zoomTo(sx, sy, next){
-    viewAnimId++; // manual zoom cancels any in-flight glide
+    cancelViewAnimation(); // manual zoom cancels any in-flight glide
     next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
     if (next === view.scale) return;
     setViewAdjusted(true);
@@ -319,22 +365,28 @@ export function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, 
   // One shared view glide (pan + zoom together): frame-all, reveal, and
   // search/activity jumps. A newer glide cancels an in-flight one; hidden windows jump
   // instantly (rAF never fires there).
-  var viewAnimId = 0;
+  var viewAnimId = 0, viewAnimRaf = 0;
+  function cancelViewAnimation(){
+    viewAnimId++;
+    if (viewAnimRaf){ cancelAnimationFrame(viewAnimRaf); viewAnimRaf = 0; }
+  }
 export function animateView(tx, ty, ts, opts){
     opts = opts || {};
-    var myId = ++viewAnimId;
+    cancelViewAnimation();
+    var myId = viewAnimId;
     if (document.hidden || shouldReduceMotion() || opts.source !== "pointer"){
       view.x = tx; view.y = ty; view.scale = ts; applyTransform(); return;
     }
     var sx = view.x, sy = view.y, ss = view.scale, t0 = performance.now(), D = opts.duration || 270;
     var easeFn = opts.ease === "inOut" ? easeInOutMotion : easeOutMotion;
     function step(t){
+      viewAnimRaf = 0;
       if (myId !== viewAnimId) return;
       var p = Math.min(1, (t - t0) / D), k = easeFn(p);
       view.x = sx + (tx - sx) * k; view.y = sy + (ty - sy) * k; view.scale = ss + (ts - ss) * k; applyTransform();
-      if (p < 1) requestAnimationFrame(step);
+      if (p < 1) viewAnimRaf = requestAnimationFrame(step);
     }
-    requestAnimationFrame(step);
+    viewAnimRaf = requestAnimationFrame(step);
   }
 
 export function fillBody(node){
@@ -371,24 +423,30 @@ export function layoutNode(node){
   // Shared pointer-gesture wiring: cleans up on pointerup AND pointercancel/
   // lostpointercapture, so an interrupted gesture (touch cancel, window blur)
   // never leaves move listeners or drag state stuck.
-  function onPointerGesture(handle, onDown, onMove, onUp){
-    handle.addEventListener("pointerdown", function(e){
+  function onPointerGesture(handle, onDown, onMove, onUp, scope){
+    function pointerDown(e){
       if (!onDown(e)) return;
       try { handle.setPointerCapture(e.pointerId); } catch(_e){}
       function move(ev){ onMove(ev); }
-      function done(){
+      function finish(commit){
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", done);
         handle.removeEventListener("pointercancel", done);
         handle.removeEventListener("lostpointercapture", done);
+        activePointerGestures.delete(cancel);
         try { handle.releasePointerCapture(e.pointerId); } catch(_e){}
-        onUp();
+        if (commit) onUp();
       }
+      function done(){ finish(true); }
+      function cancel(){ finish(false); }
+      activePointerGestures.add(cancel);
       handle.addEventListener("pointermove", move);
       handle.addEventListener("pointerup", done);
       handle.addEventListener("pointercancel", done);
       handle.addEventListener("lostpointercapture", done);
-    });
+    }
+    if (scope) scope.listen(handle, "pointerdown", pointerDown);
+    else handle.addEventListener("pointerdown", pointerDown);
   }
   function enableDrag(node, handle){
     var sx, sy, ox, oy;
@@ -581,9 +639,9 @@ export function focusOrigin(node, on){
   function initViewportPan(){
     var sx, sy, ox, oy;
     onPointerGesture(viewport,
-      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasHooks.hideAsk(); viewAnimId++; viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
+      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasHooks.hideAsk(); cancelViewAnimation(); viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
       function(ev){ setViewAdjusted(true); view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
-      function(){ viewport.classList.remove("panning"); });
+      function(){ viewport.classList.remove("panning"); }, canvasScope);
   }
 
   // Can this element still scroll in the direction of the wheel delta?
@@ -609,7 +667,7 @@ export function focusOrigin(node, on){
     }
     wheelTs = e.timeStamp;
     if (wheelKind === "pan"){
-      e.preventDefault(); viewAnimId++; setViewAdjusted(true); view.x -= e.deltaX; view.y -= e.deltaY; applyTransform();
+      e.preventDefault(); cancelViewAnimation(); setViewAdjusted(true); view.x -= e.deltaX; view.y -= e.deltaY; applyTransform();
       return;
     }
     var over = (e.target.closest && e.target.closest(".node")) || null;

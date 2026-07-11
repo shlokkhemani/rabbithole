@@ -22,6 +22,9 @@ const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
 const store = new IdbStore();
 let currentHost = null;
 let currentHoleId = null;
+let currentUi = null;
+let currentAssetLease = null;
+let holeTransition = Promise.resolve();
 let uiStarted = false;
 let railOpen = false;
 let blankZoom = 1;
@@ -577,16 +580,17 @@ async function maybeAuthorDocument({
   } });
 }
 
-async function startHole(hole, { replace = false } = {}) {
-  if (uiStarted) {
-    await currentHost?.flushSave();
-    location.hash = `hole=${encodeURIComponent(hole.hole_id)}`;
-    location.reload();
-    return;
-  }
+function startHole(hole, options = {}) {
+  const transition = holeTransition.then(() => mountHole(hole, options));
+  holeTransition = transition.catch(() => {});
+  return transition;
+}
+
+async function mountHole(hole, { replace = false } = {}) {
+  await disposeCurrentHole();
+  resetHoleSurface();
   uiStarted = true;
   currentHoleId = hole.hole_id;
-  currentHost = null;
   document.body.classList.remove("web-blank-canvas");
   document.getElementById("blank-start").hidden = true;
   closeComposerSilently();
@@ -608,30 +612,77 @@ async function startHole(hole, { replace = false } = {}) {
   const settings = loadSettings();
   const key = getApiKey(settings);
   const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
-  currentHost = new DirectRabbitholeHost({
+  const host = new DirectRabbitholeHost({
     store,
     hole,
     brain,
-    onToast: showToast,
+    onToast: (notice) => { if (currentHost === host) showToast(notice); },
     onDone: async () => {
-      await currentHost?.flushSave();
+      if (currentHost !== host) return;
+      await host.flushSave();
       history.replaceState(null, "", location.pathname);
       location.reload();
     },
-    onRestore: () => location.reload(),
-    onAuthRequired: handleBranchAuthRequired,
-    onRootAnswered: renderRail,
+    onRestore: () => { if (currentHost === host) location.reload(); },
+    onAuthRequired: (...args) => { if (currentHost === host) return handleBranchAuthRequired(...args); },
+    onRootAnswered: () => { if (currentHost === host) return renderRail(); },
   });
+  currentHost = host;
 
-  const hydration = currentHost.hydration();
-  hydration.asset_data = await buildLiveAssetData(hole.hole_id);
-  startRabbithole(hydration, {
-    transport: currentHost.adapter(),
-    exportPortable: exportCurrentRabbithole,
-  });
-  document.getElementById("r-canvas")?.click();
-  await renderRail();
-  currentHost.startRootAnswer();
+  try {
+    const hydration = host.hydration();
+    currentAssetLease = await createLiveAssetData(hole.hole_id);
+    hydration.asset_data = currentAssetLease.data;
+    currentUi = startRabbithole(hydration, {
+      transport: host.adapter(),
+      exportPortable: exportCurrentRabbithole,
+    });
+    document.getElementById("r-canvas")?.click();
+    await renderRail();
+    host.startRootAnswer();
+  } catch (error) {
+    await disposeCurrentHole();
+    throw error;
+  }
+}
+
+async function disposeCurrentHole() {
+  settingsController?.close();
+  closeComposerSilently();
+  const ui = currentUi;
+  const host = currentHost;
+  const assets = currentAssetLease;
+  currentUi = null;
+  currentHost = null;
+  currentAssetLease = null;
+  uiStarted = false;
+  currentHoleId = null;
+  const errors = [];
+  if (ui) {
+    try { await ui.flush(); } catch (error) { errors.push(error); }
+    try { await ui.dispose(); } catch (error) { errors.push(error); }
+  }
+  if (host) {
+    try { await host.flushSave(); } catch (error) { errors.push(error); }
+    try { await host.dispose(); } catch (error) { errors.push(error); }
+  }
+  try { assets?.dispose(); } catch (error) { errors.push(error); }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, "Failed to dispose the previous Rabbithole");
+}
+
+function resetHoleSurface() {
+  document.body.classList.remove("agent-down", "session-over", "blank-dragging", "frozen");
+  const world = document.getElementById("world");
+  if (world) {
+    const edges = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    edges.id = "edges";
+    world.replaceChildren(edges);
+    world.style.transform = "";
+  }
+  document.getElementById("reader-main")?.replaceChildren();
+  document.getElementById("reader-side")?.replaceChildren();
+  document.getElementById("breadcrumb")?.replaceChildren();
 }
 
 function closeComposerSilently() {
@@ -728,9 +779,8 @@ async function deleteHoleFromRail(holeId) {
   if (!holeId) return;
   const deletingCurrent = holeId === currentHoleId;
   if (deletingCurrent) {
-    await currentHost?.flushSave();
-    currentHost?.dispose?.();
-    currentHost = null;
+    await disposeCurrentHole();
+    resetHoleSurface();
   }
   const hole = await store.loadHole(holeId);
   if (!hole) return;
@@ -759,8 +809,7 @@ async function deleteHoleFromRail(holeId) {
       const nextHole = await store.loadHole(next.hole_id);
       if (nextHole) await startHole(nextHole, { replace: true });
     } else {
-      location.hash = "";
-      location.reload();
+      showBlankCanvas();
     }
   }
 }
@@ -932,13 +981,31 @@ function shake(onShake) {
   window.setTimeout(() => document.querySelectorAll(".shake-once").forEach((el) => el.classList.remove("shake-once")), 260);
 }
 
-async function buildLiveAssetData(holeId) {
-  const out = {};
-  for (const name of await store.listAssets(holeId)) {
-    const blob = await store.getAsset(holeId, name);
-    if (blob) out[name] = URL.createObjectURL(blob);
+async function createLiveAssetData(holeId) {
+  const data = {};
+  const urls = [];
+  try {
+    for (const name of await store.listAssets(holeId)) {
+      const blob = await store.getAsset(holeId, name);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        data[name] = url;
+        urls.push(url);
+      }
+    }
+  } catch (error) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    throw error;
   }
-  return out;
+  let disposed = false;
+  return {
+    data,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    },
+  };
 }
 
 function showToast({ message, actionLabel = "", timeoutMs = 4000, onAction = null } = {}) {

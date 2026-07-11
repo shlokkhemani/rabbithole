@@ -60,18 +60,29 @@ import { mountVisuals } from "./visuals.js";
 var transportAdapter = null;
 var sse = null;
 var webTransport = null;
+var transportEpoch = 0;
+var transportDisposed = true;
+var transportDisposePromise = null;
+var healthProbeController = null;
 
 export function setTransportAdapter(adapter){
   transportAdapter = adapter && typeof adapter === "object" ? adapter : null;
 }
 
 export function initTransportStatus(){
+  transportEpoch += 1;
+  transportDisposed = false;
+  transportDisposePromise = null;
 }
 
 export function post(payload){
     if (frozen) return Promise.resolve({ ok: true }); // a snapshot has no server
-    if (transportAdapter && typeof transportAdapter.post === "function") {
-      return Promise.resolve(transportAdapter.post(payload)).catch(function(){ return null; });
+    if (transportDisposed) return Promise.resolve(null);
+    return postWithAdapter(transportAdapter, payload);
+  }
+  function postWithAdapter(adapter, payload){
+    if (adapter && typeof adapter.post === "function") {
+      return Promise.resolve(adapter.post(payload)).catch(function(){ return null; });
     }
     return fetch("/events", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) }).catch(function(){ return null; });
   }
@@ -86,7 +97,7 @@ export function post(payload){
     return state;
   }
 export function scheduleViewSave(){
-    if (frozen || closed) return;
+    if (frozen || closed || transportDisposed) return;
     if (viewSaveTimer) clearTimeout(viewSaveTimer);
     viewSaveTimer = setTimeout(function(){
       viewSaveTimer = 0;
@@ -96,6 +107,7 @@ export function scheduleViewSave(){
   }
   var saveTimers = {};
 export function persistNode(node){
+    if (transportDisposed) return;
     if (saveTimers[node.id]) clearTimeout(saveTimers[node.id]);
     saveTimers[node.id] = setTimeout(function(){
       delete saveTimers[node.id];
@@ -103,39 +115,46 @@ export function persistNode(node){
     }, 350);
   }
 export function flushPendingSaves(){
+    return flushPendingSavesWith(post);
+  }
+  function flushPendingSavesWith(postPending){
     var pending = saveTimers;
     saveTimers = {};
     var posts = Object.keys(pending).map(function(id){
       clearTimeout(pending[id]);
       var node = nodes[id];
       if (!node) return Promise.resolve();
-      return post({ type:"node_update", node_id: node.id, position:{x:node.x,y:node.y}, size:{w:node.w,h:node.h}, collapsed: node.collapsed, font_scale: node.font_scale });
+      return postPending({ type:"node_update", node_id: node.id, position:{x:node.x,y:node.y}, size:{w:node.w,h:node.h}, collapsed: node.collapsed, font_scale: node.font_scale });
     });
     if (viewSaveTimer){
       clearTimeout(viewSaveTimer);
       viewSaveTimer = 0;
-      posts.push(post({ type: "view_state", state: currentViewState() }));
+      posts.push(postPending({ type: "view_state", state: currentViewState() }));
     }
     return Promise.all(posts);
   }
   // One request for a whole-layout change (Tidy) instead of N debounced posts.
 export function persistNodesBulk(list){
-    if (!list || !list.length) return;
+    if (transportDisposed || !list || !list.length) return;
     post({ type:"nodes_update", nodes: list.map(function(n){
       return { node_id: n.id, position:{x:n.x,y:n.y}, size:{w:n.w,h:n.h}, collapsed: n.collapsed, font_scale: n.font_scale };
     }) });
   }
 export function connectSse(){
+    if (transportDisposed) return null;
+    closeConnections();
+    var epoch = ++transportEpoch;
     if (transportAdapter && typeof transportAdapter.connect === "function") {
       webTransport = transportAdapter.connect({
         after: hydration.last_event_id || 0,
         onOpen: function(){
+          if (!isCurrentTransport(epoch)) return;
           resetSseFails();
           if (connLost){ setConnLost(false); refreshStatus(); }
         },
-        onMessage: handleServer,
+        onMessage: function(msg){ if (isCurrentTransport(epoch)) handleServer(msg); },
         onError: function(){
-          if (closed) return;
+          if (!isCurrentTransport(epoch) || closed) return;
           if (incrementSseFails() >= 2 && !connLost){ setConnLost(true); refreshStatus(); }
         }
       });
@@ -146,21 +165,30 @@ export function connectSse(){
     var after = hydration.last_event_id || 0;
     sse = new EventSource("/sse?after=" + after);
     sse.onopen = function(){
+      if (!isCurrentTransport(epoch)) return;
       resetSseFails();
       if (connLost){ setConnLost(false); refreshStatus(); }
     };
-    sse.onmessage = function(ev){ try { handleServer(JSON.parse(ev.data)); } catch(e){} };
+    sse.onmessage = function(ev){ if (!isCurrentTransport(epoch)) return; try { handleServer(JSON.parse(ev.data)); } catch(e){} };
     // EventSource retries forever on its own; after a couple of failures probe
     // the server once — if it's gone (agent process died), say so instead of
     // letting pending asks shimmer into eternity. Recovers via onopen.
     sse.onerror = function(){
-      if (closed) return;
+      if (!isCurrentTransport(epoch) || closed) return;
       if (incrementSseFails() >= 2 && !connLost){
-        fetch("/health", { cache: "no-store" })
+        if (healthProbeController) healthProbeController.abort();
+        healthProbeController = typeof AbortController === "function" ? new AbortController() : null;
+        var probe = healthProbeController;
+        fetch("/health", { cache: "no-store", signal: probe ? probe.signal : undefined })
           .then(function(r){ if (!r.ok) throw new Error("bad status"); })
-          .catch(function(){ if (!closed && !connLost){ setConnLost(true); refreshStatus(); } });
+          .catch(function(err){
+            if (err && err.name === "AbortError") return;
+            if (isCurrentTransport(epoch) && !closed && !connLost){ setConnLost(true); refreshStatus(); }
+          })
+          .finally(function(){ if (healthProbeController === probe) healthProbeController = null; });
       }
     };
+    return sse;
   }
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
@@ -172,6 +200,8 @@ export function connectSse(){
     delete streamRenderQueue[nodeId];
   }
   function scheduleStreamRender(node, firstChunk){
+    if (transportDisposed) return;
+    var epoch = transportEpoch;
     var queued = streamRenderQueue[node.id];
     streamRenderQueue[node.id] = { node: node, firstChunk: queued ? queued.firstChunk : firstChunk };
     if (streamRenderRaf) return;
@@ -179,6 +209,7 @@ export function connectSse(){
       streamRenderRaf = 0;
       var batch = streamRenderQueue;
       streamRenderQueue = {};
+      if (!isCurrentTransport(epoch)) return;
       Object.keys(batch).forEach(function(id){
         var item = batch[id];
         if (!item.node || item.node.status !== "pending") return;
@@ -186,6 +217,45 @@ export function connectSse(){
         renderStreamSurfaces(item.node, item.firstChunk);
       });
     });
+  }
+  function cancelFrame(frame){
+    if (!frame) return;
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
+    else clearTimeout(frame);
+  }
+  function cancelStreamRender(){
+    if (streamRenderRaf) cancelFrame(streamRenderRaf);
+    streamRenderRaf = 0;
+    streamRenderQueue = {};
+  }
+  function isCurrentTransport(epoch){
+    return !transportDisposed && epoch === transportEpoch;
+  }
+  function closeConnections(){
+    if (healthProbeController){ healthProbeController.abort(); healthProbeController = null; }
+    if (sse){ try { sse.close(); } catch(e){} sse = null; }
+    if (webTransport && typeof webTransport.close === "function"){
+      try { webTransport.close(); } catch(e){}
+    }
+    webTransport = null;
+  }
+export function disposeTransportStatus(){
+    if (transportDisposePromise) return transportDisposePromise;
+    if (transportDisposed){
+      transportAdapter = null;
+      return Promise.resolve();
+    }
+    var adapter = transportAdapter;
+    transportDisposed = true;
+    transportEpoch += 1;
+    closeConnections();
+    cancelStreamRender();
+    transportDisposePromise = Promise.resolve(flushPendingSavesWith(function(payload){
+      return postWithAdapter(adapter, payload);
+    })).finally(function(){
+      if (transportAdapter === adapter) transportAdapter = null;
+    });
+    return transportDisposePromise;
   }
   // Repaint a streaming node everywhere it is currently on screen: the reader
   // main doc, its follow-up thread turn, and its canvas card. Scroll positions
@@ -321,8 +391,8 @@ export function handleServer(msg){
     } else if (msg.type === "session_closed"){
       setClosedState(true, msg.reason || "session_closed");
       // Stop EventSource from reconnecting forever to the now-dead endpoint.
-      if (sse) { try { sse.close(); } catch(e){} sse = null; }
-      if (webTransport && typeof webTransport.close === "function") { try { webTransport.close(); } catch(e){} webTransport = null; }
+      transportEpoch += 1;
+      closeConnections();
       refreshStatus();
     }
   }

@@ -41,15 +41,21 @@ import {
   renderSidebar
 } from "./reader.js";
 import { mountVisuals } from "./visuals.js";
-import { downloadSnapshot } from "./snapshot.js";
 import { openPopover } from "./primitives/popover.js";
 import { anchorSurface } from "./overlay/anchor.js";
 import { registerLayer } from "./overlay/layer-stack.js";
+import { createCleanupScope } from "./lifecycle.js";
 
-var branchHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); },
-  exportPortable: null
-};
+function defaultBranchHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    exportSnapshot: null,
+    exportPortable: null
+  };
+}
+
+var branchHooks = defaultBranchHooks();
+var branchScope = null;
 
 export function registerBranchHooks(hooks) {
   Object.assign(branchHooks, hooks || {});
@@ -60,37 +66,63 @@ export function registerBranchHooks(hooks) {
   // ===========================================================================
   var peekTimer = 0, peekFor = null, peekPosition = null, peekLayer = null;
 export function initBranchSurfaces(){
-  readerMain.addEventListener("mouseover", onReaderMarkMouseover);
-  readerMain.addEventListener("mouseout", onReaderMarkMouseout);
-  world.addEventListener("mouseover", onReaderMarkMouseover);
-  world.addEventListener("mouseout", onReaderMarkMouseout);
-  readerMain.addEventListener("focusin", onMarkFocusin);
-  readerMain.addEventListener("focusout", onMarkFocusout);
-  world.addEventListener("focusin", onMarkFocusin);
-  world.addEventListener("focusout", onMarkFocusout);
-  peekEl.addEventListener("mouseleave", function(){ hidePeek(); });
-  peekEl.addEventListener("click", function(){
+  disposeBranchSurfaceResources(false);
+  branchScope = createCleanupScope();
+  try {
+  branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
+  branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
+  branchScope.listen(world, "mouseover", onReaderMarkMouseover);
+  branchScope.listen(world, "mouseout", onReaderMarkMouseout);
+  branchScope.listen(readerMain, "focusin", onMarkFocusin);
+  branchScope.listen(readerMain, "focusout", onMarkFocusout);
+  branchScope.listen(world, "focusin", onMarkFocusin);
+  branchScope.listen(world, "focusout", onMarkFocusout);
+  branchScope.listen(peekEl, "mouseleave", function(){ hidePeek(); });
+  branchScope.listen(peekEl, "click", function(){
     var kid = peekFor && nodes[peekFor];
     hidePeek();
     if (kid) openNode(kid.id);
   });
-  document.getElementById("r-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
-  document.getElementById("t-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
-  shareMenu.addEventListener("keydown", onShareMenuKeydown);
-  document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
-  document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
-  document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
-  document.getElementById("sm-portable").addEventListener("click", onExportPortable);
-  document.getElementById("sm-synth").addEventListener("click", function(e){
+  branchScope.listen(document.getElementById("r-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
+  branchScope.listen(document.getElementById("t-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
+  branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
+  branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
+  branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
+  branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
+  branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
+  branchScope.listen(document.getElementById("sm-synth"), "click", function(e){
     closeShare();
     synthesize(motionSourceFromEvent(e));
   });
-  document.getElementById("cf-keep").addEventListener("click", hideConfirm);
-  document.getElementById("cf-remove").addEventListener("click", function(){
+  branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
+  branchScope.listen(document.getElementById("cf-remove"), "click", function(){
     var node = confirmFor && nodes[confirmFor];
     hideConfirm();
     if (node) deleteBranch(node);
   });
+  return disposeBranchSurfaces;
+  } catch (error) {
+    disposeBranchSurfaces();
+    throw error;
+  }
+}
+
+export function disposeBranchSurfaces(){
+  disposeBranchSurfaceResources(true);
+}
+
+function disposeBranchSurfaceResources(resetHooks){
+  hidePeek();
+  closeShare({ restoreFocus: false });
+  hideConfirm({ restoreFocus: false });
+  var scope = branchScope;
+  branchScope = null;
+  if (scope) scope.dispose();
+  peekFor = null;
+  shareOpen = false;
+  shareAnchor = null;
+  confirmFor = null;
+  if (resetHooks) branchHooks = defaultBranchHooks();
 }
 
 export function hidePeek(){
@@ -131,13 +163,16 @@ export function hidePeek(){
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = setTimeout(function(){ peekTimer = 0; showPeek(m); }, 220);
+    peekTimer = branchScope
+      ? branchScope.timeout(function(){ peekTimer = 0; showPeek(m); }, 220)
+      : 0;
   }
   function onReaderMarkMouseout(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    setTimeout(function(){
+    if (!branchScope) return;
+    branchScope.timeout(function(){
       if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
     }, 80);
   }
@@ -147,13 +182,16 @@ export function hidePeek(){
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = setTimeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220);
+    peekTimer = branchScope
+      ? branchScope.timeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220)
+      : 0;
   }
   function onMarkFocusout(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    setTimeout(function(){
+    if (!branchScope) return;
+    branchScope.timeout(function(){
       if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
     }, 0);
   }
@@ -210,10 +248,10 @@ export function toggleShare(anchor, openedByKeyboard){
       onClose: closeShare
     });
   }
-export function closeShare(){
+export function closeShare(settings){
     shareOpen = false;
     shareMenu.classList.remove("visible");
-    if (sharePopover){ sharePopover.close(); sharePopover = null; }
+    if (sharePopover){ sharePopover.close(settings); sharePopover = null; }
     shareAnchor = null;
   }
 
@@ -268,8 +306,12 @@ export function closeShare(){
   }
 	  function onExportSnapshot(){
 	    closeShare();
+	    if (typeof branchHooks.exportSnapshot !== "function"){
+	      flashHint("This snapshot is already portable.");
+	      return;
+	    }
 	    flashHint("Preparing snapshot...");
-	    downloadSnapshot().then(function(){
+	    Promise.resolve(branchHooks.exportSnapshot()).then(function(){
 	      flashHint("Snapshot downloading — a single file that opens anywhere.");
 	    }, function(){
 	      flashHint("Couldn't prepare the snapshot.");

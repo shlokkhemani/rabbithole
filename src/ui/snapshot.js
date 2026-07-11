@@ -11,17 +11,23 @@ import {
 } from "./core.js";
 import { flushPendingSaves } from "./transport-status.js";
 
-var snapshotHooks = {
-  fetchAssetBinary: null,
-  getSnapshotHole: null,
-  getFrozenClientSource: null,
-  getDompurifySource: null,
-  getStylesheetText: null
-};
+function defaultSnapshotHooks(){
+  return {
+    fetchAssetBinary: null,
+    getSnapshotHole: null,
+    getFrozenClientSource: null,
+    getDompurifySource: null,
+    getStylesheetText: null
+  };
+}
+
+var snapshotHooks = defaultSnapshotHooks();
 
 export function setSnapshotHooks(hooks) {
-  snapshotHooks = Object.assign({}, snapshotHooks, hooks || {});
+  snapshotHooks = Object.assign(defaultSnapshotHooks(), hooks || {});
 }
+
+export function resetSnapshotHooks() { snapshotHooks = defaultSnapshotHooks(); }
 
 function snapshotViewState() {
   var cur = nodes[currentNodeId];

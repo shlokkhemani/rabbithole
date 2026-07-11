@@ -27,6 +27,7 @@ export class DirectRabbitholeHost {
     this.abortByNode = new Map();
     this.lastEventId = 0;
     this.disposed = false;
+    this.subscriptions = new Set();
   }
 
   hydration() {
@@ -45,11 +46,32 @@ export class DirectRabbitholeHost {
   adapter() {
     return {
       connect: ({ onOpen, onMessage }) => {
-        this.onEvent = (event) => {
-          onMessage?.(event);
+        const subscription = {
+          closed: false,
+          openTimer: 0,
+          callback: (event) => {
+            if (!subscription.closed && !this.disposed) onMessage?.(event);
+          },
+          close: () => {
+            if (subscription.closed) return;
+            subscription.closed = true;
+            if (subscription.openTimer) clearTimeout(subscription.openTimer);
+            subscription.openTimer = 0;
+            this.subscriptions.delete(subscription);
+            if (this.onEvent === subscription.callback) this.onEvent = null;
+          },
         };
-        setTimeout(() => onOpen?.(), 0);
-        return { close: () => {} };
+        if (this.disposed) {
+          subscription.closed = true;
+          return { close: subscription.close };
+        }
+        this.subscriptions.add(subscription);
+        this.onEvent = subscription.callback;
+        subscription.openTimer = setTimeout(() => {
+          subscription.openTimer = 0;
+          if (!subscription.closed && !this.disposed) onOpen?.();
+        }, 0);
+        return { close: subscription.close };
       },
       post: (payload) => this.handleBrowserEvent(payload),
     };
@@ -496,6 +518,7 @@ export class DirectRabbitholeHost {
   }
 
   dispose() {
+    if (this.disposed) return this.savingChain;
     this.disposed = true;
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
@@ -505,6 +528,9 @@ export class DirectRabbitholeHost {
       try { controller.abort(); } catch {}
     }
     this.abortByNode.clear();
+    for (const subscription of [...this.subscriptions]) subscription.close();
+    this.onEvent = null;
+    return this.savingChain;
   }
 }
 

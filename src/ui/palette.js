@@ -13,13 +13,19 @@ import {
 } from "./core.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
+import { createCleanupScope } from "./lifecycle.js";
 
-var paletteHooks = {
-  hideAsk: function(){},
-  hidePeek: function(){},
-  closeShare: function(){},
-  hideConfirm: function(){}
-};
+function defaultPaletteHooks(){
+  return {
+    hideAsk: function(){},
+    hidePeek: function(){},
+    closeShare: function(){},
+    hideConfirm: function(){}
+  };
+}
+
+var paletteHooks = defaultPaletteHooks();
+var paletteScope = null;
 
 export function registerPaletteHooks(hooks) {
   Object.assign(paletteHooks, hooks || {});
@@ -39,12 +45,37 @@ export function registerPaletteHooks(hooks) {
   }
   var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palDialog = null, palRows = [];
 export function initPalette(){
-  palText.setAttribute("role", "combobox");
-  palText.setAttribute("aria-expanded", "false");
-  palText.addEventListener("input", function(){ renderPalette(palText.value); });
-  palText.addEventListener("keydown", onPaletteKeydown);
-  palResults.addEventListener("click", onPaletteClick);
-  palResults.addEventListener("mousemove", onPaletteMousemove);
+  disposePaletteResources(false);
+  paletteScope = createCleanupScope();
+  try {
+    palText.setAttribute("role", "combobox");
+    palText.setAttribute("aria-expanded", "false");
+    paletteScope.listen(palText, "input", function(){ renderPalette(palText.value); });
+    paletteScope.listen(palText, "keydown", onPaletteKeydown);
+    paletteScope.listen(palResults, "click", onPaletteClick);
+    paletteScope.listen(palResults, "mousemove", onPaletteMousemove);
+    return disposePalette;
+  } catch (error) {
+    disposePalette();
+    throw error;
+  }
+}
+
+export function disposePalette(){
+  disposePaletteResources(true);
+}
+
+function disposePaletteResources(resetHooks){
+  closePalette({ restoreFocus: false });
+  var scope = paletteScope;
+  paletteScope = null;
+  if (scope) scope.dispose();
+  palOpen = false;
+  palSel = 0;
+  palItems = [];
+  palCanvasCommands = false;
+  palRows = [];
+  if (resetHooks) paletteHooks = defaultPaletteHooks();
 }
 
 export function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
@@ -72,8 +103,8 @@ export function openPalette(){
     });
     palText.setAttribute("aria-expanded", "true");
   }
-export function closePalette(){
-    if (palDialog) palDialog.close();
+export function closePalette(settings){
+    if (palDialog) palDialog.close("programmatic", settings);
   }
   function onPaletteKeydown(e){
     if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }

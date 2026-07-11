@@ -104,6 +104,7 @@ export interface ViewStateEvent { type: "view_state"; state?: unknown; }
 export interface HoleTitleEvent { type: "hole_title"; title?: unknown; }
 /** Internal engine event; not part of the MCP/SSE wire vocabulary. */
 export interface NodeOriginEvent extends NodeTarget { type: "node_origin"; origin?: unknown; }
+export interface NodeExtensionsPatchEvent extends NodeTarget { type: "node_extensions_patch"; namespace?: unknown; value?: unknown; }
 export interface BlockStateEvent extends NodeTarget {
   type: "block_state";
   block_id?: unknown;
@@ -117,7 +118,7 @@ export interface BlockStateEvent extends NodeTarget {
 
 export type DocEvent = BranchRequestEvent | NodeProgressEvent | NodeAnsweredEvent |
   DeleteNodeEvent | NodeUpdateEvent | NodesUpdateEvent | ViewStateEvent |
-  HoleTitleEvent | NodeOriginEvent | BlockStateEvent;
+  HoleTitleEvent | NodeOriginEvent | NodeExtensionsPatchEvent | BlockStateEvent;
 
 export interface ReduceEffects {
   node_id?: string;

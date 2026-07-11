@@ -3,18 +3,17 @@ import { ProviderError, normalizeProviderError } from "./errors.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class OpenAICompatibleBrain {
-  constructor({ baseUrl, apiKey, authorModel, answerModel, extraHeaders = {}, title = "Rabbithole" } = {}) {
+  constructor({ baseUrl, apiKey, model, extraHeaders = {}, title = "Rabbithole" } = {}) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     this.apiKey = apiKey || "";
-    this.authorModel = authorModel || answerModel || "anthropic/claude-sonnet-5";
-    this.answerModel = answerModel || this.authorModel;
+    this.model = model || "anthropic/claude-sonnet-5";
     this.extraHeaders = extraHeaders || {};
     this.title = title;
   }
 
   async *authorDocument(source, signal) {
     const body = {
-      model: this.authorModel,
+      model: this.model,
       messages: buildAuthorMessages(source),
       stream: true,
       temperature: 0.2,
@@ -31,7 +30,7 @@ export class OpenAICompatibleBrain {
 
   async *authorExplainer({ question } = {}, signal) {
     const body = {
-      model: this.authorModel,
+      model: this.model,
       messages: buildExplainerMessages({ question }),
       stream: true,
       temperature: 0.35,
@@ -48,7 +47,7 @@ export class OpenAICompatibleBrain {
 
   async *answerBranch(context, signal) {
     const body = {
-      model: this.answerModel,
+      model: this.model,
       messages: buildAnswerMessages(context),
       stream: true,
       temperature: 0.4,

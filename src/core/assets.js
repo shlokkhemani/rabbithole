@@ -86,3 +86,16 @@ export function extractAssetRefsFromMarkdown(markdown) {
   }
   return refs;
 }
+
+/** Single asset-reference view used by deletion candidates, survivors, and undo. */
+/** @param {any} node */
+export function extractNodeAssetRefs(node) {
+  const refs = new Set(extractAssetRefsFromMarkdown(node?.markdown));
+  const pages = node?.extensions?.pdf?.pages;
+  if (Array.isArray(pages)) {
+    for (const page of pages) {
+      try { refs.add(validateAssetName(page?.asset)); } catch {}
+    }
+  }
+  return refs;
+}

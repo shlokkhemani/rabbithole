@@ -104,7 +104,7 @@ function beginImageResize(e, dc, frame, key){
     var dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
-function openImageLightbox(src, alt, trigger){
+export function openImageLightbox(src, alt, trigger){
     closeImageLightbox();
     var overlay = document.createElement("div");
     overlay.className = "rh-lightbox";

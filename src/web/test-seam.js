@@ -20,7 +20,7 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
     inspectAssetType: async (name, id = currentHoleId()) => (await store.getAsset(id, name))?.type || "",
     // Empty-store persistence tests need raw persistence record counts, which empty product chrome cannot distinguish.
     listStoredHoles: () => store.listHoles(),
-    // Structured-authoring tests need author-model rewrite fixtures, for which the product has no equivalent UI action.
+    // Structured-authoring tests need model rewrite fixtures, for which the product has no equivalent UI action.
     createDocument,
     // Snapshot byte/content tests need pre-download artifact strings, which the download UI cannot return.
     exportSnapshot,

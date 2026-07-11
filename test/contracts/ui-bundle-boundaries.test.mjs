@@ -16,6 +16,7 @@ const inputs = Object.keys(result.metafile.inputs);
 const forbidden = inputs.filter((input) =>
   input === "src/ui/transport-status.js"
   || input === "src/ui/snapshot.js"
+  || input === "src/ui/pdf-view.js"
   || input.startsWith("src/web/")
 );
 

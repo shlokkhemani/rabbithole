@@ -32,7 +32,7 @@ function liveAssetUrl(name) {
   return slash + "assets" + slash + name;
 }
 
-function resolveAssetUrl(name) {
+export function resolveAssetUrl(name) {
   if (assetData) return assetData[name] || "data:,";
   return liveAssetUrl(name);
 }

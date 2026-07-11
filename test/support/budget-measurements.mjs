@@ -22,6 +22,8 @@ export const budgetDefinitions = [
   ["stream_dom_batches", "DOM mutation batches for a fixed 40-update synthetic stream", "batches", 1, "Minimum observed batch count on an otherwise-quiescent page; 2x ceiling with a 6-batch floor catches loss of rAF coalescing (which produces dozens of batches) without flaking.", 6],
   ["stream_update_ms", "Total browser duration for a fixed 40-update synthetic stream", "ms", 2, "Minimum of repeated samples; 3x ceiling absorbs browser scheduling noise."],
   ["save_window_ms", "Elapsed time from final streamed DOM update until the final markdown is persisted", "ms", 1, "Minimum of repeated samples; 2x ceiling with a 100ms floor (poll quantization) still catches a lost flush-on-complete, which costs 400ms+.", 100],
+  ["pdf_hole_serialized_bytes", "Serialized size of a representative 40-page native PDF hole", "bytes", 0.2, "Exact JSON byte size catches provenance growth."],
+  ["pdf_save_latency_ms", "JSON clone/serialize latency for a representative native PDF save", "ms", 4, "Minimum of repeated 20-save loops with a 20ms floor absorbs timer noise.", 20],
 ].map(([id, description, unit, tolerance, rationale, floor]) => ({ id, description, unit, tolerance, rationale, ...(floor ? { floor } : {}) }));
 
 export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) {
@@ -31,10 +33,17 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
     bundle_client_bytes: (await fs.stat(path.join(ROOT, "dist/client.js"))).size,
     bundle_frozen_client_bytes: (await fs.stat(path.join(ROOT, "dist/frozen-client.js"))).size,
   };
+  const pdfHole = representativePdfHole();
+  exact.pdf_hole_serialized_bytes = Buffer.byteLength(JSON.stringify(pdfHole));
   const server = await serveStatic(WEB_DIST);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch();
   const values = Object.fromEntries(budgetDefinitions.map(({ id }) => [id, []]));
+  for (let sample = 0; sample < samples; sample++) {
+    const start = performance.now();
+    for (let run = 0; run < 20; run++) JSON.parse(JSON.stringify(pdfHole));
+    values.pdf_save_latency_ms.push((performance.now() - start) / 20);
+  }
   try {
     const fixtureResults = await measureSnapshots(browser, baseUrl, samples, onSample);
     Object.assign(exact, fixtureResults.exact);
@@ -58,6 +67,18 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
     value: Math.min(...list),
     samples: list,
   }]));
+}
+
+function representativePdfHole() {
+  const markdown = "# PDF budget\n" + Array.from({ length: 2000 }, (_, i) => `line ${i}`).join("\n") + "\n";
+  let offset = "# PDF budget\n".length;
+  const lines = Array.from({ length: 2000 }, (_, i) => {
+    const length = `line ${i}`.length;
+    const line = { p: Math.floor(i / 50) + 1, x: .1, y: .1, w: .8, h: .02, s: offset, e: offset + length };
+    offset += length + 1;
+    return line;
+  });
+  return { hole_id: "pdf-budget", title: "PDF budget", root_id: "root", nodes: [{ id: "root", markdown, extensions: { pdf: { version: 1, scale: 2, page_count: 40, pages: Array.from({ length: 40 }, (_, i) => ({ n: i + 1, asset: `page-${String(i + 1).padStart(3, "0")}.jpg`, w: 1224, h: 1584 })), lines } } }] };
 }
 
 async function measureSnapshots(browser, baseUrl, samples, onSample) {

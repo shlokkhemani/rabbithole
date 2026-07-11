@@ -8,8 +8,7 @@ export const PROVIDERS = Object.freeze({
     base_url: "https://openrouter.ai/api/v1",
     kind: "openai-compatible",
     requires_key: true,
-    author_model: "anthropic/claude-sonnet-5",
-    answer_model: "anthropic/claude-sonnet-5",
+    model: "anthropic/claude-sonnet-5",
   }),
   custom: Object.freeze({
     id: "custom",
@@ -18,8 +17,7 @@ export const PROVIDERS = Object.freeze({
     base_url: "http://localhost:11434/v1",
     kind: "openai-compatible",
     requires_key: false,
-    author_model: "llama3.2",
-    answer_model: "llama3.2",
+    model: "llama3.2",
   }),
 });
 
@@ -37,8 +35,7 @@ export function defaultBrainSettings() {
   return {
     preset: provider.id,
     base_url: provider.base_url,
-    author_model: provider.author_model,
-    answer_model: provider.answer_model,
+    model: provider.model,
     fetch_proxy_url: "",
     session_only: false,
   };
@@ -50,7 +47,6 @@ export function settingsForProvider(id, current = {}) {
     ...current,
     preset: provider.id,
     base_url: provider.base_url,
-    author_model: provider.author_model,
-    answer_model: provider.answer_model,
+    model: provider.model,
   };
 }

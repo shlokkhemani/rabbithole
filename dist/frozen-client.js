@@ -2468,6 +2468,7 @@ var RabbitholeFrozenClient = (() => {
       openNode: function() {
       },
       mountDocImages: null,
+      mountPdfView: null,
       effH: function(n) {
         return n.h;
       }
@@ -2552,6 +2553,9 @@ var RabbitholeFrozenClient = (() => {
     try {
       if (scope) scope.dispose();
     } finally {
+      Object.keys(nodes).forEach(function(id) {
+        disposeNodeContent(nodes[id]);
+      });
       resetCoreState();
     }
   }
@@ -2895,6 +2899,13 @@ var RabbitholeFrozenClient = (() => {
       if (t) els[i2].textContent = formatElapsed(Date.now() - t);
     }
   }
+  function disposeNodeContent(node) {
+    if (!node || !node._contentDisposers) return;
+    Array.from(node._contentDisposers).forEach(function(dispose) {
+      dispose();
+    });
+    node._contentDisposers.clear();
+  }
   function buildDocContent(node, base) {
     var dc = document.createElement("div");
     dc.className = "doc-content md";
@@ -2904,8 +2915,19 @@ var RabbitholeFrozenClient = (() => {
       if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
       else dc.appendChild(buildLoading(node));
     } else {
-      dc.innerHTML = node.html || "";
-      mountDocMedia(dc, node, base);
+      var disposePdf = coreHooks.mountPdfView ? coreHooks.mountPdfView(dc, node) : null;
+      if (disposePdf) {
+        if (!node._contentDisposers) node._contentDisposers = /* @__PURE__ */ new Set();
+        var dispose = function() {
+          node._contentDisposers.delete(dispose);
+          disposePdf();
+        };
+        node._contentDisposers.add(dispose);
+        dc._rhDispose = dispose;
+      } else {
+        dc.innerHTML = node.html || "";
+        mountDocMedia(dc, node, base);
+      }
     }
     return dc;
   }
@@ -3177,6 +3199,8 @@ var RabbitholeFrozenClient = (() => {
   }
   function renderReaderBody() {
     var node = nodes[currentNodeId];
+    var previous = readerMain.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
@@ -3973,6 +3997,8 @@ var RabbitholeFrozenClient = (() => {
   function fillBody(node) {
     var body = node.bodyEl;
     if (!body) return;
+    var previous = body.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis) {
       var sq = document.createElement("div");
@@ -4677,6 +4703,7 @@ var RabbitholeFrozenClient = (() => {
   function teardownNode(id) {
     var node = nodes[id];
     if (!node) return;
+    disposeNodeContent(node);
     if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
     removeMarks(readerMain, id);
     removeThreadItem(id);
@@ -32862,7 +32889,8 @@ ${text2}</tr>
       registerCoreHooks({
         post,
         openNode,
-        mountDocImages
+        mountDocImages,
+        mountPdfView: capabilities.mountPdfView || null
       });
       registerReaderHooks({
         hideAsk,

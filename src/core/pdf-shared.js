@@ -2,6 +2,12 @@ export const MAX_PDF_BYTES = 100 * 1024 * 1024;
 export const DEFAULT_PAGE_CAP = 40;
 export const PDF_RENDER_SCALE = 2;
 export const PDF_MAGIC = "%PDF";
+export const MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
+export const MAX_PDF_PAGES = 100;
+export const MAX_PDF_LINES = 25000;
+
+import { validateAssetName } from "./assets.js";
+import { normalizeBlockIds } from "./blocks.js";
 
 /** @param {{ length: number, [index: number]: number } | null | undefined} bytes */
 export function hasPdfMagic(bytes) {
@@ -23,7 +29,7 @@ export function describePdfOpenError(err, { label, encryptedHint, engine }) {
 
 /** @typedef {{ str: string, transform: number[], width?: number, height?: number }} PdfTextItem */
 /** @typedef {{ str: string, x: number, y: number, width: number, height: number }} TextGeometry */
-/** @typedef {{ y: number, minX: number, maxX: number, text: string }} TextLine */
+/** @typedef {{ y: number, minX: number, maxX: number, height: number, text: string }} TextLine */
 /** @typedef {TextLine & { column: string }} ClassifiedLine */
 
 /** @param {unknown} pages */
@@ -80,7 +86,7 @@ export function normalizePdfTitle(metadata) {
 
 /** @param {number} pageNumber */
 export function pdfPageAssetName(pageNumber) {
-  return `page-${String(pageNumber).padStart(3, "0")}.png`;
+  return `page-${String(pageNumber).padStart(3, "0")}.jpg`;
 }
 
 /** @param {PdfTextItem} item @returns {TextGeometry} */
@@ -147,6 +153,7 @@ function clusterTextLines(items) {
         y: line.y,
         minX,
         maxX,
+        height: Math.max(...line.items.map((item) => item.height)),
         text: text.trimEnd(),
       };
     })
@@ -166,7 +173,7 @@ function orderLinesForReading(lines, pageWidth) {
   });
   const leftCount = classified.filter((line) => line.column === "left").length;
   const rightCount = classified.filter((line) => line.column === "right").length;
-  if (leftCount < 8 || rightCount < 8) return classified.map((line) => line.text);
+  if (leftCount < 8 || rightCount < 8) return classified;
 
   /** @type {ClassifiedLine[]} */
   const ordered = [];
@@ -191,50 +198,115 @@ function orderLinesForReading(lines, pageWidth) {
     }
   }
   flushRun();
-  return ordered.map((line) => line.text);
+  return ordered;
 }
 
 /** @param {{ items?: PdfTextItem[] } | null | undefined} content @param {number} pageWidth */
 function extractTextFromPdfContent(content, pageWidth) {
   const lines = orderLinesForReading(clusterTextLines(content?.items || []), pageWidth);
-  return lines.join("\n");
+  return lines.map((line) => line.text).join("\n");
 }
 
 /** @param {any} page */
-export async function extractPdfPageText(page) {
+export async function extractPdfPageLines(page) {
   const content = await page.getTextContent({ includeMarkedContent: false });
   const viewport = page.getViewport({ scale: 1 });
-  return extractTextFromPdfContent(content, viewport.width);
+  return orderLinesForReading(clusterTextLines(content?.items || []), viewport.width).map((line) => ({
+    text: line.text,
+    x: clamp01(line.minX / viewport.width),
+    y: clamp01((viewport.height - line.y - line.height) / viewport.height),
+    w: clamp01((line.maxX - line.minX) / viewport.width),
+    h: clamp01(line.height / viewport.height),
+  }));
 }
 
-/** @param {{ title?: unknown, pageCount?: number, processedPages?: number[], pageAssets?: { page: number, name?: string }[], pageText?: { page: number, text?: unknown }[], notes?: unknown[] }} [input] */
-export function buildPdfMarkdown({ title, pageCount, processedPages, pageAssets, pageText, notes } = {}) {
-  const out = [`# ${cleanHeading(title || "PDF Document")}`, ""];
-  const pages = Array.isArray(processedPages) ? processedPages : [];
-  if (pageCount && pages.length) {
-    out.push(`Imported ${pages.length} of ${pageCount} ${pageCount === 1 ? "page" : "pages"}.`, "");
-  }
-  const textByPage = new Map((pageText || []).map((entry) => [entry.page, String(entry.text || "").trim()]));
-  const assetsByPage = new Map((pageAssets || []).map((entry) => [entry.page, entry]));
-
-  for (const pageNumber of pages) {
-    const asset = assetsByPage.get(pageNumber);
-    out.push(`## Page ${pageNumber}`, "");
-    if (asset?.name) out.push(`![Page ${pageNumber}](asset:${asset.name})`, "");
-    const text = textByPage.get(pageNumber);
-    if (text) {
-      out.push("```text", text, "```", "");
+/** @param {{title?: unknown, pageCount?: number, processedPages?: number[], pageAssets?: any[], pageLines?: any[], notes?: unknown[]}} [input] Build the canonical model body and native-view provenance for either host. */
+export function buildPdfDocument({ title, pageCount, processedPages, pageAssets, pageLines, notes } = {}) {
+  const bodyLines = [`# ${cleanHeading(title || "PDF Document")}`, ""];
+  const provenance = [];
+  const linesByPage = new Map((pageLines || []).map((entry) => [entry.page, Array.isArray(entry.lines) ? entry.lines : []]));
+  for (const pageNumber of Array.isArray(processedPages) ? processedPages : []) {
+    const lines = linesByPage.get(pageNumber) || [];
+    if (!lines.length) bodyLines.push(`*(page ${pageNumber}: no extractable text)*`);
+    for (const line of lines) {
+      const ordinal = bodyLines.length;
+      bodyLines.push(String(line.text || ""));
+      provenance.push({ p: pageNumber, x: line.x, y: line.y, w: line.w, h: line.h, ordinal });
     }
   }
-
   const usefulNotes = (notes || []).map((note) => String(note || "").trim()).filter(Boolean);
-  if (usefulNotes.length) {
-    out.push("## Import Notes", "");
-    for (const note of usefulNotes) out.push(`- ${note}`);
-    out.push("");
-  }
+  for (const note of usefulNotes) bodyLines.push(note);
+  const assembled = bodyLines.join("\n").trimEnd() + "\n";
+  let blockId = 0;
+  const markdown = normalizeBlockIds(assembled, { idFactory: () => `pdf${String(blockId++).padStart(3, "0")}` }).markdown;
+  const positions = linePositions(markdown);
+  const lines = provenance.map(({ ordinal, ...line }) => ({
+    ...line,
+    s: positions[ordinal].s,
+    e: positions[ordinal].e,
+  }));
+  const assetsByPage = new Map((pageAssets || []).map((entry) => [entry.page, entry]));
+  const pages = (processedPages || []).map((n) => {
+    const asset = assetsByPage.get(n) || {};
+    return { n, asset: asset.name, w: asset.width, h: asset.height };
+  });
+  return {
+    markdown,
+    pdfExtension: {
+      version: 1,
+      scale: PDF_RENDER_SCALE,
+      page_count: Number(pageCount) || pages.length,
+      pages,
+      lines,
+      notes: usefulNotes,
+      converting: false,
+      converted: false,
+      original_markdown: null,
+    },
+  };
+}
 
-  return out.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
+/** Consumer-side validation for schema-opaque extension data. */
+/** @param {any} nodeOrExtension */
+export function normalizePdfExtension(nodeOrExtension) {
+  try {
+    const body = String(nodeOrExtension?.markdown ?? nodeOrExtension?.md ?? "");
+    const value = nodeOrExtension?.extensions?.pdf ?? nodeOrExtension?.pdf ?? nodeOrExtension;
+    if (!value || value.version !== 1 || !Array.isArray(value.pages) || !Array.isArray(value.lines)) return null;
+    if (value.pages.length > MAX_PDF_PAGES || value.lines.length > MAX_PDF_LINES) return null;
+    const finite = (/** @type {unknown} */ number) => typeof number === "number" && Number.isFinite(number);
+    if (!finite(value.scale) || !finite(value.page_count) || value.page_count < value.pages.length) return null;
+    const pages = value.pages.map((/** @type {any} */ page) => {
+      if (!finite(page.n) || !finite(page.w) || !finite(page.h) || page.w <= 0 || page.h <= 0) throw new Error("bad page");
+      return { n: page.n, asset: validateAssetName(page.asset), w: page.w, h: page.h };
+    });
+    let previous = -1;
+    const lines = value.lines.map((/** @type {any} */ line) => {
+      for (const key of ["p", "x", "y", "w", "h", "s", "e"]) if (!finite(line[key])) throw new Error("bad line");
+      if (line.s < previous || line.s < 0 || line.e < line.s || line.e > body.length) throw new Error("bad offsets");
+      previous = line.e;
+      return { p: line.p, x: clamp01(line.x), y: clamp01(line.y), w: clamp01(line.w), h: clamp01(line.h), s: line.s, e: line.e };
+    });
+    return { ...value, pages, lines, notes: Array.isArray(value.notes) ? value.notes.map(String) : [] };
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} markdown */
+function linePositions(markdown) {
+  const positions = [];
+  let s = 0;
+  for (const text of markdown.split("\n").slice(0, -1)) {
+    positions.push({ s, e: s + text.length });
+    s += text.length + 1;
+  }
+  return positions;
+}
+
+/** @param {unknown} value */
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
 /** @param {unknown} value */

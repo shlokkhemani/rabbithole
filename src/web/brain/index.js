@@ -10,11 +10,11 @@ export * from "./openai-compatible.js";
 export function createBrain(settings, apiKey) {
   const preset = providerFor(settings?.preset);
   const base = settings?.base_url || preset.base_url;
+  const model = settings?.model || preset.model;
   const common = {
     baseUrl: base,
     apiKey,
-    authorModel: settings?.author_model || preset.author_model,
-    answerModel: settings?.answer_model || preset.answer_model,
+    model,
   };
   return new OpenAICompatibleBrain(common);
 }

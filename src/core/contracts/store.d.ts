@@ -51,4 +51,5 @@ export interface RabbitholeStore {
   createStaging(): Promise<StagingHandle>;
   putStagedAsset(ingestId: string, name: string, bytes: AssetBytes): Promise<void>;
   adoptStagedAssets(holeId: string, ingestId: string): Promise<string[]>;
+  discardStaging(ingestId: string): Promise<void>;
 }

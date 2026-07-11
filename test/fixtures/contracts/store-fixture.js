@@ -13,5 +13,5 @@ export const storeFixture = {
   async createStaging() { return { ingest_id: "ingest-fixture" }; },
   async putStagedAsset(_ingestId, _name, _bytes) {},
   async adoptStagedAssets(_holeId, _ingestId) { return []; },
+  async discardStaging(_ingestId) {},
 };
-

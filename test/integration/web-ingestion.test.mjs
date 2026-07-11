@@ -27,8 +27,8 @@ const context = await browser.newContext();
 await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
   preset: "custom",
   base_url: "http://localhost:11434/v1",
-  answer_model: "llama3.2",
-  author_model: "llama3.2",
+  model: "llama3.2",
+  model: "llama3.2",
   session_only: true,
   generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
 })));
@@ -67,9 +67,7 @@ try {
     "Browser PDF page two: Integral int_0^1 x dx = 1/2",
   ]);
   await dropPdf(page, pdfBytes, "MaTh-FiXtUrE.PdF", "");
-  await page.waitForSelector(".node .doc-content[data-node-id] img");
-  await waitForCanvasText(page, "Euler math");
-  await waitForCanvasText(page, "Integral int_0^1");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.waitForFunction(() => {
     const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
@@ -84,11 +82,14 @@ try {
     const raw = await window.__rabbitholeTest.readStoredHole(holeId);
     return { assets, sizes, raw: JSON.stringify(raw) };
   });
-  assert.deepEqual(pdfState.assets, ["page-001.png", "page-002.png"]);
-  assert(pdfState.sizes["page-001.png"] > 100, "page-001.png should be stored as a non-empty Blob");
-  assert(pdfState.raw.includes("asset:page-001.png"));
+  assert.deepEqual(pdfState.assets, ["page-001.jpg", "page-002.jpg"]);
+  assert(pdfState.sizes["page-001.jpg"] > 100, "page-001.jpg should be stored as a non-empty Blob");
+  assert(!pdfState.raw.includes("asset:page-001.jpg"), "model markdown must not contain page-image refs");
+  assert(pdfState.raw.includes('"version":1'));
   assert(pdfState.raw.includes("Browser PDF page one"));
   assert(pdfState.raw.includes("Integral int_0^1"));
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await setFetchProxy(page, `${baseUrl}/proxy`);

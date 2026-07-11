@@ -13,6 +13,7 @@
  * - createStaging(): Promise<{ ingest_id: string }>
  * - putStagedAsset(ingestId, name, bytes): Promise<void>
  * - adoptStagedAssets(holeId, ingestId): Promise<string[]>
+ * - discardStaging(ingestId): Promise<void>
  */
 
 export const RABBITHOLE_STORE_METHODS = Object.freeze([
@@ -27,6 +28,7 @@ export const RABBITHOLE_STORE_METHODS = Object.freeze([
   "createStaging",
   "putStagedAsset",
   "adoptStagedAssets",
+  "discardStaging",
 ]);
 
 /**

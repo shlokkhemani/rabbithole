@@ -62,6 +62,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       post: post,
       openNode: openNode,
       mountDocImages: mountDocImages
+      ,mountPdfView: capabilities.mountPdfView || null
     });
     registerReaderHooks({
       hideAsk: hideAsk,

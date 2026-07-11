@@ -12,6 +12,7 @@ import {
   setTransportAdapter
 } from "./transport-status.js";
 import { downloadSnapshot, resetSnapshotHooks, setSnapshotHooks } from "./snapshot.js";
+import { mountPdfView } from "./pdf-view.js";
 
 export function startRabbithole(hydration, options) {
   options = options || {};
@@ -31,6 +32,7 @@ export function startRabbithole(hydration, options) {
       dispose: disposeTransportStatus
     },
     capabilities: {
+      mountPdfView: mountPdfView,
       exportSnapshot: downloadSnapshot,
       exportPortable: options.exportPortable || null
     }

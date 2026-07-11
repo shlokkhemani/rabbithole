@@ -270,7 +270,7 @@ async function verifyComboboxCatalogStates() {
   await delayedPage.keyboard.press("Enter");
   assert.equal(await delayedPage.locator("#model-select-listbox").count(), 0);
   assert.equal(await delayedPage.evaluate(() => document.activeElement?.id), "model-select", "keyboard commit should restore trigger focus");
-  assert.equal((await delayedPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).answer_model, "openai/gpt-5");
+  assert.equal((await delayedPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "openai/gpt-5");
   await delayed.close();
 
   const failed = await browser.newContext();
@@ -302,7 +302,7 @@ async function verifyComboboxCatalogStates() {
   assert.match(await emptyPage.locator(".combobox-empty").innerText(), /returned no models/i);
   await emptyPage.fill("#model-select-input", "vendor/exact-model");
   await emptyPage.keyboard.press("Enter");
-  assert.equal((await emptyPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).author_model, "vendor/exact-model", "empty catalogs should commit free text");
+  assert.equal((await emptyPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "vendor/exact-model", "empty catalogs should commit free text");
   await empty.close();
 
   await verifyLocalComboboxStates(fixture);
@@ -343,8 +343,8 @@ async function verifySetupReadinessInvalidation() {
   await local.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
     preset: "custom",
     base_url: "http://localhost:11434/v1",
-    answer_model: "llama3.2",
-    author_model: "llama3.2",
+    model: "llama3.2",
+    model: "llama3.2",
     session_only: true,
     generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
   })));
@@ -380,7 +380,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
   await found.page.click(".model-option[data-value='qwen3:8b']");
   const foundSettings = await found.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")));
-  assert.equal(foundSettings.answer_model, "qwen3:8b"); assert.equal(foundSettings.author_model, "qwen3:8b");
+  assert.equal(foundSettings.model, "qwen3:8b"); assert.equal(foundSettings.model, "qwen3:8b");
   await found.context.close();
 
   const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
@@ -405,7 +405,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await free.page.waitForSelector(".combobox-error");
   await free.page.fill("#local-model-input", "manual:7b");
   await free.page.keyboard.press("Enter");
-  assert.equal((await free.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).answer_model, "manual:7b", "failed local discovery should commit an exact id");
+  assert.equal((await free.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "manual:7b", "failed local discovery should commit an exact id");
   await free.context.close();
 }
 
@@ -617,8 +617,8 @@ async function verifyAskKeyUxAndRail() {
   await page.waitForSelector("#local-model-listbox [role=option][data-value='deepseek-r1:7b']");
   await page.keyboard.press("Enter");
   const localSettings = await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings") || "{}"));
-  assert.equal(localSettings.answer_model, "deepseek-r1:7b");
-  assert.equal(localSettings.author_model, "deepseek-r1:7b");
+  assert.equal(localSettings.model, "deepseek-r1:7b");
+  assert.equal(localSettings.model, "deepseek-r1:7b");
   await page.click('[data-provider="openrouter"]');
   assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "returning to a provider should restore only that provider's local key");
   await page.click("#model-select");
@@ -633,8 +633,8 @@ async function verifyAskKeyUxAndRail() {
   await page.waitForSelector("#model-select-listbox", { state: "detached" });
   assert.equal(await page.locator("#model-select-name").innerText(), "GPT-5");
   const pickedSettings = await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings") || "{}"));
-  assert.equal(pickedSettings.answer_model, "openai/gpt-5", "model pick should apply instantly, no save button");
-  assert.equal(pickedSettings.author_model, "openai/gpt-5", "one model choice should drive authoring too");
+  assert.equal(pickedSettings.model, "openai/gpt-5", "model pick should apply instantly, no save button");
+  assert.equal(pickedSettings.model, "openai/gpt-5", "one model choice should drive authoring too");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
   assert.equal(await page.locator("#web-settings-popover").count(), 0, "Escape must remove the settings surface from the DOM");

@@ -1,7 +1,7 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
-import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
+import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
@@ -97,6 +97,7 @@ export class DirectRabbitholeHost {
           node_update: (event) => this.applyPersistedBrowserEvent(event),
           nodes_update: (event) => this.applyPersistedBrowserEvent(event),
           block_state: (event) => this.applyPersistedBrowserEvent(event),
+          node_extensions_patch: (event) => this.handleExtensionsPatch(event),
           delete_node: (event) => this.handleDeleteNode(event),
           view_state: (event) => this.applyPersistedBrowserEvent(event),
           done: async () => { await this.flushSave(); this.onDone?.(); return { ok: true }; },
@@ -114,6 +115,12 @@ export class DirectRabbitholeHost {
     await this.flushSave();
     this.startAnswer(node.id, { reset: false });
     return { ok: true, node_id: node.id, request_id: payload.request_id };
+  }
+
+  handleExtensionsPatch(payload) {
+    const result = this.applyPersistedBrowserEvent(payload);
+    this.emit({ type: "node_extensions_patch", node_id: payload.node_id, namespace: payload.namespace, value: payload.value });
+    return result;
   }
 
   handleRetry(payload) {
@@ -175,7 +182,7 @@ export class DirectRabbitholeHost {
   async snapshotAssetsForDeletedNodes(deletedNodes) {
     const refs = new Set();
     for (const node of deletedNodes) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) refs.add(name);
+      for (const name of extractNodeAssetRefs(node)) refs.add(name);
     }
     const out = [];
     for (const name of refs) {
@@ -188,7 +195,7 @@ export class DirectRabbitholeHost {
   }
 
   async gcAssetsForDeletedNodes(deletedNodes) {
-    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.state.nodes.values(), extractRefs: extractAssetRefsFromMarkdown });
+    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.state.nodes.values(), extractRefs: extractNodeAssetRefs });
     for (const name of orphaned) {
       try { await this.store.deleteAsset(this.holeId, name); } catch {}
     }

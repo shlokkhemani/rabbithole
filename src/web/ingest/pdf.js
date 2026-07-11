@@ -1,10 +1,11 @@
 import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import {
   MAX_PDF_BYTES,
+  MAX_PDF_PAGE_ASSET_BYTES,
   PDF_RENDER_SCALE,
   describePdfOpenError,
-  buildPdfMarkdown,
-  extractPdfPageText,
+  buildPdfDocument,
+  extractPdfPageLines,
   normalizePdfTitle,
   pdfPageAssetName,
   resolvePagesToProcess,
@@ -16,6 +17,7 @@ export async function ingestPdf(source, {
   pages,
   includeText = true,
   onProgress = null,
+  onAsset = null,
 } = {}) {
   const { data, name } = await readPdfSource(source);
   validatePdfBytes(data, name);
@@ -43,7 +45,6 @@ export async function ingestPdf(source, {
     }
 
     const notes = [];
-    notes.push("Embedded raster extraction is disabled in the browser importer; page render PNGs were created instead.");
     const metadata = await doc.getMetadata().catch((err) => {
       notes.push(`PDF metadata could not be read: ${err instanceof Error ? err.message : String(err)}`);
       return null;
@@ -60,20 +61,26 @@ export async function ingestPdf(source, {
       notes,
       blobs: [],
     };
-    if (includeText !== false) result.text = [];
+    if (includeText !== false) result.page_lines = [];
+    let assetBytes = 0;
 
     for (let index = 0; index < processedPages.length; index += 1) {
       const pageNumber = processedPages[index];
-      onProgress?.({ phase: "page", page: pageNumber, index: index + 1, total: processedPages.length, pageCount: doc.numPages });
+      onProgress?.({ phase: "page", message: `Preparing page ${index + 1} of ${processedPages.length}`, page: pageNumber, index: index + 1, total: processedPages.length, pageCount: doc.numPages });
       let page = null;
       try {
         page = await doc.getPage(pageNumber);
         if (includeText !== false) {
-          result.text.push({ page: pageNumber, text: await extractPdfPageText(page) });
+          result.page_lines.push({ page: pageNumber, lines: await extractPdfPageLines(page) });
         }
-        const rendered = await renderPageToPngBlob(page, pageNumber);
+        const remaining = processedPages.length - index;
+        const remainingBudget = Math.max(0, MAX_PDF_PAGE_ASSET_BYTES - assetBytes);
+        const targetBytes = remainingBudget / Math.max(remaining, 1);
+        const rendered = await renderPageToJpegBlob(page, pageNumber, targetBytes);
+        assetBytes += rendered.blob.size;
         result.assets.pages.push(rendered.asset);
-        result.blobs.push({ name: rendered.asset.name, blob: rendered.blob });
+        if (onAsset) await onAsset(rendered.asset, rendered.blob);
+        else result.blobs.push({ name: rendered.asset.name, blob: rendered.blob });
       } catch (err) {
         notes.push(`Page ${pageNumber} could not be fully processed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -98,23 +105,37 @@ export async function ingestPdfToStoredHole({
   baseUrl = null,
 } = {}) {
   if (!store) throw new Error("PDF import needs a store.");
-  const result = await ingestPdf(source, { pages, includeText, onProgress });
-  const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
-  const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
-  const markdown = buildPdfMarkdown({
-    title: holeTitle,
-    pageCount: result.page_count,
-    processedPages: result.processed_pages,
-    pageAssets: result.assets.pages,
-    pageText: result.text || [],
-    notes: result.notes,
-  });
-  const hole = createHoleFromMarkdown({ title: holeTitle, markdown, baseUrl });
-  for (const asset of result.blobs) {
-    await store.putAsset(hole.hole_id, asset.name, asset.blob);
+  const staging = await store.createStaging();
+  let adopted = false;
+  let savedHole = null;
+  try {
+    const result = await ingestPdf(source, {
+      pages, includeText, onProgress,
+      onAsset: (_asset, blob) => store.putStagedAsset(staging.ingest_id, _asset.name, blob),
+    });
+    const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
+    const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
+    const built = buildPdfDocument({
+      title: holeTitle,
+      pageCount: result.page_count,
+      processedPages: result.processed_pages,
+      pageAssets: result.assets.pages,
+      pageLines: result.page_lines || [],
+      notes: result.notes,
+    });
+    const hole = createHoleFromMarkdown({ title: holeTitle, markdown: built.markdown, baseUrl });
+    hole.nodes[0].extensions = { pdf: built.pdfExtension };
+    await store.saveHole(hole);
+    savedHole = hole;
+    await store.adoptStagedAssets(hole.hole_id, staging.ingest_id);
+    adopted = true;
+    return { hole, result };
+  } finally {
+    if (!adopted) {
+      await store.discardStaging?.(staging.ingest_id).catch(() => {});
+      if (savedHole) await store.deleteHole?.(savedHole.hole_id).catch(() => {});
+    }
   }
-  await store.saveHole(hole);
-  return { hole, result };
 }
 
 async function readPdfSource(source) {
@@ -153,17 +174,28 @@ function configurePdfjs() {
   pdfjs.GlobalWorkerOptions.workerSrc = webAssetUrl("pdf.worker.mjs");
 }
 
-async function renderPageToPngBlob(page, pageNumber) {
-  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-  const width = Math.ceil(viewport.width);
-  const height = Math.ceil(viewport.height);
-  const canvas = createRenderCanvas(width, height);
-  const context = canvas.getContext("2d", { alpha: false });
-  context.fillStyle = "white";
-  context.fillRect(0, 0, width, height);
-  const renderTask = page.render({ canvasContext: context, viewport });
-  await renderTask.promise;
-  const blob = await canvasToPngBlob(canvas);
+async function renderPageToJpegBlob(page, pageNumber, targetBytes) {
+  let scale = PDF_RENDER_SCALE;
+  let blob;
+  let viewport;
+  let canvas;
+  let width = 0;
+  let height = 0;
+  do {
+    viewport = page.getViewport({ scale });
+    width = Math.ceil(viewport.width);
+    height = Math.ceil(viewport.height);
+    canvas = createRenderCanvas(width, height);
+    const context = canvas.getContext("2d", { alpha: false });
+    context.fillStyle = "white";
+    context.fillRect(0, 0, width, height);
+    const renderTask = page.render({ canvasContext: context, viewport });
+    await renderTask.promise;
+    blob = await canvasToJpegBlob(canvas);
+    if (blob.size <= Math.min(20 * 1024 * 1024, Math.max(targetBytes, 256 * 1024)) || scale <= 0.5) break;
+    releaseCanvas(canvas);
+    scale *= 0.75;
+  } while (true);
   const name = pdfPageAssetName(pageNumber);
   releaseCanvas(canvas);
   return {
@@ -180,15 +212,15 @@ function createRenderCanvas(width, height) {
   return canvas;
 }
 
-function canvasToPngBlob(canvas) {
+function canvasToJpegBlob(canvas) {
   if (typeof canvas.convertToBlob === "function") {
-    return canvas.convertToBlob({ type: "image/png" });
+    return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
   }
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
-      else reject(new Error("Canvas could not be encoded as PNG."));
-    }, "image/png");
+      else reject(new Error("Canvas could not be encoded as JPEG."));
+    }, "image/jpeg", 0.85);
   });
 }
 

@@ -204,6 +204,16 @@ export class IdbStore {
     return moved.sort();
   }
 
+  async discardStaging(ingestId) {
+    const safeIngestId = assertSafeIngestId(ingestId);
+    const db = await this.open();
+    const tx = db.transaction([STAGING, META], "readwrite");
+    const rows = await requestResult(tx.objectStore(STAGING).getAll());
+    for (const row of rows) if (row.ingest_id === safeIngestId) tx.objectStore(STAGING).delete([safeIngestId, row.name]);
+    tx.objectStore(META).delete(`staging:${safeIngestId}`);
+    await txDone(tx);
+  }
+
   async open() {
     if (this.dbPromise) return this.dbPromise;
     this.dbPromise = new Promise((resolve, reject) => {

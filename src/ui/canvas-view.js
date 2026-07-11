@@ -387,6 +387,7 @@ function animateView(tx, ty, ts, opts){
 
 export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
+    var previous = body.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
       var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";

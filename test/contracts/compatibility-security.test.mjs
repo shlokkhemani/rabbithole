@@ -58,8 +58,7 @@ function verifySetupReadinessFingerprint() {
   const completed = {
     preset: "custom",
     base_url: "http://localhost:11434/v1",
-    answer_model: "llama3.2",
-    author_model: "llama3.2",
+    model: "llama3.2",
     session_only: true,
   };
   completed.generation_setup = setupFingerprint(completed);
@@ -67,7 +66,7 @@ function verifySetupReadinessFingerprint() {
   for (const [field, patch] of [
     ["provider", { preset: "openrouter" }],
     ["endpoint", { base_url: "http://localhost:12345/v1" }],
-    ["model", { answer_model: "qwen3:8b" }],
+    ["model", { model: "qwen3:8b" }],
   ]) {
     const status = getGenerationSetupStatus({ ...completed, ...patch });
     assert.deepEqual({ ready: status.ready, reason: status.reason }, { ready: false, reason: "setup_incomplete" }, `${field} changes should invalidate completed setup`);
@@ -170,43 +169,43 @@ async function verifyPreferenceFixtures() {
   const fixtures = [
     {
       name: "current provider-key map",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "test/model", author_model: "test/author", session_only: false }, key: SECRET, keys: { openrouter: SECRET }, theme: "dark", last: "missing-hole" },
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "test/model", session_only: false }, key: SECRET, keys: { openrouter: SECRET }, theme: "dark", last: "missing-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "test/model", author_model: "test/author", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "test/model", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "single-key era",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "legacy/model", author_model: "legacy/author", session_only: false }, key: SECRET, theme: "dark", last: "legacy-hole" },
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "legacy/model", session_only: false }, key: SECRET, theme: "dark", last: "legacy-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "legacy/model", author_model: "legacy/author", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "legacy/model", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "pre-popover custom/local settings",
-      seed: { settings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", answer_model: "qwen2.5", author_model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, key: SECRET, theme: "light", last: "local-hole" },
+      seed: { settings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, key: SECRET, theme: "light", last: "local-hole" },
       selected: "custom",
-      expectedSettings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", answer_model: "qwen2.5", author_model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "removed Anthropic-direct provider",
-      seed: { settings: { preset: "anthropic", base_url: "https://api.anthropic.com/v1", answer_model: "claude-sonnet-5", author_model: "claude-sonnet-5", session_only: false }, key: SECRET, theme: "dark", last: "anthropic-hole" },
+      seed: { settings: { preset: "anthropic", base_url: "https://api.anthropic.com/v1", model: "claude-sonnet-5", session_only: false }, key: SECRET, theme: "dark", last: "anthropic-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "anthropic/claude-sonnet-5", author_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "removed OpenAI provider",
-      seed: { settings: { preset: "openai", base_url: "https://api.openai.com/v1", answer_model: "gpt-5", author_model: "gpt-5", session_only: false }, key: SECRET, theme: "light", last: "openai-hole" },
+      seed: { settings: { preset: "openai", base_url: "https://api.openai.com/v1", model: "gpt-5", session_only: false }, key: SECRET, theme: "light", last: "openai-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: "anthropic/claude-sonnet-5", author_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "malformed settings JSON",
       seed: { rawSettings: "{not-json", theme: "dark", last: "malformed-settings-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
     },
     {
       name: "array credential map",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, rawKeys: "[]", theme: "light", last: "malformed-keys-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", author_model: "anthropic/claude-sonnet-5", answer_model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
+      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, rawKeys: "[]", theme: "light", last: "malformed-keys-hole" }, selected: "openrouter",
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
     },
   ];
   for (const fixture of fixtures) {
@@ -278,7 +277,7 @@ async function assertPreferenceState(page, fixture) {
       version: 1,
       preset: fixture.expectedSettings.preset,
       base_url: fixture.expectedSettings.base_url.replace(/\/+$/, ""),
-      model: fixture.expectedSettings.answer_model,
+      model: fixture.expectedSettings.model,
     };
   }
   assert.deepEqual(JSON.parse(state["rh-web-settings"]), expectedSettings, `${fixture.name}: settings are canonical`);

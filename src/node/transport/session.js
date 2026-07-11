@@ -4,7 +4,7 @@ import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
 import { addAssetsToHole, defaultFsStore } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
-import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
+import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { lineageTitlesFromMap } from "../../core/model.js";
@@ -658,7 +658,7 @@ export class RabbitHoleSession {
   }
 
   async gcAssetsForDeletedNodes(deletedNodes) {
-    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.nodes.values(), extractRefs: extractAssetRefsFromMarkdown });
+    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.nodes.values(), extractRefs: extractNodeAssetRefs });
     for (const name of orphaned) {
       try {
         await defaultFsStore.deleteAsset(this.holeId, name);
@@ -693,6 +693,11 @@ export class RabbitHoleSession {
         node_update: (event) => this.handleNodeUpdate(event),
         nodes_update: (event) => this.handleNodesUpdate(event),
         block_state: (event) => this.applyPersistedBrowserEvent(event),
+        node_extensions_patch: (event) => {
+          const result = this.applyPersistedBrowserEvent(event);
+          this.broadcast({ type: "node_extensions_patch", node_id: event.node_id, namespace: event.namespace, value: event.value });
+          return result;
+        },
         delete_node: (event) => this.handleDeleteNode(event),
         view_state: (event) => this.applyPersistedBrowserEvent(event),
         done: () => { this.close("done"); return { ok: true }; },

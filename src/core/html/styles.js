@@ -473,4 +473,10 @@ body.frozen.session-over .ll-frozen { display: inline; }
    persistent instruction bar; the UI has to explain itself. */
 #hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 40; display: none; font-size: 11.5px; color: var(--fg); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; box-shadow: var(--shadow); pointer-events: none; max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #hint.flash { display: block; }
-body:not(.mode-canvas) #hint.flash { bottom: 84px; }`;
+body:not(.mode-canvas) #hint.flash { bottom: 84px; }
+
+/* ---------- native PDF pages ---------- */
+.doc-content.rh-pdf { display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
+.rh-pdf-page { position: relative; width: 100%; overflow: hidden; background: white; border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.rh-pdf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; user-select: none; }
+`;

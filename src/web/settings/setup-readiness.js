@@ -9,7 +9,7 @@ function fingerprint(settings) {
     version: SETUP_VERSION,
     preset: providerFor(settings.preset).id,
     base_url: String(settings.base_url || "").replace(/\/+$/, ""),
-    model: String(settings.answer_model || "").trim(),
+    model: String(settings.model || "").trim(),
   };
 }
 

@@ -533,7 +533,7 @@ async function createFromPdfFile(file) {
       store,
       title: "",
       onProgress: ({ page, index, total }) => {
-        if (page) setIngestStatus(`Importing PDF page ${index}/${total}...`, "busy");
+        if (page) setIngestStatus(`Preparing page ${index} of ${total}`, "busy");
       },
     });
     setIngestStatus("");
@@ -558,7 +558,7 @@ async function maybeAuthorDocument({
   }
   const settings = loadSettings();
   const key = getApiKey(settings);
-  setIngestStatus("Improving structure with the author model...", "busy");
+  setIngestStatus("Improving structure with the model...", "busy");
   const brain = createBrain(settings, key);
   const root = hole.nodes[0];
   root.status = "pending";

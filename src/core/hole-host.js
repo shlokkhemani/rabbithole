@@ -41,19 +41,19 @@ export function createSaveChain({ save, debounceMs, onTimerChange = () => {} }) 
 }
 
 /**
- * @param {{ deletedNodes: Iterable<{ markdown?: string }>, remainingNodes: Iterable<{ markdown?: string }>, extractRefs: (markdown: string | undefined) => Iterable<string> }} options
+ * @param {{ deletedNodes: Iterable<object>, remainingNodes: Iterable<object>, extractRefs: (node: object) => Iterable<string> }} options
  * @returns {string[]}
  */
 export function assetsOrphanedByDeletion({ deletedNodes, remainingNodes, extractRefs }) {
   const deletedRefs = new Set();
   for (const node of deletedNodes) {
-    for (const name of extractRefs(node.markdown)) deletedRefs.add(name);
+    for (const name of extractRefs(node)) deletedRefs.add(name);
   }
   if (!deletedRefs.size) return [];
 
   const remainingRefs = new Set();
   for (const node of remainingNodes) {
-    for (const name of extractRefs(node.markdown)) remainingRefs.add(name);
+    for (const name of extractRefs(node)) remainingRefs.add(name);
   }
   return [...deletedRefs].filter((name) => !remainingRefs.has(name));
 }
@@ -102,6 +102,7 @@ export function dispatchBrowserEvent(payload, { handlers, unsupported }) {
     case "node_update":
     case "nodes_update":
     case "block_state":
+    case "node_extensions_patch":
     case "delete_node":
     case "view_state":
     case "done": {

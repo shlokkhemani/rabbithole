@@ -83,6 +83,7 @@ function defaultCoreHooks(){
     diveToNode: function(){},
     openNode: function(){},
     mountDocImages: null,
+    mountPdfView: null,
     effH: function(n){ return n.h; }
   };
 }
@@ -171,6 +172,7 @@ export function disposeCore(){
   try {
     if (scope) scope.dispose();
   } finally {
+    Object.keys(nodes).forEach(function(id){ disposeNodeContent(nodes[id]); });
     resetCoreState();
   }
 }
@@ -485,6 +487,11 @@ function updateLoadingTimers(){
 }
 
   // ---------- shared document content ----------
+export function disposeNodeContent(node){
+    if (!node || !node._contentDisposers) return;
+    Array.from(node._contentDisposers).forEach(function(dispose){ dispose(); });
+    node._contentDisposers.clear();
+  }
 export function buildDocContent(node, base){
     var dc = document.createElement("div");
     dc.className = "doc-content md";
@@ -495,8 +502,16 @@ export function buildDocContent(node, base){
       else dc.appendChild(buildLoading(node));
     }
     else {
-      dc.innerHTML = node.html || "";
-      mountDocMedia(dc, node, base);
+      var disposePdf = coreHooks.mountPdfView ? coreHooks.mountPdfView(dc, node) : null;
+      if (disposePdf){
+        if (!node._contentDisposers) node._contentDisposers = new Set();
+        var dispose = function(){ node._contentDisposers.delete(dispose); disposePdf(); };
+        node._contentDisposers.add(dispose);
+        dc._rhDispose = dispose;
+      } else {
+        dc.innerHTML = node.html || "";
+        mountDocMedia(dc, node, base);
+      }
     }
     return dc;
   }

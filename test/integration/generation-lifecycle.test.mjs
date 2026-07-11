@@ -103,7 +103,7 @@ for (const events of [
 }
 console.log("ok generation lifecycle: pure branch and author adapters preserve exact text bytes");
 
-const openAiBrain = new OpenAICompatibleBrain({ baseUrl: "https://example.test", answerModel: "fixture" });
+const openAiBrain = new OpenAICompatibleBrain({ baseUrl: "https://example.test", model: "fixture" });
 try {
   globalThis.fetch = async (_url, options) => {
     const messages = JSON.parse(options.body).messages;

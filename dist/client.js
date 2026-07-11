@@ -2443,6 +2443,7 @@ var RabbitholeClient = (() => {
       openNode: function() {
       },
       mountDocImages: null,
+      mountPdfView: null,
       effH: function(n) {
         return n.h;
       }
@@ -2527,6 +2528,9 @@ var RabbitholeClient = (() => {
     try {
       if (scope) scope.dispose();
     } finally {
+      Object.keys(nodes).forEach(function(id) {
+        disposeNodeContent(nodes[id]);
+      });
       resetCoreState();
     }
   }
@@ -2890,6 +2894,13 @@ var RabbitholeClient = (() => {
       if (t) els[i2].textContent = formatElapsed(Date.now() - t);
     }
   }
+  function disposeNodeContent(node) {
+    if (!node || !node._contentDisposers) return;
+    Array.from(node._contentDisposers).forEach(function(dispose) {
+      dispose();
+    });
+    node._contentDisposers.clear();
+  }
   function buildDocContent(node, base) {
     var dc = document.createElement("div");
     dc.className = "doc-content md";
@@ -2899,8 +2910,19 @@ var RabbitholeClient = (() => {
       if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
       else dc.appendChild(buildLoading(node));
     } else {
-      dc.innerHTML = node.html || "";
-      mountDocMedia(dc, node, base);
+      var disposePdf = coreHooks.mountPdfView ? coreHooks.mountPdfView(dc, node) : null;
+      if (disposePdf) {
+        if (!node._contentDisposers) node._contentDisposers = /* @__PURE__ */ new Set();
+        var dispose = function() {
+          node._contentDisposers.delete(dispose);
+          disposePdf();
+        };
+        node._contentDisposers.add(dispose);
+        dc._rhDispose = dispose;
+      } else {
+        dc.innerHTML = node.html || "";
+        mountDocMedia(dc, node, base);
+      }
     }
     return dc;
   }
@@ -3182,6 +3204,8 @@ var RabbitholeClient = (() => {
   }
   function renderReaderBody() {
     var node = nodes[currentNodeId];
+    var previous = readerMain.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
@@ -3987,6 +4011,8 @@ var RabbitholeClient = (() => {
   function fillBody(node) {
     var body = node.bodyEl;
     if (!body) return;
+    var previous = body.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis) {
       var sq = document.createElement("div");
@@ -4691,6 +4717,7 @@ var RabbitholeClient = (() => {
   function teardownNode(id) {
     var node = nodes[id];
     if (!node) return;
+    disposeNodeContent(node);
     if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
     removeMarks(readerMain, id);
     removeThreadItem(id);
@@ -32876,7 +32903,8 @@ ${text2}</tr>
       registerCoreHooks({
         post: post2,
         openNode,
-        mountDocImages
+        mountDocImages,
+        mountPdfView: capabilities.mountPdfView || null
       });
       registerReaderHooks({
         hideAsk,
@@ -33310,6 +33338,15 @@ ${text2}</tr>
         sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
         scheduleStreamRender(sn, firstChunk);
       }
+    } else if (msg.type === "node_extensions_patch") {
+      var pn = nodes[msg.node_id];
+      if (pn) {
+        pn.extensions = pn.extensions || {};
+        pn.extensions[msg.namespace] = msg.value;
+        if (pn.bodyEl) fillBody(pn);
+        if (mode === "reader" && currentNodeId === pn.id) renderReaderBody();
+        scheduleEdges();
+      }
     } else if (msg.type === "node_error") {
       var en = nodes[msg.node_id];
       if (en && en.status === "pending") {
@@ -33699,6 +33736,96 @@ ${text2}</tr>
     return html2;
   }
 
+  // src/core/pdf-shared.js
+  var MAX_PDF_BYTES = 100 * 1024 * 1024;
+  var MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
+  var MAX_PDF_PAGES = 100;
+  var MAX_PDF_LINES = 25e3;
+  function normalizePdfExtension(nodeOrExtension) {
+    var _a2, _b, _c, _d, _e;
+    try {
+      const body = String((_b = (_a2 = nodeOrExtension == null ? void 0 : nodeOrExtension.markdown) != null ? _a2 : nodeOrExtension == null ? void 0 : nodeOrExtension.md) != null ? _b : "");
+      const value = (_e = (_d = (_c = nodeOrExtension == null ? void 0 : nodeOrExtension.extensions) == null ? void 0 : _c.pdf) != null ? _d : nodeOrExtension == null ? void 0 : nodeOrExtension.pdf) != null ? _e : nodeOrExtension;
+      if (!value || value.version !== 1 || !Array.isArray(value.pages) || !Array.isArray(value.lines)) return null;
+      if (value.pages.length > MAX_PDF_PAGES || value.lines.length > MAX_PDF_LINES) return null;
+      const finite = (number) => typeof number === "number" && Number.isFinite(number);
+      if (!finite(value.scale) || !finite(value.page_count) || value.page_count < value.pages.length) return null;
+      const pages = value.pages.map((page) => {
+        if (!finite(page.n) || !finite(page.w) || !finite(page.h) || page.w <= 0 || page.h <= 0) throw new Error("bad page");
+        return { n: page.n, asset: validateAssetName(page.asset), w: page.w, h: page.h };
+      });
+      let previous = -1;
+      const lines = value.lines.map((line) => {
+        for (const key of ["p", "x", "y", "w", "h", "s", "e"]) if (!finite(line[key])) throw new Error("bad line");
+        if (line.s < previous || line.s < 0 || line.e < line.s || line.e > body.length) throw new Error("bad offsets");
+        previous = line.e;
+        return { p: line.p, x: clamp01(line.x), y: clamp01(line.y), w: clamp01(line.w), h: clamp01(line.h), s: line.s, e: line.e };
+      });
+      return { ...value, pages, lines, notes: Array.isArray(value.notes) ? value.notes.map(String) : [] };
+    } catch (e) {
+      return null;
+    }
+  }
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  // src/ui/pdf-view.js
+  function mountPdfView(container, node) {
+    var pdf = normalizePdfExtension(node);
+    if (!pdf || pdf.converted) return null;
+    container.className = "doc-content rh-pdf";
+    var disposed = false;
+    var pageEls = [];
+    var observer = null;
+    function mountWindow(index) {
+      for (var i2 = 0; i2 < pageEls.length; i2++) {
+        var img = pageEls[i2].querySelector("img");
+        if (Math.abs(i2 - index) <= 2) {
+          if (!img) {
+            img = document.createElement("img");
+            img.className = "rh-pdf-img";
+            img.alt = "Page " + pdf.pages[i2].n;
+            img.src = resolveAssetUrl(pdf.pages[i2].asset);
+            img.addEventListener("click", function(e) {
+              openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
+            });
+            pageEls[i2].appendChild(img);
+          }
+        } else if (img) img.remove();
+      }
+    }
+    pdf.pages.forEach(function(page, index) {
+      var pageEl = document.createElement("div");
+      pageEl.className = "rh-pdf-page";
+      pageEl.dataset.page = page.n;
+      pageEl.style.aspectRatio = page.w + " / " + page.h;
+      pageEls.push(pageEl);
+      container.appendChild(pageEl);
+      if (typeof IntersectionObserver === "function") {
+        if (!observer) observer = new IntersectionObserver(function(entries) {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting) mountWindow(pageEls.indexOf(entry.target));
+          });
+        }, { root: null, rootMargin: "100% 0px" });
+        observer.observe(pageEl);
+      }
+    });
+    mountWindow(0);
+    return function dispose() {
+      if (disposed) return;
+      disposed = true;
+      if (observer) observer.disconnect();
+      pageEls.forEach(function(pageEl) {
+        var img = pageEl.querySelector("img");
+        if (img) {
+          img.removeAttribute("src");
+          img.remove();
+        }
+      });
+    };
+  }
+
   // src/ui/entry.js
   function startRabbithole(hydration2, options2) {
     options2 = options2 || {};
@@ -33718,6 +33845,7 @@ ${text2}</tr>
         dispose: disposeTransportStatus
       },
       capabilities: {
+        mountPdfView,
         exportSnapshot: downloadSnapshot,
         exportPortable: options2.exportPortable || null
       }

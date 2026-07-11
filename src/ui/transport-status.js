@@ -350,6 +350,15 @@ function handleServer(msg){
         sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
         scheduleStreamRender(sn, firstChunk);
       }
+    } else if (msg.type === "node_extensions_patch"){
+      var pn = nodes[msg.node_id];
+      if (pn){
+        pn.extensions = pn.extensions || {};
+        pn.extensions[msg.namespace] = msg.value;
+        if (pn.bodyEl) fillBody(pn);
+        if (mode === "reader" && currentNodeId === pn.id) renderReaderBody();
+        scheduleEdges();
+      }
     } else if (msg.type === "node_error"){
       var en = nodes[msg.node_id];
       if (en && en.status === "pending"){

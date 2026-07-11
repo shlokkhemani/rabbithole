@@ -106,6 +106,27 @@
       "baseline": 52,
       "ceiling": 104,
       "measured_at_commit": "761c56c"
+    },
+    {
+      "id": "pdf_hole_serialized_bytes",
+      "description": "Serialized size of a representative 40-page native PDF hole",
+      "unit": "bytes",
+      "tolerance": 0.2,
+      "rationale": "Exact JSON byte size catches provenance growth.",
+      "baseline": 150000,
+      "ceiling": 250000,
+      "measured_at_commit": "PDF Slice 1"
+    },
+    {
+      "id": "pdf_save_latency_ms",
+      "description": "JSON clone/serialize latency for a representative native PDF save",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated 20-save loops with a 20ms floor absorbs timer noise.",
+      "floor": 20,
+      "baseline": 1,
+      "ceiling": 20,
+      "measured_at_commit": "PDF Slice 1"
     }
   ]
 }

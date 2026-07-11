@@ -51,7 +51,7 @@ export async function routeProvider(page, { keyStatus, streams = [], onProviderC
 export async function seedConfiguredOpenRouter(context) {
   await context.addInitScript(({ key, model }) => {
     localStorage.setItem("rh-web-settings", JSON.stringify({
-      preset: "openrouter", base_url: "https://openrouter.ai/api/v1", answer_model: model, author_model: model, session_only: false,
+      preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: model, session_only: false,
       generation_setup: { version: 1, preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model },
     }));
     localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key }));

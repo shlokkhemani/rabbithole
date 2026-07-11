@@ -66,7 +66,7 @@ try {
       },
       body: sse([
         "# Authored Structure\n\n",
-        "This document was streamed through the author model.\n\n",
+        "This document was streamed through the model.\n\n",
         "```js\nconsole.log('authored');\n```",
       ]),
     });
@@ -85,15 +85,15 @@ try {
     "# Author Check\n\nraw notes about a streamed authoring pass",
     { improveStructure: true },
   ));
-  await waitForCanvasText(page, "This document was streamed through the author model");
+  await waitForCanvasText(page, "This document was streamed through the model");
   assert.equal(authorCalls, 1, "Improve structure should call authorDocument once");
 
   await page.click("#t-new");
 
-  const pdfBytes = buildTinyPdf(["Portable asset page: import should render this PNG asset."]);
+  const pdfBytes = buildTinyPdf(["Portable asset page: import should render this JPEG asset."]);
   await dropPdf(page, pdfBytes);
   await page.waitForSelector(".node .doc-content[data-node-id] img");
-  await waitForCanvasText(page, "Portable asset page");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await page.waitForFunction(() => {
     const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
@@ -105,8 +105,8 @@ try {
     const { names: assets, sizes } = await window.__rabbitholeTest.inspectAssets(holeId);
     return { holeId, raw, assets, sizes };
   });
-  assert.deepEqual(original.assets, ["page-001.png"]);
-  assert(original.sizes["page-001.png"] > 100, "PDF page asset should be non-empty");
+  assert.deepEqual(original.assets, ["page-001.jpg"]);
+  assert(original.sizes["page-001.jpg"] > 100, "PDF page asset should be non-empty");
 
   const shareDownloadPromise = page.waitForEvent("download");
   await page.click("#t-share");
@@ -122,7 +122,7 @@ try {
   assert.equal(exported.format, "rabbithole");
   assert.equal(exported.format_version, 1);
   assert.equal(exported.hole.schema_version, 2);
-  assert.equal(typeof exported.assets["page-001.png"], "string");
+  assert.equal(typeof exported.assets["page-001.jpg"], "string");
 
   await ensureRailOpen(page);
   assert.equal(await page.locator(".rail-row", { hasText: "pdf document" }).first().locator(".rail-export").count(), 1);
@@ -137,7 +137,7 @@ try {
   await importPage.goto(baseUrl, { waitUntil: "networkidle" });
   await importPage.setInputFiles("#file-md", shareExportPath);
   await importPage.waitForSelector(".node .doc-content[data-node-id] img");
-  await waitForCanvasText(importPage, "Portable asset page");
+  await importPage.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await importPage.waitForFunction(() => {
     const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
@@ -151,7 +151,7 @@ try {
   });
   assert.deepEqual(projectHole(imported.raw), projectHole(original.raw));
   assert.deepEqual(imported.assets, original.assets);
-  assert.equal(imported.sizes["page-001.png"], original.sizes["page-001.png"]);
+  assert.equal(imported.sizes["page-001.jpg"], original.sizes["page-001.jpg"]);
 
   await fresh.close();
   await context.close();

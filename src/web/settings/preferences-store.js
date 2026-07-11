@@ -44,20 +44,19 @@ export function ensureCanonical() {
       ...stored,
       preset: provider.id,
       base_url: provider.base_url,
-      answer_model: provider.answer_model,
-      author_model: provider.author_model,
+      model: provider.model,
     };
   }
   canonical = { ...canonical };
   if (stored && !canonical.generation_setup) {
     const provider = providerFor(canonical.preset);
     const hasLegacySetup = provider.id === "custom" || !!getApiKey(canonical);
-    if (hasLegacySetup && canonical.answer_model) {
+    if (hasLegacySetup && canonical.model) {
       canonical.generation_setup = {
         version: 1,
         preset: provider.id,
         base_url: String(canonical.base_url || provider.base_url).replace(/\/+$/, ""),
-        model: String(canonical.answer_model).trim(),
+        model: String(canonical.model).trim(),
       };
     }
   }

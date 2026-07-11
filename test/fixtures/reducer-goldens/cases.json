@@ -108,6 +108,13 @@
     "expected_effects": { "node_id": "root" }
   },
   {
+    "name": "node_extensions_patch replaces one opaque namespace",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "extensions": { "learn": { "kept": true }, "pdf": { "old": true } } }] },
+    "events": [{ "event": { "type": "node_extensions_patch", "node_id": "root", "namespace": "pdf", "value": { "version": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "extensions": { "learn": { "kept": true }, "pdf": { "version": 1 } } }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
     "name": "malformed known node_progress is a no-op",
     "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "before" }] },
     "events": [{ "event": { "type": "node_progress" } }],

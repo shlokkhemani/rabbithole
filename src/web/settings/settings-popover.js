@@ -54,7 +54,7 @@ export function createSettingsPopover(options) {
     if (!host) return;
     const settings = loadSettings();
     const preset = providerFor(settings.preset);
-    const currentModel = settings.answer_model || preset.answer_model;
+    const currentModel = settings.model || preset.model;
     surface.querySelector("#settings-panel").dataset.preset = preset.id;
     host.innerHTML = `${recoveryStatus ? `<div class="settings-section settings-recovery" role="status">${escapeHtml(recoveryStatus)}</div>` : ""}
       ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: modelDisplayName(currentModel), title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}${localDiscovery === "error" || localDiscovery === "empty" ? ` <button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</small></div>`}
@@ -108,8 +108,8 @@ export function createSettingsPopover(options) {
       localDiscovery = models.length ? "success" : "empty";
       if (models.length) {
         const settings = loadSettings();
-        if (!models.some((model) => model.id === settings.answer_model) && !getGenerationSetupStatus(settings).ready) {
-          applyPatch({ answer_model: models[0].id, author_model: models[0].id });
+        if (!models.some((model) => model.id === settings.model) && !getGenerationSetupStatus(settings).ready) {
+          applyPatch({ model: models[0].id });
         }
       }
     } catch (error) {
@@ -122,11 +122,11 @@ export function createSettingsPopover(options) {
 
   async function completeSetup() {
     const settings = loadSettings(); const preset = providerFor(settings.preset);
-    if (!settings.answer_model) return;
+    if (!settings.model) return;
     if (preset.requires_key) {
       const ok = await commitSettingsKey({ required: true });
       if (!ok) return;
-    } else if (localDiscovery !== "success" || !localModels?.some((model) => model.id === settings.answer_model)) {
+    } else if (localDiscovery !== "success" || !localModels?.some((model) => model.id === settings.model)) {
       localDiscovery = "error"; localDiscoveryMessage = "Connect to a local model before finishing setup."; renderConditionalSections(); return;
     }
     markGenerationSetupComplete();
@@ -147,15 +147,15 @@ export function createSettingsPopover(options) {
 
   function wireModelComboboxes(root) {
     const searchIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-    const commit = (id) => { if (!id) return; applyPatch({ author_model: id, answer_model: id }); };
+    const commit = (id) => { if (!id) return; applyPatch({ model: id }); };
     wireCombobox(root, { id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", placeholder: "Search every model on OpenRouter…", surfaceClassName: "combobox-surface model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, searchAfterHtml: "<kbd>esc</kbd>", freeText: renderExactModelRow, source: {
       load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)),
       filter: (models, query) => query ? searchModels(models, query).map((model, index) => ({ model, itemIndex: index })) : [...SUGGESTED_MODEL_IDS.map((id) => models.find((model) => model.id === id)).filter(Boolean).map((model, index) => ({ model, itemIndex: models.indexOf(model), group: index === 0 ? "Suggested" : "", recommended: model.id === RECOMMENDED_MODEL_ID })), ...models.map((model, index) => ({ model, itemIndex: index, group: index === 0 ? "All models" : "" }))],
-      renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().answer_model, ...entry }), loading: () => `<div class="model-note combobox-loading">Loading models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching models." : "OpenRouter returned no models."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach OpenRouter for the model list. ${retry}</div>` }, onChange: commit });
+      renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().model, ...entry }), loading: () => `<div class="model-note combobox-loading">Loading models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching models." : "OpenRouter returned no models."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach OpenRouter for the model list. ${retry}</div>` }, onChange: commit });
     if (!root.querySelector("#local-model")) return;
     wireCombobox(root, { id: "local-model", labelledBy: "local-model-label", placeholder: "Search installed Ollama models…", surfaceClassName: "combobox-surface local-model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, searchAfterHtml: "<kbd>esc</kbd>", freeText: renderExactModelRow, source: {
       load: async () => localModels || discoverLocalModels(loadSettings().base_url),
-      filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })), renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().answer_model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Looking for installed models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching installed models." : "No models are installed yet."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach the local model endpoint. ${retry}</div>` }, onChange: commit });
+      filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })), renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Looking for installed models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching installed models." : "No models are installed yet."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach the local model endpoint. ${retry}</div>` }, onChange: commit });
   }
 
   async function commitSettingsKey({ required = false } = {}) {

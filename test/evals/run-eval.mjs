@@ -13,8 +13,7 @@ if (missing.length) {
 const brain = new OpenAICompatibleBrain({
   baseUrl: process.env.EVAL_BASE_URL,
   apiKey: process.env.EVAL_API_KEY,
-  answerModel: process.env.EVAL_MODEL,
-  authorModel: process.env.EVAL_MODEL,
+  model: process.env.EVAL_MODEL,
 });
 
 const renderer = createMarkdownRenderer({

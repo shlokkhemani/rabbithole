@@ -224,6 +224,10 @@ export class FsStore {
     const moved = await adoptStagedAssets(holeId, ingestId);
     return moved.map((asset) => asset.name);
   }
+
+  async discardStaging(ingestId) {
+    await fs.rm(stagedAssetDir(ingestId), { recursive: true, force: true });
+  }
 }
 
 export const defaultFsStore = new FsStore();

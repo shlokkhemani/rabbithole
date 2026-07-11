@@ -6,6 +6,7 @@ import {
   anchorStart,
   breadcrumbEl,
   buildDocContent,
+  disposeNodeContent,
   buildLoading,
   childrenOf,
   closed,
@@ -163,6 +164,7 @@ function disposeReaderResources(resetHooks){
 
 export function renderReaderBody(){
     var node = nodes[currentNodeId];
+    var previous = readerMain.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";

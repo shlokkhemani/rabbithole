@@ -165,8 +165,9 @@ usability, and secret exclusion from every artifact projection.
 
 ## MCP tools and session wire
 
-The public MCP tool names are `open_rabbithole`, `answer_branch`, `ingest_pdf`,
-and `list_rabbitholes`. Their declared input schemas, validation limits, and
+The public MCP tool names are `open_rabbithole`, `answer_branch`, and
+`list_rabbitholes`. `ingest_pdf` was retired in favor of passing a PDF directly
+to `open_rabbithole { file_path }`. Their declared input schemas, validation limits, and
 result status meanings are compatibility surfaces. So are the long-poll loop and
 its durable session behavior:
 
@@ -184,6 +185,23 @@ names, field meanings, streaming concatenation, wait/rearm behavior, and
 disconnect persistence are not removed or repurposed in place. Any unavoidable
 breaking change needs a separately versioned protocol or tool surface and an
 overlap period with the existing one.
+
+## Native PDF nodes
+
+Schema-v2 extension bags may contain `extensions.pdf` version 1. The namespace
+stores 2x white-background JPEG page assets, page dimensions, and ordered
+markdown-offset line geometry. Consumers strictly validate the version,
+cardinality, asset names, finite geometry, and offsets; invalid or future PDF
+extensions fall back to the deterministic markdown body. Frozen snapshots also
+use that markdown fallback because frozen projection intentionally omits
+extensions.
+
+`node_extensions_patch { node_id, namespace, value }` replaces one extension
+namespace and is carried by both the local browser adapter and node-host event
+stream. Native page assets participate in the same deletion, survivor, and undo
+reference accounting as markdown `asset:` references. PDF files opened by web
+upload or MCP `file_path` use the same normalized builder and persist the same
+body/provenance shape; page JPEG encoder bytes may differ by host.
 
 Persisted schema safety applies equally to MCP resume: a newer saved schema is
 refused before a session opens. Host-specific durable-ask semantics are also

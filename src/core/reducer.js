@@ -21,6 +21,7 @@ import {
 /** @typedef {import("./contracts/engine.js").NodeUpdateEvent} NodeUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodesUpdateEvent} NodesUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodeOriginEvent} NodeOriginEvent */
+/** @typedef {import("./contracts/engine.js").NodeExtensionsPatchEvent} NodeExtensionsPatchEvent */
 /** @typedef {import("./contracts/engine.js").BlockStateEvent} BlockStateEvent */
 
 /** @param {Parameters<import("./contracts/engine.js").createHoleState>[0]} [input] @returns {HoleState} */
@@ -101,11 +102,26 @@ export function reduceHoleEvent(state, event, options = {}) {
       return withState({ ...state, title: String(/** @type {import("./contracts/engine.js").HoleTitleEvent} */ (event).title ?? state.title) });
     case "node_origin":
       return reduceNodeOrigin(state, /** @type {NodeOriginEvent} */ (event));
+    case "node_extensions_patch":
+      return reduceNodeExtensionsPatch(state, /** @type {NodeExtensionsPatchEvent} */ (event));
     case "block_state":
       return reduceBlockState(state, /** @type {BlockStateEvent} */ (event));
     default:
       throw new Error(`Unsupported hole event: ${type}`);
   }
+}
+
+/** @param {HoleState} state @param {NodeExtensionsPatchEvent} event */
+function reduceNodeExtensionsPatch(state, event) {
+  const nodeId = String(event.node_id || "");
+  const namespace = String(event.namespace || "");
+  const node = state.nodes.get(nodeId);
+  if (!node || !/^[a-z][a-z0-9_-]*$/.test(namespace)) return withState(state);
+  const extensions = cloneJson(node.extensions ?? {});
+  extensions[namespace] = cloneJson(event.value);
+  const nodes = cloneNodes(state);
+  nodes.set(nodeId, { ...node, extensions });
+  return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
 /** @param {HoleState} state @param {BlockStateEvent} event */

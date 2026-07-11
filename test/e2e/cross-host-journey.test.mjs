@@ -22,7 +22,7 @@ const MODERN_MARKDOWN = [
 ].join("\n");
 const BRANCH_MARKDOWN = "First streamed paragraph.\n\nSecond final paragraph with $x+y$.";
 
-const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage19-"));
+const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-cross-host-journey-"));
 const assetPath = path.join(tmp, "journey.png");
 await fs.writeFile(assetPath, ASSET_BYTES);
 const server = await serveStatic(WEB_DIST);
@@ -32,7 +32,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   await modernJourney();
   await temporalJourney();
-  console.log("stage19 journey verification passed");
+  console.log("cross-host journey verification passed");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
@@ -81,7 +81,7 @@ async function modernJourney() {
       assertProjection(JSON.parse(portableText), { title: "Modern journey", rootMarkdown: canonicalRoot, branchMarkdown: BRANCH_MARKDOWN, asset: ASSET_BYTES });
       await resumePortableOverMcp(portableText, "modern-resume", "Modern journey", canonicalRoot, BRANCH_MARKDOWN);
     } finally { await webContext.close(); }
-    console.log("ok stage19 C1: modern MCP → live branch → snapshot → web import → portable → MCP resume journey");
+    console.log("ok cross-host journey: modern MCP → live branch → snapshot → web import → portable → MCP resume");
   } finally {
     await authorContext?.close();
     await mcp.close();
@@ -121,7 +121,7 @@ async function temporalJourney() {
       assertNoCredentials(portableText, "legacy portable");
       await resumePortableOverMcp(portableText, "legacy-resume", "Null schema legacy", "Legacy defaults are backfilled", null);
     } finally { await second.close(); }
-    console.log("ok stage19 C1: v0.1 import → web → snapshot → web import → portable → MCP resume journey");
+    console.log("ok cross-host journey: v0.1 import → web → snapshot → web import → portable → MCP resume");
   } finally { await first.close(); }
 }
 
@@ -170,7 +170,7 @@ async function startMcp(dir) {
       if (waiter) waiter.resolve(match[1]); else urls.push(match[1]);
     }
   });
-  const client = new Client({ name: "stage19-journey", version: "1" });
+  const client = new Client({ name: "cross-host-journey", version: "1" });
   await client.connect(transport);
   return {
     client,

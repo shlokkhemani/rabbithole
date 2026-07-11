@@ -7,7 +7,7 @@ import { RabbitHoleSession } from "../../src/node/transport/session.js";
 import { runStoreContract } from "../support/store-contract.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage9-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-filesystem-store-"));
 
 const store = assertRabbitholeStore(new FsStore());
 
@@ -27,11 +27,11 @@ await runStoreContract(store, {
     return {
       deleteNode: (nodeId) => session.handleDeleteNode({ node_id: nodeId }),
       close: async () => {
-        session.close("stage9_complete");
+        session.close("filesystem_store_test_complete");
         await session.savingChain;
       },
     };
   },
 });
 
-console.log("stage9 store contract verification passed");
+console.log("filesystem store contract verification passed");

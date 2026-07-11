@@ -117,19 +117,19 @@ function runCheckDescriptorGoldens() {
 
 function runDerivedFenceRecognition() {
   registerBlockType({
-    type: "stage2block",
+    type: "customblock",
     version: 1,
     parse: (source) => source,
     toPlainText: () => "",
     security: "sanitize-html",
   });
   const renderer = createMarkdownRenderer({ encodeBase64: encodeBase64Utf8 });
-  const pending = renderer.renderMarkdownToHtml("```stage2block\npartial");
+  const pending = renderer.renderMarkdownToHtml("```customblock\npartial");
   assert(pending.includes('class="viz viz-pending"'));
-  assert(pending.includes('data-viz="stage2block"'));
+  assert(pending.includes('data-viz="customblock"'));
   assert(!pending.includes("partial"));
-  const unknown = renderer.renderMarkdownToHtml("```stage2unknown\nplain code");
-  assert(unknown.includes('<pre><code class="language-stage2unknown">plain code'));
+  const unknown = renderer.renderMarkdownToHtml("```unknownblock\nplain code");
+  assert(unknown.includes('<pre><code class="language-unknownblock">plain code'));
   assert(!unknown.includes("viz-pending"));
   console.log("ok blocks: fresh renderer derives pending recognition from registry");
 }
@@ -426,14 +426,14 @@ async function runClientMountSimulation() {
 function runFrameworkSanitization() {
   const harness = createVisualHarness();
   let wiredRoot = null;
-  registerBlockMount("stage2block", {
+  registerBlockMount("customblock", {
     renderHtml() { return '<script>hostile()</script><div onclick="bad()">Safe</div>'; },
     wire(root) { wiredRoot = root; },
   });
   const container = harness.document.createElement("div");
   const placeholder = harness.document.createElement("div");
   placeholder.className = "viz";
-  placeholder.setAttribute("data-viz", "stage2block");
+  placeholder.setAttribute("data-viz", "customblock");
   placeholder.setAttribute("data-src", encodeBase64Utf8("model"));
   container.appendChild(placeholder);
   mountVisuals(container, "reader:framework-sanitize");
@@ -445,7 +445,7 @@ function runFrameworkSanitization() {
 }
 
 async function assertPageAssembly() {
-  const html = buildCanvasHtml({ title: "Stage 2", root_id: "root", nodes: [] });
+  const html = buildCanvasHtml({ title: "Content Blocks", root_id: "root", nodes: [] });
   const purify = getDompurifyScript();
   assert.equal(count(html, purify), 1, "DOMPurify should be inlined exactly once");
   assert.equal(count(html, "<script>"), 1, "page should keep one inline script for the node --check gate");
@@ -453,7 +453,7 @@ async function assertPageAssembly() {
 
   const scriptMatch = html.match(/<script>\n([\s\S]*)\n<\/script>/);
   assert(scriptMatch, "assembled HTML should contain an inline script");
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage2-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-content-blocks-"));
   const scriptPath = path.join(dir, "assembled-client.js");
   await fs.writeFile(scriptPath, scriptMatch[1], "utf8");
   const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
@@ -470,4 +470,4 @@ await runMarkdownFixtures();
 await runClientMountSimulation();
 runFrameworkSanitization();
 await assertPageAssembly();
-console.log("stage2 verification passed");
+console.log("content blocks verification passed");

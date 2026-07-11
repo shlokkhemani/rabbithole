@@ -46,7 +46,7 @@ try {
   await verifyAskKeyUxAndRail();
   await verifyCanvasBranching();
   await verifySharedCanvasDialogs();
-  console.log("stage10 web verification passed");
+  console.log("web app verification passed");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
@@ -96,7 +96,7 @@ async function verifyStatefulCheckCycle() {
   assert.equal(await frozen.locator(".viz-check .rh-check-explanation:visible").count() > 0, true, "frozen Check remains interactive offline");
   await frozen.close();
   await context.close();
-  console.log("ok stage10: Check UI persists, hydrates, exports state portably, strips snapshot progress, and stays keyboard-interactive frozen");
+  console.log("ok web app: Check UI persists, hydrates, exports state portably, strips snapshot progress, and stays keyboard-interactive frozen");
 }
 
 async function verifyNoticePrimitive() {
@@ -432,7 +432,7 @@ async function verifySetupReadinessInvalidation() {
   assert.equal(await localPage.locator("#blank-start-new").isDisabled(), true, "changing endpoint should invalidate completed setup");
   await local.close();
 
-  console.log("ok stage10: provider, endpoint, and model changes invalidate completed setup fingerprints");
+  console.log("ok web app: provider, endpoint, and model changes invalidate completed setup fingerprints");
 }
 
 async function verifyLocalComboboxStates(openRouterFixture) {

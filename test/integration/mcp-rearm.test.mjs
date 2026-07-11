@@ -5,7 +5,7 @@ import path from "node:path";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage7-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mcp-rearm-"));
 
 const { openRabbithole, answerBranch } = await import("../../src/node/index.js");
 const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
@@ -39,7 +39,7 @@ function rootNode(id = "root") {
 }
 
 async function runKeepListeningAndLiveReattachFixture() {
-  const first = await openRabbithole({ title: "Stage 7 Rearm", content: "Root" });
+  const first = await openRabbithole({ title: "MCP Rearm", content: "Root" });
   assert.equal(first.status, "keep_listening");
   assert(first.hole_id, "keep_listening should include hole_id");
   assert(first.session_id, "keep_listening should include session_id");
@@ -105,7 +105,7 @@ async function runKeepListeningAndLiveReattachFixture() {
 }
 
 async function runSavedAskRequeueFixture() {
-  const holeId = "stage7-saved";
+  const holeId = "mcp-rearm-saved";
   const root = rootNode();
   const child = {
     id: "saved-child",
@@ -133,7 +133,7 @@ async function runSavedAskRequeueFixture() {
 
   await saveHole({
     hole_id: holeId,
-    title: "Stage 7 Saved",
+    title: "MCP Rearm Saved",
     root_id: "root",
     created_at: new Date().toISOString(),
     nodes: [
@@ -175,7 +175,7 @@ try {
   await runKeepListeningAndLiveReattachFixture();
   await runSavedAskRequeueFixture();
 } finally {
-  await closeAllSessions("stage7_test_complete");
+  await closeAllSessions("mcp_rearm_test_complete");
 }
 
-console.log("stage7 rearm verification passed");
+console.log("MCP rearm verification passed");

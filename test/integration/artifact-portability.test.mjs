@@ -22,7 +22,7 @@ try {
   }
 }
 
-const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage12-"));
+const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-artifact-portability-"));
 const server = await serveStatic(WEB_DIST);
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
@@ -159,7 +159,7 @@ try {
   await fresh.close();
   await context.close();
   await verifyPublishOutput();
-  console.log("stage12 portability verification passed");
+  console.log("artifact portability verification passed");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));

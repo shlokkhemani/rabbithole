@@ -171,7 +171,7 @@ try {
     "web import should surface the exact newer-version refusal",
   );
 
-  console.log("stage11 web ingestion verification passed");
+  console.log("web ingestion verification passed");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));

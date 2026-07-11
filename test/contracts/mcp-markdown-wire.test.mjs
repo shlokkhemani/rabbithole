@@ -13,7 +13,7 @@ import { importSnapshotFile } from "../../src/web/portable.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage8-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mcp-markdown-wire-"));
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 8, 8, 8, 8]);
 
@@ -62,11 +62,11 @@ function assertBranchRequestShape(result, session, requestId, nodeId) {
   assert.equal(result.request_id, requestId);
   assert.equal(result.node_id, nodeId);
   assert.equal(result.parent_node_id, session.rootId);
-  assert.equal(result.parent_node_title, "Stage 8 Root");
+  assert.equal(result.parent_node_title, "Markdown Wire Root");
   assert.equal(result.selected_text, "Root");
   assert.equal(result.question, "Explain root");
   assert.equal(result.lens, null);
-  assert.deepEqual(result.lineage, ["Stage 8 Root"]);
+  assert.deepEqual(result.lineage, ["Markdown Wire Root"]);
 }
 
 function assertSessionClosedShape(result, sessionId) {
@@ -145,7 +145,7 @@ async function runRendererGoldenFixtures() {
 
   const clientBundle = await fs.readFile(new URL("../../dist/client.js", import.meta.url), "utf8");
   assertIncludes(clientBundle, "rabbithole-shared-markdown-renderer-v1", "browser bundle should contain the shared renderer sentinel");
-  console.log("ok stage8: shared renderer golden/security fixtures and bundle sentinel");
+  console.log("ok MCP markdown wire: shared renderer golden/security fixtures and bundle sentinel");
 }
 
 async function runMarkdownWireFixture() {
@@ -178,7 +178,7 @@ async function runMarkdownWireFixture() {
   ].join("\n");
 
   const opened = await openRabbithole({
-    title: "Stage 8 Root",
+    title: "Markdown Wire Root",
     content: rootMarkdown,
     assets: [{ name: "diagram-1.png", file_path: imagePath }],
   });
@@ -208,8 +208,8 @@ async function runMarkdownWireFixture() {
   assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("extensions"), false, "agent rehydration stays lean");
   assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("attempts"), false, "learner state never enters agent rehydration");
 
-  const requestId = "req-stage8";
-  const nodeId = "node-stage8";
+  const requestId = "req-markdown-wire";
+  const nodeId = "node-markdown-wire";
   const postResult = await postEvent(session, {
     type: "branch_request",
     request_id: requestId,
@@ -254,7 +254,7 @@ async function runMarkdownWireFixture() {
   const afterFinal = await answerBranch({
     sessionId: session.id,
     requestId,
-    title: "Stage 8 Answer",
+    title: "Markdown Wire Answer",
     content: "\n</div>\n```\n\nDone.",
   });
   assertKeepListeningShape(afterFinal, session);
@@ -304,9 +304,9 @@ async function runMarkdownWireFixture() {
   const importedHole = await importStore.loadHole(imported.hole_id);
   assert.equal(importedHole.nodes.find((node) => node.id === nodeId).markdown, answered.markdown, "web import should restore the MCP-authored branch");
 
-  session.close("stage8_done");
+  session.close("markdown_wire_done");
   assertSessionClosedShape(await answerBranch({ sessionId: session.id, requestId, content: "late" }), session.id);
-  console.log("ok stage8: markdown-only hydration/SSE, tool shapes, streaming, canonical export, and web-import round trip");
+  console.log("ok MCP markdown wire: markdown-only hydration/SSE, tool shapes, streaming, canonical export, and web-import round trip");
 }
 
 async function assertLegacyViewDoesNotMint() {
@@ -322,7 +322,7 @@ async function assertLegacyViewDoesNotMint() {
   await session.flushSave();
   assert.equal((await store.loadHole("legacy-view-only")).nodes[0].markdown, markdown);
   session.close("legacy_view_done");
-  console.log("ok stage8: opening and viewing a legacy hole does not mint ids or rewrite stored markdown");
+  console.log("ok MCP markdown wire: opening and viewing a legacy hole does not mint ids or rewrite stored markdown");
 }
 
 try {
@@ -334,9 +334,9 @@ try {
     () => openRabbithole({ holeId: "future-mcp" }),
     (error) => error?.message === "This Rabbithole was saved by a newer version of Rabbithole — update to open it.",
   );
-  console.log("ok stage8: MCP resume refuses newer schemas with the update-to-open message");
+  console.log("ok MCP markdown wire: resume refuses newer schemas with the update-to-open message");
 } finally {
-  await closeAllSessions("stage8_test_complete");
+  await closeAllSessions("markdown_wire_test_complete");
 }
 
-console.log("stage8 markdown wire verification passed");
+console.log("MCP markdown wire verification passed");

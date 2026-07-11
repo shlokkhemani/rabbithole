@@ -12,9 +12,9 @@ for (const budget of recorded.budgets) {
   assert.equal(typeof budget.ceiling, "number", `${budget.id} must record a numeric ceiling`);
   const actual = Math.round(measured[budget.id].value * 100) / 100;
   const status = actual <= budget.ceiling ? "ok" : "FAIL";
-  console.log(`${status} stage16: ${budget.id} ${actual} <= ${budget.ceiling} ${budget.unit}`);
+  console.log(`${status} performance budget: ${budget.id} ${actual} <= ${budget.ceiling} ${budget.unit}`);
   if (actual > budget.ceiling) failures.push(`${budget.id}: measured ${actual} ${budget.unit}, ceiling ${budget.ceiling} ${budget.unit}`);
 }
 assert.equal(failures.length, 0,
-  `budget regression(s):\n- ${failures.join("\n- ")}\nRun node test/calibrate-budgets.mjs only when deliberately ratcheting ceilings; any worsening requires an explicit recorded trade-off.`);
-console.log("ok stage16: budget gauges are within recorded machine-relative ceilings");
+  `budget regression(s):\n- ${failures.join("\n- ")}\nRun npm run calibrate:budgets only when deliberately ratcheting ceilings; any worsening requires an explicit recorded trade-off.`);
+console.log("ok performance budgets: gauges are within recorded machine-relative ceilings");

@@ -9,7 +9,7 @@ import { getKatexCss } from "../../src/node/html/built-assets.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage1-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-markdown-renderer-"));
 
 const KATEX_CSS_SENTINEL = ".katex .katex-version::after";
 
@@ -151,8 +151,8 @@ async function assertPageAssembly() {
   };
 
   const session = await createSession({
-    holeId: "stage1-test",
-    title: "Stage 1 Test",
+    holeId: "markdown-renderer-test",
+    title: "Markdown Renderer Test",
     rootId: "root",
     nodes: [rootNode],
     isResume: false,
@@ -193,10 +193,10 @@ async function assertPageAssembly() {
     const pageBytes = Buffer.byteLength(liveHtml, "utf8");
     console.log(`ok page assembly: KaTeX CSS ${katexCssBytes} bytes, live page ${pageBytes} bytes`);
   } finally {
-    await closeAllSessions("stage1_test_complete");
+    await closeAllSessions("markdown_renderer_test_complete");
   }
 }
 
 await runMarkdownFixtures();
 await assertPageAssembly();
-console.log("stage1 verification passed");
+console.log("markdown renderer verification passed");

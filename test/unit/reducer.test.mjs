@@ -28,7 +28,7 @@ assert.deepEqual(
   [{ ...hydrationGolden[0], origin: null }, hydrationGolden[1]],
   "web hydration preserves its intentional root-origin suppression"
 );
-console.log("ok stage14: canonical hydration-node projection preserves both host wire shapes");
+console.log("ok reducer: canonical hydration-node projection preserves both host wire shapes");
 
 function summarizeEffects(effects) {
   const out = { ...effects };
@@ -159,4 +159,4 @@ try {
 assertGoldens(browserResults, "browser");
 assert.deepEqual(browserResults, nodeResults, "Node and browser must produce identical reducer projections");
 
-console.log(`ok stage14: ${cases.length} reducer goldens conform in node and browser; frozen-input immutability enforced`);
+console.log(`ok reducer: ${cases.length} goldens conform in node and browser; frozen-input immutability enforced`);

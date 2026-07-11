@@ -20,7 +20,7 @@ try {
     await verifyFormPrimitivesAndButtons(page, name);
     await context.close();
     await browser.close();
-    console.log(`stage10x kit matrix ${name} passed`);
+    console.log(`UI primitives browser matrix ${name} passed`);
   }
 } finally {
   await new Promise((resolve) => server.close(resolve));

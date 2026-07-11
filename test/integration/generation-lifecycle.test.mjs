@@ -54,13 +54,13 @@ try {
 }
 assert.equal(parseOpenAISseEvent('data: {"choices":[{"message":{"content":"one"}}]}\ndata: {"choices":[{"delta":{"content":" two"}}]}'), "one two");
 assert.equal(parseOpenAISseEvent("data: [DONE]"), "");
-console.log("ok stage18: OpenAI SSE arbitrary fragmentation, multi-event chunks, CRLF, and DONE");
+console.log("ok generation lifecycle: OpenAI SSE arbitrary fragmentation, multi-event chunks, CRLF, and DONE");
 
 const anthropicEvent = 'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}';
 assert.equal(parseAnthropicSseEvent(anthropicEvent), "hello");
 assert.equal(parseAnthropicSseEvent('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}'), "ab");
 assert.equal(parseAnthropicSseEvent("data: [DONE]"), "");
-console.log("ok stage18: Anthropic SSE multi-data events, CRLF, and DONE");
+console.log("ok generation lifecycle: Anthropic SSE multi-data events, CRLF, and DONE");
 
 const anthropicWire = [
   'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"alpha"}}',
@@ -76,7 +76,7 @@ try {
 } finally {
   globalThis.fetch = originalFetch;
 }
-console.log("ok stage18: Anthropic SSE arbitrary fragmentation and multi-event chunks");
+console.log("ok generation lifecycle: Anthropic SSE arbitrary fragmentation and multi-event chunks");
 
 function parseTitle(chunks, fallbackTitle = "Fallback") {
   const parser = new TitleSentinelParser({ fallbackTitle });
@@ -96,7 +96,7 @@ assert.deepEqual(parseTitle(["TITLE: End"]), { title: "End", text: "" });
 assert.deepEqual(parseTitle(["plain body"]), { title: "Fallback", text: "plain body\n" });
 assert.deepEqual(parseTitle(["TITLE:"]), { title: "Fallback", text: "TITLE:\n" });
 assert.deepEqual(parseTitle(["TITLE: partial"]), { title: "partial", text: "" });
-console.log("ok stage18: title sentinel full fragmentation sweep and terminal edge cases");
+console.log("ok generation lifecycle: title sentinel full fragmentation sweep and terminal edge cases");
 
 const existing = new ProviderError("rate", { status: 429, code: "rate_limit" });
 assert.strictEqual(normalizeProviderError(existing), existing);
@@ -109,7 +109,7 @@ const network = normalizeProviderError(new TypeError("socket closed"));
 assert.equal(network.message, "socket closed");
 assert.equal(network.code, "network");
 assert.equal(network.retryable, true);
-console.log("ok stage18: provider error normalization shapes");
+console.log("ok generation lifecycle: provider error normalization shapes");
 
 async function* fixtureChunks(parts) { yield* parts; }
 const rawBranch = "TITLE: Adapter title\n\nParagraph one.\nParagraph two.";
@@ -124,7 +124,7 @@ for (const events of [
   assert.equal(events.some((event) => event.type === "title"), false);
   assert.equal(events.map((event) => event.delta).join(""), rawAuthor);
 }
-console.log("ok stage18: pure branch and author adapters preserve exact text bytes");
+console.log("ok generation lifecycle: pure branch and author adapters preserve exact text bytes");
 
 const openAiBrain = new OpenAICompatibleBrain({ baseUrl: "https://example.test", answerModel: "fixture" });
 try {
@@ -159,7 +159,7 @@ for (const events of [
   await collect(anthropic.authorExplainerMessagesApi({ question: "why" })),
   await collect(anthropic.authorDocumentMessagesApi({ markdown: "source" })),
 ]) assert.equal(events.some((event) => event.type === "title"), false);
-console.log("ok stage18: both brain implementations expose GenerationEvent on all surfaces");
+console.log("ok generation lifecycle: both brain implementations expose GenerationEvent on all surfaces");
 
 const run = new GenerationRun({ id: "run-a", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
 assert.deepEqual(run.accept({ type: "text", delta: "one" }, { nodeId: "node-a" }), {
@@ -188,7 +188,7 @@ assert.deepEqual(empty.complete({ nodeId: "empty-node" }), {
 assert.throws(() => empty.accept({ type: "usage", input_tokens: 1, output_tokens: 2 }), /Unsupported GenerationEvent/);
 assert.throws(() => empty.accept({ type: "text", delta: "no node" }), /requires a non-empty nodeId/);
 assert.equal(JSON.stringify(run.complete(finalContext)).includes("node_error"), false);
-console.log("ok stage18: GenerationRun accumulation, ordering, late title, empty completion, idempotence, and rejection goldens");
+console.log("ok generation lifecycle: GenerationRun accumulation, ordering, late title, empty completion, idempotence, and rejection goldens");
 
 const wiringEvents = [{ type: "title", title: "Wired title" }, { type: "text", delta: "one" }, { type: "text", delta: " two" }];
 const wiredRun = new GenerationRun({ id: "wired-run", initialMarkdown: "Start ", fallbackTitle: "Fallback" });
@@ -204,7 +204,7 @@ const manual = wiringEvents.flatMap((event) => {
 });
 manual.push(manualRun.complete({ nodeId: "wired-node", answeredFields: { parent_id: "root", read: false } }));
 assert.deepEqual(wired, manual);
-console.log("ok stage18: browser branch wiring matches hand-driven GenerationRun DocEvents");
+console.log("ok generation lifecycle: browser branch wiring matches hand-driven GenerationRun DocEvents");
 
 const mcpIngress = new GenerationIngress({ id: "mcp-run", nodeId: "mcp-node", fallbackTitle: "Fallback" });
 assert.deepEqual(mcpIngress.acceptChunk("one"), {
@@ -228,7 +228,7 @@ assert.notEqual(
   mcpSession.createGenerationIngress({ id: "node", title: "Fallback" }).run.id,
   mcpSession.createGenerationIngress({ id: "node", title: "Fallback" }).run.id,
 );
-console.log("ok stage18: MCP ingress normalizes tail/repeat chunks, tags progress, carries title, and isolates fresh runs");
+console.log("ok generation lifecycle: MCP ingress normalizes tail/repeat chunks, tags progress, carries title, and isolates fresh runs");
 
 let minted = 0;
 const mintHost = new DirectRabbitholeHost({
@@ -245,7 +245,7 @@ guarded = reduceHoleEvent(guarded, oldRun.accept({ type: "text", delta: "old" },
 guarded = reduceHoleEvent(guarded, retryRun.accept({ type: "text", delta: "new" }, { nodeId: "branch" })).state;
 guarded = reduceHoleEvent(guarded, oldRun.accept({ type: "text", delta: " late" }, { nodeId: "branch" })).state;
 assert.equal(guarded.nodes.get("branch").markdown, "new");
-console.log("ok stage18: retry mints a new run id and reducer rejects an aborted-run straggler");
+console.log("ok generation lifecycle: retry mints a new run id and reducer rejects an aborted-run straggler");
 
 const emptyWired = await collect(generationDocEvents(fixtureChunks([]), new GenerationRun({
   id: "empty-wired", fallbackTitle: "Branch fallback",
@@ -253,7 +253,7 @@ const emptyWired = await collect(generationDocEvents(fixtureChunks([]), new Gene
 assert.deepEqual(emptyWired, [{
   type: "node_answered", node_id: "empty-branch", title: "Branch fallback", markdown: "",
 }]);
-console.log("ok stage18: browser branch wiring preserves empty-stream completion");
+console.log("ok generation lifecycle: browser branch wiring preserves empty-stream completion");
 
 const rootBeforeComplete = (activeRun) => {
   if (!activeRun.snapshot().markdown.trim()) throw new Error("The provider returned an empty document.");
@@ -274,7 +274,7 @@ for (const events of [[], [{ type: "text", delta: " \n" }]]) {
     id: "empty-root", fallbackTitle: "Question",
   }), { nodeId: "root", beforeComplete: rootBeforeComplete })), /provider returned an empty document/);
 }
-console.log("ok stage18: browser root wiring uses GenerationRun and rejects empty or whitespace streams");
+console.log("ok generation lifecycle: browser root wiring uses GenerationRun and rejects empty or whitespace streams");
 
 const authoringHole = createHoleFromMarkdown({ title: "Source", markdown: "Original source" });
 authoringHole.nodes[0].status = "pending";
@@ -315,7 +315,7 @@ await assert.rejects(() => failedAuthoringHost.authorDocument({ markdown: "Origi
 await new Promise((resolve) => setTimeout(resolve, 450));
 assert.equal(failedAuthoringSaves.length, 0);
 assert.equal(failedAuthoringHost.saveTimer, 0);
-console.log("ok stage18: document authoring saves only once on completion and saves nothing on failure");
+console.log("ok generation lifecycle: document authoring saves only once on completion and saves nothing on failure");
 
 const productionGenerationSources = await Promise.all([
   new URL("../../src/web/brain/generation-events.js", import.meta.url),
@@ -323,9 +323,9 @@ const productionGenerationSources = await Promise.all([
   new URL("../../src/web/app.js", import.meta.url),
 ].map((url) => fs.readFile(url, "utf8")));
 assert.equal(productionGenerationSources.join("\n").includes("textDeltaFromGenerationEvent"), false);
-console.log("ok stage18: retired GenerationEvent text-delta seam is absent from production sources");
+console.log("ok generation lifecycle: retired GenerationEvent text-delta seam is absent from production sources");
 
 const appSource = await fs.readFile(new URL("../../src/web/app.js", import.meta.url), "utf8");
 assert.match(appSource, /document\.addEventListener\("visibilitychange"[\s\S]*document\.visibilityState === "hidden"[\s\S]*currentHost\?\.flushSave\(\)/);
 assert.match(appSource, /window\.addEventListener\("pagehide"[\s\S]*currentHost\?\.flushSave\(\)/);
-console.log("ok stage18: hidden visibility and pagehide flush the existing host save pipeline");
+console.log("ok generation lifecycle: hidden visibility and pagehide flush the existing host save pipeline");

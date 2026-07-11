@@ -9,24 +9,24 @@ import { getGenerationSetupStatus, setupFingerprint } from "../../src/web/settin
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
-const SECRET = `sk-or-v1-${"stage15-secret-".repeat(5)}`;
+const SECRET = `sk-or-v1-${"security-probe-secret-".repeat(5)}`;
 const ASSET = "pixel.gif";
 const ASSET_BASE64 = "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const HOSTILE = [
   "# Hostile import",
   "",
-  "<script>window.__stage15Pwned=(window.__stage15Pwned||0)+1</script>",
-  '<iframe srcdoc="<script>parent.__stage15Pwned=2<\\/script>"></iframe>',
-  '<img src=x onerror="window.__stage15Pwned=3">',
-  '[bad](javascript:window.__stage15Pwned=4)',
+  "<script>window.__securityProbePwned=(window.__securityProbePwned||0)+1</script>",
+  '<iframe srcdoc="<script>parent.__securityProbePwned=2<\\/script>"></iframe>',
+  '<img src=x onerror="window.__securityProbePwned=3">',
+  '[bad](javascript:window.__securityProbePwned=4)',
   "",
   "```show",
-  '<div id="safe-show" onclick="window.__stage15Pwned=5"><a id="bad-link" href="javascript:window.__stage15Pwned=6">safe label</a></div>',
-  '<svg id="hostile-svg" xmlns="http://www.w3.org/2000/svg" onload="window.__stage15Pwned=7"><a href="javascript:window.__stage15Pwned=8"><text>svg-safe</text></a><animate onbegin="window.__stage15Pwned=9" attributeName="x"/></svg>',
-  '<script>window.__stage15Pwned=10</script><iframe src="https://attacker.invalid/"></iframe>',
+  '<div id="safe-show" onclick="window.__securityProbePwned=5"><a id="bad-link" href="javascript:window.__securityProbePwned=6">safe label</a></div>',
+  '<svg id="hostile-svg" xmlns="http://www.w3.org/2000/svg" onload="window.__securityProbePwned=7"><a href="javascript:window.__securityProbePwned=8"><text>svg-safe</text></a><animate onbegin="window.__securityProbePwned=9" attributeName="x"/></svg>',
+  '<script>window.__securityProbePwned=10</script><iframe src="https://attacker.invalid/"></iframe>',
   "```",
   "",
-  "Invalid math $\\notacommand{<img src=x onerror=window.__stage15Pwned=11>}$.",
+  "Invalid math $\\notacommand{<img src=x onerror=window.__securityProbePwned=11>}$.",
   "",
   "Valid inline $x^2+1$ and display:",
   "$$\\frac{a}{b}$$",
@@ -36,7 +36,7 @@ const HOSTILE = [
 
 verifySetupReadinessFingerprint();
 await ensureBuild();
-const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage15-"));
+const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-compatibility-security-"));
 const hostilePath = path.join(tmp, "hostile.rabbithole");
 await fs.writeFile(hostilePath, JSON.stringify(portableFixture()), "utf8");
 const server = await serveStatic(WEB_DIST);
@@ -47,7 +47,7 @@ try {
   const snapshot = await verifyLiveAndBuildSnapshot();
   await verifyFrozen(snapshot);
   await verifyPreferenceFixtures();
-  console.log("ok stage15: security probes and preference/credential migration fixtures");
+  console.log("ok compatibility and security: probes and preference/credential migration fixtures");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
@@ -137,7 +137,7 @@ async function assertSafeRender(page, label) {
     const all = show ? [...show.querySelectorAll("*")] : [];
     const math = [...(doc?.querySelectorAll(".katex") || [])];
     return {
-      pwned: window.__stage15Pwned || 0,
+      pwned: window.__securityProbePwned || 0,
       liveScripts: doc?.querySelectorAll("script,iframe").length || 0,
       showScripts: show?.querySelectorAll("script,iframe,object,embed,form").length || 0,
       handlers: all.flatMap((el) => [...el.attributes]).filter((a) => /^on/i.test(a.name)).length,
@@ -299,7 +299,7 @@ function portableFixture() {
   return {
     format: "rabbithole", format_version: 1,
     hole: {
-      schema_version: 2, hole_id: "stage15-hostile", title: "Stage 15 hostile", root_id: "root",
+      schema_version: 2, hole_id: "security-hostile", title: "Security hostile fixture", root_id: "root",
       created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", view_state: null,
       nodes: [{ id: "root", parent_id: null, title: "Hostile", markdown: HOSTILE, base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-01-01T00:00:00.000Z", extensions: { learn: { c8lb3: { attempts: 2, last: { option: 1, correct: true }, revealed: true } } } }],
     },

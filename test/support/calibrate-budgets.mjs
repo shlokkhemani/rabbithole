@@ -21,7 +21,7 @@ const budgets = budgetDefinitions.map((definition) => {
   };
 });
 await fs.writeFile(file, `${JSON.stringify({
-  note: "Machine-relative ceilings. Run node test/calibrate-budgets.mjs in each enforcement environment; commit worsening only with an explicit recorded trade-off.",
+  note: "Machine-relative ceilings. Run npm run calibrate:budgets in each enforcement environment; commit worsening only with an explicit recorded trade-off.",
   samples: 3,
   statistic: "Exact for byte gauges; minimum of repeated samples for timing and DOM-batch gauges.",
   budgets,
@@ -30,7 +30,7 @@ for (const budget of budgets) {
   const old = priorById.get(budget.id);
   console.log(`${old ? "changed" : "added"} ${budget.id}: baseline ${format(old?.baseline)} -> ${format(budget.baseline)}, ceiling ${format(old?.ceiling)} -> ${format(budget.ceiling)} ${budget.unit}`);
 }
-console.log("ok stage16: calibrated budget baselines and ratcheted ceilings");
+console.log("ok performance budgets: calibrated baselines and ratcheted ceilings");
 
 function gitCommit() {
   try {

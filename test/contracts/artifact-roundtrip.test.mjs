@@ -14,7 +14,7 @@ const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWit
 assert.equal(fixtureNames.length, 20, "the curated corpus must contain exactly 20 portable fixtures");
 
 async function storeAt(label) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `rabbithole-stage13-${label}-`));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `rabbithole-artifact-roundtrip-${label}-`));
   // FsStore deliberately reads RABBITHOLE_DIR at operation time, so each store
   // round trip is completed before selecting the next isolated directory.
   process.env.RABBITHOLE_DIR = dir;
@@ -89,7 +89,7 @@ for (const name of fixtureNames) {
     `${name}: portable -> FsStore -> canonical snapshot HTML -> web snapshot import -> portable is a fixed point; referenced assets are byte-exact and unreferenced assets drop at the snapshot hop by design (referenced=${JSON.stringify(snapshot.referenced)}, before=${JSON.stringify(exported1)}, after=${JSON.stringify(snapshotExport)})`
   );
 }
-console.log(`ok stage13: all ${fixtureNames.length} corpus fixtures are normalized three-projection fixed points and export-idempotent`);
+console.log(`ok artifact round trip: all ${fixtureNames.length} corpus fixtures are normalized three-projection fixed points and export-idempotent`);
 
 {
   const source = JSON.parse(await fs.readFile(new URL("01-empty-root.rabbithole", corpusDir), "utf8"));
@@ -109,7 +109,7 @@ console.log(`ok stage13: all ${fixtureNames.length} corpus fixtures are normaliz
   const snapshotImported = await importSnapshotFile(snapshotStore.store, snapshot.html);
   assert.deepEqual((await snapshotStore.store.loadHole(snapshotImported.hole_id)).nodes[0].extensions, {}, "snapshot import re-normalizes the omitted bag to empty");
 }
-console.log("ok stage13: extension bags survive portable round trips and are stripped from snapshots");
+console.log("ok artifact round trip: extension bags survive portable round trips and are stripped from snapshots");
 
 {
   const text = await fs.readFile(new URL("04-assets-png-svg.rabbithole", corpusDir), "utf8");
@@ -131,6 +131,6 @@ console.log("ok stage13: extension bags survive portable round trips and are str
   const snapshotFixedPoint = await buildRabbitholeExport(target.store, snapshotImported.hole_id);
   assert.deepEqual(normalized(snapshotFixedPoint), normalized(before), "snapshot import exports to the canonical .rabbithole fixed point");
 }
-console.log("ok stage13: portable and snapshot import collisions mint fresh ids and preserve the .rabbithole fixed point");
+console.log("ok artifact round trip: portable and snapshot import collisions mint fresh ids and preserve the .rabbithole fixed point");
 
-console.log("stage13 round-trip verification passed");
+console.log("artifact round-trip verification passed");

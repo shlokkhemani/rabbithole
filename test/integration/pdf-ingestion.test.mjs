@@ -14,7 +14,7 @@ import {
 } from "../../src/node/fs-store.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage5-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-pdf-ingestion-"));
 
 const ATTENTION_PDF =
   "/private/tmp/claude-501/-Users-shlokkhemani-Projects-rabbit-hole/aa6bb307-c272-4866-927a-c517187acb97/scratchpad/pdfs/attention.pdf";
@@ -181,7 +181,7 @@ async function runStagingAdoptionFixture(pdfPath) {
   assert.equal(asset.headers.get("content-type"), "image/png");
   assert(isPng(Buffer.from(await asset.arrayBuffer())));
 
-  await closeAllSessions("stage5_adoption_complete");
+  await closeAllSessions("pdf_adoption_complete");
   console.log("ok pdf: staging adoption by open_rabbithole renders and serves assets");
 }
 
@@ -245,5 +245,5 @@ await runStagingAdoptionFixture(tinyPdf);
 await runDirectHoleFixture(tinyPdf);
 await runValidationFixtures(tinyPdf);
 await runRealPaperFixture();
-await closeAllSessions("stage5_test_complete");
-console.log("stage5 pdf verification passed");
+await closeAllSessions("pdf_ingestion_test_complete");
+console.log("PDF ingestion verification passed");

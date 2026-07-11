@@ -1,5 +1,5 @@
 {
-  "note": "Machine-relative ceilings. Run node test/calibrate-budgets.mjs in each enforcement environment; commit worsening only with an explicit recorded trade-off.",
+  "note": "Machine-relative ceilings. Run npm run calibrate:budgets in each enforcement environment; commit worsening only with an explicit recorded trade-off.",
   "samples": 3,
   "statistic": "Exact for byte gauges; minimum of repeated samples for timing and DOM-batch gauges.",
   "budgets": [
@@ -8,7 +8,7 @@
       "description": "Built live client bundle size",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact file size after a deterministic build. The Phase 8 content contract and Check primitive account for the growth from the prior baseline, a recorded trade-off.",
+      "rationale": "Exact file size after a deterministic build, including the content contract and Check primitive.",
       "baseline": 1097454,
       "ceiling": 1152326.7,
       "measured_at_commit": "0a7272f"
@@ -18,7 +18,7 @@
       "description": "Built frozen client bundle size",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact file size after a deterministic build. The Phase 8 content contract and Check primitive account for the growth from the prior baseline, a recorded trade-off.",
+      "rationale": "Exact file size after a deterministic build, including the content contract and Check primitive.",
       "baseline": 1085760,
       "ceiling": 1140048,
       "measured_at_commit": "0a7272f"
@@ -28,7 +28,7 @@
       "description": "Frozen HTML size for the math-heavy reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size. Frozen artifacts embed exactly the canonical canvas + self-contained KaTeX stylesheet (web chrome CSS excluded since the explicit-stylesheet unification), one inert portable payload, and the frozen client; ratcheted from the Phase 4 styled baseline through the Phase 7 canonicalization.",
+      "rationale": "Exact UTF-8 snapshot size. Frozen artifacts embed the canonical canvas, self-contained KaTeX stylesheet, one inert portable payload, and the frozen client; web-only chrome CSS remains excluded.",
       "baseline": 1554035,
       "ceiling": 1631736.75,
       "measured_at_commit": "0a7272f"
@@ -38,7 +38,7 @@
       "description": "Frozen HTML size for the PNG/SVG reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size including assets. Frozen artifacts embed exactly the canonical canvas + self-contained KaTeX stylesheet (web chrome CSS excluded since the explicit-stylesheet unification), one inert portable payload, and the frozen client; ratcheted from the Phase 4 styled baseline through the Phase 7 canonicalization.",
+      "rationale": "Exact UTF-8 snapshot size including assets. Frozen artifacts embed the canonical canvas, self-contained KaTeX stylesheet, one inert portable payload, and the frozen client; web-only chrome CSS remains excluded.",
       "baseline": 1554066,
       "ceiling": 1631769.3,
       "measured_at_commit": "0a7272f"

@@ -20,7 +20,7 @@ import { toolDefinitions } from "../../src/node/tools/manifest.js";
 import { buildMcpInputSchema } from "../../src/node/mcp/schema.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage4-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-assets-"));
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const PNG_BYTES_2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 8, 7, 6]);
@@ -201,7 +201,7 @@ async function runSessionFixtures(source, source2) {
 
   const session = await createSession({
     holeId: "session-hole",
-    title: "Stage 4 Assets",
+    title: "Asset Contract",
     rootId: "root",
     nodes: [root],
     assetNames,
@@ -271,7 +271,7 @@ async function runSessionFixtures(source, source2) {
     assert.equal(streamedAsset.status, 200);
     assert.deepEqual(Buffer.from(await streamedAsset.arrayBuffer()), PNG_BYTES_2);
   } finally {
-    await closeAllSessions("stage4_test_complete");
+    await closeAllSessions("asset_contract_test_complete");
   }
 
   console.log("ok assets: route serving, route rejection, canonical referenced-only export, SSE progress");
@@ -282,4 +282,4 @@ await runMarkdownFixtures();
 runToolValidationFixture(source);
 runToolInputCapFixture();
 await runSessionFixtures(source, source2);
-console.log("stage4 assets verification passed");
+console.log("asset contract verification passed");

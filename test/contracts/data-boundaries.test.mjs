@@ -49,7 +49,7 @@ const portable = (hole = validHole(), assets = {}) => JSON.stringify({
   format: "rabbithole", format_version: 1, hole, assets,
 });
 async function newStore() {
-  process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage13-"));
+  process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-data-boundaries-"));
   return new FsStore();
 }
 
@@ -59,7 +59,7 @@ for (const missing of RABBITHOLE_STORE_METHODS) {
   delete invalidStore[missing];
   assert.throws(() => assertRabbitholeStore(invalidStore), new RegExp(`missing ${missing}\\(\\)`));
 }
-console.log("ok stage13: typed store fixture satisfies the port and missing capabilities are rejected");
+console.log("ok data boundaries: typed store fixture satisfies the port and missing capabilities are rejected");
 
 assert.equal(validatePersistedHole(persistedHoleFixture), true);
 assert.throws(
@@ -78,7 +78,7 @@ const encodedFixture = "AAF/gP7/";
 assert.equal(await binaryToBase64(binaryFixture), encodedFixture);
 assert.equal(await binaryToBase64(new Blob([binaryFixture])), encodedFixture);
 assert.deepEqual(base64ToBytes(encodedFixture), binaryFixture);
-console.log("ok stage13: typed artifact fixtures validate and invalid persisted/portable shapes are rejected");
+console.log("ok data boundaries: typed artifact fixtures validate and invalid persisted/portable shapes are rejected");
 
 const isGenerationEvent = (event) => event !== null && typeof event === "object" && (
   (event.type === "text" && typeof event.delta === "string") ||
@@ -94,7 +94,7 @@ for (const malformed of [
 const generated = [];
 for await (const event of brainFixture.answerBranch({}, new AbortController().signal)) generated.push(event);
 assert.deepEqual(generated, generationEventFixtures);
-console.log("ok stage13: typed generation fixture distinguishes the two-event vocabulary from malformed events");
+console.log("ok data boundaries: typed generation fixture distinguishes the two-event vocabulary from malformed events");
 
 const isMarkdownExtension = (value) => value !== null && typeof value === "object" &&
   typeof value.language === "string" && typeof value.render === "function";
@@ -115,7 +115,7 @@ for (const malformed of [
   assert.equal(isHydratableBlock(malformed), false);
 }
 assert.equal(isPrimitive({ mount: null }), false);
-console.log("ok stage13: typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values");
+console.log("ok data boundaries: typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values");
 
 {
   const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persistedHoleFixture)));
@@ -138,13 +138,13 @@ console.log("ok stage13: typed content fixtures distinguish extension, hydratabl
   };
   assert.deepEqual(normalizedPortable, portableArtifactFixture, "portable fixture survives parse/migrate/re-persist");
 }
-console.log("ok stage13: typed persisted, legacy, and portable artifacts round-trip with defined normalization");
+console.log("ok data boundaries: typed persisted, legacy, and portable artifacts round-trip with defined normalization");
 
 assert.throws(
   () => validatePersistedHole(validHole({ nodes: [validNode({ extensions: [] })] })),
   /extensions must be a JSON object/,
 );
-console.log("ok stage13: non-object node extensions are legibly rejected");
+console.log("ok data boundaries: non-object node extensions are legibly rejected");
 
 {
   const bag = { future_primitive: { attempts: [0, null, "雪", { correct: false }] } };
@@ -161,19 +161,19 @@ console.log("ok stage13: non-object node extensions are legibly rejected");
   assert.equal(reopened.schema_version, 2);
   assert.deepEqual(reopened.nodes[0].extensions, bag);
 }
-console.log("ok stage13: v1 open-modify-save-reopen preserves the schema-v2 extension bag");
+console.log("ok data boundaries: v1 open-modify-save-reopen preserves the schema-v2 extension bag");
 
 assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ format: "rabbithole", format_version: 2, hole: {}, assets: {} })),
   /unsupported Rabbithole file format/i,
 );
-console.log("ok stage13: future format_version is clearly refused");
+console.log("ok data boundaries: future format_version is clearly refused");
 
 await assert.rejects(
   () => importRabbitholeFile(new FsStore(), portable(validHole({ schema_version: 3 }))),
   /This Rabbithole was saved by a newer version of Rabbithole — update to open it\./,
 );
-console.log("ok stage13: future schema_version is legibly refused");
+console.log("ok data boundaries: future schema_version is legibly refused");
 
 {
   const store = await newStore();
@@ -185,7 +185,7 @@ console.log("ok stage13: future schema_version is legibly refused");
   assert.equal(loaded.nodes[0].status, "answered");
   assert.equal((await store.loadHole(result.hole_id)).schema_version, 2, "reload remains migrated");
 }
-console.log("ok stage13: schema_version null backfills, persists, and reloads");
+console.log("ok data boundaries: schema_version null backfills, persists, and reloads");
 
 assert.throws(() => parseRabbitholeFile("{ nope"), /valid JSON/);
 await assert.rejects(async () => importRabbitholeFile(await newStore(), portable(validHole(), { "bad.png": "not+base64!" })), /not valid base64/);
@@ -197,7 +197,7 @@ for (const hole of [
 ]) {
   await assert.rejects(async () => importRabbitholeFile(await newStore(), portable(hole)), /must be/);
 }
-console.log("ok stage13: malformed JSON, base64, and wrong-type fields reject without crashing");
+console.log("ok data boundaries: malformed JSON, base64, and wrong-type fields reject without crashing");
 
 {
   const title = "Café 漢字 🐇🕳️ — مرحبا — שלום";
@@ -210,7 +210,7 @@ console.log("ok stage13: malformed JSON, base64, and wrong-type fields reject wi
   assert.equal(loaded.title, title);
   assert.equal(loaded.nodes[0].title, nodeTitle);
 }
-console.log("ok stage13: unicode, emoji, and RTL titles survive validate-persist-reload");
+console.log("ok data boundaries: unicode, emoji, and RTL titles survive validate-persist-reload");
 
 const snapshot = (payload, before = "", after = "") =>
   `<!doctype html><html><body>${before}${SNAPSHOT_PAYLOAD_OPEN}${payload}${SNAPSHOT_PAYLOAD_CLOSE}${after}</body></html>`;
@@ -265,7 +265,7 @@ const snapshot = (payload, before = "", after = "") =>
     nodes: [validNode({ markdown: idlessMarkdown })],
   }))));
   assert.match((await identityStore.loadHole(snapshotImport.hole_id)).nodes[0].markdown, /^```show id=[a-z0-9]{4,8}\n/);
-  console.log("ok stage13: portable and snapshot imports mint durable block ids and canonical re-import preserves them");
+  console.log("ok data boundaries: portable and snapshot imports mint durable block ids and canonical re-import preserves them");
 
   const storage = new Map();
   const previousWindow = globalThis.window;
@@ -315,7 +315,7 @@ const snapshot = (payload, before = "", after = "") =>
   );
   assert.equal(await cleanupStore.loadHole("cleanup-failure"), null, "failed asset persistence removes the partial hole");
 }
-console.log("ok stage13: snapshot and portable imports enforce inert extraction, uniform caps, secret isolation, and cleanup-on-failure");
+console.log("ok data boundaries: snapshot and portable imports enforce inert extraction, uniform caps, secret isolation, and cleanup-on-failure");
 
 {
   const exact = Buffer.alloc(MAX_ASSET_BYTES, 0xa5).toString("base64");
@@ -333,6 +333,6 @@ console.log("ok stage13: snapshot and portable imports enforce inert extraction,
   globalThis.atob = originalAtob;
   assert.equal(atobCalled, false, "encoded-length preflight rejects oversized base64 before atob");
 }
-console.log("ok stage13: exact 20 MB asset is accepted and one byte over is rejected");
+console.log("ok data boundaries: exact 20 MB asset is accepted and one byte over is rejected");
 
-console.log("stage13 data-edge verification passed");
+console.log("data-boundary verification passed");

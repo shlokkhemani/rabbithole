@@ -12,7 +12,7 @@ import { RabbitHoleSession } from "../../src/node/transport/session.js";
 import { loadHole } from "../../src/node/fs-store.js";
 import { toolDefinitions } from "../../src/node/tools/manifest.js";
 
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage3-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-base-url-"));
 
 function assertIncludes(haystack, needle, message) {
   assert(haystack.includes(needle), message || `expected to include ${needle}`);
@@ -178,8 +178,8 @@ async function runSessionLifecycleFixture() {
     created_at: new Date().toISOString(),
   };
   const session = new RabbitHoleSession({
-    holeId: "stage3-session",
-    title: "Stage 3 Session",
+    holeId: "base-url-session",
+    title: "Base URL Session",
     rootId: "root",
     nodes: [root],
     isResume: false,
@@ -239,7 +239,7 @@ async function runSessionLifecycleFixture() {
       "finalized inherited nodes should upgrade to their own frontmatter base"
     );
   } finally {
-    session.close("stage3_test_complete");
+    session.close("base_url_test_complete");
     await session.savingChain;
   }
 
@@ -333,4 +333,4 @@ runFrontmatterAndPrecedenceFixtures();
 await runSessionLifecycleFixture();
 await runLegacyBackfillFixture();
 runToolValidationFixture();
-console.log("stage3 base-url verification passed");
+console.log("base URL verification passed");

@@ -13,7 +13,7 @@ import { addAssetsToHole, listAssets } from "../../src/node/fs-store.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage6-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-image-experience-"));
 
 function assertIncludes(haystack, needle, message) {
   assert(haystack.includes(needle), message || `expected to include ${needle}`);
@@ -64,8 +64,8 @@ async function runPageFixtures() {
   };
 
   const session = await createSession({
-    holeId: "stage6-image-ux",
-    title: "Stage 6 Image UX",
+    holeId: "image-experience",
+    title: "Image Experience",
     rootId: "root",
     nodes: [root],
     assetNames: new Set(["diagram-1.png"]),
@@ -92,7 +92,7 @@ async function runPageFixtures() {
     assertIncludes(liveHtml, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
     assert(!CANVAS_STYLES.includes('html[data-theme="dark"] .md img'), "matte selector should not target every .md img directly");
 
-    const scriptPath = path.join(process.env.RABBITHOLE_DIR, "stage6-client.js");
+    const scriptPath = path.join(process.env.RABBITHOLE_DIR, "image-client.js");
     await fs.writeFile(scriptPath, script, "utf8");
     const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
     assert.equal(check.status, 0, check.stderr || check.stdout);
@@ -103,26 +103,26 @@ async function runPageFixtures() {
     assertIncludes(exportHtml, 'html[data-theme="dark"] .md .rh-img-frame', "export should retain dark-mode image matte CSS");
     console.log("ok image ux: served client, matte CSS, export CSS");
   } finally {
-    await closeAllSessions("stage6_test_complete");
+    await closeAllSessions("image_experience_test_complete");
   }
 }
 
 async function runLiveSnapshotDownload() {
-  const referencedBytes = Buffer.from("stage6 referenced snapshot asset");
-  const unreferencedBytes = Buffer.from("stage6 unreferenced snapshot asset");
+  const referencedBytes = Buffer.from("referenced snapshot asset");
+  const unreferencedBytes = Buffer.from("unreferenced snapshot asset");
   const referencedPath = path.join(process.env.RABBITHOLE_DIR, "diagram.png");
   const unreferencedPath = path.join(process.env.RABBITHOLE_DIR, "unused.png");
   await fs.writeFile(referencedPath, referencedBytes);
   await fs.writeFile(unreferencedPath, unreferencedBytes);
-  await addAssetsToHole("stage6-live-snapshot", [
+  await addAssetsToHole("image-live-snapshot", [
     { name: "diagram.png", file_path: referencedPath },
     { name: "unused.png", file_path: unreferencedPath },
   ]);
 
   const now = new Date().toISOString();
   const session = await createSession({
-    holeId: "stage6-live-snapshot",
-    title: "Stage 6 Live Snapshot",
+    holeId: "image-live-snapshot",
+    title: "Image Live Snapshot",
     rootId: "root",
     nodes: [
       {
@@ -138,7 +138,7 @@ async function runLiveSnapshotDownload() {
         collapsed: false, status: "pending", read: false, created_at: now,
       },
     ],
-    assetNames: new Set(await listAssets("stage6-live-snapshot")),
+    assetNames: new Set(await listAssets("image-live-snapshot")),
     isResume: false,
     renderPage: (hydration) => buildCanvasHtml(hydration),
   });
@@ -170,11 +170,11 @@ async function runLiveSnapshotDownload() {
     console.log("ok image ux: live MCP share snapshot download is canonical and portable");
   } finally {
     await browser.close();
-    await closeAllSessions("stage6_snapshot_test_complete");
+    await closeAllSessions("image_snapshot_test_complete");
   }
 }
 
 await runMarkdownSmoke();
 await runPageFixtures();
 await runLiveSnapshotDownload();
-console.log("stage6 image ux verification passed");
+console.log("image experience verification passed");

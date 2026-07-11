@@ -65,14 +65,14 @@ export async function runHoleContract(store, hooks) {
 
   await store.deleteHole("contract-hole");
   assert.equal(await store.loadHole("contract-hole"), null);
-  console.log("ok stage9: hole save/load/list/delete and schema stamping");
+  console.log("ok store contract: hole save/load/list/delete and schema stamping");
 }
 
 export async function runNewerSchemaRefusalContract(store, hooks) {
   const future = { ...hole({ hole_id: "future-hole" }), schema_version: 3, updated_at: "2026-01-01T00:00:00.000Z" };
   await hooks.writeRawHole("future-hole", future);
   await assert.rejects(() => store.loadHole("future-hole"), (error) => error?.message === NEWER_SCHEMA_MESSAGE);
-  console.log("ok stage9: newer schema is refused with the update-to-open message");
+  console.log("ok store contract: newer schema is refused with the update-to-open message");
 }
 
 export async function runMigrationContract(store, hooks) {
@@ -113,7 +113,7 @@ export async function runMigrationContract(store, hooks) {
   assert.equal(saved.schema_version, CURRENT_SCHEMA_VERSION, "loadHole should save migrated v0 files");
   await store.saveHole(migrated);
   assert.equal((await store.loadHole("legacy-hole")).schema_version, CURRENT_SCHEMA_VERSION);
-  console.log("ok stage9: v0.2 fixture migrates, saves, and reloads as schema v2");
+  console.log("ok store contract: v0.2 fixture migrates, saves, and reloads as schema v2");
 }
 
 export async function runAssetContract(store) {
@@ -125,7 +125,7 @@ export async function runAssetContract(store) {
   await store.deleteAsset("asset-hole", "diagram-1.png");
   assert.equal(await store.getAsset("asset-hole", "diagram-1.png"), null);
   assert.deepEqual(await store.listAssets("asset-hole"), ["diagram-2.png"]);
-  console.log("ok stage9: asset put/get/list/delete");
+  console.log("ok store contract: asset put/get/list/delete");
 }
 
 export async function runStagingContract(store) {
@@ -136,7 +136,7 @@ export async function runStagingContract(store) {
   assert.deepEqual(adopted, ["page-001.png"]);
   await assertBytes(await store.getAsset("staged-hole", "page-001.png"), PNG_BYTES);
   await assert.rejects(() => store.adoptStagedAssets("staged-hole", staged.ingest_id), /Unknown ingest_id/);
-  console.log("ok stage9: staging create/put/adopt");
+  console.log("ok store contract: staging create/put/adopt");
 }
 
 export async function runSafetyContract(store) {
@@ -150,7 +150,7 @@ export async function runSafetyContract(store) {
   }
   await assert.rejects(() => store.putStagedAsset("../bad", "safe.png", PNG_BYTES), /Invalid ingest id/);
   await assert.rejects(() => store.adoptStagedAssets("safe-hole", "../bad"), /Invalid ingest id/);
-  console.log("ok stage9: safety validation rejects bad ids, names, and traversal");
+  console.log("ok store contract: safety validation rejects bad ids, names, and traversal");
 }
 
 export async function runAssetGcFixture(store, makeDeleteHost) {
@@ -177,7 +177,7 @@ export async function runAssetGcFixture(store, makeDeleteHost) {
   await host.deleteNode("child-b");
   assert.equal(await store.getAsset("gc-hole", "shared.png"), null, "asset should be removed after final reference is deleted");
   await host.close?.();
-  console.log("ok stage9: asset GC keeps shared references and deletes the final unreferenced asset");
+  console.log("ok store contract: asset GC keeps shared references and deletes the final unreferenced asset");
 }
 
 export async function runStoreContract(store, hooks) {

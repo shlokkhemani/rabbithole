@@ -14,7 +14,7 @@ Object.defineProperty(globalThis, "navigator", {
   },
 });
 
-const store = assertRabbitholeStore(new IdbStore({ dbName: `rabbithole-stage9-idb-${Date.now()}` }));
+const store = assertRabbitholeStore(new IdbStore({ dbName: `rabbithole-indexeddb-store-${Date.now()}` }));
 
 await runStoreContract(store, {
   readRawHole: (holeId) => rawHole("readonly", holeId),
@@ -54,4 +54,4 @@ async function rawHole(mode, value) {
   return mode === "readonly" && result ? structuredClone(result) : result;
 }
 
-console.log("stage9 idb store contract verification passed");
+console.log("IndexedDB store contract verification passed");

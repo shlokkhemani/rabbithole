@@ -53,7 +53,7 @@ export const DESIGN_TOKENS = `:root {
   --shadow-modal: 0 20px 70px rgba(0, 0, 0, .48);
 
   /* Anchored surface */
-  --surface-popover-bg: color-mix(in srgb, var(--color-chrome) 88%, transparent);
+  --surface-popover-bg: color-mix(in srgb, var(--color-chrome) 96%, transparent);
   --surface-popover-border: var(--border-default); --surface-popover-radius: var(--radius-popover);
   --surface-popover-blur: blur(16px) saturate(1.3); --surface-popover-shadow: var(--shadow-popover);
 

@@ -3668,6 +3668,13 @@ var RabbitholeClient = (() => {
   }
   var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
   var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
+  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
+  function syncCollapseButton(node, btn) {
+    var action = node.collapsed ? "Expand document" : "Collapse document";
+    btn.innerHTML = node.collapsed ? NODE_RESTORE_ICON : NODE_COLLAPSE_ICON;
+    btn.setAttribute("aria-label", action);
+    btn.title = action;
+  }
   function createNodeEl(node, enter) {
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
@@ -3689,6 +3696,7 @@ var RabbitholeClient = (() => {
     var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A\u2212", ariaLabel: "Smaller text", title: "Smaller text" }));
     var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
     var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
+    syncCollapseButton(node, collapseBtn);
     var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
     var divider = document.createElement("span");
     divider.className = "node-act-divider";
@@ -4074,7 +4082,7 @@ var RabbitholeClient = (() => {
   function toggleCollapse(node, btn) {
     node.collapsed = !node.collapsed;
     node.el.classList.toggle("collapsed", node.collapsed);
-    btn.innerHTML = NODE_COLLAPSE_ICON;
+    syncCollapseButton(node, btn);
     if (!node.collapsed) layoutNode(node);
     renderVisibility();
     drawEdges();

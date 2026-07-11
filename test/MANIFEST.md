@@ -368,9 +368,20 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 | retired text-delta seam absence | C2 | Prevents browser generation surfaces from bypassing GenerationRun through the temporary event-to-text helper. | Generation: shared accumulation and transition construction |
 | browser lifecycle save flush | C2 | Requires hidden visibility and pagehide to invoke the existing host flush seam, closing the final debounce window without changing save policy. | Generation: browser durable partial markdown on tab close |
 
+## `stage19-journey-verify.mjs`
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| modern MCP/web cross-host journey | C1 | Pins one continuous MCP authoring, real selection branch and streamed answer, snapshot download, fresh-profile web import, portable export, filesystem import, and MCP rehydration path with byte-faithful content/assets and credential exclusion. | Cross-host compatibility; snapshot and portable external formats; durable MCP rehydration |
+| v0.1 temporal cross-host journey | C1 | Carries the oldest `schema_version:null` fixture through real web snapshot/portable surfaces into MCP resume, requiring one trust-boundary migration to schema v2 and stability thereafter. | Migration/deploy: v0.1-era hole retained through Phase 9; idempotent migration; cross-host compatibility |
+
 ## Counts
 
-Current inventory arithmetic: `62 + 165 + 10 + 1 + 0 = 238` total cases.
+Current inventory arithmetic: `65 + 167 + 10 + 1 + 0 = 243` total cases.
+
+Phase 9 Slice 1 adds one C1 case (MCP string input caps) and two C2 cases (file classification, markdown pre-read cap): 62 + 1 = 63, 165 + 2 = 167, and 238 + 3 = 241.
+
+Phase 9 Slice 2 adds two C1 cross-host journey cases: 63 + 2 = 65 and 241 + 2 = 243, yielding 65 + 167 + 10 + 1 + 0 = 243.
 
 Phase 8 Slice 4 adds one C1 case for the additive MCP state wire and six C2 cases for Check registration, parsing, prose projection, escaped mount structure, reducer semantics, and the real live/reload/export/frozen cycle: C1 `61 + 1 = 62`, C2 `159 + 6 = 165`, and total `231 + 7 = 238`, yielding `62 + 165 + 10 + 1 + 0 = 238`.
 
@@ -384,12 +395,12 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 62 |
-| C2 behavioral product contract | 165 |
+| C1 compatibility contract | 65 |
+| C2 behavioral product contract | 167 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 1 |
 | C5 design target | 0 |
-| **Total** | **238** |
+| **Total** | **243** |
 
 ## Known-defect fossils
 

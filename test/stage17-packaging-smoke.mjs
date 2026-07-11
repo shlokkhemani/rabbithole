@@ -118,6 +118,18 @@ try {
   const [packResult] = JSON.parse(packOutput);
   assert.ok(packResult?.filename, "npm pack did not report a tarball");
   const packedPaths = new Set(packResult.files.map((entry) => entry.path));
+  const permittedPathPatterns = [
+    /^bin\//,
+    /^dist\//,
+    /^src\//,
+    /^README\.md$/,
+    /^LICENSE$/,
+    /^package\.json$/,
+  ];
+  const unexpectedPaths = [...packedPaths].filter((packedPath) =>
+    !permittedPathPatterns.some((pattern) => pattern.test(packedPath))
+  );
+  assert.deepEqual(unexpectedPaths, [], `tarball contains unexpected paths:\n${unexpectedPaths.join("\n")}`);
   const requiredPaths = [
     "package.json",
     "README.md",

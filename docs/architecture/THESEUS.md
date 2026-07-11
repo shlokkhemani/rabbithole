@@ -290,9 +290,10 @@ Eleven phases. Each names **Goal · Build · Wire-in · Delete · Exit criteria 
 **Delete (D6), complete:** split fence/visual registries, the hardcoded fence allowlist, and the descriptor/mount speculation invalidated by Check.
 **Exit, met:** unified `show` and Check goldens, structural extension fidelity, three-surface refusal, framework-owned XSS defense, durable identity, and live/reload/export/frozen parity are green. Walk/Play-specific lifecycle design remains deliberately provisional.
 
-### Phase 9 — The refactor audit *(S–M, low risk)*
+### Phase 9 — The refactor audit *(complete; S–M, low risk)*
 
-**Goal:** certify the swap before new capabilities muddy attribution. **Verify:** deletion ledger complete or explicitly deferred; dead-code sweep; **the remnant audit (Rule 10): grep-verifiable absence of `*ForTest` hooks, phase-labeled scaffolding, temporary flags, and migration shims in shipped source (`src/`, `bin/`, `dist/`); the one test seam reviewed entry-by-entry with each entry's justification recorded; C4 tripwires all retired or still guarding a live defect; the scenario manifest free of stale rows**; budgets ratcheted where phases banked improvements; accessibility pass over the manifest; packaging audit (`npx` on Node 18/20, publish contents, `check:dist`/`check:purity` green); security review of import paths; the end-to-end: author over MCP → open on web → branch with BYOK → snapshot → import → export `.rabbithole` → reopen over MCP with rehydration — one hole, no seams; and the temporal test: a v0.1-era hole flies the whole journey. **Exit:** all green; the refactor is *done* and declared so.
+**Shipped:** the deletion and remnant audits are closed with D1 explicitly deferred below; the sole shipped test seam is documented entry-by-entry; C4 is empty; deterministic byte budgets are ratcheted; publish contents are allowlisted; import boundaries, accessibility contracts, purity, distribution, packaging, cross-host journeys, and the v0.1 temporal journey are green.
+**Exit, met:** the scenario manifest has no stale known-defect rows, the ledger is closed or explicitly deferred, and the refactor is done.
 
 ### Phase 10 — The product roadmap *(ongoing — visible by design)*
 
@@ -306,15 +307,15 @@ Now the features, with clean attribution:
 
 | # | Target | Killed by |
 |---|---|---|
-| D1 | Unsystematic design values in chrome CSS (structural literals exempt) | Phase 2 |
-| D2 | `innerHTML` rebuilds of interactive chrome; per-surface positioning; native provider select + bespoke model pickers; bespoke focus recovery | Phases 3–4 |
-| D3 | Shape folklore; provably-redundant *internal* normalization (trust boundaries keep runtime validation forever) | Phase 5 |
+| D1 | Unsystematic design values in chrome CSS (structural literals exempt) | **Deferred:** the token payload exists; remaining literals are structural/optical exemptions to be converged opportunistically. |
+| D2 | `innerHTML` rebuilds of interactive chrome; per-surface positioning; native provider select + bespoke model pickers; bespoke focus recovery | **Closed:** settings conditional sections are permitted kit-internal Popover mounts, and Select/Combobox option rebuilds are permitted kit-internal primitive surfaces under the recorded taxonomy; no audited site falls outside it. |
+| D3 | Shape folklore; provably-redundant *internal* normalization (trust boundaries keep runtime validation forever) | **Closed:** trust-boundary validation is retained by design; the audit found no redundant internal normalization. |
 | D4 | Host knowledge of the title sentinel; duplicated accumulation across hosts; bespoke per-provider settings code. *Gated:* the sentinel prompt protocol itself (spike must pass latency/cost/quality) | Phase 6 |
 | D5 | Ad-hoc snapshot hydration serialization; export-shape drift | Phase 7 |
 | D6 | Split fence/visual registries; hardcoded `VISUAL_FENCE_LANGUAGES`; speculative hydratable-block contract superseded by the validated descriptor/mount split | Phase 8 |
-| D7 | Everything the audit sweep finds dead | Phase 9 |
+| D7 | Everything the audit sweep finds dead | **Closed:** dead exports and the pure button re-export wrapper were removed in Phase 9. |
 | D8 | Bespoke single-shot delete-undo plumbing (re-backed by history) | Phase 10 |
-| D9 | Ad-hoc test scaffolding in shipped source: the `window.__rhWebApp` grab-bag (store exposure + eight `*ForTest` methods, `src/web/app.js:1728-1742`) and `readRawHoleForTest`/`writeRawHoleForTest` (`src/web/store/idb-store.js:206,214`) — consolidated into the one documented test seam or replaced by driving the real surface; no new ad-hoc hooks from v2.2 onward (Rule 10) | Consolidated as touched in Phases 3–7; ledger proven empty by the Phase 9 remnant audit |
+| D9 | Ad-hoc test scaffolding in shipped source: the `window.__rhWebApp` grab-bag (store exposure + eight `*ForTest` methods, `src/web/app.js:1728-1742`) and `readRawHoleForTest`/`writeRawHoleForTest` (`src/web/store/idb-store.js:206,214`) — consolidated into the one documented test seam or replaced by driving the real surface; no new ad-hoc hooks from v2.2 onward (Rule 10) | **Closed:** the grab-bags are deleted and one entry-by-entry documented seam remains. |
 
 ## Part VI — The scenario ledger
 

@@ -3,7 +3,7 @@
 // ===========================================================================
 import { getBlockType } from "../core/blocks.js";
 
-export var visualSurfaceCaches = {};
+var visualSurfaceCaches = {};
 var blockMounts = {};
 var visualHooks = {
   post: function(){ return Promise.resolve({ ok: true }); },

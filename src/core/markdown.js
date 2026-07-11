@@ -1,3 +1,4 @@
+/** Supported Node-side renderer adapter for tests, evals, and external Node consumers. */
 import { defaultAssetUrlResolver } from "./assets.js";
 import { createMarkdownRenderer } from "./markdown-renderer.js";
 

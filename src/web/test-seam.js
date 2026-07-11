@@ -5,27 +5,26 @@
  */
 export function installTestSeam({ store, currentHoleId, createDocument, exportSnapshot, exportPortable }) {
   window.__rabbitholeTest = Object.freeze({
-    version: 1,
-    // Routing/reload fixtures need the active storage identity, which is not rendered.
+    // Routing/reload tests need the raw persistence identity, which the product UI does not expose.
     currentHoleId,
-    // Persistence fixtures need the exact pre-migration IndexedDB record.
+    // Persistence-migration tests need raw persistence records before product loading normalizes them.
     readStoredHole: async (id = currentHoleId()) => id ? readRawRecord(store, id) : null,
-    // Ingest fixtures must verify binary asset names and byte sizes, neither rendered in UI.
+    // Asset-ingest tests need binary asset names and byte sizes, which rendered product content cannot reveal.
     inspectAssets: async (id = currentHoleId()) => {
       const names = id ? await store.listAssets(id) : [];
       const sizes = {};
       for (const name of names) sizes[name] = (await store.getAsset(id, name))?.size || 0;
       return { names, sizes };
     },
-    // MIME migration fixtures need the stored Blob type, which live rendering hides.
+    // Asset-MIME migration tests need binary asset Blob types, which live rendering hides.
     inspectAssetType: async (name, id = currentHoleId()) => (await store.getAsset(id, name))?.type || "",
-    // Empty-store persistence assertions cannot distinguish zero records from empty rail copy.
+    // Empty-store persistence tests need raw persistence record counts, which empty product chrome cannot distinguish.
     listStoredHoles: () => store.listHoles(),
-    // Structured-authoring fixtures have no paste/import UI that requests author-model rewriting.
+    // Structured-authoring tests need author-model rewrite fixtures, for which the product has no equivalent UI action.
     createDocument,
-    // Byte/content gauges require the generated snapshot string before a browser download.
+    // Snapshot byte/content tests need pre-download artifact strings, which the download UI cannot return.
     exportSnapshot,
-    // Snapshot projection tests compare the HTML carrier with the canonical portable export.
+    // Portable-projection tests need pre-download artifact strings to compare with the snapshot HTML carrier.
     exportPortable,
   });
 }

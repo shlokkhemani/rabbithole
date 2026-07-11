@@ -9,7 +9,7 @@ import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQues
 import { startRabbithole } from "../ui/entry.js";
 import { openDialog } from "../ui/primitives/dialog.js";
 import { fieldMarkup, wireField } from "../ui/primitives/field.js";
-import { buttonMarkup } from "../ui/primitives/button.js";
+import { buttonMarkup } from "../core/html/button-markup.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { flushPendingSaves } from "../ui/transport-status.js";

@@ -140,7 +140,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | reader/canvas toolbar keyboard activation and focus-visible rings | C2 | Exercises Enter/Space activation across both modes and requires the constitutional keyboard-only ring on both toolbar families. | Chrome: keyboard-only completion; focus visibility |
 | warm re-entry, hash precedence, rail delete fallback, and Undo | C2 | Protects saved-hole navigation, recovery, and actionable-toast restoration. | — |
 | first ask key validation and streamed root creation | C2 | Protects BYOK first-run streaming behavior. | Generation: 401/403 (pre-stream validation only); title never arrives (non-sentinel root title path only) |
-| rail content/geometry exact values | C4 | Pins the Phase 2 semantic rail width, panel padding, and symmetric row-padding geometry. | — |
+| rail content/geometry exact values | C2 | Pins the intended post-Phase-2 semantic rail width, panel padding, and symmetric row-padding design. | — |
 | keyboard-opened rail holds focus without a container ring; Escape closes only the rail | C2 | Focus policy: the panel takes focus so keys flow into rows, container emphasis must not impersonate the keyboard ring (was a UA `outline: auto` around the whole panel), and Escape must not fall through to the canvas client's open-the-reader shortcut (it did — the rail handler leaked propagation). | Chrome: keyboard-only completion (rail subset) |
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
 | inert snapshot portable carrier and canonical projection | C1 | Requires exactly one typed/id-addressed inert JSON payload whose document matches the flushed canonical portable export after the documented one-time live view-state substitution and referenced-only asset normalization, including all canonical timestamps, with extraction parity against the shipped extractor; immediate real-UI mutations pin both snapshot and portable flush-before-export, while an immediate view change pins live-view-at-export timing, all without timer waits. | Data: snapshot external format; Rendering: frozen viewing fully offline; Data: export-vs-debounce timing |
@@ -377,11 +377,13 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `65 + 167 + 10 + 1 + 0 = 243` total cases.
+Current inventory arithmetic: `65 + 167 + 10 + 0 + 0 = 243` total cases.
 
 Phase 9 Slice 1 adds one C1 case (MCP string input caps) and two C2 cases (file classification, markdown pre-read cap): 62 + 1 = 63, 165 + 2 = 167, and 238 + 3 = 241.
 
 Phase 9 Slice 2 adds two C1 cross-host journey cases: 63 + 2 = 65 and 241 + 2 = 243, yielding 65 + 167 + 10 + 1 + 0 = 243.
+
+Phase 9 Slice 3 reclassifies the intended post-Phase-2 rail design from C4 to C2 and closes the known-defect category; the audited inventory remains `65 + 167 + 10 + 0 + 0 = 243`.
 
 Phase 8 Slice 4 adds one C1 case for the additive MCP state wire and six C2 cases for Check registration, parsing, prose projection, escaped mount structure, reducer semantics, and the real live/reload/export/frozen cycle: C1 `61 + 1 = 62`, C2 `159 + 6 = 165`, and total `231 + 7 = 238`, yielding `62 + 165 + 10 + 1 + 0 = 238`.
 
@@ -398,13 +400,12 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | C1 compatibility contract | 65 |
 | C2 behavioral product contract | 167 |
 | C3 implementation snapshot | 10 |
-| C4 known defect | 1 |
+| C4 known defect | 0 |
 | C5 design target | 0 |
 | **Total** | **243** |
 
 ## Known-defect fossils
 
-- `stage10-web-verify.mjs:179-224` pins rail padding (`12px`, `7px`, `8px`), bottom gap (`14px`), and width (`<=226px`): per-screen magic design values Phase 2 intends to centralize.
 - `stage10-web-verify.mjs:421-442` retains settings surface equality and the optical gear offset; `stage10-web-verify.mjs:486-521` retains share surface equality and exact shell/item padding. Anchoring itself is now a C2 engine contract rather than a bespoke-geometry fossil.
 - No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
 

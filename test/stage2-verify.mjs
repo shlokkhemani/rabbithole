@@ -9,7 +9,7 @@ import { createMarkdownRenderer } from "../src/core/markdown-renderer.js";
 import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../src/core/blocks.js";
 import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { getDompurifyScript } from "../src/node/html/built-assets.js";
-import { buildCheckVisual, mountVisuals, registerBlockMount, visualSurfaceCaches } from "../src/ui/visuals.js";
+import { buildCheckVisual, mountVisuals, registerBlockMount } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -364,7 +364,18 @@ async function runClientMountSimulation() {
   const duplicateIdHtml = await renderMarkdownToHtml(["```show id=f1pe6", "<div>one</div>", "```", "", "```show id=f1pe6", "<div>two</div>", "```"].join("\n"));
   container.innerHTML = duplicateIdHtml;
   harness.mountVisuals(container, "reader:duplicate-id");
-  assert.equal(Object.hasOwn(visualSurfaceCaches["reader:duplicate-id"], "id\nf1pe6"), false);
+  const duplicateFirstRender = container.childNodes.filter((node) => node.classList?.contains("viz-mounted"));
+  assert.equal(duplicateFirstRender.length, 2);
+  assert.notStrictEqual(duplicateFirstRender[0], duplicateFirstRender[1]);
+  assert.equal(findShadowContent(duplicateFirstRender[0]).innerHTML, "one");
+  assert.equal(findShadowContent(duplicateFirstRender[1]).innerHTML, "two");
+  container.innerHTML = duplicateIdHtml;
+  harness.mountVisuals(container, "reader:duplicate-id");
+  const duplicateSecondRender = container.childNodes.filter((node) => node.classList?.contains("viz-mounted"));
+  assert.strictEqual(duplicateSecondRender[0], duplicateFirstRender[0]);
+  assert.strictEqual(duplicateSecondRender[1], duplicateFirstRender[1]);
+  assert.equal(findShadowContent(duplicateSecondRender[0]).innerHTML, "one");
+  assert.equal(findShadowContent(duplicateSecondRender[1]).innerHTML, "two");
 
   const pendingHtml = await renderMarkdownToHtml(["Intro.", "", "```show", body].join("\n"));
   container.innerHTML = pendingHtml;

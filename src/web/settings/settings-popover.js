@@ -131,5 +131,5 @@ export function createSettingsPopover(options) {
   return { open, close, refresh: renderConditionalSections, getInlineKeySlot: () => surface?.querySelector("#settings-inline-key") || null };
 }
 
-export function keyIdleWhisper(preset) { return `Stored only in this browser, sent directly to ${preset.label}.`; }
+function keyIdleWhisper(preset) { return `Stored only in this browser, sent directly to ${preset.label}.`; }
 export function apiKeyPlaceholder(presetId) { return presetId === "openrouter" ? "sk-or-v1-…" : "API key"; }

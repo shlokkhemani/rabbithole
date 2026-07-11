@@ -55,7 +55,7 @@ import {
   zoomLabel
 } from "./core.js";
 import { applyChildHighlights, openNode } from "./reader.js";
-import { buttonMarkup, iconButtonMarkup } from "./primitives/button.js";
+import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 
 var canvasHooks = {
   hideAsk: function(){},

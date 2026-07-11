@@ -88,6 +88,11 @@ async function verifyLandingAndComposer() {
   const page = await context.newPage();
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForSelector("#composer-modal:not([hidden])");
+  assert.deepEqual(await page.locator("#composer-card").evaluate((dialog) => ({
+    role: dialog.getAttribute("role"),
+    modal: dialog.getAttribute("aria-modal"),
+    labelledby: dialog.getAttribute("aria-labelledby"),
+  })), { role: "dialog", modal: "true", labelledby: "composer-title" }, "Dialog should enforce the composer modal semantics");
   assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("rail-open")), false, "sidebar should be closed by default");
   assert.equal(await page.getAttribute("#t-rail", "aria-expanded"), "false", "sidebar toggle should expose its default collapsed state");
   await page.evaluate(() => localStorage.setItem("rh-rail-open", "1"));
@@ -141,13 +146,32 @@ async function verifyLandingAndComposer() {
     return Math.abs((rect.left + rect.right) / 2 - (canvasLeft + window.innerWidth) / 2);
   });
   assert(blankOffset <= 1, `blank-state CTA should sit centered over the free canvas, off by ${blankOffset.toFixed(1)}px`);
-  await page.click("#blank-start-new");
+  await page.focus("#blank-start-new");
+  await page.keyboard.press("N");
   await page.waitForSelector("#composer-modal:not([hidden])");
   await page.waitForFunction(() => document.activeElement?.id === "composer-card");
   assert.equal(await page.locator(".composer-path:focus").count(), 0, "no starting path should look preselected when the composer opens");
+  await page.focus("#composer-path-url");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "composer-path-ask", "Tab should wrap from the last visible composer control to the first");
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "composer-path-url", "Shift+Tab should wrap from the first visible composer control to the last");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "blank-start-new", "the N shortcut should restore focus to the visible new-Rabbithole trigger");
   await page.waitForSelector("#blank-start:not([hidden])");
+
+  await page.click("#t-new");
+  await page.waitForSelector("#composer-modal:not([hidden])");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-new", "Escape should restore focus to the toolbar trigger");
+
+  await page.click("#blank-start-new");
+  await page.waitForSelector("#composer-modal:not([hidden])");
+  await page.locator("#composer-modal").click({ position: { x: 2, y: 2 } });
+  await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "blank-start-new", "backdrop dismissal should restore focus to its trigger");
 
   const first = await createDocument(page, "# First hole\n\nEuler identity $e^{i\\pi}+1=0$.");
   await page.reload({ waitUntil: "networkidle" });

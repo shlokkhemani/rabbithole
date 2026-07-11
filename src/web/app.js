@@ -7,7 +7,7 @@ import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
-import { activateFocusTrap } from "../ui/focus-trap.js";
+import { openDialog } from "../ui/primitives/dialog.js";
 import { fieldMarkup, wireField } from "../ui/primitives/field.js";
 import { buttonMarkup } from "../ui/primitives/button.js";
 import { wireNotice } from "../ui/primitives/notice.js";
@@ -25,7 +25,7 @@ let currentHoleId = null;
 let uiStarted = false;
 let railOpen = false;
 let blankZoom = 1;
-let composerTrap = null;
+let composerDialog = null;
 let settingsController = null;
 let composerPath = "";
 let pendingComposerAction = null;
@@ -68,7 +68,7 @@ function renderShell() {
   document.body.classList.add("mode-canvas", "web-shell");
   document.body.innerHTML = `<div id="canvas-root">${CANVAS_SHELL}</div>
     <aside id="web-rail" class="web-rail" aria-label="Rabbitholes" tabindex="-1"></aside>
-    <div id="composer-modal" class="composer-modal" role="dialog" aria-modal="true" aria-labelledby="composer-title" hidden>
+    <div id="composer-modal" class="composer-modal" hidden>
       <div class="composer-card" id="composer-card" tabindex="-1">
         <section id="composer-start" class="composer-start">
           <header class="composer-start-head">
@@ -144,7 +144,7 @@ function initAppChrome() {
   const rail = document.getElementById("web-rail");
   window.addEventListener("resize", syncRailPosition, { passive: true });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
-  document.getElementById("t-new")?.addEventListener("click", () => openComposer({ source: "button" }));
+  document.getElementById("t-new")?.addEventListener("click", (event) => openComposer({ source: "button", trigger: event.currentTarget }));
   const settingsTrigger = document.getElementById("t-settings");
   settingsController = createSettingsPopover({
     trigger: settingsTrigger,
@@ -155,7 +155,7 @@ function initAppChrome() {
     validateKey: validateKeyForPreset,
   });
   settingsTrigger?.addEventListener("click", () => settingsController.open());
-  document.getElementById("blank-start-new")?.addEventListener("click", () => openComposer({ source: "button" }));
+  document.getElementById("blank-start-new")?.addEventListener("click", (event) => openComposer({ source: "button", trigger: event.currentTarget }));
   rail?.addEventListener("click", async (event) => {
     const row = event.target?.closest?.(".rail-row");
     if (!row) return;
@@ -197,7 +197,10 @@ function initAppChrome() {
     if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return;
     if (event.key === "n" || event.key === "N") {
       event.preventDefault();
-      openComposer({ source: "keyboard" });
+      const trigger = document.getElementById("blank-start-new")?.offsetParent !== null
+        ? document.getElementById("blank-start-new")
+        : document.getElementById("t-new");
+      openComposer({ source: "keyboard", trigger });
     } else if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       toggleRail();
@@ -218,9 +221,6 @@ function initComposer() {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       runComposer();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      closeComposer();
     }
   });
   primary.addEventListener("click", runComposer);
@@ -249,9 +249,6 @@ function initComposer() {
     const file = event.dataTransfer?.files?.[0];
     if (file) await createFromFile(file);
   });
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) closeComposer();
-  });
 }
 
 function initGlobalDrops() {
@@ -279,7 +276,7 @@ function initGlobalDrops() {
   });
 }
 
-function openComposer({ source = "button", value = "" } = {}) {
+function openComposer({ source = "button", value = "", trigger } = {}) {
   const modal = document.getElementById("composer-modal");
   const input = document.getElementById("composer-input");
   const card = document.getElementById("composer-card");
@@ -292,28 +289,30 @@ function openComposer({ source = "button", value = "" } = {}) {
   document.getElementById("composer-entry").hidden = true;
   input.value = value;
   autoGrowTextarea(input, 240);
-  modal.hidden = false;
   document.getElementById("blank-start").hidden = true;
   if (value) selectComposerPath(isSingleHttpUrl(value) ? "url" : "ask", { value });
-  if (composerTrap) composerTrap();
-  // Focus rests on the card, not the first option — nothing looks preselected.
-  composerTrap = activateFocusTrap(modal, {
+  composerDialog?.close("programmatic", { restoreFocus: false });
+  composerDialog = openDialog({
+    backdrop: modal,
+    dialog: card,
+    labelledby: "composer-title",
+    trigger,
     initialFocus: value ? input : card,
-    onEscape: closeComposer,
+    onClose: finishClosingComposer,
   });
-  (value ? input : card).focus({ preventScroll: true });
 }
 
 function closeComposer() {
+  composerDialog?.close("programmatic");
+}
+
+function finishClosingComposer() {
   const modal = document.getElementById("composer-modal");
   modal.hidden = true;
   modal.classList.remove("dragging");
   pendingComposerAction = null;
   clearComposerKeyPanel();
-  if (composerTrap) {
-    composerTrap();
-    composerTrap = null;
-  }
+  composerDialog = null;
   if (!currentHoleId && lastHoleCount === 0) {
     document.getElementById("blank-start").hidden = false;
   }
@@ -605,10 +604,8 @@ async function startHole(hole, { replace = false } = {}) {
 function closeComposerSilently() {
   const modal = document.getElementById("composer-modal");
   if (modal) modal.hidden = true;
-  if (composerTrap) {
-    composerTrap();
-    composerTrap = null;
-  }
+  composerDialog?.close("programmatic", { restoreFocus: false });
+  composerDialog = null;
 }
 
 function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {

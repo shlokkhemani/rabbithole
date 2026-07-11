@@ -118,6 +118,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 |---|---|---|---|
 | calm landing, three-path composer, path copy, dismiss-without-create | C2 | Protects first-run navigation and empty state. | — |
 | blank-state centering and composer initial focus | C2 | Protects visible placement and initial keyboard focus. | Chrome: keyboard-only completion (small opening/closing subset) |
+| Dialog composer containment, dismissal, and restoration | C2 | Requires live-content Tab/Shift+Tab wrapping, enforced modal labeling, Escape and backdrop dismissal, and deterministic toolbar/N-trigger focus restoration while first-visit auto-open remains triggerless-safe. | Chrome: keyboard-only completion; focus restoration after transient surfaces; outside-pointer dismissal |
 | toolbar Button kit conformance | C2 | Requires every reader/canvas toolbar button to declare `type="button"` and expose a non-empty accessible name. | Chrome: toolbar accessibility |
 | Notice timer replacement, hover pause, live regions, and banner dismiss | C2 | Requires one wired-shell Notice contract to replace timers without early hiding, pause timed feedback during interaction, announce politely, and dismiss persistent banners. | Chrome: transient feedback accessibility |
 | reader/canvas toolbar keyboard activation and focus-visible rings | C2 | Exercises Enter/Space activation across both modes and requires the constitutional keyboard-only ring on both toolbar families. | Chrome: keyboard-only completion; focus visibility |
@@ -275,11 +276,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 102 |
+| C2 behavioral product contract | 103 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **158** |
+| **Total** | **159** |
 
 ## Known-defect fossils
 

@@ -1,3 +1,4 @@
+// Kit-internal focus trap used only by the Popover primitive.
 var FOCUSABLE = [
   "a[href]",
   "button:not([disabled])",

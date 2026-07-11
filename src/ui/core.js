@@ -323,7 +323,14 @@ export function refreshAmbient(){
     var chips = [actReader, actCanvas];
     for (var i = 0; i < chips.length; i++){
       chips[i].className = cls;
-      chips[i].innerHTML = label ? '<span class="act-dot"></span>' + esc(label) : "";
+      var dot = chips[i].querySelector(".act-dot");
+      var text = chips[i].querySelector(".act-label");
+      if (!dot || !text) {
+        dot = document.createElement("span"); dot.className = "act-dot";
+        text = document.createElement("span"); text.className = "act-label";
+        chips[i].replaceChildren(dot, text);
+      }
+      text.textContent = label;
       chips[i].title = "Watch it being written";
     }
     if (actSep) actSep.style.display = label ? "" : "none";

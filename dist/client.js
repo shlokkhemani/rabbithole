@@ -2269,7 +2269,16 @@ var RabbitholeClient = (() => {
     var chips = [actReader, actCanvas];
     for (var i2 = 0; i2 < chips.length; i2++) {
       chips[i2].className = cls;
-      chips[i2].innerHTML = label ? '<span class="act-dot"></span>' + esc(label) : "";
+      var dot = chips[i2].querySelector(".act-dot");
+      var text2 = chips[i2].querySelector(".act-label");
+      if (!dot || !text2) {
+        dot = document.createElement("span");
+        dot.className = "act-dot";
+        text2 = document.createElement("span");
+        text2.className = "act-label";
+        chips[i2].replaceChildren(dot, text2);
+      }
+      text2.textContent = label;
       chips[i2].title = "Watch it being written";
     }
     if (actSep) actSep.style.display = label ? "" : "none";
@@ -3352,11 +3361,7 @@ var RabbitholeClient = (() => {
     inner2.className = "nc-inner";
     var ta = document.createElement("textarea");
     ta.rows = 1;
-    var send = document.createElement("button");
-    send.className = "send-btn";
-    send.title = "Send (\u21B5)";
-    send.setAttribute("aria-label", "Send follow-up");
-    send.innerHTML = SEND_ICON;
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (\u21B5)", svgIconHtml: SEND_ICON }));
     var handle = document.createElement("button");
     handle.type = "button";
     handle.className = "nc-handle";

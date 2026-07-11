@@ -168,6 +168,20 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
 
+## `stage10x-kit-matrix.mjs` (Chromium, Firefox, WebKit)
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| Layer stack Escape, outside pointer, stacking, and focus restore | C2 | Runs the shared dismissal ordering and focus-continuity contract in all supported engines. | Chrome: nested transient surfaces; focus restoration after transient surfaces; outside-pointer dismissal |
+| Anchor element/virtual placement, token gap, flip, and clamp | C2 | Runs both anchor shapes through the shared token geometry in all supported engines. | Chrome: anchored transient surfaces |
+| Popover trigger semantics, initial focus, Escape, and restore | C2 | Pins the composed Popover contract independently of app consumers in all supported engines. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
+| Dialog labeling, initial focus, Tab containment, backdrop close, and restore | C2 | Pins modal accessibility and lifecycle behavior in all supported engines. | Chrome: keyboard-only completion; focus restoration after transient surfaces; outside-pointer dismissal |
+| Notice variant wiring and timer pause/resume | C2 | Pins live-region semantics and interaction-safe timing in all supported engines. | Chrome: transient feedback accessibility |
+| Select keyboard open and commit | C2 | Pins the owned single-select keyboard contract in all supported engines. | Chrome: keyboard-only completion |
+| Combobox input semantics, filter, and keyboard commit | C2 | Pins the owned editable-combobox contract in all supported engines. | Chrome: Combobox catalogs; keyboard-only completion |
+| Field description and password-toggle synchronization | C2 | Pins accessible descriptions and visible/pressed state in all supported engines. | Chrome: credential entry and accessible state |
+| Button and IconButton type/name enforcement | C2 | Pins safe button defaults and icon accessible-name enforcement in all supported engines. | Chrome: toolbar accessibility |
+
 ## `fetch-proxy-worker-verify.mjs` (run by Stage 11)
 
 | Case | Category | Rationale | Scenario-ledger entries covered |
@@ -292,11 +306,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 119 |
+| C2 behavioral product contract | 128 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **175** |
+| **Total** | **184** |
 
 ## Known-defect fossils
 

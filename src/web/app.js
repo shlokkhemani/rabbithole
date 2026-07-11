@@ -180,6 +180,13 @@ function initAppChrome() {
       if (hole) await startHole(hole);
     }
   });
+  rail?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    // Contain Escape to the rail: the canvas client's document-level handler
+    // treats a loose Escape as "open the reader".
+    event.stopPropagation();
+    setRailOpen(false);
+  });
   document.getElementById("t-theme")?.addEventListener("click", () => {
     if (currentHoleId) return;
     toggleBlankTheme();
@@ -613,7 +620,9 @@ function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
   currentHost = null;
   currentHoleId = null;
   document.body.classList.add("mode-canvas", "web-blank-canvas");
-  document.getElementById("world").innerHTML = `<svg id="edges"></svg>`;
+  const edges = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  edges.id = "edges";
+  document.getElementById("world").replaceChildren(edges);
   setBlankZoom(1);
   history.replaceState(null, "", location.pathname);
   if (shouldOpenComposer) openComposer({ source: "empty" });
@@ -631,36 +640,59 @@ async function renderRail() {
   if (!rail) return;
   const summaries = await store.listHoles();
   lastHoleCount = summaries.length;
-  rail.innerHTML = `<div class="rail-inner">
-    <div class="rail-list" id="rail-list">
-      ${summaries.length ? summaries.map((summary) => railRowHtml(summary)).join("") : `<div class="rail-empty">No Rabbitholes yet.</div>`}
-    </div>
-  </div>`;
-  rail.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      // Contain Escape to the rail: the canvas client's document-level
-      // handler treats a loose Escape as "open the reader".
-      event.stopPropagation();
-      setRailOpen(false);
-    }
+  let inner = rail.querySelector(":scope > .rail-inner");
+  let list = inner?.querySelector(":scope > .rail-list");
+  if (!inner || !list) {
+    inner = document.createElement("div"); inner.className = "rail-inner";
+    list = document.createElement("div"); list.className = "rail-list"; list.id = "rail-list";
+    inner.appendChild(list); rail.replaceChildren(inner);
+  }
+  const rows = new Map(Array.from(list.querySelectorAll(".rail-row"), (row) => [row.dataset.hole, row]));
+  const next = summaries.map((summary) => {
+    const row = rows.get(summary.hole_id) || createRailRow(summary.hole_id);
+    patchRailRow(row, summary);
+    return row;
   });
+  if (!next.length) {
+    const empty = list.querySelector(".rail-empty") || document.createElement("div");
+    empty.className = "rail-empty"; empty.textContent = "No Rabbitholes yet."; next.push(empty);
+  }
+  list.replaceChildren(...next);
   applyRailState();
 }
 
-function railRowHtml(summary) {
+function createRailIconButton(className, label, paths) {
+  const button = document.createElement("button");
+  button.className = `rail-icon ${className}`; button.type = "button"; button.setAttribute("aria-label", label);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [name, value] of Object.entries({ width: "15", height: "15", viewBox: "0 0 16 16", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none", "aria-hidden": "true" })) svg.setAttribute(name, value);
+  for (const d of paths) { const path = document.createElementNS(svg.namespaceURI, "path"); path.setAttribute("d", d); svg.appendChild(path); }
+  button.appendChild(svg);
+  return button;
+}
+
+function createRailRow(holeId) {
+  const row = document.createElement("article"); row.className = "rail-row"; row.dataset.hole = holeId;
+  const open = document.createElement("button"); open.className = "rail-open"; open.type = "button";
+  const copy = document.createElement("span"); copy.className = "rail-row-copy";
+  const title = document.createElement("span"); title.className = "rail-title"; copy.appendChild(title); open.appendChild(copy);
+  const actions = document.createElement("span"); actions.className = "rail-actions";
+  actions.append(
+    createRailIconButton("rail-export", "Export", ["M8 2.75v7", "M5.25 7.1 8 9.85l2.75-2.75", "M3.25 12.75h9.5"]),
+    createRailIconButton("rail-delete", "Delete", ["M3.25 4.25h9.5", "M6.25 2.75h3.5", "M5.25 4.25v8.25h5.5V4.25", "M7 6.5v3.75", "M9 6.5v3.75"])
+  );
+  row.append(open, actions);
+  return row;
+}
+
+function patchRailRow(row, summary) {
   const title = summary.title || "Untitled";
   const updated = formatRelativeDate(summary.updated_at);
-  return `<article class="rail-row${summary.hole_id === currentHoleId ? " current" : ""}" data-hole="${escapeAttr(summary.hole_id)}">
-    <button class="rail-open" type="button" aria-label="${escapeAttr(title)}" title="${escapeAttr(updated)}">
-      <span class="rail-row-copy">
-        <span class="rail-title">${escapeHtml(title)}</span>
-      </span>
-    </button>
-    <span class="rail-actions">
-      <button class="rail-icon rail-export" type="button" aria-label="Export ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M8 2.75v7"/><path d="M5.25 7.1 8 9.85l2.75-2.75"/><path d="M3.25 12.75h9.5"/></svg></button>
-      <button class="rail-icon rail-delete" type="button" aria-label="Delete ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.25 4.25h9.5"/><path d="M6.25 2.75h3.5"/><path d="M5.25 4.25v8.25h5.5V4.25"/><path d="M7 6.5v3.75"/><path d="M9 6.5v3.75"/></svg></button>
-    </span>
-  </article>`;
+  row.classList.toggle("current", summary.hole_id === currentHoleId);
+  row.querySelector(".rail-title").textContent = title;
+  const open = row.querySelector(".rail-open"); open.setAttribute("aria-label", title); open.title = updated;
+  row.querySelector(".rail-export").setAttribute("aria-label", `Export ${title}`);
+  row.querySelector(".rail-delete").setAttribute("aria-label", `Delete ${title}`);
 }
 
 async function deleteHoleFromRail(holeId) {

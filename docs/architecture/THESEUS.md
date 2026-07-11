@@ -259,6 +259,12 @@ Eleven phases. Each names **Goal · Build · Wire-in · Delete · Exit criteria 
 
 **Goal:** remaining chrome on the kit, extraction driven by real consumers. **Build/Wire-in:** migrate share, selection bar, menus, dialogs, tooltips, notices — extracting Button/IconButton/Menu/Tooltip/Dialog/Notice as each second consumer appears; each surface is a shippable slice with probes + experience review. **Delete (D2):** every remaining `innerHTML` rebuild of interactive chrome; ad-hoc positioning math; bespoke focus recovery. **Exit:** one anchoring code path; zero string-rebuilt interactive chrome; keyboard-only probes green per surface; cross-browser checks for the kit run now, not in Phase 9.
 
+**D2 closure — permitted `innerHTML` taxonomy:**
+- Kit-internal mounts → settings Popover and primitive Combobox/Select/Field surfaces, built once per owned surface.
+- Boot shell mounts → the fatal/app document shell only.
+- Content renders → document/stream panes, sanitized show fences, palette snippets, and the `esc()` helper.
+- Static creation templates → loading skeletons, icon constants, and `template` extraction of kit button markup.
+
 ### Phase 5 — Boundary typing *(M, low risk)*
 
 **Goal:** the engine, events, formats, and upcoming contracts typed — without touching the distribution model. **Build:** `checkJs` + JSDoc across `src/core/`; hand-authored `.d.ts` for the six contracts as the shared vocabulary of Phases 6–8; `tsc --noEmit` in CI; typed wrappers keeping compile-time and runtime views in sync (each shape round-trips through `validatePersistedHole`/`migratePersistedHole` in a test). Full `.ts` conversion is **out of scope** unless the dist-node decision (Part VII) is taken with publish smoke tests on Node 18/20. **Also here:** the reducer purity decision (immutable + frozen-input tests, or documented mutation contract) and the `node_progress` ordering guard design. **Delete (D3):** shape folklore; provably-redundant re-normalization *only* at internal call sites with tests — never at trust boundaries (imports, MCP inputs, provider responses stay validated at runtime, period). **Exit:** CI typecheck green; zero golden diffs; contracts exist as reviewed `.d.ts`; `npx` install smoke test green on Node 18.

@@ -234,7 +234,7 @@ export function autoGrowEl(ta, max){
     var clip = document.createElement("div"); clip.className = "nc-clip"; clip.id = cardDrawerId(node);
     var inner = document.createElement("div"); inner.className = "nc-inner";
     var ta = document.createElement("textarea"); ta.rows = 1;
-    var send = document.createElement("button"); send.className = "send-btn"; send.title = "Send (↵)"; send.setAttribute("aria-label", "Send follow-up"); send.innerHTML = SEND_ICON;
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (↵)", svgIconHtml: SEND_ICON }));
     var handle = document.createElement("button"); handle.type = "button"; handle.className = "nc-handle"; handle.title = "Ask a follow-up about this document";
     handle.setAttribute("aria-expanded", "false"); handle.setAttribute("aria-controls", clip.id);
     var plus = document.createElement("span"); plus.className = "nc-plus"; plus.textContent = "+";

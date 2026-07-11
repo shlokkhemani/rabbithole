@@ -1,5 +1,6 @@
 import { nodes, readerMain } from "./core.js";
-import { removeMarks, removeThreadItem } from "./reader.js";
+import { removeThreadItem } from "./reader.js";
+import { removeMarks } from "./text-marks.js";
 
 /** @param {string} id */
 export function teardownNode(id) {

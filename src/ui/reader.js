@@ -31,8 +31,9 @@ import {
   sessionPhase
 } from "./core.js";
 import { escapeHtml } from "../core/utils.js";
-import { createCleanupScope } from "./lifecycle.js";
+import { createModuleLifecycle } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
+import { applyChildHighlights } from "./text-marks.js";
 
 function defaultReaderHooks(){
   return {
@@ -48,11 +49,10 @@ function defaultReaderHooks(){
   };
 }
 
-var readerHooks = defaultReaderHooks();
-var readerScope = null;
+var readerLifecycle = createModuleLifecycle({ defaults: defaultReaderHooks });
 
 export function registerReaderHooks(hooks) {
-  Object.assign(readerHooks, hooks || {});
+  readerLifecycle.register(hooks);
 }
 
 var breadcrumbNodes = {};
@@ -72,15 +72,15 @@ export function openNode(id){
     setCurrentNodeId(id);
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
-    readerHooks.hideAsk();
-    readerHooks.hidePeek();
+    readerLifecycle.hooks.hideAsk();
+    readerLifecycle.hooks.hidePeek();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
     renderSidebar();
-    readerHooks.updateComposerState();
+    readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
-    readerHooks.scheduleViewSave();
+    readerLifecycle.hooks.scheduleViewSave();
   }
 
 export function renderBreadcrumb(){
@@ -116,7 +116,7 @@ export function renderBreadcrumb(){
   }
 export function initReader(){
     disposeReaderResources(false);
-    readerScope = createCleanupScope();
+    var readerScope = readerLifecycle.beginInit();
     try {
     readerScope.listen(breadcrumbEl, "click", function(e){
       var c = e.target.closest(".crumb");
@@ -139,8 +139,8 @@ export function initReader(){
     readerScope.listen(sideEl, "keydown", onSidebarKeydown);
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
     readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
-    readerScope.listen(document.getElementById("r-canvas"), "click", function(){ readerHooks.setMode("canvas"); });
-    readerScope.listen(document.getElementById("r-done"), "click", function(){ if (!closed) readerHooks.post({ type: "done" }); });
+    readerScope.listen(document.getElementById("r-canvas"), "click", function(){ readerLifecycle.hooks.setMode("canvas"); });
+    readerScope.listen(document.getElementById("r-done"), "click", function(){ if (!closed) readerLifecycle.hooks.post({ type: "done" }); });
     readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
     readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
     return disposeReader;
@@ -155,13 +155,10 @@ export function disposeReader(){
   }
 
 function disposeReaderResources(resetHooks){
-    var scope = readerScope;
-    readerScope = null;
-    if (scope) scope.dispose();
+    readerLifecycle.dispose(resetHooks);
     breadcrumbNodes = {};
     sidebarNodes = {};
     kbdMarkIdx = -1;
-    if (resetHooks) readerHooks = defaultReaderHooks();
   }
 
 export function renderReaderBody(){
@@ -226,7 +223,7 @@ export function jumpToOrigin(node, source){
                  readerMain.querySelector('[data-turn="' + node.id + '"]');
     if (!target) return;
     var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
     if (target.tagName === "MARK"){
       var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
       for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
@@ -235,8 +232,8 @@ export function jumpToOrigin(node, source){
   function onReaderScroll(){
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    readerHooks.hidePeek();
-    readerHooks.scheduleViewSave();
+    readerLifecycle.hooks.hidePeek();
+    readerLifecycle.hooks.scheduleViewSave();
   }
 
   // ---------- follow-up thread ----------
@@ -305,43 +302,6 @@ export function removeThreadItem(childId){
     if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
   }
 
-export function applyChildHighlights(dc, node){
-    var kids = childrenOf(node.id).filter(function(k){ return k.origin && k.origin.anchor; });
-    kids.sort(function(a,b){ return b.origin.anchor.offset_start - a.origin.anchor.offset_start; }); // apply end→start
-    kids.forEach(function(k){
-      var a = k.origin.anchor;
-      var r = rangeFromOffsets(dc, a.offset_start, a.offset_end);
-      if (!r) return;
-      wrapRange(r, k.id, "hl " + (k.status === "answered" ? "mark-ready" : "mark-pending"));
-    });
-  }
-
-  // Wrap one selection (by offsets, always text-node endpoints) inside a container.
-export function wrapInContainer(dc, anchor, childId, cls){
-    if (!dc || !anchor) return;
-    var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
-    if (rr){ try { wrapRange(rr, childId, cls); } catch(e){} }
-  }
-  // Promote a child's pending marks to ready within a container.
-export function upgradeMarks(root, childId){
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    var child = nodes[childId], label = "Open branch: " + ((child && child.title) || "Untitled");
-    for (var i = 0; i < marks.length; i++){
-      marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready");
-      marks[i].setAttribute("aria-label", label);
-    }
-  }
-  // Unwrap a child's marks (used to roll back a failed ask) so offsets stay valid.
-export function removeMarks(root, childId){
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i = 0; i < marks.length; i++){
-      var m = marks[i], p = m.parentNode; if (!p) continue;
-      while (m.firstChild) p.insertBefore(m.firstChild, m);
-      p.removeChild(m); p.normalize();
-    }
-  }
   function onMarkClick(e){
     var m = e.target.closest("mark[data-child]");
     if (!m) return;
@@ -437,7 +397,7 @@ function mountSidebarVisuals(panes){
     for (var i = 0; i < panes.length; i++){
       var key = "reader-side:" + panes[i].node.id;
       mountVisuals(panes[i].pane, key);
-      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
+      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
   }
 function pendingStatusHtml(k){
@@ -468,62 +428,7 @@ function setReaderFontScale(delta){
     var dcs = readerMain.querySelectorAll(".doc-content");
     for (var i = 0; i < dcs.length; i++) dcs[i].style.fontSize = fontPx(node, READER_BASE) + "px";
     if (node.bodyEl){ var cdc = node.bodyEl.querySelector(".doc-content"); if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px"; }
-    readerHooks.persistNode(node);
-  }
-
-  // ---------- offset <-> range highlighting ----------
-function rangeFromOffsets(container, startOff, endOff){
-    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    var pos = 0, sN, sO, eN, eO;
-    while (walker.nextNode()){
-      var node = walker.currentNode, L = node.textContent.length;
-      if (sN == null && pos + L > startOff){ sN = node; sO = startOff - pos; }
-      if (pos + L >= endOff){ eN = node; eO = endOff - pos; break; }
-      pos += L;
-    }
-    if (sN == null || eN == null) return null;
-    var r = document.createRange();
-    try { r.setStart(sN, sO); r.setEnd(eN, eO); } catch(e){ return null; }
-    return r;
-  }
-export function charOffset(container, node, offset){
-    var r = document.createRange();
-    r.selectNodeContents(container);
-    try { r.setEnd(node, offset); } catch(e){ return 0; }
-    return r.toString().length;
-  }
-function wrapTextNode(textNode, childId, cls){
-    var m = document.createElement("mark");
-    m.className = cls; m.dataset.child = childId;
-    m.tabIndex = 0; m.setAttribute("role", "link");
-    var child = nodes[childId];
-    m.setAttribute("aria-label", "Open branch: " + ((child && child.title) || "Untitled"));
-    textNode.parentNode.insertBefore(m, textNode);
-    m.appendChild(textNode);
-  }
-function wrapRange(range, childId, cls){
-    var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
-    if (startC === endC && startC.nodeType === 3){
-      if (startO === endO) return;
-      var mid = startC.splitText(startO); mid.splitText(endO - startO);
-      wrapTextNode(mid, childId, cls); return;
-    }
-    var ancestor = range.commonAncestorContainer; if (ancestor.nodeType === 3) ancestor = ancestor.parentNode;
-    var walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
-    var collected = [], inRange = false;
-    while (walker.nextNode()){
-      var n = walker.currentNode;
-      if (n === startC){ inRange = true; var info = { node:n, start:startO, end:n.textContent.length }; if (n === endC){ info.end = endO; collected.push(info); break; } collected.push(info); continue; }
-      if (n === endC){ collected.push({ node:n, start:0, end:endO }); break; }
-      if (inRange) collected.push({ node:n, start:0, end:n.textContent.length });
-    }
-    for (var i = collected.length - 1; i >= 0; i--){
-      var c = collected[i], node = c.node, s = c.start, e = c.end, L = node.textContent.length;
-      if (s >= e || !L) continue;
-      var t = s > 0 ? node.splitText(s) : node;
-      if (e < L) t.splitText(e - s);
-      wrapTextNode(t, childId, cls);
-    }
+    readerLifecycle.hooks.persistNode(node);
   }
 
   // j/k focus ring over the current document's marks (doc order, thread included).
@@ -543,5 +448,5 @@ export function stepMark(delta){
     var m = marks[kbdMarkIdx];
     m.classList.add("mark-focus");
     var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
   }

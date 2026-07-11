@@ -35,10 +35,9 @@ import {
   renderBreadcrumb,
   renderReaderBody,
   renderSidebar,
-  updateThreadItem,
-  upgradeMarks,
-  wrapInContainer
+  updateThreadItem
 } from "./reader.js";
+import { upgradeMarks, wrapInContainer } from "./text-marks.js";
 import {
   createNodeEl,
   drawEdges,

@@ -13,7 +13,6 @@ import {
   composerSend,
   composerText,
   currentNodeId,
-  easeOutMotion,
   flashHint,
   frozen,
   lensLabel,
@@ -44,13 +43,13 @@ import {
 } from "./canvas-view.js";
 import {
   buildThreadItem,
-  charOffset,
   ensureThread,
-  renderSidebar,
-  wrapInContainer
+  renderSidebar
 } from "./reader.js";
+import { charOffset, wrapInContainer } from "./text-marks.js";
+import { easeOutMotion } from "./easing.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
-import { cancelFrame, createCleanupScope, nextFrame } from "./lifecycle.js";
+import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
 import { applyComposerState } from "./composer-state.js";
 import { teardownNode } from "./node-teardown.js";
 
@@ -61,11 +60,10 @@ function defaultAskHooks(){
   };
 }
 
-var askHooks = defaultAskHooks();
-var askScope = null;
+var askLifecycle = createModuleLifecycle({ defaults: defaultAskHooks });
 
 export function registerAskHooks(hooks) {
-  Object.assign(askHooks, hooks || {});
+  askLifecycle.register(hooks);
 }
 
   // ===========================================================================
@@ -73,10 +71,10 @@ export function registerAskHooks(hooks) {
   // ===========================================================================
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
-  askScope = createCleanupScope();
+  var askScope = askLifecycle.beginInit();
   askScope.listen(document, "mousedown", function(e){
     var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
-    if (!c("#peek") && !c("mark[data-child]")) askHooks.hidePeek();
+    if (!c("#peek") && !c("mark[data-child]")) askLifecycle.hooks.hidePeek();
   });
   askScope.listen(document, "mouseup", function(e){ if (inAsk(e)) return; askScope.timeout(maybeShowAsk, 0); });
   askScope.listen(askGo, "click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
@@ -151,8 +149,8 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     var owner = selectionOwner(dc);
     var virtualAnchor = { getBoundingClientRect: function(){ return pendingAsk.range.getBoundingClientRect(); }, contextElement: dc };
     askTabOwner = owner;
-    askOwnerCleanup = askScope
-      ? askScope.listen(document, "keydown", onAskOwnerKeydown)
+    askOwnerCleanup = askLifecycle.scope
+      ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown)
       : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
     // The selection bar is non-focus-stealing: only an explicit Tab/click enters
     // it. Escape is layer-owned, preserves the Range, and returns focus here.
@@ -181,9 +179,7 @@ export function disposeAskFollowups(){
   function disposeAskFollowupResources(resetHooks){
     hideAsk();
     cancelScrollAnimation();
-    var scope = askScope;
-    askScope = null;
-    if (scope) scope.dispose();
+    askLifecycle.dispose(resetHooks);
     pendingAsk = null;
     askTabOwner = null;
     askOwnerCleanup = null;
@@ -191,7 +187,6 @@ export function disposeAskFollowups(){
     scrollAnimIgnoreUntil = 0;
     askText.value = "";
     composerText.value = "";
-    if (resetHooks) askHooks = defaultAskHooks();
   }
   // Custom Highlight API — keeps the selected text visibly marked while the popup
   // has focus. Best-effort: browsers without it just fall back to today's look.
@@ -248,7 +243,7 @@ export function disposeAskFollowups(){
 
     var sel = window.getSelection(); if (sel) sel.removeAllRanges();
     hideAsk();
-    askHooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
+    askLifecycle.hooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: node.origin.selected_text, question: question, lens: lens, anchor: anchor,
            branch_type: BRANCH_SELECTION,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } })
@@ -308,7 +303,7 @@ export function sendFollowup(parent, question, lens, synthesis){
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
-    askHooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
+    askLifecycle.hooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
     refreshAmbient();
     return node;
   }
@@ -328,7 +323,7 @@ function cancelScrollAnimation(){ scrollAnimId++; clearScrollFrame(); }
     clearScrollFrame();
     var id = nextFrame(run);
     var cancel = function(){ cancelFrame(id); };
-    scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
+    scrollFrameCleanup = askLifecycle.scope ? askLifecycle.scope.addCleanup(cancel) : cancel;
     function run(timestamp){
       var cleanup = scrollFrameCleanup;
       scrollFrameCleanup = null;

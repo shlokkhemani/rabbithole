@@ -15,8 +15,6 @@ import {
   childrenOf,
   closed,
   currentNodeId,
-  easeInOutMotion,
-  easeOutMotion,
   edgesSvg,
   fontPx,
   flashHint,
@@ -47,9 +45,11 @@ import {
   world,
   zoomLabel
 } from "./core.js";
-import { applyChildHighlights, openNode } from "./reader.js";
+import { openNode } from "./reader.js";
+import { applyChildHighlights } from "./text-marks.js";
+import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
-import { createCleanupScope } from "./lifecycle.js";
+import { createModuleLifecycle } from "./lifecycle.js";
 import { applyComposerState } from "./composer-state.js";
 
 function defaultCanvasHooks(){
@@ -64,18 +64,17 @@ function defaultCanvasHooks(){
   };
 }
 
-var canvasHooks = defaultCanvasHooks();
-var canvasScope = null;
+var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
 var filmCameraHandle = null;
 var activePointerGestures = new Set();
 
 export function registerCanvasHooks(hooks) {
-  Object.assign(canvasHooks, hooks || {});
+  canvasLifecycle.register(hooks);
 }
 
 export function initCanvasView(){
   cleanupCanvasView(false);
-  canvasScope = createCleanupScope();
+  var canvasScope = canvasLifecycle.beginInit();
   registerCoreHooks({
     ensureCanvasBuilt: ensureCanvasBuilt,
     diveToNode: diveToNode,
@@ -101,9 +100,7 @@ export function disposeCanvasView(){
 }
 
 function cleanupCanvasView(resetHooks){
-  var scope = canvasScope;
-  canvasScope = null;
-  if (scope) scope.dispose();
+  canvasLifecycle.dispose(resetHooks);
   activePointerGestures.forEach(function(cancel){ cancel(); });
   activePointerGestures.clear();
   cancelViewAnimation();
@@ -121,7 +118,6 @@ function cleanupCanvasView(resetHooks){
   wheelTs = 0;
   viewport?.classList.remove("panning");
   if (resetHooks) {
-    canvasHooks = defaultCanvasHooks();
     registerCoreHooks({
       ensureCanvasBuilt: function(){},
       diveToNode: function(){},
@@ -136,7 +132,7 @@ function cleanupCanvasView(resetHooks){
 function applyTransform(){
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
     zoomLabel.textContent = Math.round(view.scale * 100) + "%";
-    canvasHooks.scheduleViewSave();
+    canvasLifecycle.hooks.scheduleViewSave();
   }
   function exposeFilmCameraHook(){
     var enabled = false;
@@ -208,7 +204,7 @@ export function createNodeEl(node, enter){
     var acts = document.createElement("span"); acts.className = "node-acts";
     if (node.id !== rootId){
       var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "✕", ariaLabel: "Remove this branch", title: "Remove this branch" }));
-      delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasHooks.confirmDelete(node, delBtn); });
+      delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasLifecycle.hooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
     acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
@@ -338,7 +334,7 @@ export function updateCardComposer(node){
     if (node.status === "pending") return;
     var question = node.ncText.value.trim();
     if (!question) return;
-    var kid = canvasHooks.sendFollowup(node, question, null);
+    var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
     node.ncText.value = "";
     autoGrowEl(node.ncText, 90);
     closeCardDrawer(node);
@@ -412,7 +408,7 @@ export function fillBody(node){
     var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content"); if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
     if (mode === "reader" && currentNodeId === node.id){ var rdc = readerMain.querySelector(".doc-content"); if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px"; }
     scheduleEdges();
-    canvasHooks.persistNode(node);
+    canvasLifecycle.hooks.persistNode(node);
   }
 
 function layoutNode(node){
@@ -451,23 +447,23 @@ function layoutNode(node){
   function enableDrag(node, handle){
     var sx, sy, ox, oy;
     onPointerGesture(handle,
-      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); canvasHooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
+      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
       function(ev){ node.x = ox + (ev.clientX - sx) / view.scale; node.y = oy + (ev.clientY - sy) / view.scale; layoutNode(node); scheduleEdges(); },
-      function(){ drawEdges(); canvasHooks.persistNode(node); });
+      function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
   }
   function enableResize(node, handle){
     var sx, sy, ow, oh;
     onPointerGesture(handle,
       function(e){ if (e.button !== 0) return false; e.preventDefault(); e.stopPropagation(); sx=e.clientX; sy=e.clientY; ow=node.w; oh=node.h; return true; },
       function(ev){ node.w = Math.max(240, ow + (ev.clientX - sx)/view.scale); node.h = Math.max(160, oh + (ev.clientY - sy)/view.scale); layoutNode(node); scheduleEdges(); },
-      function(){ drawEdges(); canvasHooks.persistNode(node); });
+      function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
   }
 function toggleCollapse(node, btn){
     node.collapsed = !node.collapsed;
     node.el.classList.toggle("collapsed", node.collapsed);
     syncCollapseButton(node, btn);
     if (!node.collapsed) layoutNode(node);
-    renderVisibility(); drawEdges(); canvasHooks.persistNode(node);
+    renderVisibility(); drawEdges(); canvasLifecycle.hooks.persistNode(node);
   }
 export function renderVisibility(){
     for (var id in nodes){ var n = nodes[id]; if (!n.el) continue; if (n.id === rootId){ n.el.style.display = ""; continue; } n.el.style.display = isVisible(n) ? "" : "none"; }
@@ -639,9 +635,9 @@ function focusOrigin(node, on){
   function initViewportPan(){
     var sx, sy, ox, oy;
     onPointerGesture(viewport,
-      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasHooks.hideAsk(); cancelViewAnimation(); viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
+      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasLifecycle.hooks.hideAsk(); cancelViewAnimation(); viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
       function(ev){ setViewAdjusted(true); view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
-      function(){ viewport.classList.remove("panning"); }, canvasScope);
+      function(){ viewport.classList.remove("panning"); }, canvasLifecycle.scope);
   }
 
   // Can this element still scroll in the direction of the wheel delta?
@@ -757,7 +753,7 @@ export function tidy(source){
     var ids = Object.keys(visited);
     var moved = [];
     ids.forEach(function(id){ var nn=nodes[id]; layoutNode(nn); moved.push(nn); });
-    canvasHooks.persistNodesBulk(moved);
+    canvasLifecycle.hooks.persistNodesBulk(moved);
     rebuildEdges(); frameAll(true, source);
   }
 
@@ -781,7 +777,7 @@ export function setMode(m){
     setModeValue(m);
     if (m === "canvas"){
       ensureCanvasBuilt();
-      canvasHooks.hidePeek();
+      canvasLifecycle.hooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function(){
         rebuildEdges();
@@ -789,7 +785,7 @@ export function setMode(m){
         // pan/zoom you left it at.
         if (!canvasFramed){ setCanvasFramed(true); frameAll(); }
       });
-      canvasHooks.scheduleViewSave();
+      canvasLifecycle.hooks.scheduleViewSave();
     }
     else { openNode(currentNodeId); }
   }

@@ -1912,6 +1912,36 @@ var RabbitholeClient = (() => {
       }
     };
   }
+  function createModuleLifecycle(options2) {
+    var defaults = options2.defaults;
+    var hooks = defaults();
+    var scope = null;
+    function register(nextHooks) {
+      Object.assign(hooks, nextHooks || {});
+    }
+    function beginInit() {
+      dispose(false);
+      scope = createCleanupScope();
+      return scope;
+    }
+    function dispose(resetHooks) {
+      var activeScope = scope;
+      scope = null;
+      if (activeScope) activeScope.dispose();
+      if (resetHooks !== false) hooks = defaults();
+    }
+    return {
+      get hooks() {
+        return hooks;
+      },
+      get scope() {
+        return scope;
+      },
+      register,
+      beginInit,
+      dispose
+    };
+  }
   function nextFrame(callback) {
     if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);
     return setTimeout(function() {
@@ -2667,41 +2697,6 @@ var RabbitholeClient = (() => {
   function motionSourceFromEvent(e) {
     return e && e.detail !== 0 ? "pointer" : "keyboard";
   }
-  function bezierCoord(t, a, b) {
-    var mt = 1 - t;
-    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
-  }
-  function bezierSlope(t, a, b) {
-    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
-  }
-  function cubicBezier(x1, y1, x2, y2, x) {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    var t = x, i2, xAt, slope;
-    for (i2 = 0; i2 < 5; i2++) {
-      xAt = bezierCoord(t, x1, x2) - x;
-      slope = bezierSlope(t, x1, x2);
-      if (Math.abs(xAt) < 1e-3 || !slope) break;
-      t -= xAt / slope;
-    }
-    if (t < 0 || t > 1) {
-      var lo = 0, hi = 1;
-      t = x;
-      for (i2 = 0; i2 < 8; i2++) {
-        xAt = bezierCoord(t, x1, x2);
-        if (xAt < x) lo = t;
-        else hi = t;
-        t = (lo + hi) / 2;
-      }
-    }
-    return bezierCoord(t, y1, y2);
-  }
-  function easeOutMotion(k) {
-    return cubicBezier(0.23, 1, 0.32, 1, k);
-  }
-  function easeInOutMotion(k) {
-    return cubicBezier(0.77, 0, 0.175, 1, k);
-  }
   function playLandingCue(el, cls) {
     if (!el || document.hidden) return;
     cls = cls || "flash";
@@ -2922,6 +2917,140 @@ var RabbitholeClient = (() => {
     hintNotice.show({ message: msg, duration: 4e3 });
   }
 
+  // src/ui/text-marks.js
+  function applyChildHighlights(dc, node) {
+    var kids = childrenOf(node.id).filter(function(k) {
+      return k.origin && k.origin.anchor;
+    });
+    kids.sort(function(a, b) {
+      return b.origin.anchor.offset_start - a.origin.anchor.offset_start;
+    });
+    kids.forEach(function(k) {
+      var a = k.origin.anchor;
+      var r2 = rangeFromOffsets(dc, a.offset_start, a.offset_end);
+      if (!r2) return;
+      wrapRange(r2, k.id, "hl " + (k.status === "answered" ? "mark-ready" : "mark-pending"));
+    });
+  }
+  function wrapInContainer(dc, anchor, childId, cls) {
+    if (!dc || !anchor) return;
+    var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
+    if (rr) {
+      try {
+        wrapRange(rr, childId, cls);
+      } catch (e) {
+      }
+    }
+  }
+  function upgradeMarks(root, childId) {
+    if (!root) return;
+    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
+    var child = nodes[childId], label = "Open branch: " + (child && child.title || "Untitled");
+    for (var i2 = 0; i2 < marks.length; i2++) {
+      marks[i2].classList.remove("mark-pending");
+      marks[i2].classList.add("mark-ready");
+      marks[i2].setAttribute("aria-label", label);
+    }
+  }
+  function removeMarks(root, childId) {
+    if (!root) return;
+    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
+    for (var i2 = 0; i2 < marks.length; i2++) {
+      var m = marks[i2], p = m.parentNode;
+      if (!p) continue;
+      while (m.firstChild) p.insertBefore(m.firstChild, m);
+      p.removeChild(m);
+      p.normalize();
+    }
+  }
+  function rangeFromOffsets(container, startOff, endOff) {
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    var pos = 0, sN, sO, eN, eO;
+    while (walker.nextNode()) {
+      var node = walker.currentNode, L = node.textContent.length;
+      if (sN == null && pos + L > startOff) {
+        sN = node;
+        sO = startOff - pos;
+      }
+      if (pos + L >= endOff) {
+        eN = node;
+        eO = endOff - pos;
+        break;
+      }
+      pos += L;
+    }
+    if (sN == null || eN == null) return null;
+    var r2 = document.createRange();
+    try {
+      r2.setStart(sN, sO);
+      r2.setEnd(eN, eO);
+    } catch (e) {
+      return null;
+    }
+    return r2;
+  }
+  function charOffset(container, node, offset) {
+    var r2 = document.createRange();
+    r2.selectNodeContents(container);
+    try {
+      r2.setEnd(node, offset);
+    } catch (e) {
+      return 0;
+    }
+    return r2.toString().length;
+  }
+  function wrapTextNode(textNode, childId, cls) {
+    var m = document.createElement("mark");
+    m.className = cls;
+    m.dataset.child = childId;
+    m.tabIndex = 0;
+    m.setAttribute("role", "link");
+    var child = nodes[childId];
+    m.setAttribute("aria-label", "Open branch: " + (child && child.title || "Untitled"));
+    textNode.parentNode.insertBefore(m, textNode);
+    m.appendChild(textNode);
+  }
+  function wrapRange(range, childId, cls) {
+    var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
+    if (startC === endC && startC.nodeType === 3) {
+      if (startO === endO) return;
+      var mid = startC.splitText(startO);
+      mid.splitText(endO - startO);
+      wrapTextNode(mid, childId, cls);
+      return;
+    }
+    var ancestor = range.commonAncestorContainer;
+    if (ancestor.nodeType === 3) ancestor = ancestor.parentNode;
+    var walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
+    var collected = [], inRange = false;
+    while (walker.nextNode()) {
+      var n = walker.currentNode;
+      if (n === startC) {
+        inRange = true;
+        var info = { node: n, start: startO, end: n.textContent.length };
+        if (n === endC) {
+          info.end = endO;
+          collected.push(info);
+          break;
+        }
+        collected.push(info);
+        continue;
+      }
+      if (n === endC) {
+        collected.push({ node: n, start: 0, end: endO });
+        break;
+      }
+      if (inRange) collected.push({ node: n, start: 0, end: n.textContent.length });
+    }
+    for (var i2 = collected.length - 1; i2 >= 0; i2--) {
+      var c2 = collected[i2], node = c2.node, s = c2.start, e = c2.end, L = node.textContent.length;
+      if (s >= e || !L) continue;
+      var t = s > 0 ? node.splitText(s) : node;
+      if (e < L) t.splitText(e - s);
+      wrapTextNode(t, childId, cls);
+    }
+  }
+
   // src/ui/reader.js
   function defaultReaderHooks() {
     return {
@@ -2945,10 +3074,9 @@ var RabbitholeClient = (() => {
       }
     };
   }
-  var readerHooks = defaultReaderHooks();
-  var readerScope = null;
+  var readerLifecycle = createModuleLifecycle({ defaults: defaultReaderHooks });
   function registerReaderHooks(hooks) {
-    Object.assign(readerHooks, hooks || {});
+    readerLifecycle.register(hooks);
   }
   var breadcrumbNodes = {};
   var sidebarNodes = {};
@@ -2959,15 +3087,15 @@ var RabbitholeClient = (() => {
     setCurrentNodeId(id);
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
-    readerHooks.hideAsk();
-    readerHooks.hidePeek();
+    readerLifecycle.hooks.hideAsk();
+    readerLifecycle.hooks.hidePeek();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
     renderSidebar();
-    readerHooks.updateComposerState();
+    readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
-    readerHooks.scheduleViewSave();
+    readerLifecycle.hooks.scheduleViewSave();
   }
   function renderBreadcrumb() {
     var path2 = lineageNodes(currentNodeId);
@@ -3002,7 +3130,7 @@ var RabbitholeClient = (() => {
   }
   function initReader() {
     disposeReaderResources(false);
-    readerScope = createCleanupScope();
+    var readerScope = readerLifecycle.beginInit();
     try {
       readerScope.listen(breadcrumbEl, "click", function(e) {
         var c2 = e.target.closest(".crumb");
@@ -3030,10 +3158,10 @@ var RabbitholeClient = (() => {
         setReaderFontScale(0.1);
       });
       readerScope.listen(document.getElementById("r-canvas"), "click", function() {
-        readerHooks.setMode("canvas");
+        readerLifecycle.hooks.setMode("canvas");
       });
       readerScope.listen(document.getElementById("r-done"), "click", function() {
-        if (!closed) readerHooks.post({ type: "done" });
+        if (!closed) readerLifecycle.hooks.post({ type: "done" });
       });
       readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
       readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
@@ -3047,13 +3175,10 @@ var RabbitholeClient = (() => {
     disposeReaderResources(true);
   }
   function disposeReaderResources(resetHooks) {
-    var scope = readerScope;
-    readerScope = null;
-    if (scope) scope.dispose();
+    readerLifecycle.dispose(resetHooks);
     breadcrumbNodes = {};
     sidebarNodes = {};
     kbdMarkIdx = -1;
-    if (resetHooks) readerHooks = defaultReaderHooks();
   }
   function renderReaderBody() {
     var node = nodes[currentNodeId];
@@ -3114,7 +3239,7 @@ var RabbitholeClient = (() => {
     var target = readerMain.querySelector('mark[data-child="' + node.id + '"]') || readerMain.querySelector('[data-turn="' + node.id + '"]');
     if (!target) return;
     var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source2);
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source2);
     if (target.tagName === "MARK") {
       var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
       for (var i2 = 0; i2 < marks.length; i2++) playLandingCue(marks[i2], "mark-flash");
@@ -3123,8 +3248,8 @@ var RabbitholeClient = (() => {
   function onReaderScroll() {
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    readerHooks.hidePeek();
-    readerHooks.scheduleViewSave();
+    readerLifecycle.hooks.hidePeek();
+    readerLifecycle.hooks.scheduleViewSave();
   }
   function buildThreadRule() {
     var r2 = document.createElement("div");
@@ -3186,51 +3311,6 @@ var RabbitholeClient = (() => {
     if (item && item.parentNode) item.parentNode.removeChild(item);
     var t = readerMain.querySelector("#thread");
     if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
-  }
-  function applyChildHighlights(dc, node) {
-    var kids = childrenOf(node.id).filter(function(k) {
-      return k.origin && k.origin.anchor;
-    });
-    kids.sort(function(a, b) {
-      return b.origin.anchor.offset_start - a.origin.anchor.offset_start;
-    });
-    kids.forEach(function(k) {
-      var a = k.origin.anchor;
-      var r2 = rangeFromOffsets(dc, a.offset_start, a.offset_end);
-      if (!r2) return;
-      wrapRange(r2, k.id, "hl " + (k.status === "answered" ? "mark-ready" : "mark-pending"));
-    });
-  }
-  function wrapInContainer(dc, anchor, childId, cls) {
-    if (!dc || !anchor) return;
-    var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
-    if (rr) {
-      try {
-        wrapRange(rr, childId, cls);
-      } catch (e) {
-      }
-    }
-  }
-  function upgradeMarks(root, childId) {
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    var child = nodes[childId], label = "Open branch: " + (child && child.title || "Untitled");
-    for (var i2 = 0; i2 < marks.length; i2++) {
-      marks[i2].classList.remove("mark-pending");
-      marks[i2].classList.add("mark-ready");
-      marks[i2].setAttribute("aria-label", label);
-    }
-  }
-  function removeMarks(root, childId) {
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i2 = 0; i2 < marks.length; i2++) {
-      var m = marks[i2], p = m.parentNode;
-      if (!p) continue;
-      while (m.firstChild) p.insertBefore(m.firstChild, m);
-      p.removeChild(m);
-      p.normalize();
-    }
   }
   function onMarkClick(e) {
     var m = e.target.closest("mark[data-child]");
@@ -3327,7 +3407,7 @@ var RabbitholeClient = (() => {
     for (var i2 = 0; i2 < panes.length; i2++) {
       var key = "reader-side:" + panes[i2].node.id;
       mountVisuals(panes[i2].pane, key);
-      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
+      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
     }
   }
   function pendingStatusHtml(k) {
@@ -3360,94 +3440,7 @@ var RabbitholeClient = (() => {
       var cdc = node.bodyEl.querySelector(".doc-content");
       if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
     }
-    readerHooks.persistNode(node);
-  }
-  function rangeFromOffsets(container, startOff, endOff) {
-    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    var pos = 0, sN, sO, eN, eO;
-    while (walker.nextNode()) {
-      var node = walker.currentNode, L = node.textContent.length;
-      if (sN == null && pos + L > startOff) {
-        sN = node;
-        sO = startOff - pos;
-      }
-      if (pos + L >= endOff) {
-        eN = node;
-        eO = endOff - pos;
-        break;
-      }
-      pos += L;
-    }
-    if (sN == null || eN == null) return null;
-    var r2 = document.createRange();
-    try {
-      r2.setStart(sN, sO);
-      r2.setEnd(eN, eO);
-    } catch (e) {
-      return null;
-    }
-    return r2;
-  }
-  function charOffset(container, node, offset) {
-    var r2 = document.createRange();
-    r2.selectNodeContents(container);
-    try {
-      r2.setEnd(node, offset);
-    } catch (e) {
-      return 0;
-    }
-    return r2.toString().length;
-  }
-  function wrapTextNode(textNode, childId, cls) {
-    var m = document.createElement("mark");
-    m.className = cls;
-    m.dataset.child = childId;
-    m.tabIndex = 0;
-    m.setAttribute("role", "link");
-    var child = nodes[childId];
-    m.setAttribute("aria-label", "Open branch: " + (child && child.title || "Untitled"));
-    textNode.parentNode.insertBefore(m, textNode);
-    m.appendChild(textNode);
-  }
-  function wrapRange(range, childId, cls) {
-    var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
-    if (startC === endC && startC.nodeType === 3) {
-      if (startO === endO) return;
-      var mid = startC.splitText(startO);
-      mid.splitText(endO - startO);
-      wrapTextNode(mid, childId, cls);
-      return;
-    }
-    var ancestor = range.commonAncestorContainer;
-    if (ancestor.nodeType === 3) ancestor = ancestor.parentNode;
-    var walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
-    var collected = [], inRange = false;
-    while (walker.nextNode()) {
-      var n = walker.currentNode;
-      if (n === startC) {
-        inRange = true;
-        var info = { node: n, start: startO, end: n.textContent.length };
-        if (n === endC) {
-          info.end = endO;
-          collected.push(info);
-          break;
-        }
-        collected.push(info);
-        continue;
-      }
-      if (n === endC) {
-        collected.push({ node: n, start: 0, end: endO });
-        break;
-      }
-      if (inRange) collected.push({ node: n, start: 0, end: n.textContent.length });
-    }
-    for (var i2 = collected.length - 1; i2 >= 0; i2--) {
-      var c2 = collected[i2], node = c2.node, s = c2.start, e = c2.end, L = node.textContent.length;
-      if (s >= e || !L) continue;
-      var t = s > 0 ? node.splitText(s) : node;
-      if (e < L) t.splitText(e - s);
-      wrapTextNode(t, childId, cls);
-    }
+    readerLifecycle.hooks.persistNode(node);
   }
   var kbdMarkIdx = -1;
   function allMarks() {
@@ -3466,7 +3459,44 @@ var RabbitholeClient = (() => {
     var m = marks[kbdMarkIdx];
     m.classList.add("mark-focus");
     var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+  }
+
+  // src/ui/easing.js
+  function bezierCoord(t, a, b) {
+    var mt = 1 - t;
+    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
+  }
+  function bezierSlope(t, a, b) {
+    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
+  }
+  function cubicBezier(x1, y1, x2, y2, x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    var t = x, i2, xAt, slope;
+    for (i2 = 0; i2 < 5; i2++) {
+      xAt = bezierCoord(t, x1, x2) - x;
+      slope = bezierSlope(t, x1, x2);
+      if (Math.abs(xAt) < 1e-3 || !slope) break;
+      t -= xAt / slope;
+    }
+    if (t < 0 || t > 1) {
+      var lo = 0, hi = 1;
+      t = x;
+      for (i2 = 0; i2 < 8; i2++) {
+        xAt = bezierCoord(t, x1, x2);
+        if (xAt < x) lo = t;
+        else hi = t;
+        t = (lo + hi) / 2;
+      }
+    }
+    return bezierCoord(t, y1, y2);
+  }
+  function easeOutMotion(k) {
+    return cubicBezier(0.23, 1, 0.32, 1, k);
+  }
+  function easeInOutMotion(k) {
+    return cubicBezier(0.77, 0, 0.175, 1, k);
   }
 
   // src/core/html/button-markup.js
@@ -3538,16 +3568,15 @@ var RabbitholeClient = (() => {
       }
     };
   }
-  var canvasHooks = defaultCanvasHooks();
-  var canvasScope = null;
+  var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
   var filmCameraHandle = null;
   var activePointerGestures = /* @__PURE__ */ new Set();
   function registerCanvasHooks(hooks) {
-    Object.assign(canvasHooks, hooks || {});
+    canvasLifecycle.register(hooks);
   }
   function initCanvasView() {
     cleanupCanvasView(false);
-    canvasScope = createCleanupScope();
+    var canvasScope = canvasLifecycle.beginInit();
     registerCoreHooks({
       ensureCanvasBuilt,
       diveToNode,
@@ -3584,9 +3613,7 @@ var RabbitholeClient = (() => {
   }
   function cleanupCanvasView(resetHooks) {
     var _a2;
-    var scope = canvasScope;
-    canvasScope = null;
-    if (scope) scope.dispose();
+    canvasLifecycle.dispose(resetHooks);
     activePointerGestures.forEach(function(cancel) {
       cancel();
     });
@@ -3612,7 +3639,6 @@ var RabbitholeClient = (() => {
     wheelTs = 0;
     (_a2 = viewport) == null ? void 0 : _a2.classList.remove("panning");
     if (resetHooks) {
-      canvasHooks = defaultCanvasHooks();
       registerCoreHooks({
         ensureCanvasBuilt: function() {
         },
@@ -3627,7 +3653,7 @@ var RabbitholeClient = (() => {
   function applyTransform() {
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
     zoomLabel.textContent = Math.round(view.scale * 100) + "%";
-    canvasHooks.scheduleViewSave();
+    canvasLifecycle.hooks.scheduleViewSave();
   }
   function exposeFilmCameraHook() {
     var enabled = false;
@@ -3715,7 +3741,7 @@ var RabbitholeClient = (() => {
       var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "\u2715", ariaLabel: "Remove this branch", title: "Remove this branch" }));
       delBtn.addEventListener("click", function(e) {
         e.stopPropagation();
-        canvasHooks.confirmDelete(node, delBtn);
+        canvasLifecycle.hooks.confirmDelete(node, delBtn);
       });
       acts.appendChild(delBtn);
     }
@@ -3901,7 +3927,7 @@ var RabbitholeClient = (() => {
     if (node.status === "pending") return;
     var question = node.ncText.value.trim();
     if (!question) return;
-    var kid = canvasHooks.sendFollowup(node, question, null);
+    var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
     node.ncText.value = "";
     autoGrowEl(node.ncText, 90);
     closeCardDrawer(node);
@@ -3991,7 +4017,7 @@ var RabbitholeClient = (() => {
       if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px";
     }
     scheduleEdges();
-    canvasHooks.persistNode(node);
+    canvasLifecycle.hooks.persistNode(node);
   }
   function layoutNode(node) {
     var el = node.el;
@@ -4044,7 +4070,7 @@ var RabbitholeClient = (() => {
       function(e) {
         if (e.button !== 0 || e.target.closest(".node-btn")) return false;
         e.preventDefault();
-        canvasHooks.hideAsk();
+        canvasLifecycle.hooks.hideAsk();
         sx = e.clientX;
         sy = e.clientY;
         ox = node.x;
@@ -4059,7 +4085,7 @@ var RabbitholeClient = (() => {
       },
       function() {
         drawEdges();
-        canvasHooks.persistNode(node);
+        canvasLifecycle.hooks.persistNode(node);
       }
     );
   }
@@ -4085,7 +4111,7 @@ var RabbitholeClient = (() => {
       },
       function() {
         drawEdges();
-        canvasHooks.persistNode(node);
+        canvasLifecycle.hooks.persistNode(node);
       }
     );
   }
@@ -4096,7 +4122,7 @@ var RabbitholeClient = (() => {
     if (!node.collapsed) layoutNode(node);
     renderVisibility();
     drawEdges();
-    canvasHooks.persistNode(node);
+    canvasLifecycle.hooks.persistNode(node);
   }
   function renderVisibility() {
     for (var id in nodes) {
@@ -4284,7 +4310,7 @@ var RabbitholeClient = (() => {
       viewport,
       function(e) {
         if (e.button !== 0 || e.target.closest(".node")) return false;
-        canvasHooks.hideAsk();
+        canvasLifecycle.hooks.hideAsk();
         cancelViewAnimation();
         viewport.classList.add("panning");
         sx = e.clientX;
@@ -4302,7 +4328,7 @@ var RabbitholeClient = (() => {
       function() {
         viewport.classList.remove("panning");
       },
-      canvasScope
+      canvasLifecycle.scope
     );
   }
   function canScroll(el, dx, dy) {
@@ -4445,7 +4471,7 @@ var RabbitholeClient = (() => {
       layoutNode(nn);
       moved.push(nn);
     });
-    canvasHooks.persistNodesBulk(moved);
+    canvasLifecycle.hooks.persistNodesBulk(moved);
     rebuildEdges();
     frameAll(true, source2);
   }
@@ -4466,7 +4492,7 @@ var RabbitholeClient = (() => {
     setModeValue(m);
     if (m === "canvas") {
       ensureCanvasBuilt();
-      canvasHooks.hidePeek();
+      canvasLifecycle.hooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function() {
         rebuildEdges();
@@ -4475,7 +4501,7 @@ var RabbitholeClient = (() => {
           frameAll();
         }
       });
-      canvasHooks.scheduleViewSave();
+      canvasLifecycle.hooks.scheduleViewSave();
     } else {
       openNode(currentNodeId);
     }
@@ -4683,21 +4709,20 @@ var RabbitholeClient = (() => {
       }
     };
   }
-  var askHooks = defaultAskHooks();
-  var askScope = null;
+  var askLifecycle = createModuleLifecycle({ defaults: defaultAskHooks });
   function registerAskHooks(hooks) {
-    Object.assign(askHooks, hooks || {});
+    askLifecycle.register(hooks);
   }
   function initAskFollowups() {
     disposeAskFollowupResources(false);
-    askScope = createCleanupScope();
+    var askScope = askLifecycle.beginInit();
     askScope.listen(document, "mousedown", function(e) {
       var c2 = e.target && e.target.closest ? function(sel) {
         return e.target.closest(sel);
       } : function() {
         return null;
       };
-      if (!c2("#peek") && !c2("mark[data-child]")) askHooks.hidePeek();
+      if (!c2("#peek") && !c2("mark[data-child]")) askLifecycle.hooks.hidePeek();
     });
     askScope.listen(document, "mouseup", function(e) {
       if (inAsk(e)) return;
@@ -4798,7 +4823,7 @@ var RabbitholeClient = (() => {
       return pendingAsk.range.getBoundingClientRect();
     }, contextElement: dc };
     askTabOwner = owner;
-    askOwnerCleanup = askScope ? askScope.listen(document, "keydown", onAskOwnerKeydown) : function() {
+    askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
       document.removeEventListener("keydown", onAskOwnerKeydown);
     };
     askPosition = openAnchoredSurface({
@@ -4837,9 +4862,7 @@ var RabbitholeClient = (() => {
   function disposeAskFollowupResources(resetHooks) {
     hideAsk();
     cancelScrollAnimation();
-    var scope = askScope;
-    askScope = null;
-    if (scope) scope.dispose();
+    askLifecycle.dispose(resetHooks);
     pendingAsk = null;
     askTabOwner = null;
     askOwnerCleanup = null;
@@ -4847,7 +4870,6 @@ var RabbitholeClient = (() => {
     scrollAnimIgnoreUntil = 0;
     askText.value = "";
     composerText.value = "";
-    if (resetHooks) askHooks = defaultAskHooks();
   }
   function paintAskHighlight(range) {
     try {
@@ -4921,7 +4943,7 @@ var RabbitholeClient = (() => {
     var sel = window.getSelection();
     if (sel) sel.removeAllRanges();
     hideAsk();
-    askHooks.post({
+    askLifecycle.hooks.post({
       type: "branch_request",
       request_id: requestId,
       node_id: childId,
@@ -5006,7 +5028,7 @@ var RabbitholeClient = (() => {
       size: { w: node.w, h: node.h }
     };
     if (synthesis) payload.synthesis = true;
-    askHooks.post(payload).then(function(res) {
+    askLifecycle.hooks.post(payload).then(function(res) {
       if (!res || !res.ok) rollbackBranch(node);
     });
     refreshAmbient();
@@ -5031,7 +5053,7 @@ var RabbitholeClient = (() => {
     var cancel = function() {
       cancelFrame(id);
     };
-    scrollFrameCleanup = askScope ? askScope.addCleanup(cancel) : cancel;
+    scrollFrameCleanup = askLifecycle.scope ? askLifecycle.scope.addCleanup(cancel) : cancel;
     function run(timestamp) {
       var cleanup = scrollFrameCleanup;
       scrollFrameCleanup = null;
@@ -5467,10 +5489,9 @@ var RabbitholeClient = (() => {
       }
     };
   }
-  var paletteHooks = defaultPaletteHooks();
-  var paletteScope = null;
+  var paletteLifecycle = createModuleLifecycle({ defaults: defaultPaletteHooks });
   function registerPaletteHooks(hooks) {
-    Object.assign(paletteHooks, hooks || {});
+    paletteLifecycle.register(hooks);
   }
   function getPlain(node) {
     if (node._plainFor !== node.html) {
@@ -5489,7 +5510,7 @@ var RabbitholeClient = (() => {
   var palRows = [];
   function initPalette() {
     disposePaletteResources(false);
-    paletteScope = createCleanupScope();
+    var paletteScope = paletteLifecycle.beginInit();
     try {
       palText.setAttribute("role", "combobox");
       palText.setAttribute("aria-expanded", "false");
@@ -5510,15 +5531,12 @@ var RabbitholeClient = (() => {
   }
   function disposePaletteResources(resetHooks) {
     closePalette({ restoreFocus: false });
-    var scope = paletteScope;
-    paletteScope = null;
-    if (scope) scope.dispose();
+    paletteLifecycle.dispose(resetHooks);
     palOpen = false;
     palSel = 0;
     palItems = [];
     palCanvasCommands = false;
     palRows = [];
-    if (resetHooks) paletteHooks = defaultPaletteHooks();
   }
   function togglePalette() {
     if (palOpen) closePalette();
@@ -5527,10 +5545,10 @@ var RabbitholeClient = (() => {
   function openPalette() {
     palOpen = true;
     palCanvasCommands = mode === "canvas";
-    paletteHooks.hideAsk();
-    paletteHooks.hidePeek();
-    paletteHooks.closeShare();
-    paletteHooks.hideConfirm();
+    paletteLifecycle.hooks.hideAsk();
+    paletteLifecycle.hooks.hidePeek();
+    paletteLifecycle.hooks.closeShare();
+    paletteLifecycle.hooks.hideConfirm();
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
@@ -5899,17 +5917,16 @@ var RabbitholeClient = (() => {
       exportPortable: null
     };
   }
-  var branchHooks = defaultBranchHooks();
-  var branchScope = null;
+  var branchLifecycle = createModuleLifecycle({ defaults: defaultBranchHooks });
   function registerBranchHooks(hooks) {
-    Object.assign(branchHooks, hooks || {});
+    branchLifecycle.register(hooks);
   }
   var peekTimer = 0;
   var peekFor = null;
   var peekPosition = null;
   function initBranchSurfaces() {
     disposeBranchSurfaceResources(false);
-    branchScope = createCleanupScope();
+    var branchScope = branchLifecycle.beginInit();
     try {
       branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
       branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
@@ -5963,14 +5980,11 @@ var RabbitholeClient = (() => {
     hidePeek();
     closeShare({ restoreFocus: false });
     hideConfirm({ restoreFocus: false });
-    var scope = branchScope;
-    branchScope = null;
-    if (scope) scope.dispose();
+    branchLifecycle.dispose(resetHooks);
     peekFor = null;
     shareOpen = false;
     shareAnchor = null;
     confirmFor = null;
-    if (resetHooks) branchHooks = defaultBranchHooks();
   }
   function hidePeek() {
     if (peekTimer) {
@@ -6020,7 +6034,7 @@ var RabbitholeClient = (() => {
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchScope ? branchScope.timeout(function() {
+    peekTimer = branchLifecycle.scope ? branchLifecycle.scope.timeout(function() {
       peekTimer = 0;
       showPeek(m);
     }, 220) : 0;
@@ -6032,8 +6046,8 @@ var RabbitholeClient = (() => {
       clearTimeout(peekTimer);
       peekTimer = 0;
     }
-    if (!branchScope) return;
-    branchScope.timeout(function() {
+    if (!branchLifecycle.scope) return;
+    branchLifecycle.scope.timeout(function() {
       if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
     }, 80);
   }
@@ -6043,7 +6057,7 @@ var RabbitholeClient = (() => {
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchScope ? branchScope.timeout(function() {
+    peekTimer = branchLifecycle.scope ? branchLifecycle.scope.timeout(function() {
       peekTimer = 0;
       if (document.activeElement === m) showPeek(m);
     }, 220) : 0;
@@ -6055,8 +6069,8 @@ var RabbitholeClient = (() => {
       clearTimeout(peekTimer);
       peekTimer = 0;
     }
-    if (!branchScope) return;
-    branchScope.timeout(function() {
+    if (!branchLifecycle.scope) return;
+    branchLifecycle.scope.timeout(function() {
       if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
     }, 0);
   }
@@ -6101,7 +6115,7 @@ var RabbitholeClient = (() => {
     }
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
-    document.getElementById("sm-portable").style.display = !frozen && typeof branchHooks.exportPortable === "function" ? "" : "none";
+    document.getElementById("sm-portable").style.display = !frozen && typeof branchLifecycle.hooks.exportPortable === "function" ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var items = visibleShareItems();
@@ -6194,12 +6208,12 @@ var RabbitholeClient = (() => {
   }
   function onExportSnapshot() {
     closeShare();
-    if (typeof branchHooks.exportSnapshot !== "function") {
+    if (typeof branchLifecycle.hooks.exportSnapshot !== "function") {
       flashHint("This snapshot is already portable.");
       return;
     }
     flashHint("Preparing snapshot...");
-    Promise.resolve(branchHooks.exportSnapshot()).then(function() {
+    Promise.resolve(branchLifecycle.hooks.exportSnapshot()).then(function() {
       flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
     }, function() {
       flashHint("Couldn't prepare the snapshot.");
@@ -6207,13 +6221,13 @@ var RabbitholeClient = (() => {
   }
   function onExportPortable() {
     closeShare();
-    if (typeof branchHooks.exportPortable !== "function") {
+    if (typeof branchLifecycle.hooks.exportPortable !== "function") {
       flashHint("Rabbithole export is only available in the web app.");
       return;
     }
     flashHint("Preparing Rabbithole export...");
     Promise.resolve().then(function() {
-      return branchHooks.exportPortable();
+      return branchLifecycle.hooks.exportPortable();
     }).then(function(result) {
       var name = result && result.filename ? " " + result.filename : "";
       flashHint("Rabbithole export downloading." + name);
@@ -6288,7 +6302,7 @@ var RabbitholeClient = (() => {
   function deleteBranch(node) {
     var title = node.title || "Untitled";
     var ids = collectSubtree(node.id, []);
-    branchHooks.post({ type: "delete_node", node_id: node.id });
+    branchLifecycle.hooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
     flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
   }
@@ -22792,8 +22806,8 @@ ${text2}</tr>
   };
 
   // node_modules/highlight.js/es/core.js
-  var import_core9 = __toESM(require_core(), 1);
-  var core_default = import_core9.default;
+  var import_core10 = __toESM(require_core(), 1);
+  var core_default = import_core10.default;
 
   // node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {

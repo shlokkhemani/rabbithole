@@ -13,7 +13,7 @@ import {
 import { escapeHtml } from "../core/utils.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
-import { createCleanupScope } from "./lifecycle.js";
+import { createModuleLifecycle } from "./lifecycle.js";
 
 function defaultPaletteHooks(){
   return {
@@ -24,11 +24,10 @@ function defaultPaletteHooks(){
   };
 }
 
-var paletteHooks = defaultPaletteHooks();
-var paletteScope = null;
+var paletteLifecycle = createModuleLifecycle({ defaults: defaultPaletteHooks });
 
 export function registerPaletteHooks(hooks) {
-  Object.assign(paletteHooks, hooks || {});
+  paletteLifecycle.register(hooks);
 }
 
   // ===========================================================================
@@ -46,7 +45,7 @@ export function registerPaletteHooks(hooks) {
   var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palDialog = null, palRows = [];
 export function initPalette(){
   disposePaletteResources(false);
-  paletteScope = createCleanupScope();
+  var paletteScope = paletteLifecycle.beginInit();
   try {
     palText.setAttribute("role", "combobox");
     palText.setAttribute("aria-expanded", "false");
@@ -67,22 +66,19 @@ export function disposePalette(){
 
 function disposePaletteResources(resetHooks){
   closePalette({ restoreFocus: false });
-  var scope = paletteScope;
-  paletteScope = null;
-  if (scope) scope.dispose();
+  paletteLifecycle.dispose(resetHooks);
   palOpen = false;
   palSel = 0;
   palItems = [];
   palCanvasCommands = false;
   palRows = [];
-  if (resetHooks) paletteHooks = defaultPaletteHooks();
 }
 
 export function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
 function openPalette(){
     palOpen = true;
     palCanvasCommands = mode === "canvas";
-    paletteHooks.hideAsk(); paletteHooks.hidePeek(); paletteHooks.closeShare(); paletteHooks.hideConfirm();
+    paletteLifecycle.hooks.hideAsk(); paletteLifecycle.hooks.hidePeek(); paletteLifecycle.hooks.closeShare(); paletteLifecycle.hooks.hideConfirm();
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");

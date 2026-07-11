@@ -38,7 +38,7 @@ import {
 import { mountVisuals } from "./visuals.js";
 import { openPopover } from "./primitives/popover.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
-import { createCleanupScope } from "./lifecycle.js";
+import { createModuleLifecycle } from "./lifecycle.js";
 import { teardownNode } from "./node-teardown.js";
 
 function defaultBranchHooks(){
@@ -49,11 +49,10 @@ function defaultBranchHooks(){
   };
 }
 
-var branchHooks = defaultBranchHooks();
-var branchScope = null;
+var branchLifecycle = createModuleLifecycle({ defaults: defaultBranchHooks });
 
 export function registerBranchHooks(hooks) {
-  Object.assign(branchHooks, hooks || {});
+  branchLifecycle.register(hooks);
 }
 
   // ===========================================================================
@@ -62,7 +61,7 @@ export function registerBranchHooks(hooks) {
   var peekTimer = 0, peekFor = null, peekPosition = null;
 export function initBranchSurfaces(){
   disposeBranchSurfaceResources(false);
-  branchScope = createCleanupScope();
+  var branchScope = branchLifecycle.beginInit();
   try {
   branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
   branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
@@ -110,14 +109,11 @@ function disposeBranchSurfaceResources(resetHooks){
   hidePeek();
   closeShare({ restoreFocus: false });
   hideConfirm({ restoreFocus: false });
-  var scope = branchScope;
-  branchScope = null;
-  if (scope) scope.dispose();
+  branchLifecycle.dispose(resetHooks);
   peekFor = null;
   shareOpen = false;
   shareAnchor = null;
   confirmFor = null;
-  if (resetHooks) branchHooks = defaultBranchHooks();
 }
 
 export function hidePeek(){
@@ -156,16 +152,16 @@ export function hidePeek(){
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchScope
-      ? branchScope.timeout(function(){ peekTimer = 0; showPeek(m); }, 220)
+    peekTimer = branchLifecycle.scope
+      ? branchLifecycle.scope.timeout(function(){ peekTimer = 0; showPeek(m); }, 220)
       : 0;
   }
   function onReaderMarkMouseout(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    if (!branchScope) return;
-    branchScope.timeout(function(){
+    if (!branchLifecycle.scope) return;
+    branchLifecycle.scope.timeout(function(){
       if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
     }, 80);
   }
@@ -175,16 +171,16 @@ export function hidePeek(){
     var kid = nodes[m.dataset.child];
     if (!kid || kid.status !== "answered") return;
     if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchScope
-      ? branchScope.timeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220)
+    peekTimer = branchLifecycle.scope
+      ? branchLifecycle.scope.timeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220)
       : 0;
   }
   function onMarkFocusout(e){
     var m = e.target.closest && e.target.closest("mark[data-child]");
     if (!m) return;
     if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    if (!branchScope) return;
-    branchScope.timeout(function(){
+    if (!branchLifecycle.scope) return;
+    branchLifecycle.scope.timeout(function(){
       if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
     }, 0);
   }
@@ -227,7 +223,7 @@ function toggleShare(anchor, openedByKeyboard){
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
-    document.getElementById("sm-portable").style.display = (!frozen && typeof branchHooks.exportPortable === "function") ? "" : "none";
+    document.getElementById("sm-portable").style.display = (!frozen && typeof branchLifecycle.hooks.exportPortable === "function") ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var items = visibleShareItems();
@@ -299,12 +295,12 @@ export function closeShare(settings){
   }
 	  function onExportSnapshot(){
 	    closeShare();
-	    if (typeof branchHooks.exportSnapshot !== "function"){
+	    if (typeof branchLifecycle.hooks.exportSnapshot !== "function"){
 	      flashHint("This snapshot is already portable.");
 	      return;
 	    }
 	    flashHint("Preparing snapshot...");
-	    Promise.resolve(branchHooks.exportSnapshot()).then(function(){
+	    Promise.resolve(branchLifecycle.hooks.exportSnapshot()).then(function(){
 	      flashHint("Snapshot downloading — a single file that opens anywhere.");
 	    }, function(){
 	      flashHint("Couldn't prepare the snapshot.");
@@ -312,13 +308,13 @@ export function closeShare(settings){
 	  }
   function onExportPortable(){
     closeShare();
-    if (typeof branchHooks.exportPortable !== "function"){
+    if (typeof branchLifecycle.hooks.exportPortable !== "function"){
       flashHint("Rabbithole export is only available in the web app.");
       return;
     }
     flashHint("Preparing Rabbithole export...");
     Promise.resolve()
-      .then(function(){ return branchHooks.exportPortable(); })
+      .then(function(){ return branchLifecycle.hooks.exportPortable(); })
       .then(function(result){
         var name = result && result.filename ? " " + result.filename : "";
         flashHint("Rabbithole export downloading." + name);
@@ -381,7 +377,7 @@ export function hideConfirm(settings){
   function deleteBranch(node){
     var title = node.title || "Untitled";
     var ids = collectSubtree(node.id, []);
-    branchHooks.post({ type: "delete_node", node_id: node.id });
+    branchLifecycle.hooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
     flashHint(ids.length > 1
       ? "Removed “" + truncate(title, 40) + "” and " + (ids.length - 1) + " inside it"

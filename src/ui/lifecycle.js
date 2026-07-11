@@ -78,6 +78,37 @@ export function createCleanupScope() {
   };
 }
 
+export function createModuleLifecycle(options) {
+  var defaults = options.defaults;
+  var hooks = defaults();
+  var scope = null;
+
+  function register(nextHooks) {
+    Object.assign(hooks, nextHooks || {});
+  }
+
+  function beginInit() {
+    dispose(false);
+    scope = createCleanupScope();
+    return scope;
+  }
+
+  function dispose(resetHooks) {
+    var activeScope = scope;
+    scope = null;
+    if (activeScope) activeScope.dispose();
+    if (resetHooks !== false) hooks = defaults();
+  }
+
+  return {
+    get hooks(){ return hooks; },
+    get scope(){ return scope; },
+    register: register,
+    beginInit: beginInit,
+    dispose: dispose
+  };
+}
+
 /** @param {(timestamp: number) => void} callback */
 export function nextFrame(callback) {
   if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);

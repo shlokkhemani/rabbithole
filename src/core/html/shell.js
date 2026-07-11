@@ -1,4 +1,4 @@
-import { buttonMarkup, iconButtonMarkup } from "../../ui/primitives/button.js";
+import { buttonMarkup, iconButtonMarkup } from "./button-markup.js";
 
 /*
  * Extracted from the former canvas.js monolith. Keep this string as the exact
@@ -66,13 +66,13 @@ export const CANVAS_SHELL = `
   </div>
 </div>
 
-<div id="palette"><div id="palette-panel">
+<div id="palette" hidden><div id="palette-panel">
   <div class="pal-input">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <input id="pal-text" placeholder="Search this Rabbithole…" autocomplete="off" spellcheck="false">
+    <input id="pal-text" placeholder="Search this Rabbithole…" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
     <kbd>esc</kbd>
   </div>
-  <div id="pal-results"></div>
+  <div id="pal-results" role="listbox" aria-label="Search results"></div>
 </div></div>
 
 <div id="peek"></div>

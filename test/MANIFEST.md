@@ -145,6 +145,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | settings surface lifetime follows the interaction | C2 | Requires both Escape and outside-pointer dismissal to remove the body-appended settings surface from the DOM. | Chrome: transient surface lifetime |
 | settings trigger ARIA follows live surface state | C2 | Requires `aria-expanded` true/false synchronization and an `aria-controls` reference only while the controlled surface exists. | Chrome: settings trigger accessibility |
 | live math/code/show document rendering | C2 | Protects core authoring rendering. | — |
+| lightbox Dialog Escape/backdrop dismissal and source-image focus restoration | C2 | Requires the dynamic image preview to use the shared Dialog lifecycle while preserving surround-only dismissal and deterministic focus continuity. | Chrome: keyboard-only completion; focus restoration after transient surfaces; outside-pointer dismissal |
+| palette Dialog keyboard, listbox, active-descendant, and Escape isolation contract | C2 | Requires shortcut opening, type filtering, Arrow/Enter commit, input-retained focus, synchronized option selection, and layer-owned Escape that cannot reach the canvas reader shortcut. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
+| frozen palette and lightbox Dialog smoke | C2 | Requires both shared canvas-client modal paths to remain initialized and dismissible in self-contained snapshots. | Rendering: frozen viewing control parity; Chrome: keyboard-only completion |
 | share popover token anchor geometry, surface/padding, and focus restore | C2 | Enforces shared-engine trigger-relative placement and stack focus restoration while retaining the shared surface metrics (`stage10-web-verify.mjs:486-526`). | Chrome: anchored surfaces at viewport edges; focus restoration after transient surfaces |
 | share menu keyboard contract | C2 | Requires keyboard-invoked initial focus, a single roving Tab stop, wrapped Arrow navigation, Home/End, activation, Tab departure, and layer-owned Escape restoration. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
 | frozen share menu suppression and traversal | C2 | Requires frozen snapshots to omit export/portable/synthesis from both presentation and the keyboard traversal set. | Rendering: frozen viewing control parity; Chrome: keyboard-only completion |
@@ -276,11 +279,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 103 |
+| C2 behavioral product contract | 106 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **159** |
+| **Total** | **162** |
 
 ## Known-defect fossils
 

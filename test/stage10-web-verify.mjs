@@ -36,6 +36,7 @@ try {
   await verifyComboboxCatalogStates();
   await verifyAskKeyUxAndRail();
   await verifyCanvasBranching();
+  await verifySharedCanvasDialogs();
   console.log("stage10 web verification passed");
 } finally {
   await browser.close();
@@ -912,6 +913,71 @@ async function verifyCanvasBranching() {
   const external = requests.filter((url) => !url.startsWith(baseUrl));
   assert(external.length > 0, "provider and key validation should have been called");
   assert(external.every((url) => url === PROVIDER_URL || url === KEY_URL || url === MODEL_URL || url === LOCAL_MODEL_URL), `unexpected external request(s): ${external.join(", ")}`);
+  await context.close();
+}
+
+async function verifySharedCanvasDialogs() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const imageUrl = "https://dialog-probe.invalid/palette-lightbox.png";
+  await page.route(imageUrl, (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#8faaf0"/><circle cx="320" cy="180" r="100" fill="#f5f3ee"/></svg>',
+  }));
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => !!window.__rabbitholeTest);
+  await createDocument(page, `# Palette target\n\nSearchable dialog content.\n\n![Dialog probe](${imageUrl})`);
+  await page.waitForSelector('.doc-content img[alt="Dialog probe"]:visible');
+
+  await page.keyboard.press("Meta+k");
+  await page.waitForSelector("#palette.visible");
+  await page.waitForFunction(() => document.activeElement?.id === "pal-text");
+  await page.fill("#pal-text", "Palette");
+  await page.waitForSelector('#pal-results [role="option"]:visible');
+  assert.equal(await page.getAttribute("#pal-results", "role"), "listbox");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "pal-text", "palette navigation should retain input focus");
+  const firstActive = await page.getAttribute("#pal-text", "aria-activedescendant");
+  assert(firstActive && await page.locator(`#${firstActive}[role="option"][aria-selected="true"]`).count() === 1, "aria-activedescendant should identify the selected option");
+  await page.keyboard.press("ArrowDown");
+  const movedActive = await page.getAttribute("#pal-text", "aria-activedescendant");
+  assert(movedActive && await page.locator(`#${movedActive}[aria-selected="true"]`).count() === 1, "ArrowDown should keep active-descendant selection synchronized");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "pal-text");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#palette:not(.visible)", { state: "attached" });
+
+  await page.keyboard.press("Meta+k");
+  await page.waitForSelector("#palette.visible");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#palette:not(.visible)", { state: "attached" });
+  assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("mode-canvas")), true, "palette Escape must not leak into the canvas reader shortcut");
+
+  const sourceImage = page.locator('.doc-content img[alt="Dialog probe"]:visible').first();
+  await sourceImage.click();
+  await page.waitForSelector(".rh-lightbox");
+  assert.equal(await page.getAttribute(".rh-lightbox-dialog", "role"), "dialog");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".rh-lightbox", { state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("alt")), "Dialog probe", "lightbox Escape should restore the source image");
+  await sourceImage.click();
+  await page.waitForSelector(".rh-lightbox");
+  await page.mouse.click(5, 5);
+  await page.waitForSelector(".rh-lightbox", { state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("alt")), "Dialog probe", "lightbox backdrop close should restore the source image");
+
+  const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+  const frozenPage = await context.newPage();
+  await frozenPage.route(imageUrl, (route) => route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#8faaf0"/></svg>' }));
+  await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
+  await frozenPage.keyboard.press("Meta+k");
+  await frozenPage.waitForSelector("#palette.visible");
+  assert.equal(await frozenPage.evaluate(() => document.activeElement?.id), "pal-text", "frozen palette should use Dialog initial focus");
+  await frozenPage.keyboard.press("Escape");
+  await frozenPage.locator('.doc-content img[alt="Dialog probe"]:visible').first().click();
+  await frozenPage.waitForSelector(".rh-lightbox");
+  await frozenPage.keyboard.press("Escape");
+  await frozenPage.waitForSelector(".rh-lightbox", { state: "detached" });
+  await frozenPage.close();
   await context.close();
 }
 

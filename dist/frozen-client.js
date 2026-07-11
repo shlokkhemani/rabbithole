@@ -4139,7 +4139,72 @@ var RabbitholeFrozenClient = (() => {
     });
   }
 
-  // src/ui/focus-trap.js
+  // src/ui/overlay/layer-stack.js
+  var layers = [];
+  function focus(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      try {
+        element.focus();
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function onKeydown(event) {
+    if (event.key !== "Escape") return;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnEscape) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layer.onClose("escape");
+  }
+  function onPointerdown(event) {
+    var _a2;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnOutsidePointer) return;
+    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
+    event.preventDefault();
+    layer.onClose("outside-pointer");
+    if (layer.restoreFocus) setTimeout(function() {
+      if (!focus(layer.trigger)) focus(layer.previousFocus);
+    }, 0);
+  }
+  function syncListeners() {
+    var method = layers.length ? "addEventListener" : "removeEventListener";
+    document[method]("keydown", onKeydown, true);
+    document[method]("pointerdown", onPointerdown, true);
+  }
+  function registerLayer(options2) {
+    var layer = {
+      element: options2.element,
+      trigger: options2.trigger || null,
+      onClose: options2.onClose,
+      closeOnEscape: options2.closeOnEscape !== false,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
+      restoreFocus: options2.restoreFocus !== false,
+      previousFocus: document.activeElement
+    };
+    layers.push(layer);
+    if (layers.length === 1) syncListeners();
+    var active = true;
+    return function unregisterLayer(settings) {
+      if (!active) return;
+      active = false;
+      var index = layers.indexOf(layer);
+      if (index !== -1) layers.splice(index, 1);
+      if (!layers.length) syncListeners();
+      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
+        if (!focus(layer.trigger)) focus(layer.previousFocus);
+      }
+    };
+  }
+
+  // src/ui/primitives/dialog.js
   var FOCUSABLE = [
     "a[href]",
     "button:not([disabled])",
@@ -4148,68 +4213,96 @@ var RabbitholeFrozenClient = (() => {
     "select:not([disabled])",
     "[tabindex]:not([tabindex='-1'])"
   ].join(",");
-  function activateFocusTrap(root, options2) {
-    if (!root) return function() {
-    };
-    options2 = options2 || {};
-    var previous = document.activeElement;
-    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
-    function focusables() {
-      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE)) : [];
-      return all.filter(function(el) {
-        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
-      });
-    }
-    function focusInitial() {
-      var target = options2.initialFocus || focusables()[0] || root;
+  function focus2(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
       try {
-        target.focus({ preventScroll: true });
-      } catch (e) {
-        try {
-          target.focus();
-        } catch (_e) {
-        }
+        element.focus();
+      } catch (_error) {
+        return false;
       }
     }
-    function onKeydown2(e) {
-      if (e.key === "Escape" && typeof options2.onEscape === "function") {
-        e.preventDefault();
-        e.stopPropagation();
-        options2.onEscape(e);
-        return;
-      }
-      if (e.key !== "Tab") return;
-      var items = focusables();
+    return true;
+  }
+  function visibleFocusables(dialog) {
+    return Array.prototype.slice.call(dialog.querySelectorAll(FOCUSABLE)).filter(function(element) {
+      return element.offsetParent !== null || element === document.activeElement;
+    });
+  }
+  function resolveInitialFocus(dialog, requested) {
+    var explicit = typeof requested === "string" ? dialog.querySelector(requested) : requested;
+    return (explicit == null ? void 0 : explicit.isConnected) ? explicit : visibleFocusables(dialog)[0] || dialog;
+  }
+  function openDialog(options2) {
+    options2 = options2 || {};
+    var dialog = options2.dialog || options2.element;
+    var backdrop = options2.backdrop || dialog;
+    if (!dialog || !backdrop) throw new Error("openDialog requires a dialog element");
+    var labelledby = options2.labelledby || dialog.getAttribute("aria-labelledby");
+    var label = options2.label || dialog.getAttribute("aria-label");
+    if (!labelledby && !label) throw new Error("openDialog requires label or labelledby");
+    if (labelledby && !labelledby.split(/\s+/).every(function(id) {
+      return document.getElementById(id);
+    })) {
+      throw new Error("openDialog labelledby must reference existing elements");
+    }
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    if (labelledby) dialog.setAttribute("aria-labelledby", labelledby);
+    else dialog.setAttribute("aria-label", label);
+    if (!dialog.hasAttribute("tabindex")) dialog.setAttribute("tabindex", "-1");
+    backdrop.hidden = false;
+    var closed2 = false;
+    var initialTimer = null;
+    function onKeydown2(event) {
+      if (event.key !== "Tab") return;
+      var items = visibleFocusables(dialog);
       if (!items.length) {
-        e.preventDefault();
-        root.focus();
+        event.preventDefault();
+        focus2(dialog);
         return;
       }
-      var first = items[0];
-      var last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+      var first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        focus2(last);
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        focus2(first);
       }
     }
-    document.addEventListener("keydown", onKeydown2, true);
-    setTimeout(focusInitial, 0);
-    return function deactivateFocusTrap() {
-      document.removeEventListener("keydown", onKeydown2, true);
-      if (options2.restoreFocus !== false && previous && previous.focus) {
-        try {
-          previous.focus({ preventScroll: true });
-        } catch (e) {
-          try {
-            previous.focus();
-          } catch (_e) {
-          }
-        }
+    dialog.addEventListener("keydown", onKeydown2);
+    var unregister = registerLayer({
+      element: dialog,
+      trigger: options2.trigger,
+      closeOnEscape: options2.closeOnEscape,
+      closeOnOutsidePointer: options2.closeOnBackdrop,
+      restoreFocus: options2.restoreFocus,
+      onClose: function(reason) {
+        close2(reason === "outside-pointer" ? "backdrop" : reason);
       }
-    };
+    });
+    function close2(reason, settings) {
+      var _a2;
+      if (closed2) return;
+      closed2 = true;
+      if (initialTimer !== null) clearTimeout(initialTimer);
+      dialog.removeEventListener("keydown", onKeydown2);
+      backdrop.hidden = true;
+      (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason || "programmatic");
+      unregister(settings);
+    }
+    function dispose(settings) {
+      close2("programmatic", settings);
+      if (options2.removeOnDispose) backdrop.remove();
+    }
+    initialTimer = setTimeout(function() {
+      initialTimer = null;
+      if (!closed2) focus2(resolveInitialFocus(dialog, options2.initialFocus));
+    }, 0);
+    return { close: close2, dispose };
   }
 
   // src/ui/image-ux.js
@@ -4312,43 +4405,44 @@ var RabbitholeFrozenClient = (() => {
     var dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
-  function openImageLightbox(src, alt) {
+  function openImageLightbox(src, alt, trigger) {
     closeImageLightbox();
     var overlay = document.createElement("div");
     overlay.className = "rh-lightbox";
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", alt || "Image preview");
-    overlay.setAttribute("tabindex", "-1");
+    overlay.hidden = true;
+    var dialog = document.createElement("div");
+    dialog.className = "rh-lightbox-dialog";
     var img = document.createElement("img");
     img.className = "rh-lightbox-img";
     img.src = src;
     img.alt = alt || "";
     img.draggable = false;
-    overlay.appendChild(img);
+    dialog.appendChild(img);
+    overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     var state = { scale: 1, x: 0, y: 0 };
     var drag = null;
     var pointers = {};
     var pinch = null;
     setLightboxTransform(img, state);
-    var trap = activateFocusTrap(overlay, { initialFocus: overlay, onEscape: closeImageLightbox });
-    activeLightbox = { el: overlay, key: onKey, trap };
-    function onKey(e) {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      closeImageLightbox();
-    }
+    activeLightbox = openDialog({
+      dialog,
+      backdrop: overlay,
+      label: alt || "Image preview",
+      initialFocus: dialog,
+      trigger,
+      removeOnDispose: true,
+      onClose: function() {
+        overlay.remove();
+        activeLightbox = null;
+      }
+    });
     function clearPointer(id) {
       delete pointers[id];
       var keys = Object.keys(pointers);
       if (keys.length < 2) pinch = null;
       if (!keys.length) drag = null;
     }
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) closeImageLightbox();
-    });
     overlay.addEventListener("wheel", function(e) {
       e.preventDefault();
       e.stopPropagation();
@@ -4402,14 +4496,12 @@ var RabbitholeFrozenClient = (() => {
     overlay.addEventListener("pointercancel", function(e) {
       clearPointer(e.pointerId);
     });
-    document.addEventListener("keydown", onKey, true);
   }
   function closeImageLightbox() {
     if (!activeLightbox) return;
-    document.removeEventListener("keydown", activeLightbox.key, true);
-    if (typeof activeLightbox.trap === "function") activeLightbox.trap();
-    if (activeLightbox.el && activeLightbox.el.parentNode) activeLightbox.el.parentNode.removeChild(activeLightbox.el);
+    var dialog = activeLightbox;
     activeLightbox = null;
+    dialog.dispose();
   }
   function mountDocImages(dc, node, base, surfaceKey) {
     if (!dc || !dc.querySelectorAll) return;
@@ -4427,6 +4519,7 @@ var RabbitholeFrozenClient = (() => {
       }
       var key = imageMemoryKey(dc, img, i2, surfaceKey || visualSurfaceKey(node, base));
       img.dataset.rhImgReady = "1";
+      img.tabIndex = 0;
       img.draggable = false;
       if (imageResizeMemory[key]) applyImageWidth(frame, imageResizeMemory[key]);
       var handle = document.createElement("button");
@@ -4441,7 +4534,7 @@ var RabbitholeFrozenClient = (() => {
       img.addEventListener("click", function(e) {
         e.preventDefault();
         e.stopPropagation();
-        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt);
+        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
       });
       handle.addEventListener("pointerdown", /* @__PURE__ */ (function(f, k) {
         return function(e) {
@@ -4489,11 +4582,11 @@ var RabbitholeFrozenClient = (() => {
   var palSel = 0;
   var palItems = [];
   var palCanvasCommands = false;
-  var palTrap = null;
+  var palDialog = null;
+  var palRows = [];
   function initPalette() {
-    paletteEl.addEventListener("mousedown", function(e) {
-      if (e.target === paletteEl) closePalette();
-    });
+    palText.setAttribute("role", "combobox");
+    palText.setAttribute("aria-expanded", "false");
     palText.addEventListener("input", function() {
       renderPalette(palText.value);
     });
@@ -4515,24 +4608,28 @@ var RabbitholeFrozenClient = (() => {
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
-    if (palTrap) palTrap();
-    palTrap = activateFocusTrap(paletteEl, { initialFocus: palText, onEscape: closePalette });
+    if (palDialog) palDialog.close();
+    palDialog = openDialog({
+      dialog: document.getElementById("palette-panel"),
+      backdrop: paletteEl,
+      label: palText.getAttribute("aria-label") || palText.placeholder,
+      initialFocus: palText,
+      onClose: function() {
+        palOpen = false;
+        palCanvasCommands = false;
+        paletteEl.classList.remove("visible");
+        palText.setAttribute("aria-expanded", "false");
+        palText.removeAttribute("aria-activedescendant");
+        palDialog = null;
+      }
+    });
+    palText.setAttribute("aria-expanded", "true");
   }
   function closePalette() {
-    palOpen = false;
-    palCanvasCommands = false;
-    paletteEl.classList.remove("visible");
-    if (palTrap) {
-      palTrap();
-      palTrap = null;
-    }
-    palText.blur();
+    if (palDialog) palDialog.close();
   }
   function onPaletteKeydown(e) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      closePalette();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       movePalSel(1);
     } else if (e.key === "ArrowUp") {
@@ -4576,27 +4673,84 @@ var RabbitholeFrozenClient = (() => {
     }).concat(paletteCommandItems(tokens));
     palSel = 0;
     if (!palItems.length) {
-      palResults.innerHTML = tokens.length ? '<div class="pal-empty">Nothing in this hole matches that.</div>' : "";
+      palRows.forEach(function(row) {
+        row.hidden = true;
+      });
+      palText.removeAttribute("aria-activedescendant");
+      var empty = palResults.querySelector(".pal-empty");
+      if (!empty) {
+        empty = document.createElement("div");
+        empty.className = "pal-empty";
+        palResults.appendChild(empty);
+      }
+      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
+      empty.hidden = !tokens.length;
       return;
     }
-    var html2 = "";
+    var empty = palResults.querySelector(".pal-empty");
+    if (empty) empty.hidden = true;
+    var fragment = document.createDocumentFragment();
     palItems.forEach(function(item, i3) {
+      var row = palRows[i3] || createPalRow(i3);
+      palRows[i3] = row;
+      row.hidden = false;
+      row.dataset.idx = i3;
+      row.classList.toggle("sel", i3 === palSel);
+      row.classList.toggle("pal-command", item.type === "command");
+      row._flag.textContent = "";
+      row._flag.className = "";
+      row._badge.hidden = true;
+      row._kbd.hidden = true;
+      row._snippet.hidden = item.type === "command";
       if (item.type === "command") {
-        html2 += '<div class="pal-item pal-command' + (i3 === palSel ? " sel" : "") + '" data-idx="' + i3 + '">';
-        html2 += '<div class="pal-t"><span class="pal-title">' + esc(item.name) + '</span><kbd class="pal-kbd">' + esc(item.kbd) + "</kbd></div>";
-        html2 += "</div>";
+        row._title.textContent = item.name;
+        row._kbd.textContent = item.kbd;
+        row._kbd.hidden = false;
+        fragment.appendChild(row);
         return;
       }
       var n2 = nodes[item.id];
       if (!n2) return;
-      var badge = n2.origin && n2.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : n2.origin && n2.origin.lens ? lensBadgeHtml(n2.origin.lens) : "";
-      var flags = n2.status === "pending" ? '<span class="pal-writing">writing\u2026</span>' : isUnread(n2) ? '<span class="pal-dot"></span>' : "";
-      html2 += '<div class="pal-item' + (i3 === palSel ? " sel" : "") + '" data-idx="' + i3 + '">';
-      html2 += '<div class="pal-t">' + flags + '<span class="pal-title">' + esc(n2.title || "Untitled") + "</span>" + badge + "</div>";
-      html2 += '<div class="pal-s">' + palSnippet(n2, tokens) + "</div>";
-      html2 += "</div>";
+      row._title.textContent = n2.title || "Untitled";
+      if (n2.status === "pending") {
+        row._flag.className = "pal-writing";
+        row._flag.textContent = "writing\u2026";
+      } else if (isUnread(n2)) row._flag.className = "pal-dot";
+      if (n2.origin && (n2.origin.synthesis || n2.origin.lens)) {
+        row._badge.textContent = n2.origin.synthesis ? "\u2726 Synthesis" : lensLabel2(n2.origin.lens);
+        row._badge.hidden = false;
+      }
+      row._snippet.innerHTML = palSnippet(n2, tokens);
+      fragment.appendChild(row);
     });
-    palResults.innerHTML = html2;
+    for (var i2 = palItems.length; i2 < palRows.length; i2++) palRows[i2].hidden = true;
+    palResults.appendChild(fragment);
+    syncPalActiveDescendant();
+  }
+  function createPalRow(index) {
+    var row = document.createElement("div");
+    row.className = "pal-item";
+    row.id = "pal-option-" + index;
+    row.setAttribute("role", "option");
+    var top = document.createElement("div");
+    top.className = "pal-t";
+    row._flag = document.createElement("span");
+    row._title = document.createElement("span");
+    row._title.className = "pal-title";
+    row._badge = document.createElement("span");
+    row._badge.className = "lens-badge";
+    row._kbd = document.createElement("kbd");
+    row._kbd.className = "pal-kbd";
+    row._snippet = document.createElement("div");
+    row._snippet.className = "pal-s";
+    top.append(row._flag, row._title, row._badge, row._kbd);
+    row.append(top, row._snippet);
+    return row;
+  }
+  function syncPalActiveDescendant() {
+    for (var i2 = 0; i2 < palRows.length; i2++) palRows[i2].setAttribute("aria-selected", i2 === palSel && !palRows[i2].hidden ? "true" : "false");
+    if (palRows[palSel] && !palRows[palSel].hidden) palText.setAttribute("aria-activedescendant", palRows[palSel].id);
+    else palText.removeAttribute("aria-activedescendant");
   }
   function paletteCommandItems(tokens) {
     if (!palCanvasCommands) return [];
@@ -4666,6 +4820,7 @@ var RabbitholeFrozenClient = (() => {
     palSel = Math.max(0, Math.min(palItems.length - 1, palSel + delta));
     var items = palResults.querySelectorAll(".pal-item");
     for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
+    syncPalActiveDescendant();
     if (items[palSel]) items[palSel].scrollIntoView({ block: "nearest" });
   }
   function commitPal(source2) {
@@ -4694,6 +4849,7 @@ var RabbitholeFrozenClient = (() => {
       palSel = idx;
       var items = palResults.querySelectorAll(".pal-item");
       for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
+      syncPalActiveDescendant();
     }
   }
 
@@ -4704,7 +4860,7 @@ var RabbitholeFrozenClient = (() => {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  // src/ui/primitives/button.js
+  // src/core/html/button-markup.js
   var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
   function attribute(name, value) {
     if (value === void 0 || value === false || value === null) return "";
@@ -4805,13 +4961,13 @@ var RabbitholeFrozenClient = (() => {
   </div>
 </div>
 
-<div id="palette"><div id="palette-panel">
+<div id="palette" hidden><div id="palette-panel">
   <div class="pal-input">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <input id="pal-text" placeholder="Search this Rabbithole\u2026" autocomplete="off" spellcheck="false">
+    <input id="pal-text" placeholder="Search this Rabbithole\u2026" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
     <kbd>esc</kbd>
   </div>
-  <div id="pal-results"></div>
+  <div id="pal-results" role="listbox" aria-label="Search results"></div>
 </div></div>
 
 <div id="peek"></div>
@@ -4981,6 +5137,79 @@ var RabbitholeFrozenClient = (() => {
     return html2;
   }
 
+  // src/ui/focus-trap.js
+  var FOCUSABLE2 = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+  function activateFocusTrap(root, options2) {
+    if (!root) return function() {
+    };
+    options2 = options2 || {};
+    var previous = document.activeElement;
+    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
+    function focusables() {
+      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE2)) : [];
+      return all.filter(function(el) {
+        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
+      });
+    }
+    function focusInitial() {
+      var target = options2.initialFocus || focusables()[0] || root;
+      try {
+        target.focus({ preventScroll: true });
+      } catch (e) {
+        try {
+          target.focus();
+        } catch (_e) {
+        }
+      }
+    }
+    function onKeydown2(e) {
+      if (e.key === "Escape" && typeof options2.onEscape === "function") {
+        e.preventDefault();
+        e.stopPropagation();
+        options2.onEscape(e);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      var items = focusables();
+      if (!items.length) {
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeydown2, true);
+    setTimeout(focusInitial, 0);
+    return function deactivateFocusTrap() {
+      document.removeEventListener("keydown", onKeydown2, true);
+      if (options2.restoreFocus !== false && previous && previous.focus) {
+        try {
+          previous.focus({ preventScroll: true });
+        } catch (e) {
+          try {
+            previous.focus();
+          } catch (_e) {
+          }
+        }
+      }
+    };
+  }
+
   // src/ui/overlay/anchor.js
   function tokenPx(surface, name) {
     var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
@@ -5057,71 +5286,6 @@ var RabbitholeFrozenClient = (() => {
       resizeObserver == null ? void 0 : resizeObserver.disconnect();
       mutationObserver == null ? void 0 : mutationObserver.disconnect();
     } };
-  }
-
-  // src/ui/overlay/layer-stack.js
-  var layers = [];
-  function focus(element) {
-    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      try {
-        element.focus();
-      } catch (_error) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function onKeydown(event) {
-    if (event.key !== "Escape") return;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnEscape) return;
-    event.preventDefault();
-    event.stopPropagation();
-    layer.onClose("escape");
-  }
-  function onPointerdown(event) {
-    var _a2;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnOutsidePointer) return;
-    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
-    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
-    event.preventDefault();
-    layer.onClose("outside-pointer");
-    if (layer.restoreFocus) setTimeout(function() {
-      if (!focus(layer.trigger)) focus(layer.previousFocus);
-    }, 0);
-  }
-  function syncListeners() {
-    var method = layers.length ? "addEventListener" : "removeEventListener";
-    document[method]("keydown", onKeydown, true);
-    document[method]("pointerdown", onPointerdown, true);
-  }
-  function registerLayer(options2) {
-    var layer = {
-      element: options2.element,
-      trigger: options2.trigger || null,
-      onClose: options2.onClose,
-      closeOnEscape: options2.closeOnEscape !== false,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
-      restoreFocus: options2.restoreFocus !== false,
-      previousFocus: document.activeElement
-    };
-    layers.push(layer);
-    if (layers.length === 1) syncListeners();
-    var active = true;
-    return function unregisterLayer(settings) {
-      if (!active) return;
-      active = false;
-      var index = layers.indexOf(layer);
-      if (index !== -1) layers.splice(index, 1);
-      if (!layers.length) syncListeners();
-      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
-        if (!focus(layer.trigger)) focus(layer.previousFocus);
-      }
-    };
   }
 
   // src/ui/primitives/popover.js

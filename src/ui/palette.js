@@ -2,7 +2,7 @@ import {
   esc,
   goToNode,
   isUnread,
-  lensBadgeHtml,
+  lensLabel,
   mode,
   motionSourceFromEvent,
   nodes,
@@ -12,7 +12,7 @@ import {
   truncate
 } from "./core.js";
 import { frameAll, tidy } from "./canvas-view.js";
-import { activateFocusTrap } from "./focus-trap.js";
+import { openDialog } from "./primitives/dialog.js";
 
 var paletteHooks = {
   hideAsk: function(){},
@@ -37,9 +37,10 @@ export function registerPaletteHooks(hooks) {
     }
     return node._plain || "";
   }
-  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palTrap = null;
+  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palDialog = null, palRows = [];
 export function initPalette(){
-  paletteEl.addEventListener("mousedown", function(e){ if (e.target === paletteEl) closePalette(); });
+  palText.setAttribute("role", "combobox");
+  palText.setAttribute("aria-expanded", "false");
   palText.addEventListener("input", function(){ renderPalette(palText.value); });
   palText.addEventListener("keydown", onPaletteKeydown);
   palResults.addEventListener("click", onPaletteClick);
@@ -54,19 +55,28 @@ export function openPalette(){
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
-    if (palTrap) palTrap();
-    palTrap = activateFocusTrap(paletteEl, { initialFocus: palText, onEscape: closePalette });
+    if (palDialog) palDialog.close();
+    palDialog = openDialog({
+      dialog: document.getElementById("palette-panel"),
+      backdrop: paletteEl,
+      label: palText.getAttribute("aria-label") || palText.placeholder,
+      initialFocus: palText,
+      onClose: function(){
+        palOpen = false;
+        palCanvasCommands = false;
+        paletteEl.classList.remove("visible");
+        palText.setAttribute("aria-expanded", "false");
+        palText.removeAttribute("aria-activedescendant");
+        palDialog = null;
+      }
+    });
+    palText.setAttribute("aria-expanded", "true");
   }
 export function closePalette(){
-    palOpen = false;
-    palCanvasCommands = false;
-    paletteEl.classList.remove("visible");
-    if (palTrap){ palTrap(); palTrap = null; }
-    palText.blur();
+    if (palDialog) palDialog.close();
   }
   function onPaletteKeydown(e){
-    if (e.key === "Escape"){ e.stopPropagation(); closePalette(); }
-    else if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
+    if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
     else if (e.key === "ArrowUp"){ e.preventDefault(); movePalSel(-1); }
     else if (e.key === "Enter"){ e.preventDefault(); commitPal("keyboard"); }
   }
@@ -96,28 +106,71 @@ export function closePalette(){
     palItems = scored.map(function(s){ return { type: "node", id: s.n.id }; }).concat(paletteCommandItems(tokens));
     palSel = 0;
     if (!palItems.length){
-      palResults.innerHTML = tokens.length ? '<div class="pal-empty">Nothing in this hole matches that.</div>' : "";
+      palRows.forEach(function(row){ row.hidden = true; });
+      palText.removeAttribute("aria-activedescendant");
+      var empty = palResults.querySelector(".pal-empty");
+      if (!empty){ empty = document.createElement("div"); empty.className = "pal-empty"; palResults.appendChild(empty); }
+      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
+      empty.hidden = !tokens.length;
       return;
     }
-    var html = "";
+    var empty = palResults.querySelector(".pal-empty");
+    if (empty) empty.hidden = true;
+    var fragment = document.createDocumentFragment();
     palItems.forEach(function(item, i){
+      var row = palRows[i] || createPalRow(i);
+      palRows[i] = row;
+      row.hidden = false;
+      row.dataset.idx = i;
+      row.classList.toggle("sel", i === palSel);
+      row.classList.toggle("pal-command", item.type === "command");
+      row._flag.textContent = "";
+      row._flag.className = "";
+      row._badge.hidden = true;
+      row._kbd.hidden = true;
+      row._snippet.hidden = item.type === "command";
       if (item.type === "command"){
-        html += '<div class="pal-item pal-command' + (i === palSel ? " sel" : "") + '" data-idx="' + i + '">';
-        html += '<div class="pal-t"><span class="pal-title">' + esc(item.name) + '</span><kbd class="pal-kbd">' + esc(item.kbd) + '</kbd></div>';
-        html += '</div>';
+        row._title.textContent = item.name;
+        row._kbd.textContent = item.kbd;
+        row._kbd.hidden = false;
+        fragment.appendChild(row);
         return;
       }
       var n = nodes[item.id];
       if (!n) return;
-      var badge = (n.origin && n.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
-        : (n.origin && n.origin.lens) ? lensBadgeHtml(n.origin.lens) : "";
-      var flags = (n.status === "pending") ? '<span class="pal-writing">writing…</span>' : (isUnread(n) ? '<span class="pal-dot"></span>' : "");
-      html += '<div class="pal-item' + (i === palSel ? " sel" : "") + '" data-idx="' + i + '">';
-      html += '<div class="pal-t">' + flags + '<span class="pal-title">' + esc(n.title || "Untitled") + '</span>' + badge + '</div>';
-      html += '<div class="pal-s">' + palSnippet(n, tokens) + '</div>';
-      html += '</div>';
+      row._title.textContent = n.title || "Untitled";
+      if (n.status === "pending"){ row._flag.className = "pal-writing"; row._flag.textContent = "writing…"; }
+      else if (isUnread(n)) row._flag.className = "pal-dot";
+      if (n.origin && (n.origin.synthesis || n.origin.lens)){
+        row._badge.textContent = n.origin.synthesis ? "✦ Synthesis" : lensLabel(n.origin.lens);
+        row._badge.hidden = false;
+      }
+      row._snippet.innerHTML = palSnippet(n, tokens);
+      fragment.appendChild(row);
     });
-    palResults.innerHTML = html;
+    for (var i = palItems.length; i < palRows.length; i++) palRows[i].hidden = true;
+    palResults.appendChild(fragment);
+    syncPalActiveDescendant();
+  }
+  function createPalRow(index){
+    var row = document.createElement("div");
+    row.className = "pal-item";
+    row.id = "pal-option-" + index;
+    row.setAttribute("role", "option");
+    var top = document.createElement("div"); top.className = "pal-t";
+    row._flag = document.createElement("span");
+    row._title = document.createElement("span"); row._title.className = "pal-title";
+    row._badge = document.createElement("span"); row._badge.className = "lens-badge";
+    row._kbd = document.createElement("kbd"); row._kbd.className = "pal-kbd";
+    row._snippet = document.createElement("div"); row._snippet.className = "pal-s";
+    top.append(row._flag, row._title, row._badge, row._kbd);
+    row.append(top, row._snippet);
+    return row;
+  }
+  function syncPalActiveDescendant(){
+    for (var i = 0; i < palRows.length; i++) palRows[i].setAttribute("aria-selected", i === palSel && !palRows[i].hidden ? "true" : "false");
+    if (palRows[palSel] && !palRows[palSel].hidden) palText.setAttribute("aria-activedescendant", palRows[palSel].id);
+    else palText.removeAttribute("aria-activedescendant");
   }
   function paletteCommandItems(tokens){
     if (!palCanvasCommands) return [];
@@ -175,6 +228,7 @@ export function closePalette(){
     palSel = Math.max(0, Math.min(palItems.length - 1, palSel + delta));
     var items = palResults.querySelectorAll(".pal-item");
     for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel);
+    syncPalActiveDescendant();
     if (items[palSel]) items[palSel].scrollIntoView({ block: "nearest" });
   }
   function commitPal(source){
@@ -199,5 +253,5 @@ export function closePalette(){
     var it = e.target.closest(".pal-item");
     if (!it) return;
     var idx = Number(it.dataset.idx) || 0;
-    if (idx !== palSel){ palSel = idx; var items = palResults.querySelectorAll(".pal-item"); for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel); }
+    if (idx !== palSel){ palSel = idx; var items = palResults.querySelectorAll(".pal-item"); for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel); syncPalActiveDescendant(); }
   }

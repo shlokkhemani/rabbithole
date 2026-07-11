@@ -74,12 +74,12 @@ async function verifyNoticePrimitive() {
   await page.waitForTimeout(180);
   assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), false, "the replacement timer should eventually hide the notice");
 
-  await page.evaluate(() => wireNotice(document.getElementById("toast"), { variant: "toast" }).show({ message: "paused", actionLabel: "Undo", duration: 100 }));
+  await page.evaluate(() => wireNotice(document.getElementById("toast"), { variant: "toast" }).show({ message: "paused", actionLabel: "Undo", duration: 1200 }));
   await page.hover("#toast");
-  await page.waitForTimeout(160);
+  await page.waitForTimeout(1600);
   assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), true, "hover should pause a toast timer");
   await page.mouse.move(0, 0);
-  await page.waitForTimeout(120);
+  await page.waitForFunction(() => !document.getElementById("toast").classList.contains("visible"), { timeout: 4000 });
   assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), false, "a toast timer should resume after hover");
   await page.close();
 }

@@ -46,6 +46,10 @@ export function reduceHoleEvent(state, event, options = {}) {
       return reduceNodesUpdate(state, event);
     case "view_state":
       return withState({ ...state, view_state: normalizeViewState(event.state) });
+    case "hole_title":
+      return withState({ ...state, title: String(event.title ?? state.title) });
+    case "node_origin":
+      return reduceNodeOrigin(state, event);
     default:
       throw new Error(`Unsupported hole event: ${type}`);
   }
@@ -75,12 +79,13 @@ function reduceNodeProgress(state, event) {
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
   const nodes = cloneNodes(state);
-  Object.assign(node, {
+  const next = {
+    ...node,
     markdown: String(event.markdown ?? node.markdown ?? ""),
     base_url: event.base_url ?? node.base_url ?? null,
     base_url_source: event.base_url_source ?? node.base_url_source ?? null,
-  });
-  nodes.set(nodeId, node);
+  };
+  nodes.set(nodeId, next);
   return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
@@ -122,11 +127,6 @@ function reduceNodeAnswered(state, event) {
   next.base_url_source = base.base_url_source;
   maybeUpgradeBaseUrlFromFrontmatter(next);
   const nodes = cloneNodes(state);
-  if (current && state.nodes.has(nodeId)) {
-    Object.assign(current, next);
-    nodes.set(nodeId, current);
-    return withState({ ...state, nodes }, { answeredNode: current });
-  }
   nodes.set(nodeId, next);
   return withState({ ...state, nodes }, { answeredNode: next });
 }
@@ -152,8 +152,7 @@ function reduceNodeUpdate(state, event) {
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
   const nodes = cloneNodes(state);
-  Object.assign(node, applyNodeUpdateFields(node, event));
-  nodes.set(nodeId, node);
+  nodes.set(nodeId, applyNodeUpdateFields(node, event));
   return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
@@ -165,8 +164,16 @@ function reduceNodesUpdate(state, event) {
     const node = state.nodes.get(nodeId);
     if (!node) continue;
     if (!nodes) nodes = cloneNodes(state);
-    Object.assign(node, applyNodeUpdateFields(node, update));
-    nodes.set(nodeId, node);
+    nodes.set(nodeId, applyNodeUpdateFields(node, update));
   }
   return withState(nodes ? { ...state, nodes } : state);
+}
+
+function reduceNodeOrigin(state, event) {
+  const nodeId = String(event.node_id || "");
+  const node = state.nodes.get(nodeId);
+  if (!node) return withState(state);
+  const nodes = cloneNodes(state);
+  nodes.set(nodeId, { ...node, origin: event.origin ?? null });
+  return withState({ ...state, nodes }, { node_id: nodeId });
 }

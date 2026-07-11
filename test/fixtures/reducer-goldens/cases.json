@@ -66,5 +66,26 @@
     "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": { "mode": "reader", "node_id": null, "scroll": 0, "view": { "x": 4, "y": 0, "scale": 2.5 } }, "nodes": [] },
     "expected_effects": {}
   },
+  {
+    "name": "hole_title replaces the document title",
+    "initial": { "title": "Before", "root_id": "root", "nodes": [{ "id": "root" }] },
+    "events": [{ "event": { "type": "hole_title", "title": "After" } }],
+    "expected": { "hole_id": "", "title": "After", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_origin replaces opaque node metadata",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "origin": null }] },
+    "events": [{ "event": { "type": "node_origin", "node_id": "root", "origin": { "web_root_question": "Why?" } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "origin": { "web_root_question": "Why?" } }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "malformed known node_progress is a no-op",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "before" }] },
+    "events": [{ "event": { "type": "node_progress" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "before" }] },
+    "expected_effects": {}
+  },
   { "name": "unknown event type throws", "initial": { "nodes": [] }, "events": [{ "event": { "type": "future_event" } }], "expected_error": "Unsupported hole event: future_event" }
 ]

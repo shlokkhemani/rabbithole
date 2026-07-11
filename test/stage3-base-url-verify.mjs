@@ -194,7 +194,7 @@ async function runSessionLifecycleFixture() {
       question: "Explain",
     });
     session.queue.length = 0;
-    const partialNode = session.nodes.get(partialAsk.node_id);
+    let partialNode = session.nodes.get(partialAsk.node_id);
     assert.equal(partialNode.base_url, root.base_url);
     assert.equal(partialNode.base_url_source, "inherited");
     await session.answerBranch({
@@ -202,6 +202,7 @@ async function runSessionLifecycleFixture() {
       content: "![partial](img.png)",
       partial: true,
     });
+    partialNode = session.nodes.get(partialAsk.node_id);
     const partialHtml = await renderMarkdownToHtml(partialNode.markdown, { baseUrl: partialNode.base_url });
     assertIncludes(
       partialHtml,
@@ -220,13 +221,14 @@ async function runSessionLifecycleFixture() {
       question: "Open fetched child",
     });
     session.queue.length = 0;
-    const upgradeNode = session.nodes.get(upgradeAsk.node_id);
+    let upgradeNode = session.nodes.get(upgradeAsk.node_id);
     session.pushEvent({ status: "session_closed", session_id: session.id });
     const next = await session.answerBranch({
       requestId: upgradeAsk.request_id,
       title: "Fetched Child",
       content: ["---", "source: https://other.example/articles/page.md", "---", "![own](img.png)"].join("\n"),
     });
+    upgradeNode = session.nodes.get(upgradeAsk.node_id);
     assert.equal(next.status, "session_closed");
     assert.equal(upgradeNode.base_url, "https://other.example/articles/page.md");
     assert.equal(upgradeNode.base_url_source, "frontmatter");

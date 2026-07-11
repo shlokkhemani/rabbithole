@@ -22,12 +22,35 @@ function summarizeEffects(effects) {
   return out;
 }
 
+function deepFreeze(value, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  if (Object.isFrozen(value)) return value;
+  seen.add(value);
+  if (value instanceof Map) {
+    for (const [key, entry] of value) {
+      deepFreeze(key, seen);
+      deepFreeze(entry, seen);
+    }
+    const rejectMutation = () => { throw new TypeError("Cannot mutate frozen Map"); };
+    Object.defineProperties(value, {
+      set: { value: rejectMutation },
+      delete: { value: rejectMutation },
+      clear: { value: rejectMutation },
+    });
+  } else {
+    for (const entry of Object.values(value)) deepFreeze(entry, seen);
+  }
+  return Object.freeze(value);
+}
+
 function runCorpus(api, corpus) {
   return corpus.map((testCase) => {
     let state = api.createHoleState(testCase.initial);
     let effects = {};
     try {
       for (const step of testCase.events) {
+        deepFreeze(state);
+        deepFreeze(step.event);
         ({ state, effects } = api.reduceHoleEvent(state, step.event, step.options));
       }
       return { name: testCase.name, state: api.holeStateToHole(state), effects: summarizeEffects(effects) };
@@ -55,14 +78,16 @@ function assertGoldens(results, environment) {
 const nodeResults = runCorpus({ createHoleState, holeStateToHole, reduceHoleEvent }, cases);
 assertGoldens(nodeResults, "node");
 
-// Measurement point for the Phase 5 purity decision, not a product contract:
-// the cloned Map still contains the same node object, which Object.assign mutates.
+// Immutability is an engine contract: changed nodes are replaced while unchanged
+// nodes may remain shared. Frozen input makes mutation fail immediately.
 const priorState = createHoleState({ root_id: "root", nodes: [{ id: "root", markdown: "before" }] });
 const priorNode = priorState.nodes.get("root");
+deepFreeze(priorState);
 const mutationResult = reduceHoleEvent(priorState, { type: "node_progress", node_id: "root", markdown: "after" });
-assert.equal(priorNode.markdown, "after");
-assert.equal(priorState.nodes.get("root").markdown, "after");
-assert.strictEqual(mutationResult.state.nodes.get("root"), priorNode);
+assert.equal(priorNode.markdown, "before");
+assert.equal(priorState.nodes.get("root").markdown, "before");
+assert.notStrictEqual(mutationResult.state.nodes.get("root"), priorNode);
+assert.equal(mutationResult.state.nodes.get("root").markdown, "after");
 
 const bundle = await esbuild.build({
   stdin: {
@@ -84,10 +109,10 @@ try {
   const page = await browser.newPage();
   await page.setContent("<!doctype html><meta charset=utf-8><title>Reducer conformance</title>");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  browserResults = await page.evaluate(({ corpus, runner, summarizer }) => {
-    const run = (0, eval)(`(() => { const summarizeEffects = ${summarizer}; return ${runner}; })()`);
+  browserResults = await page.evaluate(({ corpus, runner, summarizer, freezer }) => {
+    const run = (0, eval)(`(() => { const summarizeEffects = ${summarizer}; const deepFreeze = ${freezer}; return ${runner}; })()`);
     return run(globalThis.ReducerUnderTest, corpus);
-  }, { corpus: cases, runner: runCorpus.toString(), summarizer: summarizeEffects.toString() });
+  }, { corpus: cases, runner: runCorpus.toString(), summarizer: summarizeEffects.toString(), freezer: deepFreeze.toString() });
 } finally {
   await browser.close();
 }
@@ -97,4 +122,4 @@ assert.deepEqual(browserResults, nodeResults, "Node and browser must produce ide
 
 // The stale-progress golden intentionally records today's last-write-wins gap.
 // Phase 5/6's {id, seq} order guard should replace and retire that known-defect expectation.
-console.log(`ok stage14: ${cases.length} reducer goldens conform in node and browser; mutation semantics measured`);
+console.log(`ok stage14: ${cases.length} reducer goldens conform in node and browser; frozen-input immutability enforced`);

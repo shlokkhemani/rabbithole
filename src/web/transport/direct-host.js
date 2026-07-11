@@ -268,7 +268,6 @@ export class DirectRabbitholeHost {
 
     const current = this.state.nodes.get(nodeId);
     const title = titleFromMarkdown(markdown) || current.title || "Untitled";
-    current.origin = null;
     this.dispatch({
       type: "node_answered",
       node_id: current.id,
@@ -283,7 +282,7 @@ export class DirectRabbitholeHost {
       font_scale: current.font_scale,
       read: true,
     });
-    this.state.title = title;
+    this.dispatch({ type: "hole_title", title });
     this.title = title;
     const finalNode = this.state.nodes.get(nodeId);
     this.abortByNode.delete(nodeId);
@@ -509,8 +508,12 @@ export function createPendingHoleFromQuestion(question) {
   const hole = createHoleFromMarkdown({ title, markdown: "" });
   const root = hole.nodes[0];
   root.status = "pending";
-  root.origin = { [WEB_ROOT_QUESTION]: normalized };
-  return hole;
+  const result = reduceHoleEvent(createHoleState(hole), {
+    type: "node_origin",
+    node_id: root.id,
+    origin: { [WEB_ROOT_QUESTION]: normalized },
+  });
+  return holeStateToHole(result.state);
 }
 
 export function titleFromMarkdown(markdown) {

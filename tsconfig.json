@@ -17,7 +17,9 @@
     "src/core/prompts/explainer-v1.js",
     "src/core/contracts/artifact.d.ts",
     "src/core/contracts/store.d.ts",
+    "src/core/contracts/engine.d.ts",
     "test/fixtures/contracts/artifact-fixture.js",
-    "test/fixtures/contracts/store-fixture.js"
+    "test/fixtures/contracts/store-fixture.js",
+    "test/fixtures/contracts/engine-fixture.js"
   ]
 }

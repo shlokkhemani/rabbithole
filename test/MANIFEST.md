@@ -249,8 +249,11 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | root delete throws | C2 | The starting document is protected from node deletion. | — |
 | node_update and nodes_update field application | C2 | Supported presentation fields must normalize consistently while unknown nodes remain untouched. | — |
 | view_state normalization | C2 | Persisted navigation state has a normalized shape and bounded camera scale. | — |
+| hole_title replaces document title | C2 | Internal title changes must flow through the immutable engine without changing MCP/SSE vocabulary. | — |
+| node_origin replaces opaque metadata | C2 | Internal origin changes must flow through the immutable engine without changing MCP/SSE vocabulary. | — |
+| malformed known node_progress is a no-op | C2 | Pins the reducer's current coercive/no-validation behavior for malformed trusted-engine input. | — |
 | unknown event type throws | C2 | Unsupported vocabulary must fail explicitly rather than silently diverge. | — |
-| prior-state node mutation probe | C3 | Measurement point for the Phase 5 purity decision; shared-node mutation is explicitly not a product contract. | — |
+| frozen-input reducer immutability | C2 | The reducer must not mutate its input state, node map, event, or node objects; changed nodes receive fresh identity. | — |
 | Node/Chromium reducer parity | C2 | The deterministic DOM-free reducer must produce identical projections in both supported execution contexts. | — |
 
 ## `stage15-security-migrations-verify.mjs`
@@ -304,16 +307,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 adds three C1 rows: `41 + 3 = 44`, so `184 + 3 = 187` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 adds three C2 rows and reclassifies the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total.
 
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 44 |
-| C2 behavioral product contract | 129 |
-| C3 implementation snapshot | 10 |
+| C2 behavioral product contract | 133 |
+| C3 implementation snapshot | 9 |
 | C4 known defect | 4 |
 | C5 design target | 0 |
-| **Total** | **187** |
+| **Total** | **190** |
 
 ## Known-defect fossils
 

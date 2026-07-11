@@ -20,6 +20,13 @@ export function buildCanvasHtml(hydration) {
   const liveSnapshotSource = frozen
     ? ""
     : `  window.__RABBITHOLE_FROZEN_CLIENT__ = ${serializeForInlineScript(getFrozenClientBundle())};\n`;
+  const liveSnapshotHoleHook = frozen
+    ? ""
+    : `      getSnapshotHole: async function(){
+        var response = await fetch("/snapshot-hole", { cache: "no-store" });
+        if (!response.ok) throw new Error("Snapshot document is unavailable");
+        return response.json();
+      },\n`;
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -42,7 +49,7 @@ ${getDompurifyScript()}
 	${liveSnapshotSource}${clientBundle}
 	  ${clientGlobal}.startRabbithole(hydration, {
 	    snapshotHooks: {
-	      getFrozenClientSource: function(){ return window.__RABBITHOLE_FROZEN_CLIENT__ || ""; },
+	${liveSnapshotHoleHook}      getFrozenClientSource: function(){ return window.__RABBITHOLE_FROZEN_CLIENT__ || ""; },
 	      getStylesheetText: function(){
 	        var style = document.head && document.head.querySelector("style:first-of-type");
 	        return style ? style.textContent : "";

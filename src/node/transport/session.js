@@ -7,6 +7,7 @@ import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } fr
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
+import { toPersistedHole } from "../../core/schema.js";
 import { lineageTitlesFromMap } from "../../core/model.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
@@ -771,6 +772,15 @@ export class RabbitHoleSession {
 
     if (req.method === "GET" && assetRequestName !== undefined) {
       await this.serveAsset(assetRequestName, res);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/snapshot-hole") {
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      });
+      res.end(JSON.stringify(toPersistedHole(this.toHole())));
       return;
     }
 

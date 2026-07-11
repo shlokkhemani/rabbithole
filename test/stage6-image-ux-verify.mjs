@@ -3,9 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { chromium } from "playwright";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
+import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../src/core/portable-import.js";
+import { validatePortableProjection } from "../src/core/portable-projection.js";
 import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { CANVAS_STYLES } from "../src/core/html/styles.js";
+import { addAssetsToHole, listAssets } from "../src/node/fs-store.js";
 import { createSession, closeAllSessions } from "../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
@@ -103,6 +107,74 @@ async function runPageFixtures() {
   }
 }
 
+async function runLiveSnapshotDownload() {
+  const referencedBytes = Buffer.from("stage6 referenced snapshot asset");
+  const unreferencedBytes = Buffer.from("stage6 unreferenced snapshot asset");
+  const referencedPath = path.join(process.env.RABBITHOLE_DIR, "diagram.png");
+  const unreferencedPath = path.join(process.env.RABBITHOLE_DIR, "unused.png");
+  await fs.writeFile(referencedPath, referencedBytes);
+  await fs.writeFile(unreferencedPath, unreferencedBytes);
+  await addAssetsToHole("stage6-live-snapshot", [
+    { name: "diagram.png", file_path: referencedPath },
+    { name: "unused.png", file_path: unreferencedPath },
+  ]);
+
+  const now = new Date().toISOString();
+  const session = await createSession({
+    holeId: "stage6-live-snapshot",
+    title: "Stage 6 Live Snapshot",
+    rootId: "root",
+    nodes: [
+      {
+        id: "root", parent_id: null, title: "Root",
+        markdown: "Referenced asset ![diagram](asset:diagram.png)",
+        origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1,
+        collapsed: false, status: "answered", read: true, created_at: now,
+      },
+      {
+        id: "pending", parent_id: "root", title: "Pending",
+        markdown: "half-streamed markdown must not escape", question: "Finish this answer",
+        origin: null, position: { x: 420, y: 0 }, size: null, font_scale: 1,
+        collapsed: false, status: "pending", read: false, created_at: now,
+      },
+    ],
+    assetNames: new Set(await listAssets("stage6-live-snapshot")),
+    isResume: false,
+    renderPage: (hydration) => buildCanvasHtml(hydration),
+  });
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ acceptDownloads: true });
+    await page.goto(session.url);
+    await page.waitForSelector("#r-share");
+    const liveStyles = await page.locator("head style:first-of-type").textContent();
+
+    await page.click("#r-share");
+    await page.waitForSelector("#sharemenu.visible");
+    const downloadPromise = page.waitForEvent("download");
+    await page.click("#sm-export");
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    assert(downloadPath, "snapshot download should expose artifact bytes");
+    const snapshotHtml = await fs.readFile(downloadPath, "utf8");
+
+    const payloadText = extractSnapshotPayload(snapshotHtml);
+    const projection = validatePortableProjection(JSON.parse(payloadText));
+    assert.equal(snapshotHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "snapshot should contain exactly one inert payload");
+    assertIncludes(snapshotHtml, `<style>\n${liveStyles}\n</style>`, "snapshot should embed the canonical served stylesheet");
+    assertIncludes(snapshotHtml, "RabbitholeFrozenClient.startPortableSnapshot", "snapshot should use derived portable hydration");
+    assert.deepEqual(Object.keys(projection.assets), ["diagram.png"], "snapshot should embed referenced assets only");
+    assert.equal(projection.assets["diagram.png"], referencedBytes.toString("base64"));
+    assert.equal(projection.hole.nodes.find((node) => node.id === "pending")?.markdown, "", "snapshot endpoint should apply persisted pending-node policy");
+    console.log("ok image ux: live MCP share snapshot download is canonical and portable");
+  } finally {
+    await browser.close();
+    await closeAllSessions("stage6_snapshot_test_complete");
+  }
+}
+
 await runMarkdownSmoke();
 await runPageFixtures();
+await runLiveSnapshotDownload();
 console.log("stage6 image ux verification passed");

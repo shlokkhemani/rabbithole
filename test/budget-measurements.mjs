@@ -21,7 +21,7 @@ export const budgetDefinitions = [
   ["snapshot_assets_bytes", "Frozen HTML size for the PNG/SVG reference corpus", "bytes", 0.05, "Exact UTF-8 snapshot size including assets."],
   ["snapshot_math_build_ms", "Mean frozen-HTML build time (20 warm builds) for the math-heavy reference corpus", "ms", 2, "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.", 25],
   ["snapshot_assets_build_ms", "Mean frozen-HTML build time (20 warm builds) for the PNG/SVG reference corpus", "ms", 2, "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.", 25],
-  ["cold_open_ms", "Cold navigation to the visible interactive landing composer", "ms", 2, "Minimum of isolated browser-context samples; 3x ceiling absorbs startup noise."],
+  ["cold_open_ms", "Cold navigation to the visible interactive setup landing", "ms", 2, "Minimum of isolated browser-context samples; 3x ceiling absorbs startup noise."],
   ["stream_dom_batches", "DOM mutation batches for a fixed 40-update synthetic stream", "batches", 1, "Minimum observed batch count on an otherwise-quiescent page; 2x ceiling with a 6-batch floor catches loss of rAF coalescing (which produces dozens of batches) without flaking.", 6],
   ["stream_update_ms", "Total browser duration for a fixed 40-update synthetic stream", "ms", 2, "Minimum of repeated samples; 3x ceiling absorbs browser scheduling noise."],
   ["save_window_ms", "Elapsed time from final streamed DOM update until the final markdown is persisted", "ms", 1, "Minimum of repeated samples; 2x ceiling with a 100ms floor (poll quantization) still catches a lost flush-on-complete, which costs 400ms+.", 100],
@@ -108,9 +108,9 @@ async function measureColdOpen(browser, baseUrl) {
   try {
     await page.goto(`${baseUrl}/?budget=${Date.now()}`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => {
-      const modal = document.getElementById("composer-modal");
-      const first = document.getElementById("composer-path-ask");
-      return window.__rabbitholeTest && modal && !modal.hidden && first && first.offsetParent !== null;
+      const landing = document.getElementById("blank-start");
+      const setup = document.getElementById("blank-start-setup");
+      return window.__rabbitholeTest && landing && !landing.hidden && setup && setup.offsetParent !== null;
     });
     return await page.evaluate(() => performance.now());
   } finally {
@@ -120,11 +120,22 @@ async function measureColdOpen(browser, baseUrl) {
 
 async function measureStreamAndSave(browser, baseUrl) {
   const context = await browser.newContext();
-  await context.addInitScript((key) => localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key })), MOCK_KEY);
+  await context.addInitScript((key) => {
+    localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key }));
+    localStorage.setItem("rh-web-settings", JSON.stringify({
+      preset: "openrouter",
+      base_url: "https://openrouter.ai/api/v1",
+      answer_model: "anthropic/claude-sonnet-5",
+      author_model: "anthropic/claude-sonnet-5",
+      session_only: false,
+      generation_setup: { version: 1, preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5" },
+    }));
+  }, MOCK_KEY);
   const page = await context.newPage();
   await routeProvider(page);
   try {
     await page.goto(`${baseUrl}/?stream-budget=${Date.now()}`, { waitUntil: "networkidle" });
+    await page.click("#blank-start-new");
     await page.evaluate(() => {
       // Streaming repaints swap innerHTML on the card body (the parent of
       // .doc-content), so no ancestor filter can see them; the page is

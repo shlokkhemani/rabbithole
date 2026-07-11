@@ -40,6 +40,7 @@ const browser = await chromium.launch();
 try {
   await verifyNoticePrimitive();
   await verifyLandingAndComposer();
+  await verifySetupReadinessInvalidation();
   await verifyStatefulCheckCycle();
   await verifyComboboxCatalogStates();
   await verifyAskKeyUxAndRail();
@@ -152,7 +153,26 @@ async function verifyNoticePrimitive() {
 async function verifyLandingAndComposer() {
   const context = await browser.newContext();
   const page = await context.newPage();
+  await page.route(KEY_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { label: "test key" } }) }));
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.waitForSelector("#blank-start:not([hidden])");
+  assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
+  assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
+  assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
+  await page.keyboard.press("N");
+  await page.waitForSelector("#web-settings-popover");
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
+  assert.equal(await page.locator("#composer-modal").isVisible(), false, "N should open setup, not the composer, before readiness");
+  await page.fill("#api-key", MOCK_KEY);
+  await page.waitForSelector("#api-key-status.valid");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "a validated key should not bypass explicit setup completion");
+  await page.click("#complete-model-setup");
+  await page.waitForSelector("#web-settings-popover", { state: "detached" });
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false);
+  assert.equal(await page.locator("#blank-start-setup").innerText(), "Model settings");
+  await page.keyboard.press("N");
   await page.waitForSelector("#composer-modal:not([hidden])");
   assert.deepEqual(await page.locator("#composer-card").evaluate((dialog) => ({
     role: dialog.getAttribute("role"),
@@ -163,6 +183,8 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.getAttribute("#t-rail", "aria-expanded"), "false", "sidebar toggle should expose its default collapsed state");
   await page.evaluate(() => localStorage.setItem("rh-rail-open", "1"));
   await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector("#blank-start:not([hidden])");
+  await page.keyboard.press("N");
   await page.waitForSelector("#composer-modal:not([hidden])");
   assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("rail-open")), false, "legacy sidebar state should not override the calm default");
   assert.equal(await page.locator(".web-home").count(), 0, "form-based home page must be gone");
@@ -359,6 +381,60 @@ async function verifyComboboxCatalogStates() {
   await verifyLocalComboboxStates(fixture);
 }
 
+async function verifySetupReadinessInvalidation() {
+  const catalog = { data: [
+    { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: "openai/gpt-5", name: "OpenAI: GPT-5", pricing: { prompt: "0.00000125", completion: "0.00001" } },
+  ] };
+  const context = await browser.newContext();
+  await seedConfiguredOpenRouter(context);
+  const page = await context.newPage();
+  await page.route(KEY_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { label: "test key" } }) }));
+  await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(catalog) }));
+  await page.route(LOCAL_MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }] }) }));
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "matching setup fingerprint should unlock creation");
+
+  await page.click("#blank-start-setup");
+  await page.click('[data-provider="custom"]');
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing provider should invalidate completed setup");
+  await page.click('[data-provider="openrouter"]');
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "returning to the completed provider fingerprint should restore readiness");
+
+  await page.click("#model-select");
+  await page.waitForSelector(".model-option[data-value='openai/gpt-5']");
+  await page.click(".model-option[data-value='openai/gpt-5']");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing model should invalidate completed setup");
+  assert.equal(await page.locator("#complete-model-setup").count(), 1, "model invalidation should immediately offer setup completion");
+  await page.click("#model-select");
+  await page.waitForSelector(".model-option[data-value='anthropic/claude-sonnet-5']");
+  await page.click(".model-option[data-value='anthropic/claude-sonnet-5']");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "restoring the completed model fingerprint should restore readiness");
+  await context.close();
+
+  const local = await browser.newContext();
+  await local.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    answer_model: "llama3.2",
+    author_model: "llama3.2",
+    session_only: true,
+    generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+  })));
+  const localPage = await local.newPage();
+  await localPage.route(LOCAL_MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }] }) }));
+  await localPage.goto(baseUrl, { waitUntil: "networkidle" });
+  assert.equal(await localPage.locator("#blank-start-new").isDisabled(), false, "matching local endpoint fingerprint should unlock creation");
+  await localPage.click("#blank-start-setup");
+  await localPage.locator(".settings-advanced summary").click();
+  await localPage.fill("#provider-base", "http://localhost:12345/v1");
+  await localPage.press("#provider-base", "Tab");
+  assert.equal(await localPage.locator("#blank-start-new").isDisabled(), true, "changing endpoint should invalidate completed setup");
+  await local.close();
+
+  console.log("ok stage10: provider, endpoint, and model changes invalidate completed setup fingerprints");
+}
+
 async function verifyLocalComboboxStates(openRouterFixture) {
   const run = async (handler) => {
     const context = await browser.newContext();
@@ -370,9 +446,10 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     return { context, page };
   };
 
-  const found = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }, { id: "qwen3:8b" }] }) }));
+  const found = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "nomic-embed-text:latest" }, { id: "llama3.2" }, { id: "qwen3:8b" }] }) }));
+  await found.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("2 installed models"));
   await found.page.click("#local-model");
-  assert.match(await found.page.locator("#local-model-listbox").innerText(), /Looking for installed models/);
+  assert.equal(await found.page.locator(".model-option[data-value='nomic-embed-text:latest']").count(), 0, "embedding-only Ollama models should not be offered for generation");
   await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
   await found.page.click(".model-option[data-value='qwen3:8b']");
   const foundSettings = await found.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")));
@@ -380,9 +457,8 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await found.context.close();
 
   const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
-  await none.page.click("#local-model");
-  await none.page.waitForSelector(".combobox-empty");
-  assert.match(await none.page.locator(".combobox-empty").innerText(), /No models are installed.*ollama list/is);
+  await none.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("No installed models"));
+  assert.equal(await none.page.locator("#local-model-retry").count(), 1);
   await none.context.close();
 
   let attempts = 0;
@@ -391,13 +467,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     return route.fulfill(attempts === 1 ? { status: 500, headers: corsHeaders(), body: "failed" }
       : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "recovered:latest" }] }) });
   });
-  await failed.page.click("#local-model");
-  await failed.page.waitForSelector(".combobox-error");
-  await failed.page.fill("#local-model-input", "typed:exact");
-  assert.equal(await failed.page.locator("[role=option][data-value='typed:exact']").count(), 1);
-  await failed.page.fill("#local-model-input", "");
-  await failed.page.click("[data-combobox-retry]");
-  await failed.page.waitForSelector("[role=option][data-value='recovered:latest']");
+  await failed.page.waitForSelector("#local-model-retry");
+  await failed.page.click("#local-model-retry");
+  await failed.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("1 installed model"));
   assert.equal(attempts, 2);
   await failed.context.close();
 
@@ -420,8 +492,7 @@ async function openFreshSettings(page) {
 }
 
 async function switchSettingsToLocal(page) {
-  await page.click("#provider-select");
-  await page.click("#provider-select-listbox [role=option]:has-text('Local')");
+  await page.click('[data-provider="custom"]');
   await page.waitForSelector("#local-model");
 }
 
@@ -438,28 +509,26 @@ async function verifyAskKeyUxAndRail() {
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#blank-start-setup");
+  assert.equal(await page.getAttribute("#api-key-toggle", "aria-pressed"), "false");
+  await page.click("#api-key-toggle");
+  assert.equal(await page.getAttribute("#api-key", "type"), "text", "shared settings should reveal the key");
+  assert.equal(await page.getAttribute("#api-key-toggle", "aria-pressed"), "true");
+  await page.click("#api-key-toggle");
+  assert.equal(await page.getAttribute("#api-key", "type"), "password", "shared settings should hide the key again");
+  assert.equal(await page.isChecked("#session-only"), true, "remember-on-this-device should default on");
+  await page.fill("#api-key", "sk-ant-fake-key");
+  await page.waitForSelector("text=That looks like an Anthropic key");
+  await page.fill("#api-key", BAD_KEY);
+  await page.waitForSelector(".key-status.invalid");
+  await page.fill("#api-key", MOCK_KEY);
+  await page.waitForSelector("#api-key-status.valid");
+  await page.click("#complete-model-setup");
+  await page.waitForSelector("#web-settings-popover", { state: "detached" });
+  await page.click("#blank-start-new");
   await page.click("#composer-path-ask");
   await page.fill("#composer-input", "Explain the attention mechanism");
   await page.click("#composer-primary");
-  await page.waitForSelector("#composer-key-panel:not([hidden])");
-  assert.equal(await page.inputValue("#composer-input"), "Explain the attention mechanism");
-  assert.equal(await page.locator("#composer-key").count(), 1, "ask flow should expose the OpenRouter key input");
-  assert.equal(await page.getAttribute("#composer-key-toggle", "aria-pressed"), "false");
-  await page.click("#composer-key-toggle");
-  assert.equal(await page.getAttribute("#composer-key", "type"), "text", "inline key eye should reveal the key");
-  assert.equal(await page.getAttribute("#composer-key-toggle", "aria-pressed"), "true", "inline key eye should expose its pressed state");
-  await page.click("#composer-key-toggle");
-  assert.equal(await page.getAttribute("#composer-key", "type"), "password", "inline key eye should hide the key again");
-  assert.equal(await page.getAttribute("#composer-key-toggle", "aria-pressed"), "false");
-  assert.match(await page.locator("#composer-key-panel").innerText(), /Stored only in this browser/i);
-  assert.equal(await page.locator("#composer-model").count(), 0, "first-run key moment should not demand a model decision");
-  assert.equal(await page.isChecked("#composer-remember"), true, "remember-on-this-device should default on");
-
-  await page.fill("#composer-key", "sk-ant-fake-key");
-  await page.waitForSelector("text=That looks like an Anthropic key");
-  await page.fill("#composer-key", BAD_KEY);
-  await page.waitForSelector(".key-status.invalid");
-  await page.fill("#composer-key", MOCK_KEY);
   await page.waitForSelector(".node .doc-content[data-node-id] .loading");
   const rootIdWhileLoading = await page.getAttribute(".node .doc-content[data-node-id]", "data-node-id");
   assert.equal(await page.locator(".node").count(), 1, "the first answer should begin in the real root node");
@@ -597,41 +666,13 @@ async function verifyAskKeyUxAndRail() {
   }, null, { timeout: 5000 });
   assert.equal(await page.locator("#save-settings, #web-settings-close").count(), 0, "settings should apply live without save or close buttons");
   assert.equal(await page.locator(".settings-section").first().getAttribute("class"), "settings-section provider-section", "provider should be the first settings decision");
-  assert.equal(await page.locator("#provider-select").evaluate((select) => select.tagName), "BUTTON", "provider should use the owned Select trigger");
-  assert.equal(await page.getAttribute("#provider-select", "aria-haspopup"), "listbox");
-  assert.equal(await page.getAttribute("#provider-select", "aria-expanded"), "false");
-  assert.match(await page.getAttribute("#provider-select", "aria-labelledby"), /provider-select-label/);
-  await page.focus("#provider-select");
-  await page.keyboard.press("Enter");
-  assert.equal(await page.getAttribute("#provider-select", "aria-expanded"), "true");
-  assert.deepEqual(await page.locator("#provider-select-listbox [role=option]").allTextContents(), ["OpenRouter", "Local"]);
-  assert.deepEqual(await page.locator("#provider-select-listbox [role=option]").evaluateAll((options) => options.map((option) => option.getAttribute("aria-selected"))), ["true", "false"]);
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const selectGap = await page.evaluate(() => {
-    const trigger = document.getElementById("provider-select").getBoundingClientRect();
-    const list = document.getElementById("provider-select-listbox");
-    const surface = list.getBoundingClientRect();
-    return { actual: surface.top - trigger.bottom, token: parseFloat(getComputedStyle(list).getPropertyValue("--surface-gap")) };
-  });
-  assert(
-    Number.isFinite(selectGap.token) && Math.abs(selectGap.actual - selectGap.token) <= 1,
-    `Select listbox should use the surface gap token, got actual ${selectGap.actual}px and token ${Number.isFinite(selectGap.token) ? `${selectGap.token}px` : "NaN"}`
-  );
-  await page.keyboard.press("Escape");
-  assert.equal(await page.locator("#provider-select-listbox").count(), 0, "first Escape should close only the child Select layer");
-  assert.equal(await page.locator("#web-settings-popover").isVisible(), true, "settings should remain after child Escape");
-  assert.equal(await page.evaluate(() => document.activeElement?.id), "provider-select", "Escape should restore Select trigger focus");
-  await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "Local", "ArrowDown should open and rove to the next option");
-  await page.keyboard.press("Home");
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "OpenRouter");
-  await page.keyboard.press("End");
-  await page.keyboard.press("Enter");
-  assert.equal(await page.locator("#provider-select-listbox").count(), 0);
-  assert.equal(await page.evaluate(() => document.activeElement?.id), "provider-select", "commit should restore focus to the re-rendered trigger");
-  assert.equal(await page.getAttribute("#provider-select", "data-value"), "custom");
-  assert.equal(await page.locator(".endpoint-section #provider-base").count(), 1, "Local should surface its endpoint immediately");
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
+  await page.click('[data-provider="custom"]');
+  assert.equal(await page.getAttribute('[data-provider="custom"]', "aria-pressed"), "true");
+  await page.waitForSelector(".local-model-section .field-hint");
+  await page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("installed models"));
+  assert.equal(await page.locator("#provider-base").count(), 1, "Local endpoint should remain available in Connection settings");
   assert.equal(await page.locator("#api-key").count(), 0, "Local should not show irrelevant credential UI");
   assert.equal(await page.locator("#model-select").count(), 0, "Local should not use the global OpenRouter model picker");
   assert.equal(await page.locator("#local-model").evaluate((control) => control.tagName), "BUTTON", "Local should use the owned Combobox trigger");
@@ -651,11 +692,7 @@ async function verifyAskKeyUxAndRail() {
   const localSettings = await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings") || "{}"));
   assert.equal(localSettings.answer_model, "deepseek-r1:7b");
   assert.equal(localSettings.author_model, "deepseek-r1:7b");
-  await page.focus("#provider-select");
-  await page.keyboard.press("Enter");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  await page.keyboard.press("Home");
-  await page.keyboard.press(" ");
+  await page.click('[data-provider="openrouter"]');
   assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "returning to a provider should restore only that provider's local key");
   await page.click("#model-select");
   await page.waitForSelector(".model-option[data-value='anthropic/claude-sonnet-5'] .model-chip");
@@ -688,12 +725,16 @@ async function verifyAskKeyUxAndRail() {
     streams: [["# Session key\n\nThis root verifies session-only storage."]],
   });
   await sessionPage.goto(baseUrl, { waitUntil: "networkidle" });
+  await sessionPage.click("#blank-start-setup");
+  await sessionPage.locator("#session-only").setChecked(false, { force: true });
+  await sessionPage.fill("#api-key", MOCK_KEY);
+  await sessionPage.waitForSelector("#api-key-status.valid");
+  await sessionPage.click("#complete-model-setup");
+  await sessionPage.waitForSelector("#web-settings-popover", { state: "detached" });
+  await sessionPage.click("#blank-start-new");
   await sessionPage.click("#composer-path-ask");
   await sessionPage.fill("#composer-input", "Check session-only storage");
   await sessionPage.click("#composer-primary");
-  await sessionPage.waitForSelector("#composer-key-panel:not([hidden])");
-  await sessionPage.locator("#composer-remember").setChecked(false, { force: true });
-  await sessionPage.fill("#composer-key", MOCK_KEY);
   await waitForCanvasText(sessionPage, "This root verifies session-only storage");
   assert.equal(await sessionPage.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "opting out of remember must keep the key out of localStorage");
   assert.equal(await sessionPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").openrouter), undefined, "opting out of remember must keep the provider-key map clean");
@@ -702,6 +743,7 @@ async function verifyAskKeyUxAndRail() {
 
 async function verifyCanvasBranching() {
   const context = await browser.newContext();
+  await seedConfiguredOpenRouter(context);
   const page = await context.newPage();
   const requests = [];
   let providerCalls = 0;
@@ -818,20 +860,17 @@ async function verifyCanvasBranching() {
   });
   assert(Math.abs(gearOffset.dx) < 0.25 && Math.abs(gearOffset.dy) < 0.25,
     `settings gear glyph should be optically centered in its button, off by ${gearOffset.dx.toFixed(2)},${gearOffset.dy.toFixed(2)}px`);
-  assert.match(await page.locator("#settings-panel").innerText(), /Stored only in this browser/i);
-  assert.equal(await page.locator("#model-select").count(), 1, "settings should expose the model picker without opening Advanced");
-  await page.locator(".settings-advanced summary").click();
-  assert.deepEqual(await page.evaluate(() => ["api-key", "answer-model", "author-model", "fetch-proxy-url"].map((id) => {
+  assert.match(await page.locator("#settings-panel").innerText(), /Connected|Stored only in this browser/i);
+  assert.equal(await page.locator("#model-select").count(), 1, "settings should expose one model picker");
+  assert.equal(await page.locator(".settings-advanced").count(), 0, "OpenRouter settings should not duplicate model choices or expose link-relay plumbing");
+  assert.deepEqual(await page.evaluate(() => ["api-key"].map((id) => {
     const input = document.getElementById(id);
     const label = document.querySelector(`label[for="${id}"]`);
     const described = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
     return { id, named: !!label?.textContent.trim(), described: described.length > 0 && described.every((ref) => !!document.getElementById(ref)) };
   })), [
     { id: "api-key", named: true, described: true },
-    { id: "answer-model", named: true, described: true },
-    { id: "author-model", named: true, described: true },
-    { id: "fetch-proxy-url", named: true, described: true },
-  ], "OpenRouter text fields should have label names and connected Field hints or status");
+  ], "OpenRouter key should have a label and connected status");
   assert.equal(await page.getAttribute("#api-key-status", "aria-live"), "polite", "API key Field status should remain a polite live region");
   await page.click("#api-key");
   const pointerFieldFocus = await page.evaluate(() => ({
@@ -1461,6 +1500,20 @@ async function routeProvider(page, { keyStatus, streams, onProviderCall = null, 
       body: sse(chunks),
     });
   });
+}
+
+async function seedConfiguredOpenRouter(context) {
+  await context.addInitScript(({ key }) => {
+    localStorage.setItem("rh-web-settings", JSON.stringify({
+      preset: "openrouter",
+      base_url: "https://openrouter.ai/api/v1",
+      answer_model: "anthropic/claude-sonnet-5",
+      author_model: "anthropic/claude-sonnet-5",
+      session_only: false,
+      generation_setup: { version: 1, preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5" },
+    }));
+    localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: key }));
+  }, { key: MOCK_KEY });
 }
 
 async function createDocument(page, markdown) {

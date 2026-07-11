@@ -1,14 +1,14 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, providerFor } from "./brain/index.js";
-import { ensureCanonical, loadSettings, saveSettings } from "./settings/preferences-store.js";
+import { ensureCanonical, loadSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
-import { createSettingsPopover, apiKeyPlaceholder } from "./settings/settings-popover.js";
+import { createSettingsPopover } from "./settings/settings-popover.js";
+import { getGenerationSetupStatus, invalidateGenerationSetup } from "./settings/setup-readiness.js";
 import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { openDialog } from "../ui/primitives/dialog.js";
-import { fieldMarkup, wireField } from "../ui/primitives/field.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
@@ -17,7 +17,6 @@ import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
-const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
 const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
 
 const store = new IdbStore();
@@ -29,8 +28,6 @@ let blankZoom = 1;
 let composerDialog = null;
 let settingsController = null;
 let composerPath = "";
-let pendingComposerAction = null;
-let pendingBranchRetry = null;
 let lastHoleCount = 0;
 let toastNotice = null;
 
@@ -53,7 +50,7 @@ async function boot() {
   if (initial) {
     await startHole(initial, { replace: true });
   } else {
-    showBlankCanvas({ openComposer: true });
+    showBlankCanvas();
   }
   installTestSeam({
     store,
@@ -111,13 +108,13 @@ function renderShell() {
           </div>
         </section>
         <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,.html,text/markdown,text/plain,text/html,application/pdf,application/json" hidden>
-        <div id="composer-key-panel" class="inline-key-slot" hidden></div>
         <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
       </div>
     </div>
     <div id="blank-start" class="blank-start" hidden>
       ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
-      <p class="blank-start-sub">or drop a PDF or Markdown file anywhere</p>
+      ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
+      <p id="blank-start-status" class="blank-start-sub">Set up AI before starting a Rabbithole.</p>
     </div>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
@@ -154,18 +151,19 @@ function initAppChrome() {
   });
   window.addEventListener("pagehide", () => { void currentHost?.flushSave(); });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
-  document.getElementById("t-new")?.addEventListener("click", (event) => openComposer({ source: "button", trigger: event.currentTarget }));
+  document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
   const settingsTrigger = document.getElementById("t-settings");
   settingsController = createSettingsPopover({
     trigger: settingsTrigger,
-    onSettingsChange: refreshCurrentBrain,
-    onClose: () => { pendingBranchRetry = null; },
+    onSettingsChange: () => { refreshCurrentBrain(); syncGenerationSetupUi(); },
     eyeSvg,
     setKeyStatus,
     validateKey: validateKeyForPreset,
   });
   settingsTrigger?.addEventListener("click", () => settingsController.open());
-  document.getElementById("blank-start-new")?.addEventListener("click", (event) => openComposer({ source: "button", trigger: event.currentTarget }));
+  document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
+  document.getElementById("blank-start-setup")?.addEventListener("click", (event) => openModelSetup({ trigger: event.currentTarget }));
+  syncGenerationSetupUi();
   rail?.addEventListener("click", async (event) => {
     const row = event.target?.closest?.(".rail-row");
     if (!row) return;
@@ -217,7 +215,7 @@ function initAppChrome() {
       const trigger = document.getElementById("blank-start-new")?.offsetParent !== null
         ? document.getElementById("blank-start-new")
         : document.getElementById("t-new");
-      openComposer({ source: "keyboard", trigger });
+      requestNewRabbithole({ source: "keyboard", trigger });
     } else if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       toggleRail();
@@ -274,7 +272,7 @@ function initGlobalDrops() {
     viewport.addEventListener(type, (event) => {
       if (currentHoleId || !event.dataTransfer?.types?.includes("Files")) return;
       event.preventDefault();
-      document.body.classList.add("blank-dragging");
+      if (getGenerationSetupStatus().ready) document.body.classList.add("blank-dragging");
     });
   }
   for (const type of ["dragleave", "drop"]) {
@@ -288,20 +286,55 @@ function initGlobalDrops() {
     if (currentHoleId) return;
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
+    if (!getGenerationSetupStatus().ready) {
+      openModelSetup({ trigger: document.getElementById("blank-start-setup") });
+      return;
+    }
     openComposer({ source: "drop" });
     await createFromFile(file);
   });
 }
 
+function requestNewRabbithole({ source = "button", value = "", trigger } = {}) {
+  if (!getGenerationSetupStatus().ready) {
+    openModelSetup({ trigger });
+    return;
+  }
+  openComposer({ source, value, trigger });
+}
+
+function openModelSetup({ trigger, status = "", onReady = null } = {}) {
+  const blankSetup = document.getElementById("blank-start-setup");
+  const safeTrigger = trigger?.disabled ? (blankSetup?.offsetParent !== null ? blankSetup : document.getElementById("t-settings")) : trigger;
+  settingsController.open({ trigger: safeTrigger || document.getElementById("t-settings"), purpose: status ? "recovery" : "setup", status, onReady });
+}
+
+function syncGenerationSetupUi() {
+  const setup = getGenerationSetupStatus();
+  const newButtons = [document.getElementById("blank-start-new"), document.getElementById("t-new")].filter(Boolean);
+  newButtons.forEach((button) => { button.disabled = !setup.ready; });
+  const blankNew = document.getElementById("blank-start-new");
+  const setupButton = document.getElementById("blank-start-setup");
+  const status = document.getElementById("blank-start-status");
+  if (blankNew) {
+    if (setup.ready) blankNew.removeAttribute("aria-describedby");
+    else blankNew.setAttribute("aria-describedby", "blank-start-status");
+  }
+  if (setupButton) setupButton.textContent = setup.ready ? "Model settings" : "Set up AI";
+  if (status) status.hidden = setup.ready;
+}
+
 function openComposer({ source = "button", value = "", trigger } = {}) {
+  if (!getGenerationSetupStatus().ready) {
+    openModelSetup({ trigger });
+    return;
+  }
   const modal = document.getElementById("composer-modal");
   const input = document.getElementById("composer-input");
   const card = document.getElementById("composer-card");
 
-  pendingComposerAction = null;
   composerPath = "";
   setIngestStatus("");
-  clearComposerKeyPanel();
   document.getElementById("composer-start").hidden = false;
   document.getElementById("composer-entry").hidden = true;
   input.value = value;
@@ -327,8 +360,6 @@ function finishClosingComposer() {
   const modal = document.getElementById("composer-modal");
   modal.hidden = true;
   modal.classList.remove("dragging");
-  pendingComposerAction = null;
-  clearComposerKeyPanel();
   composerDialog = null;
   if (!currentHoleId && lastHoleCount === 0) {
     document.getElementById("blank-start").hidden = false;
@@ -358,7 +389,6 @@ function selectComposerPath(path, { value = "" } = {}) {
 function showComposerStart() {
   composerPath = "";
   setIngestStatus("");
-  clearComposerKeyPanel();
   document.getElementById("composer-card").removeAttribute("data-path");
   document.getElementById("composer-entry").hidden = true;
   document.getElementById("composer-start").hidden = false;
@@ -378,8 +408,6 @@ async function createFromComposerDocument(markdown, { improveStructure = false }
     setIngestStatus("Paste a document first.", "error");
     return;
   }
-  const action = () => createFromComposerDocument(markdown, { improveStructure });
-  if (improveStructure && !(await ensureKeyForComposerAction(action))) return;
   try {
     const hole = await maybeAuthorDocument({
       title: "",
@@ -401,7 +429,6 @@ async function createFromAsk(question) {
     return;
   }
   const action = () => createFromAsk(question);
-  if (!(await ensureKeyForComposerAction(action))) return;
 
   try {
     const hole = createPendingHoleFromQuestion(question);
@@ -411,11 +438,9 @@ async function createFromAsk(question) {
   } catch (err) {
     const message = err?.message || String(err);
     if (isAuthLikeError(err)) {
-      showComposerKeyPanel({
-        title: err?.code === "missing_key" ? "" : "Update your key",
-        status: err?.code === "missing_key" ? "" : message,
-        afterValidated: action,
-      });
+      invalidateGenerationSetup();
+      syncGenerationSetupUi();
+      settingsController.open({ trigger: document.getElementById("t-settings"), purpose: "recovery", status: message, onReady: action, focusKey: true });
     } else {
       setIngestStatus(`Ask failed. ${message}`, "error");
     }
@@ -552,38 +577,6 @@ async function maybeAuthorDocument({
   } });
 }
 
-async function ensureKeyForComposerAction(action) {
-  const settings = loadSettings();
-  const preset = providerFor(settings.preset);
-  if (!preset.requires_key || getApiKey(settings)) return true;
-  pendingComposerAction = action;
-  showComposerKeyPanel({ afterValidated: action });
-  return false;
-}
-
-function showComposerKeyPanel({ title = "", status = "", afterValidated = null } = {}) {
-  const slot = document.getElementById("composer-key-panel");
-  slot.hidden = false;
-  renderInlineKeyPanel(slot, {
-    idPrefix: "composer",
-    title,
-    status,
-    afterValidated: async () => {
-      slot.hidden = true;
-      pendingComposerAction = null;
-      await afterValidated?.();
-    },
-  });
-}
-
-function clearComposerKeyPanel() {
-  const slot = document.getElementById("composer-key-panel");
-  if (slot) {
-    slot.hidden = true;
-    slot.innerHTML = "";
-  }
-}
-
 async function startHole(hole, { replace = false } = {}) {
   if (uiStarted) {
     await currentHost?.flushSave();
@@ -658,6 +651,8 @@ function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
   document.getElementById("world").replaceChildren(edges);
   setBlankZoom(1);
   history.replaceState(null, "", location.pathname);
+  document.getElementById("blank-start").hidden = false;
+  syncGenerationSetupUi();
   if (shouldOpenComposer) openComposer({ source: "empty" });
 }
 
@@ -825,106 +820,19 @@ function refreshCurrentBrain(settings = loadSettings()) {
 }
 
 function handleBranchAuthRequired({ node, error, retry }) {
-  pendingBranchRetry = retry;
-  const missingKey = error?.code === "missing_key";
-  settingsController.open();
-  const slot = settingsController.getInlineKeySlot();
-  slot.hidden = false;
-  renderInlineKeyPanel(slot, {
-    idPrefix: "branch",
-    title: missingKey ? "Add a key to ask" : "Update your key",
-    note: missingKey ? "" : "Your ask is saved and will continue once a key is connected.",
-    status: missingKey ? "" : (error?.message || ""),
-    afterValidated: async () => {
-      slot.hidden = true;
-      pendingBranchRetry = null;
+  invalidateGenerationSetup();
+  syncGenerationSetupUi();
+  settingsController.open({
+    trigger: document.getElementById("t-settings"),
+    purpose: "recovery",
+    status: error?.message || "Reconnect your model to continue.",
+    focusKey: providerFor(loadSettings().preset).requires_key,
+    onReady: async () => {
       refreshCurrentBrain();
       retry?.();
       showToast({ message: `Retrying "${node?.title || "ask"}".` });
     },
   });
-  settingsController.open({ focusSelector: "#branch-key" });
-}
-
-function renderInlineKeyPanel(container, { idPrefix, title = "", note = "", status = "", afterValidated = null } = {}) {
-  const settings = loadSettings();
-  const preset = providerFor(settings.preset);
-  const remember = settings.session_only === false;
-  const heading = title || "Add a key to ask";
-  const body = note || (preset.id === "openrouter"
-    ? "Use your own OpenRouter key for every model. Stored only in this browser and sent directly to OpenRouter."
-    : `Use your own ${preset.label} key. Stored only in this browser and sent directly to ${preset.label}.`);
-  container.innerHTML = `<section class="inline-key-panel">
-    <div class="inline-key-copy">
-      <h3>${escapeHtml(heading)}</h3>
-      <p>${escapeHtml(body)}</p>
-    </div>
-    <div class="key-input-wrap">
-      <input id="${idPrefix}-key" type="password" autocomplete="off" spellcheck="false" placeholder="${escapeAttr(apiKeyPlaceholder(preset.id))}" value="">
-      <button id="${idPrefix}-key-toggle" type="button" aria-label="Show key" aria-pressed="false">${eyeSvg(false)}</button>
-    </div>
-    <div id="${idPrefix}-key-status" class="key-status" aria-live="polite"></div>
-    <div class="inline-key-foot">
-      <label class="remember-mini" for="${idPrefix}-remember">
-        <span class="switch" aria-hidden="true">
-          <input id="${idPrefix}-remember" type="checkbox" role="switch" ${remember ? "checked" : ""}>
-          <span class="switch-track"></span>
-        </span>
-        <span>Remember on this device</span>
-      </label>
-      ${preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : ""}
-    </div>
-  </section>`;
-  const { input } = wireField(container, { id: `${idPrefix}-key`, toggleId: `${idPrefix}-key-toggle`, renderToggle: eyeSvg });
-  const statusEl = container.querySelector(`#${idPrefix}-key-status`);
-  if (status) setKeyStatus(statusEl, status, "invalid");
-  let timer = 0;
-  let continued = false;
-  const continueOnce = async () => {
-    if (continued) return;
-    continued = true;
-    saveSettings({
-      ...loadSettings(),
-      api_key: input.value.trim(),
-      session_only: !container.querySelector(`#${idPrefix}-remember`).checked,
-    });
-    settingsController.refresh();
-    refreshCurrentBrain();
-    await afterValidated?.();
-  };
-  const validate = async (required = false) => {
-    const presetId = loadSettings().preset || "openrouter";
-    const switched = await maybeSwitchProviderFromKey(input.value, container, continueOnce);
-    if (switched) return true;
-    const ok = await validateKeyForPreset({
-      key: input.value,
-      presetId,
-      statusEl,
-      required,
-      onShake: () => input.classList.add("shake-once"),
-    });
-    if (ok && input.value.trim()) await continueOnce();
-    return ok;
-  };
-  input.addEventListener("input", () => {
-    window.clearTimeout(timer);
-    const hint = providerKeyHint(input.value, loadSettings().preset || "openrouter");
-    setKeyStatus(statusEl, hint, hint ? "hint" : "");
-    timer = window.setTimeout(() => validate(false), 350);
-  });
-  input.addEventListener("paste", () => window.setTimeout(() => validate(false), 0));
-  input.addEventListener("blur", () => validate(false));
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      validate(true);
-    }
-  });
-  input.focus({ preventScroll: true });
-}
-
-async function maybeSwitchProviderFromKey(key, container, continueOnce) {
-  return false;
 }
 
 async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
@@ -1145,10 +1053,6 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
 function applyInitialWebTheme() {

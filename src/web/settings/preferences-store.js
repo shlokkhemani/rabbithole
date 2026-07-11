@@ -1,5 +1,5 @@
 import { defaultBrainSettings, providerFor, resolveProviderId } from "../brain/provider-registry.js";
-import { ensureCanonicalCredentials, saveApiKey } from "./credential-store.js";
+import { ensureCanonicalCredentials, getApiKey, saveApiKey } from "./credential-store.js";
 
 const SETTINGS_KEY = "rh-web-settings";
 const DEFAULT_FETCH_PROXY_URL =
@@ -27,6 +27,7 @@ export function saveSettings(settings) {
 }
 
 export function ensureCanonical() {
+  ensureCanonicalCredentials();
   const defaults = defaultWebSettings();
   let raw = null;
   let stored = null;
@@ -48,10 +49,21 @@ export function ensureCanonical() {
     };
   }
   canonical = { ...canonical };
+  if (stored && !canonical.generation_setup) {
+    const provider = providerFor(canonical.preset);
+    const hasLegacySetup = provider.id === "custom" || !!getApiKey(canonical);
+    if (hasLegacySetup && canonical.answer_model) {
+      canonical.generation_setup = {
+        version: 1,
+        preset: provider.id,
+        base_url: String(canonical.base_url || provider.base_url).replace(/\/+$/, ""),
+        model: String(canonical.answer_model).trim(),
+      };
+    }
+  }
   if (canonical.fetch_proxy_url === DEFAULT_FETCH_PROXY_URL) delete canonical.fetch_proxy_url;
   const serialized = JSON.stringify(canonical);
   if (raw !== null && raw !== serialized) {
     try { localStorage.setItem(SETTINGS_KEY, serialized); } catch {}
   }
-  ensureCanonicalCredentials();
 }

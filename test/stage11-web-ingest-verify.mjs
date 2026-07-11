@@ -22,7 +22,16 @@ let proxyCalls = 0;
 const server = await serveStatic(WEB_DIST);
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
-const page = await browser.newPage();
+const context = await browser.newContext();
+await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+  preset: "custom",
+  base_url: "http://localhost:11434/v1",
+  answer_model: "llama3.2",
+  author_model: "llama3.2",
+  session_only: true,
+  generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+})));
+const page = await context.newPage();
 const requests = [];
 let directArticleCalls = 0;
 
@@ -48,6 +57,7 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
 
 try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#blank-start-new");
   await page.waitForSelector("#composer-path-file");
 
   requests.length = 0;
@@ -80,11 +90,7 @@ try {
   assert(pdfState.raw.includes("Integral int_0^1"));
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.click("#t-settings");
-  await openAdvancedSettings(page);
-  await page.fill("#fetch-proxy-url", `${baseUrl}/proxy`);
-  await page.press("#fetch-proxy-url", "Tab");
-  await page.keyboard.press("Escape");
+  await setFetchProxy(page, `${baseUrl}/proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
   await page.fill("#composer-input", "https://arxiv.org/abs/1234.5678");
@@ -100,11 +106,7 @@ try {
   assert(urlHole.includes("https://arxiv.org/abs/1234.5678") || urlHole.includes("ar5iv.labs.arxiv.org"));
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.click("#t-settings");
-  await openAdvancedSettings(page);
-  await page.fill("#fetch-proxy-url", `${baseUrl}/dead-proxy`);
-  await page.press("#fetch-proxy-url", "Tab");
-  await page.keyboard.press("Escape");
+  await setFetchProxy(page, `${baseUrl}/dead-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
   await page.fill("#composer-input", "https://arxiv.org/abs/9999.0000");
@@ -114,11 +116,7 @@ try {
   assert.match(deadError, /Try another link or open a PDF/i);
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.click("#t-settings");
-  await openAdvancedSettings(page);
-  await page.fill("#fetch-proxy-url", `${baseUrl}/reject-proxy`);
-  await page.press("#fetch-proxy-url", "Tab");
-  await page.keyboard.press("Escape");
+  await setFetchProxy(page, `${baseUrl}/reject-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
   await page.fill("#composer-input", "https://arxiv.org/abs/7777.7777");
@@ -228,8 +226,11 @@ async function dropPdf(page, bytes, name = "math-fixture.pdf", type = "applicati
   }, { pdfBytes: bytes, name, type });
 }
 
-async function openAdvancedSettings(page) {
-  await page.locator(".settings-advanced summary").click();
+async function setFetchProxy(page, url) {
+  await page.evaluate((value) => {
+    const settings = JSON.parse(localStorage.getItem("rh-web-settings") || "{}");
+    localStorage.setItem("rh-web-settings", JSON.stringify({ ...settings, fetch_proxy_url: value }));
+  }, url);
 }
 
 async function waitForCanvasText(page, text) {

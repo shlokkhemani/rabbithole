@@ -5,6 +5,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import { getGenerationSetupStatus, setupFingerprint } from "../src/web/settings/setup-readiness.js";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -33,6 +34,7 @@ const HOSTILE = [
   `![offline asset](asset:${ASSET})`,
 ].join("\n");
 
+verifySetupReadinessFingerprint();
 await ensureBuild();
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage15-"));
 const hostilePath = path.join(tmp, "hostile.rabbithole");
@@ -50,6 +52,26 @@ try {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
   await fs.rm(tmp, { recursive: true, force: true });
+}
+
+function verifySetupReadinessFingerprint() {
+  const completed = {
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    answer_model: "llama3.2",
+    author_model: "llama3.2",
+    session_only: true,
+  };
+  completed.generation_setup = setupFingerprint(completed);
+  assert.equal(getGenerationSetupStatus(completed).ready, true, "matching setup fingerprint should be ready");
+  for (const [field, patch] of [
+    ["provider", { preset: "openrouter" }],
+    ["endpoint", { base_url: "http://localhost:12345/v1" }],
+    ["model", { answer_model: "qwen3:8b" }],
+  ]) {
+    const status = getGenerationSetupStatus({ ...completed, ...patch });
+    assert.deepEqual({ ready: status.ready, reason: status.reason }, { ready: false, reason: "setup_incomplete" }, `${field} changes should invalidate completed setup`);
+  }
 }
 
 async function verifyLiveAndBuildSnapshot() {
@@ -203,7 +225,7 @@ async function verifyPreferenceFixtures() {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.keyboard.press("Escape");
     await page.click("#t-settings");
-    await page.waitForSelector("#provider-select");
+    await page.waitForSelector(".provider-choice");
     await assertPreferenceState(page, fixture);
     await settleKeyCommit(page);
     const once = await storageState(page);
@@ -246,11 +268,20 @@ async function settleKeyCommit(page) {
 }
 
 async function assertPreferenceState(page, fixture) {
-  assert.equal(await page.getAttribute("#provider-select", "data-value"), fixture.selected, `${fixture.name}: provider behavior survives`);
+  assert.equal(await page.getAttribute(`[data-provider="${fixture.selected}"]`, "aria-pressed"), "true", `${fixture.name}: provider behavior survives`);
   const state = await storageState(page);
   assert.equal(await page.getAttribute("html", "data-theme"), fixture.seed.theme, `${fixture.name}: theme survives`);
   assert.equal(state["rh-last-hole"], fixture.seed.last, `${fixture.name}: last-hole preference survives`);
-  assert.deepEqual(JSON.parse(state["rh-web-settings"]), fixture.expectedSettings, `${fixture.name}: settings are canonical`);
+  const expectedSettings = { ...fixture.expectedSettings };
+  if (fixture.expectedSettings.preset === "custom" || fixture.expectedKeys?.openrouter) {
+    expectedSettings.generation_setup = {
+      version: 1,
+      preset: fixture.expectedSettings.preset,
+      base_url: fixture.expectedSettings.base_url.replace(/\/+$/, ""),
+      model: fixture.expectedSettings.answer_model,
+    };
+  }
+  assert.deepEqual(JSON.parse(state["rh-web-settings"]), expectedSettings, `${fixture.name}: settings are canonical`);
   assert.deepEqual(state["rh-web-api-keys"] === null ? null : JSON.parse(state["rh-web-api-keys"]), fixture.expectedKeys, `${fixture.name}: credential map is canonical`);
   assert.equal(state["rh-web-api-key"], null, `${fixture.name}: legacy key slot is removed`);
   if (fixture.expectedSettings.session_only === false && fixture.expectedKeys?.openrouter) {

@@ -81,7 +81,8 @@ try {
   await page.fill("#api-key", MOCK_KEY);
   await page.press("#api-key", "Enter");
   await page.waitForSelector("#api-key-status.valid");
-  await page.keyboard.press("Escape");
+  await page.click("#complete-model-setup");
+  await page.waitForSelector("#web-settings-popover", { state: "detached" });
 
   await page.evaluate(() => window.__rabbitholeTest.createDocument(
     "# Author Check\n\nraw notes about a streamed authoring pass",
@@ -166,35 +167,24 @@ try {
 }
 
 async function assertShellPolish(page) {
-  await page.waitForSelector("#composer-modal:not([hidden])");
+  await page.waitForSelector("#blank-start:not([hidden])");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "new Rabbithole should wait for model setup");
   assert.equal(await page.locator("#toolbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
   assert.equal(await page.locator("#toolbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
   assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should present three clear starting paths");
-  await page.keyboard.press("Escape");
-  await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
   await page.click("#t-settings");
   const keyLinkCount = await page.locator(`a[href="${"https://openrouter.ai/keys"}"]`).count();
   assert.equal(keyLinkCount, 1, "OpenRouter key link should appear exactly once in settings");
   assert.equal(await page.locator("#save-settings, #web-settings-close").count(), 0, "settings should apply live without save or close buttons");
-  const providerState = await page.locator("#provider-select").evaluate((select) => ({
-    tag: select.tagName, value: select.dataset.value, expanded: select.getAttribute("aria-expanded"),
-  }));
-  assert.equal(providerState.tag, "BUTTON");
-  assert.equal(providerState.value, "openrouter");
-  assert.equal(providerState.expanded, "false");
-  await page.focus("#provider-select");
-  await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  await page.keyboard.press("Enter");
-  assert.equal(await page.getAttribute("#provider-select", "data-value"), "custom", "provider flow should switch through the owned Select");
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
+  await page.click('[data-provider="custom"]');
+  assert.equal(await page.getAttribute('[data-provider="custom"]', "aria-pressed"), "true", "provider flow should switch through the shared two-option control");
   assert.equal(await page.locator("#provider-base").count(), 1);
-  await page.focus("#provider-select");
-  await page.keyboard.press("ArrowUp");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  await page.keyboard.press("Enter");
   await page.locator(".settings-advanced summary").click();
-  assert.equal(await page.locator("#answer-model").count(), 1, "advanced settings should retain separate model overrides");
-  assert.equal(await page.locator("#fetch-proxy-url").count(), 1, "advanced settings should retain the link relay");
+  assert.equal(await page.locator("#provider-base").isVisible(), true, "Local should keep only its endpoint under Connection settings");
+  await page.click('[data-provider="openrouter"]');
+  assert.equal(await page.locator(".settings-advanced").count(), 0, "OpenRouter should not duplicate model choices or expose link-relay plumbing");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
 }

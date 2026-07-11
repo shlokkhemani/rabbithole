@@ -211,10 +211,10 @@ async function ensureRailOpen(page) {
 }
 
 function projectHole(hole) {
+  // view_state is session-local; comparing captures from two sessions races their post-open saves, while portable carry-over becomes an explicit Phase 7 artifact test.
   return {
     title: hole.title,
     root_id: hole.root_id,
-    view_state: hole.view_state,
     nodes: hole.nodes.map((node) => ({
       id: node.id,
       parent_id: node.parent_id,

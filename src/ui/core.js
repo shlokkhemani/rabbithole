@@ -7,6 +7,7 @@ import {
   truncate as sharedTruncate
 } from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
+import { escapeHtml } from "../core/utils.js";
 import { createCleanupScope } from "./lifecycle.js";
 import {
   DEFAULT_CHILD,
@@ -225,7 +226,6 @@ export function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
-export function esc(s){ var d=document.createElement("div"); d.textContent = (s==null?"":String(s)); return d.innerHTML; }
 export function truncate(s, n){ return sharedTruncate(s, n); }
 export function childrenOf(id) { var out=[]; for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]); return out; }
 export function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
@@ -412,7 +412,7 @@ export function updateSince(){
     sinceEl.classList.add("visible");
   }
 export function lensLabel(key){ return sharedLensLabel(key); }
-export function lensBadgeHtml(key){ return '<span class="lens-badge">' + esc(lensLabel(key)) + '</span>'; }
+export function lensBadgeHtml(key){ return '<span class="lens-badge">' + escapeHtml(lensLabel(key)) + '</span>'; }
 
   // ---------- loading placeholder (pending answers) ----------
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' +

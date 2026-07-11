@@ -2,6 +2,7 @@ import { extractAssetRefsFromMarkdown } from "../core/assets.js";
 import { binaryToBase64 } from "../core/portable-projection.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
 import { buildSnapshotHtml as assembleSnapshotHtml } from "../core/snapshot-html.js";
+import { slugifyTitle } from "../core/utils.js";
 import {
   currentNodeId,
   mode,
@@ -111,12 +112,7 @@ export function buildSnapshotHtml(snapshotProjection) {
 }
 
 function exportFilename(title) {
-  var slug = String(title || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return "rabbithole-" + (slug || "export") + ".html";
+  return "rabbithole-" + slugifyTitle(title, { fallback: "export" }) + ".html";
 }
 
 export async function downloadSnapshot() {

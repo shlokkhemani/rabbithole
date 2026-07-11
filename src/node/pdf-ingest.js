@@ -5,10 +5,12 @@ import { createStagedAssetDir, ensureAssetDir, loadHole, validateAssetName } fro
 import {
   MAX_PDF_BYTES,
   PDF_RENDER_SCALE,
+  describePdfOpenError,
   extractPdfPageText,
   normalizePdfTitle,
   pdfPageAssetName,
   resolvePagesToProcess,
+  hasPdfMagic,
 } from "../core/pdf-shared.js";
 
 const require = createRequire(import.meta.url);
@@ -117,7 +119,7 @@ async function validatePdfFile(filePath) {
   try {
     const magic = Buffer.alloc(4);
     await handle.read(magic, 0, magic.length, 0);
-    if (magic.toString("latin1") !== "%PDF") {
+    if (!hasPdfMagic(magic)) {
       throw new Error(`file_path is not a PDF: expected a %PDF header at ${absolute}`);
     }
   } finally {
@@ -323,14 +325,6 @@ async function renderPage({ canvasModule, canvasFactory, page, pageNumber, destD
   return { page: pageNumber, name, width, height };
 }
 
-function describePdfOpenError(err, filePath) {
-  const message = err instanceof Error ? err.message : String(err);
-  if (/password|encrypted|PasswordException/i.test(`${err?.name || ""} ${message}`)) {
-    return `PDF is encrypted or password-protected: ${filePath}. Provide a decrypted copy and run ingest_pdf again.`;
-  }
-  return `PDF could not be opened by pdfjs: ${filePath}. Check that the file is not corrupt. Original error: ${message}`;
-}
-
 /**
  * Extract page PNGs, embedded rasters, metadata, and text from a local PDF.
  * Page rendering and image extraction are best-effort; text still works when
@@ -366,7 +360,11 @@ export async function ingestPdf({ filePath, holeId, pages, includeText = true } 
     try {
       doc = await loadingTask.promise;
     } catch (err) {
-      throw new Error(describePdfOpenError(err, absolutePath));
+      throw new Error(describePdfOpenError(err, {
+        label: absolutePath,
+        encryptedHint: "Provide a decrypted copy and run ingest_pdf again.",
+        engine: "pdfjs",
+      }));
     }
 
     const metadata = await doc.getMetadata().catch((err) => {

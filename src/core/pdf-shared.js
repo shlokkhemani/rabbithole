@@ -1,6 +1,25 @@
 export const MAX_PDF_BYTES = 100 * 1024 * 1024;
 export const DEFAULT_PAGE_CAP = 40;
 export const PDF_RENDER_SCALE = 2;
+export const PDF_MAGIC = "%PDF";
+
+/** @param {{ length: number, [index: number]: number } | null | undefined} bytes */
+export function hasPdfMagic(bytes) {
+  if (!bytes || bytes.length < 4) return false;
+  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+/**
+ * @param {unknown} err
+ * @param {{ label: string, encryptedHint: string, engine: string }} options
+ */
+export function describePdfOpenError(err, { label, encryptedHint, engine }) {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/password|encrypted|PasswordException/i.test(`${/** @type {{ name?: string }} */ (err)?.name || ""} ${message}`)) {
+    return `PDF is encrypted or password-protected: ${label}. ${encryptedHint}`;
+  }
+  return `PDF could not be opened by ${engine}: ${label}. Check that the file is not corrupt. Original error: ${message}`;
+}
 
 /** @typedef {{ str: string, transform: number[], width?: number, height?: number }} PdfTextItem */
 /** @typedef {{ str: string, x: number, y: number, width: number, height: number }} TextGeometry */

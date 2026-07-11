@@ -10,6 +10,7 @@ import { createSnapshotProjection } from "../../core/snapshot-projection.js";
 import { buildSnapshotHtml } from "../../core/snapshot-html.js";
 import { CANVAS_STYLES } from "../../core/html/styles.js";
 import { getDompurifyScript, getFrozenClientBundle, getKatexCss } from "../html/built-assets.js";
+import { slugifyTitle } from "../../core/utils.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { lineageTitlesFromMap } from "../../core/model.js";
@@ -908,10 +909,5 @@ function rawAssetRequestName(reqUrl) {
 
 // Download filename for /export — slug of the title, safe for a header.
 function exportFilename(title) {
-  const slug = String(title || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return `rabbithole-${slug || "export"}.html`;
+  return `rabbithole-${slugifyTitle(title, { fallback: "export" })}.html`;
 }

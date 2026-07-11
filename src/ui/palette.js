@@ -1,5 +1,4 @@
 import {
-  esc,
   goToNode,
   isUnread,
   lensLabel,
@@ -11,6 +10,7 @@ import {
   paletteEl,
   truncate
 } from "./core.js";
+import { escapeHtml } from "../core/utils.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
 import { createCleanupScope } from "./lifecycle.js";
@@ -235,11 +235,11 @@ export function closePalette(settings){
     if (quote) return "“" + hiTokens(truncate(quote, 90), tokens) + "”";
     var q = n.origin && n.origin.question;
     if (q) return hiTokens(truncate(q, 100), tokens);
-    return esc(truncate(body, 100));
+    return escapeHtml(truncate(body, 100));
   }
   // Escape text while wrapping every token match in <mark>.
   function hiTokens(text, tokens){
-    if (!tokens.length) return esc(text);
+    if (!tokens.length) return escapeHtml(text);
     var lower = text.toLowerCase(), out = "", i = 0;
     while (i < text.length){
       var best = -1, bl = 0;
@@ -247,8 +247,8 @@ export function closePalette(settings){
         var at = lower.indexOf(tokens[t], i);
         if (at !== -1 && (best === -1 || at < best)){ best = at; bl = tokens[t].length; }
       }
-      if (best === -1){ out += esc(text.slice(i)); break; }
-      out += esc(text.slice(i, best)) + "<mark>" + esc(text.slice(best, best + bl)) + "</mark>";
+      if (best === -1){ out += escapeHtml(text.slice(i)); break; }
+      out += escapeHtml(text.slice(i, best)) + "<mark>" + escapeHtml(text.slice(best, best + bl)) + "</mark>";
       i = best + bl;
     }
     return out;

@@ -11,7 +11,6 @@ import {
   closed,
   connLost,
   currentNodeId,
-  esc,
   followupsOf,
   fontPx,
   frozen,
@@ -33,6 +32,7 @@ import {
   truncate,
   world
 } from "./core.js";
+import { escapeHtml } from "../core/utils.js";
 import { createCleanupScope } from "./lifecycle.js";
 
 function defaultReaderHooks(){
@@ -178,11 +178,11 @@ export function renderReaderBody(){
         ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
       } else if (node.origin.selected_text){
         var tail = node.origin.lens ? " — " + lensBadgeHtml(node.origin.lens)
-          : (node.origin.question ? " — " + esc(node.origin.question) : "");
-        ctx.innerHTML = '<span class="rc-label">From</span>“' + esc(truncate(node.origin.selected_text, 200)) + '”' + tail + '<span class="rc-go">→</span>';
+          : (node.origin.question ? " — " + escapeHtml(node.origin.question) : "");
+        ctx.innerHTML = '<span class="rc-label">From</span>“' + escapeHtml(truncate(node.origin.selected_text, 200)) + '”' + tail + '<span class="rc-go">→</span>';
       } else {
         ctx.innerHTML = '<span class="rc-label">Follow-up</span>' +
-          (node.origin.lens ? lensBadgeHtml(node.origin.lens) : esc(node.origin.question || ""));
+          (node.origin.lens ? lensBadgeHtml(node.origin.lens) : escapeHtml(node.origin.question || ""));
       }
       // The strip is a live link: click it to land on the exact spot in the
       // parent this branch grew from (flashed so the eye finds it).
@@ -384,7 +384,7 @@ export function renderSidebar(){
       var pending = k.status !== "answered";
       var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
         : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
-        : esc((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
+        : escapeHtml((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
       var quote = (k.origin && k.origin.selected_text) ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k)
         : isUnread(k) ? '<span class="si-new">new — open →</span>'

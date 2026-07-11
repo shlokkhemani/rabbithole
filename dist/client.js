@@ -1815,6 +1815,20 @@ var RabbitholeClient = (() => {
     return handle;
   }
 
+  // src/core/utils.js
+  var LINE_SEP = new RegExp(String.fromCharCode(8232), "g");
+  var PARA_SEP = new RegExp(String.fromCharCode(8233), "g");
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function slugifyTitle(title, { fallback = "" } = {}) {
+    const slug = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+    return slug || fallback;
+  }
+  function serializeForInlineScript(value) {
+    return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(LINE_SEP, "\\u2028").replace(PARA_SEP, "\\u2029");
+  }
+
   // src/ui/lifecycle.js
   function createCleanupScope() {
     var cleanups = /* @__PURE__ */ new Set();
@@ -2224,11 +2238,6 @@ var RabbitholeClient = (() => {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
-  function esc(s) {
-    var d = document.createElement("div");
-    d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
-  }
   function truncate2(s, n) {
     return truncate(s, n);
   }
@@ -2468,7 +2477,7 @@ var RabbitholeClient = (() => {
     return lensLabel(key);
   }
   function lensBadgeHtml(key) {
-    return '<span class="lens-badge">' + esc(lensLabel2(key)) + "</span>";
+    return '<span class="lens-badge">' + escapeHtml(lensLabel2(key)) + "</span>";
   }
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
   function buildLoading(node) {
@@ -2858,16 +2867,12 @@ var RabbitholeClient = (() => {
     }
   }
   registerBlockMount("show", { renderHtml: buildShowVisual });
-  function escapeCheckText(value) {
-    return String(value != null ? value : "").replace(/[&<>"']/g, function(char) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
-    });
-  }
   function buildCheckVisual(model) {
+    var _a2;
     var options2 = model.options.map(function(option, index) {
-      return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeCheckText(option) + "</button>";
+      return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeHtml(option != null ? option : "") + "</button>";
     }).join("");
-    return '<section class="rh-check"><div class="rh-check-question">' + escapeCheckText(model.question) + '</div><div class="rh-check-options">' + options2 + '</div><div class="rh-check-explanation" hidden>' + escapeCheckText(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
+    return '<section class="rh-check"><div class="rh-check-question">' + escapeHtml((_a2 = model.question) != null ? _a2 : "") + '</div><div class="rh-check-options">' + options2 + '</div><div class="rh-check-explanation" hidden>' + escapeHtml(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
   }
   function wireCheck(root, model, ctx) {
     var options2 = Array.from(root.querySelectorAll(".rh-check-option"));
@@ -3056,10 +3061,10 @@ var RabbitholeClient = (() => {
       if (node.origin.synthesis) {
         ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
       } else if (node.origin.selected_text) {
-        var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + esc(node.origin.question) : "";
-        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
+        var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + escapeHtml(node.origin.question) : "";
+        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + escapeHtml(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
       } else {
-        ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : esc(node.origin.question || ""));
+        ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : escapeHtml(node.origin.question || ""));
       }
       if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis) {
         ctx.classList.add("linked");
@@ -3261,7 +3266,7 @@ var RabbitholeClient = (() => {
     var newLivePanes = [];
     kids.forEach(function(k, i2) {
       var pending = k.status !== "answered";
-      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : esc(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
+      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
       var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
       var tile = sidebarNodes[k.id];
@@ -3456,16 +3461,6 @@ var RabbitholeClient = (() => {
     m.classList.add("mark-focus");
     var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
     readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
-  }
-
-  // src/core/utils.js
-  var LINE_SEP = new RegExp(String.fromCharCode(8232), "g");
-  var PARA_SEP = new RegExp(String.fromCharCode(8233), "g");
-  function escapeHtml(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-  function serializeForInlineScript(value) {
-    return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(LINE_SEP, "\\u2028").replace(PARA_SEP, "\\u2029");
   }
 
   // src/core/html/button-markup.js
@@ -5690,10 +5685,10 @@ var RabbitholeClient = (() => {
     if (quote) return "\u201C" + hiTokens(truncate2(quote, 90), tokens) + "\u201D";
     var q = n.origin && n.origin.question;
     if (q) return hiTokens(truncate2(q, 100), tokens);
-    return esc(truncate2(body, 100));
+    return escapeHtml(truncate2(body, 100));
   }
   function hiTokens(text2, tokens) {
-    if (!tokens.length) return esc(text2);
+    if (!tokens.length) return escapeHtml(text2);
     var lower = text2.toLowerCase(), out = "", i2 = 0;
     while (i2 < text2.length) {
       var best = -1, bl = 0;
@@ -5705,10 +5700,10 @@ var RabbitholeClient = (() => {
         }
       }
       if (best === -1) {
-        out += esc(text2.slice(i2));
+        out += escapeHtml(text2.slice(i2));
         break;
       }
-      out += esc(text2.slice(i2, best)) + "<mark>" + esc(text2.slice(best, best + bl)) + "</mark>";
+      out += escapeHtml(text2.slice(i2, best)) + "<mark>" + escapeHtml(text2.slice(best, best + bl)) + "</mark>";
       i2 = best + bl;
     }
     return out;
@@ -33659,8 +33654,7 @@ ${text2}</tr>
     });
   }
   function exportFilename(title) {
-    var slug = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-    return "rabbithole-" + (slug || "export") + ".html";
+    return "rabbithole-" + slugifyTitle(title, { fallback: "export" }) + ".html";
   }
   async function downloadSnapshot() {
     var snapshotProjection = await buildSnapshotProjection();

@@ -2,15 +2,15 @@ import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import {
   MAX_PDF_BYTES,
   PDF_RENDER_SCALE,
+  describePdfOpenError,
   buildPdfMarkdown,
   extractPdfPageText,
   normalizePdfTitle,
   pdfPageAssetName,
   resolvePagesToProcess,
+  hasPdfMagic,
 } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
-
-const PDF_MAGIC = "%PDF";
 
 export async function ingestPdf(source, {
   pages,
@@ -35,7 +35,11 @@ export async function ingestPdf(source, {
     try {
       doc = await loadingTask.promise;
     } catch (err) {
-      throw new Error(describePdfOpenError(err, name));
+      throw new Error(describePdfOpenError(err, {
+        label: name || "selected file",
+        encryptedHint: "Provide a decrypted copy, or paste the text instead.",
+        engine: "pdf.js",
+      }));
     }
 
     const notes = [];
@@ -140,9 +144,7 @@ function validatePdfBytes(data, name) {
   if (!(data instanceof Uint8Array) || data.byteLength < 4) {
     throw new Error(`${name || "PDF"} is not a PDF: expected a %PDF header.`);
   }
-  let magic = "";
-  for (let i = 0; i < 4; i += 1) magic += String.fromCharCode(data[i]);
-  if (magic !== PDF_MAGIC) {
+  if (!hasPdfMagic(data)) {
     throw new Error(`${name || "PDF"} is not a PDF: expected a %PDF header.`);
   }
 }
@@ -195,14 +197,6 @@ function releaseCanvas(canvas) {
     canvas.width = 0;
     canvas.height = 0;
   } catch {}
-}
-
-function describePdfOpenError(err, name) {
-  const message = err instanceof Error ? err.message : String(err);
-  if (/password|encrypted|PasswordException/i.test(`${err?.name || ""} ${message}`)) {
-    return `PDF is encrypted or password-protected: ${name || "selected file"}. Provide a decrypted copy, or paste the text instead.`;
-  }
-  return `PDF could not be opened by pdf.js: ${name || "selected file"}. Check that the file is not corrupt. Original error: ${message}`;
 }
 
 function webAssetUrl(relativePath) {

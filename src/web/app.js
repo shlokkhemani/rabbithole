@@ -10,6 +10,7 @@ import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQues
 import { startRabbithole } from "../ui/entry.js";
 import { openDialog } from "../ui/primitives/dialog.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
+import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { flushPendingSaves } from "../ui/transport-status.js";
@@ -1098,14 +1099,6 @@ function autoGrowTextarea(textarea, maxHeight) {
 
 function isEditableTarget(target) {
   return !!target?.closest?.("input, textarea, select, [contenteditable='true']");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function applyInitialWebTheme() {

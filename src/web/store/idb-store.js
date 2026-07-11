@@ -1,5 +1,6 @@
 import { validateAssetName, MAX_ASSET_BYTES } from "../../core/assets.js";
 import { CURRENT_SCHEMA_VERSION, migratePersistedHole, toPersistedHole } from "../../core/schema.js";
+import { randomUuidOrFallback } from "../../core/utils.js";
 
 const DB_NAME = "rabbithole-web";
 const DB_VERSION = 1;
@@ -55,7 +56,7 @@ async function bytesToBlob(bytes, label = "asset bytes") {
 
 function newIngestId() {
   const stamp = Date.now().toString(36);
-  const uuid = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const uuid = randomUuidOrFallback();
   return `ingest-${stamp}-${String(uuid).replace(/-/g, "").slice(0, 16)}`;
 }
 

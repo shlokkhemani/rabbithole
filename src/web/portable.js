@@ -6,6 +6,7 @@ import {
 } from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
 import { normalizeBlockIds } from "../core/blocks.js";
+import { randomId, slugifyTitle } from "../core/utils.js";
 import {
   extractSnapshotPayload,
   MAX_IMPORT_FILE_BYTES,
@@ -91,12 +92,7 @@ export function parseRabbitholeFile(text) {
 }
 
 export function rabbitholeFilename(title) {
-  const slug = String(title || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return `${slug || "untitled"}.rabbithole`;
+  return `${slugifyTitle(title, { fallback: "untitled" })}.rabbithole`;
 }
 
 async function decodeAssets(rawAssets) {
@@ -137,6 +133,5 @@ async function freshHoleId(store) {
 }
 
 function newHoleId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `hole-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return randomId("hole");
 }

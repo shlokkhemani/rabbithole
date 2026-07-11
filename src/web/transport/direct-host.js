@@ -3,6 +3,7 @@ import { normalizeBlockIds } from "../../core/blocks.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
+import { randomId } from "../../core/utils.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -570,15 +571,13 @@ function branchAnsweredFields(node) {
 }
 
 function defaultGenerationRunId() {
-  return globalThis.crypto?.randomUUID
-    ? globalThis.crypto.randomUUID()
-    : `generation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return randomId("generation");
 }
 
 export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {}) {
   const now = new Date().toISOString();
-  const holeId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `hole-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const rootId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `root-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const holeId = randomId("hole");
+  const rootId = randomId("root");
   const inferredTitle = title || titleFromMarkdown(markdown) || "Untitled";
   return {
     hole_id: holeId,

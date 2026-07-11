@@ -22,6 +22,30 @@ export function escapeHtml(str) {
 }
 
 /**
+ * @param {unknown} title
+ * @param {{ fallback?: string }} [options]
+ */
+export function slugifyTitle(title, { fallback = "" } = {}) {
+  const slug = String(title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+export function randomUuidOrFallback() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+/** @param {string} prefix */
+export function randomId(prefix) {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
  * Serializes a value for safe embedding inside an inline `<script>`.
  * @param {unknown} value
  */

@@ -2,6 +2,7 @@
 // VISUAL FENCES
 // ===========================================================================
 import { getBlockType } from "../core/blocks.js";
+import { escapeHtml } from "../core/utils.js";
 
 var visualSurfaceCaches = {};
 var blockMounts = {};
@@ -225,19 +226,13 @@ export function mountVisuals(containerEl, surfaceKey){
 
 registerBlockMount("show", { renderHtml: buildShowVisual });
 
-function escapeCheckText(value){
-  return String(value ?? "").replace(/[&<>"']/g, function(char){
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
-  });
-}
-
 export function buildCheckVisual(model){
   var options = model.options.map(function(option, index){
-    return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeCheckText(option) + '</button>';
+    return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeHtml(option ?? "") + '</button>';
   }).join("");
-  return '<section class="rh-check"><div class="rh-check-question">' + escapeCheckText(model.question) +
+  return '<section class="rh-check"><div class="rh-check-question">' + escapeHtml(model.question ?? "") +
     '</div><div class="rh-check-options">' + options + '</div><div class="rh-check-explanation" hidden>' +
-    escapeCheckText(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
+    escapeHtml(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
 }
 
 function wireCheck(root, model, ctx){

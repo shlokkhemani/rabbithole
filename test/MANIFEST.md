@@ -127,9 +127,11 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | settings native provider select width/arrow/theme | C4 | Explicitly fossilizes the native select Phase 3 replaces. | — |
 | provider switch, local model field, OpenRouter picker | C4 | Pins bespoke controls and provider id `custom` that Phase 3 replaces/migrates. | Chrome: Combobox catalogs (successful catalog only); settings during active stream (no active stream) |
 | session-only key opt-out | C2 | Protects credential persistence choice. | Data: preference/credential storage (current behavior only) |
-| settings trigger/panel exact alignment and 14px surface geometry | C4 | Pins the shared popover surface standard and positioning geometry targeted by Phases 3–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| settings anchor uses token gap/edge, flips, and repositions after content growth | C2 | Enforces the shared measure-flip-clamp engine and token-derived trigger-relative geometry (`stage10-web-verify.mjs:364-420`). | Chrome: anchored surfaces at viewport edges; content changes after open |
+| nested settings layers close top-first on Escape | C2 | Enforces model-picker-before-settings stack ordering and prevents Escape from leaking to lower canvas shortcuts (`stage10-web-verify.mjs:445-452`). | Chrome: nested transient surfaces; keyboard-only completion |
+| settings Escape/outside-pointer restore trigger focus | C2 | Enforces visible focus continuity for both stack dismissal paths (`stage10-web-verify.mjs:450-458`). | Chrome: focus restoration after transient surfaces |
 | live math/code/show document rendering | C2 | Protects core authoring rendering. | — |
-| share popover exact surface/padding/anchor geometry | C4 | Pins the shared popover surface and Phase 2 semantic share-item padding, plus positioning targeted by Phases 3–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| share popover token anchor geometry, surface/padding, and focus restore | C2 | Enforces shared-engine trigger-relative placement and stack focus restoration while retaining the shared surface metrics (`stage10-web-verify.mjs:486-526`). | Chrome: anchored surfaces at viewport edges; focus restoration after transient surfaces |
 | selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
@@ -257,11 +259,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 79 |
+| C2 behavioral product contract | 83 |
 | C3 implementation snapshot | 10 |
-| C4 known defect | 10 |
+| C4 known defect | 8 |
 | C5 design target | 0 |
-| **Total** | **140** |
+| **Total** | **142** |
 
 ## Known-defect fossils
 
@@ -269,7 +271,7 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 - `stage10-web-verify.mjs:261-285` requires the bespoke local text input and OpenRouter picker and persists provider id `custom`; Phase 3 replaces these controls and includes provider-id migration.
 - `stage12-portability-verify.mjs:182-191` independently requires the native provider `<select>` and an exact OpenRouter-label width band.
 - `stage10-web-verify.mjs:179-224` pins rail padding (`12px`, `7px`, `8px`), bottom gap (`14px`), and width (`<=226px`): per-screen magic design values Phase 2 intends to centralize.
-- `stage10-web-verify.mjs:336-379` pins settings alignment, edge fallback, toolbar gap, and optical SVG offsets; `stage10-web-verify.mjs:408-445` pins share surface equality and exact shell/item padding. These fossilize bespoke anchoring/surface geometry that Phases 2–4 replace.
+- `stage10-web-verify.mjs:421-442` retains settings surface equality and the optical gear offset; `stage10-web-verify.mjs:486-521` retains share surface equality and exact shell/item padding. Anchoring itself is now a C2 engine contract rather than a bespoke-geometry fossil.
 - No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
 - `stage14-reducer-conformance.mjs` "stale node_progress currently wins" pins last-write-wins progress ordering — the gap the `{id, seq}` order guard (Phases 5/6) closes.
 - `stage13-data-edges-verify.mjs` "hand-edited snapshot payload validation" is a skip-with-reason: snapshots currently have no inert import boundary, validator, or size cap (built in Phase 7).

@@ -56,7 +56,6 @@ import {
 
 var askHooks = {
   post: function(){ return Promise.resolve({ ok: true }); },
-  closeShare: function(){},
   hideConfirm: function(){},
   hidePeek: function(){}
 };
@@ -71,7 +70,6 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   document.addEventListener("mousedown", function(e){
     var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
-    if (!c("#sharemenu") && !c("#r-share") && !c("#t-share")) askHooks.closeShare();
     if (!c("#confirm")) askHooks.hideConfirm();
     if (!c("#peek") && !c("mark[data-child]")) askHooks.hidePeek();
     if (inAsk(e)) return;

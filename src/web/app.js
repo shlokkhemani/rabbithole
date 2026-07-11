@@ -7,6 +7,8 @@ import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { activateFocusTrap } from "../ui/focus-trap.js";
+import { anchorSurface } from "../ui/overlay/anchor.js";
+import { registerLayer } from "../ui/overlay/layer-stack.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
@@ -32,6 +34,9 @@ let railOpen = false;
 let blankZoom = 1;
 let composerTrap = null;
 let settingsTrap = null;
+let settingsPosition = null;
+let settingsLayer = null;
+let settingsPickerLayer = null;
 let composerPath = "";
 let pendingComposerAction = null;
 let pendingBranchRetry = null;
@@ -161,7 +166,6 @@ async function chooseInitialHole() {
 function initAppChrome() {
   const rail = document.getElementById("web-rail");
   window.addEventListener("resize", syncRailPosition, { passive: true });
-  window.addEventListener("resize", syncSettingsPosition, { passive: true });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", () => openComposer({ source: "button" }));
   document.getElementById("t-settings")?.addEventListener("click", () => openSettingsModal());
@@ -739,26 +743,6 @@ function syncRailPosition() {
   rail.style.setProperty("--rail-top", `${toolbar.getBoundingClientRect().bottom + 14}px`);
 }
 
-function syncSettingsPosition() {
-  const modal = document.getElementById("web-settings-modal");
-  const dialog = modal?.querySelector(".web-settings-dialog");
-  const button = document.getElementById("t-settings");
-  if (!modal || modal.hidden || !dialog || !button) return;
-
-  const edge = window.innerWidth <= 760 ? 8 : 14;
-  const toolbarRect = document.getElementById("toolbar")?.getBoundingClientRect();
-  const readerRect = document.getElementById("reader-top")?.getBoundingClientRect();
-  const buttonRect = button.getBoundingClientRect();
-  const dialogWidth = dialog.offsetWidth || Math.min(340, window.innerWidth - edge * 2);
-  const anchorBottom = toolbarRect?.height ? toolbarRect.bottom : (readerRect?.height ? readerRect.bottom : 0);
-  const anchorRight = buttonRect.width ? buttonRect.right : window.innerWidth - edge;
-  const left = Math.max(edge, Math.min(window.innerWidth - dialogWidth - edge, anchorRight - dialogWidth));
-
-  modal.style.setProperty("--settings-left", `${left}px`);
-  modal.style.setProperty("--settings-top", `${anchorBottom + edge}px`);
-  modal.style.setProperty("--settings-edge", `${edge}px`);
-}
-
 function setRailOpen(value) {
   railOpen = !!value;
   applyRailState();
@@ -782,19 +766,17 @@ function loadRailOpen() {
 
 function initSettingsModal() {
   initSettingsPanel();
-  const modal = document.getElementById("web-settings-modal");
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) closeSettingsModal();
-  });
 }
 
 function openSettingsModal({ focusKey = false, focusSelector = "" } = {}) {
   const modal = document.getElementById("web-settings-modal");
   initSettingsPanel();
   modal.hidden = false;
-  syncSettingsPosition();
-  requestAnimationFrame(syncSettingsPosition);
-  document.getElementById("t-settings")?.setAttribute("aria-expanded", "true");
+  const trigger = document.getElementById("t-settings");
+  const dialog = modal.querySelector(".web-settings-dialog");
+  trigger?.setAttribute("aria-expanded", "true");
+  settingsPosition?.dispose();
+  settingsPosition = anchorSurface(trigger, dialog, { placement: "bottom-end" });
   warmModelCatalog();
   const panel = document.getElementById("settings-panel");
   if (panel?.querySelector("#api-key")?.value.trim()) commitSettingsKey(panel);
@@ -802,14 +784,10 @@ function openSettingsModal({ focusKey = false, focusSelector = "" } = {}) {
   const explicitFocus = focusSelector ? modal.querySelector(focusSelector) : null;
   settingsTrap = activateFocusTrap(modal, {
     initialFocus: explicitFocus || (focusKey ? modal.querySelector("#api-key") : modal.querySelector(".web-settings-dialog")),
-    onEscape: () => {
-      if (closeSettingsPickerFn) {
-        closeSettingsPickerFn();
-        return;
-      }
-      closeSettingsModal();
-    },
+    restoreFocus: false,
   });
+  settingsLayer?.({ restoreFocus: false });
+  settingsLayer = registerLayer({ element: dialog, trigger, onClose: closeSettingsModal });
 }
 
 function closeSettingsModal() {
@@ -820,11 +798,15 @@ function closeSettingsModal() {
   inline.hidden = true;
   inline.innerHTML = "";
   pendingBranchRetry = null;
+  if (closeSettingsPickerFn) closeSettingsPickerFn({ refocus: false });
   closeSettingsPickerFn = null;
   if (settingsTrap) {
     settingsTrap();
     settingsTrap = null;
   }
+  settingsPosition?.dispose();
+  settingsPosition = null;
+  if (settingsLayer) { settingsLayer(); settingsLayer = null; }
 }
 
 function warmModelCatalog() {
@@ -1033,6 +1015,8 @@ function wireModelPicker(panel) {
     renderList();
     search.focus({ preventScroll: true });
     closeSettingsPickerFn = closePicker;
+    settingsPickerLayer?.({ restoreFocus: false });
+    settingsPickerLayer = registerLayer({ element: picker, trigger: select, onClose: () => closePicker() });
     if (!modelCatalogCache) {
       loadModelCatalog().then((models) => {
         modelCatalogCache = models;
@@ -1048,6 +1032,10 @@ function wireModelPicker(panel) {
     select.setAttribute("aria-expanded", "false");
     panel.classList.remove("picking");
     closeSettingsPickerFn = null;
+    if (settingsPickerLayer) {
+      settingsPickerLayer({ restoreFocus: refocus });
+      settingsPickerLayer = null;
+    }
     if (refocus) select.focus({ preventScroll: true });
   };
 
@@ -1113,12 +1101,6 @@ function wireModelPicker(panel) {
   });
   search.addEventListener("input", renderList);
   search.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      closePicker();
-      return;
-    }
     const rows = optionRows();
     if (!rows.length) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {

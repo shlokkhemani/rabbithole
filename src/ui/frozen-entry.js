@@ -74,7 +74,6 @@ export function startRabbithole(hydration) {
   });
   registerAskHooks({
     post: post,
-    closeShare: closeShare,
     hideConfirm: hideConfirm,
     hidePeek: hidePeek
   });

@@ -42,6 +42,8 @@ import {
 import { mountVisuals } from "./visuals.js";
 import { downloadSnapshot } from "./snapshot.js";
 import { activateFocusTrap } from "./focus-trap.js";
+import { anchorSurface } from "./overlay/anchor.js";
+import { registerLayer } from "./overlay/layer-stack.js";
 
 var branchHooks = {
   post: function(){ return Promise.resolve({ ok: true }); },
@@ -81,7 +83,6 @@ export function initBranchSurfaces(){
     hideConfirm();
     if (node) deleteBranch(node);
   });
-  window.addEventListener("resize", function(){ if (shareOpen && shareAnchor) positionShare(shareAnchor); }, { passive: true });
 }
 
 export function hidePeek(){
@@ -131,18 +132,7 @@ export function hidePeek(){
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize
   // ===========================================================================
-  var shareOpen = false, shareTrap = null, shareAnchor = null;
-  function positionShare(anchor){
-    var edge = window.innerWidth <= 760 ? 8 : 14;
-    var r = anchor.getBoundingClientRect();
-    var bar = anchor.id === "t-share" ? document.getElementById("toolbar") : document.getElementById("reader-top");
-    var barRect = bar && bar.getBoundingClientRect();
-    var anchorBottom = barRect && barRect.height ? barRect.bottom : r.bottom;
-    var width = shareMenu.offsetWidth;
-    var left = Math.max(edge, Math.min(window.innerWidth - width - edge, r.right - width));
-    shareMenu.style.left = left + "px";
-    shareMenu.style.top = (anchorBottom + edge) + "px";
-  }
+  var shareOpen = false, shareTrap = null, shareAnchor = null, sharePosition = null, shareLayer = null;
 export function toggleShare(anchor){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
@@ -152,23 +142,26 @@ export function toggleShare(anchor){
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     shareAnchor = anchor;
-    positionShare(anchor);
     shareOpen = true;
     anchor.setAttribute("aria-expanded", "true");
     shareMenu.classList.add("visible");
+    sharePosition = anchorSurface(anchor, shareMenu, { placement: "bottom-end" });
     setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
     if (shareTrap) shareTrap();
     shareTrap = activateFocusTrap(shareMenu, {
       initialFocus: shareMenu.querySelector("button"),
-      onEscape: closeShare
+      restoreFocus: false
     });
+    shareLayer = registerLayer({ element: shareMenu, trigger: anchor, onClose: closeShare });
   }
 export function closeShare(){
     shareOpen = false;
     shareMenu.classList.remove("visible");
     if (shareAnchor) shareAnchor.setAttribute("aria-expanded", "false");
-    shareAnchor = null;
     if (shareTrap){ shareTrap(); shareTrap = null; }
+    if (sharePosition){ sharePosition.dispose(); sharePosition = null; }
+    if (shareLayer){ shareLayer(); shareLayer = null; }
+    shareAnchor = null;
   }
 
   function copyText(text, okMsg){

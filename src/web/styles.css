@@ -621,12 +621,10 @@ body.blank-dragging .composer-card {
 }
 
 .web-settings-dialog {
-  position: absolute;
-  top: var(--settings-top, 68px);
-  left: var(--settings-left, 14px);
+  position: fixed;
   width: min(340px, 100%);
   min-width: 0;
-  max-height: calc(100vh - var(--settings-top, 68px) - var(--settings-edge, 14px));
+  max-height: calc(100vh - var(--surface-edge) * 2);
   overflow: auto;
   outline: none;
   border: var(--surface-popover-border);

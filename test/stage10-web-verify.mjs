@@ -363,19 +363,61 @@ async function verifyCanvasBranching() {
   assert.equal(toolbarAlignment.settingsHeight, toolbarAlignment.themeHeight, "settings control should match toolbar peer height");
   const settingsPlacement = await page.evaluate(() => {
     const button = document.getElementById("t-settings").getBoundingClientRect();
-    const toolbar = document.getElementById("toolbar").getBoundingClientRect();
     const dialog = document.querySelector(".web-settings-dialog").getBoundingClientRect();
+    const styles = getComputedStyle(document.documentElement);
+    const edge = parseFloat(styles.getPropertyValue("--surface-edge"));
+    const gap = parseFloat(styles.getPropertyValue("--surface-gap"));
     return {
       rightAlignment: Math.abs(dialog.right - button.right),
       leftEdge: dialog.left,
-      toolbarGap: dialog.top - toolbar.bottom,
-      withinViewport: dialog.left >= 0 && dialog.right <= innerWidth,
+      triggerGap: dialog.top - button.bottom,
+      edge,
+      gap,
+      withinViewport: dialog.left >= edge && dialog.right <= innerWidth - edge && dialog.top >= edge && dialog.bottom <= innerHeight - edge,
     };
   });
-  assert(settingsPlacement.rightAlignment < 1 || Math.abs(settingsPlacement.leftEdge - 14) < 1,
+  assert(settingsPlacement.rightAlignment < 1 || Math.abs(settingsPlacement.leftEdge - settingsPlacement.edge) < 1,
     `settings panel should anchor to its gear or the safe page edge, right offset ${settingsPlacement.rightAlignment.toFixed(2)}px, left ${settingsPlacement.leftEdge.toFixed(2)}px`);
-  assert(Math.abs(settingsPlacement.toolbarGap - 14) < 1, `settings panel should share the 14px toolbar rhythm, got ${settingsPlacement.toolbarGap.toFixed(2)}px`);
+  assert(Math.abs(settingsPlacement.triggerGap - settingsPlacement.gap) < 1, `settings panel should use the token gap from its trigger, got ${settingsPlacement.triggerGap.toFixed(2)}px`);
   assert.equal(settingsPlacement.withinViewport, true, "settings panel should stay within the viewport");
+  await page.evaluate(() => {
+    const trigger = document.getElementById("t-settings");
+    trigger.style.position = "fixed";
+    trigger.style.bottom = "8px";
+    trigger.style.right = "14px";
+    window.dispatchEvent(new Event("resize"));
+  });
+  await page.waitForTimeout(50);
+  const flipped = await page.evaluate(() => {
+    const trigger = document.getElementById("t-settings").getBoundingClientRect();
+    const dialog = document.querySelector(".web-settings-dialog").getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap"));
+    return { placement: document.querySelector(".web-settings-dialog").dataset.placement, gap: trigger.top - dialog.bottom, tokenGap: gap };
+  });
+  assert.equal(flipped.placement, "top-end", "settings should flip above when below-space cannot fit the rendered surface");
+  assert(Math.abs(flipped.gap - flipped.tokenGap) < 1, "flipped settings should preserve the token gap");
+  await page.evaluate(() => {
+    document.getElementById("t-settings").removeAttribute("style");
+    window.dispatchEvent(new Event("resize"));
+  });
+  await page.waitForTimeout(50);
+  const growthBefore = await page.locator(".web-settings-dialog").boundingBox();
+  await page.evaluate(() => {
+    const growth = document.createElement("div");
+    growth.id = "anchor-growth-probe";
+    growth.style.height = "120px";
+    document.getElementById("settings-panel").appendChild(growth);
+  });
+  await page.waitForTimeout(50);
+  const growthAfter = await page.evaluate(() => {
+    const dialog = document.querySelector(".web-settings-dialog").getBoundingClientRect();
+    const edge = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-edge"));
+    return { top: dialog.top, height: dialog.height, bottom: dialog.bottom, limit: innerHeight - edge };
+  });
+  assert(growthAfter.height > growthBefore.height || growthAfter.top < growthBefore.y,
+    "content growth should resize or reposition the measured settings surface");
+  assert(growthAfter.bottom <= growthAfter.limit + 1, "content growth should re-clamp settings within the token edge");
+  await page.evaluate(() => document.getElementById("anchor-growth-probe").remove());
   const settingsSurfaceStandard = await page.evaluate(() => {
     const styles = getComputedStyle(document.querySelector(".web-settings-dialog"));
     return {
@@ -400,6 +442,21 @@ async function verifyCanvasBranching() {
     `settings gear glyph should be optically centered in its button, off by ${gearOffset.dx.toFixed(2)},${gearOffset.dy.toFixed(2)}px`);
   assert.match(await page.locator("#settings-panel").innerText(), /Stored only in this browser/i);
   assert.equal(await page.locator("#model-select").count(), 1, "settings should expose the model picker without opening Advanced");
+  await page.click("#model-select");
+  await page.waitForSelector("#model-picker:not([hidden])");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#model-picker").getAttribute("hidden"), "", "first Escape should close only the nested model picker");
+  assert.equal(await page.locator("#web-settings-modal").getAttribute("hidden"), null, "settings should remain open after its child closes");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#web-settings-modal[hidden]", { state: "attached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-settings", "closing settings should restore focus to its trigger");
+  await page.click("#t-settings");
+  await page.waitForSelector("#web-settings-modal:not([hidden])");
+  await page.locator("#web-settings-modal").click({ position: { x: 4, y: 300 } });
+  await page.waitForSelector("#web-settings-modal[hidden]", { state: "attached" });
+  await page.waitForTimeout(30);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-settings", "outside-pointer close should restore settings focus");
+  await page.click("#t-settings");
   await page.fill("#api-key", MOCK_KEY);
   await page.press("#api-key", "Enter");
   await page.waitForSelector("#api-key-status.valid");
@@ -432,9 +489,9 @@ async function verifyCanvasBranching() {
   const shareStandard = await page.evaluate(() => {
     const menu = document.getElementById("sharemenu");
     const anchor = document.getElementById("t-share").getBoundingClientRect();
-    const toolbar = document.getElementById("toolbar").getBoundingClientRect();
     const menuRect = menu.getBoundingClientRect();
     const styles = getComputedStyle(menu);
+    const rootStyles = getComputedStyle(document.documentElement);
     const itemStyles = getComputedStyle(menu.querySelector(".sm-item"));
     return {
       surface: {
@@ -445,7 +502,8 @@ async function verifyCanvasBranching() {
         backdrop: styles.backdropFilter,
       },
       rightAlignment: Math.abs(menuRect.right - anchor.right),
-      toolbarGap: menuRect.top - toolbar.bottom,
+      triggerGap: menuRect.top - anchor.bottom,
+      tokenGap: parseFloat(rootStyles.getPropertyValue("--surface-gap")),
       shellPadding: styles.padding,
       itemPaddingTop: itemStyles.paddingTop,
       itemPaddingBottom: itemStyles.paddingBottom,
@@ -455,7 +513,7 @@ async function verifyCanvasBranching() {
   });
   assert.deepEqual(shareStandard.surface, settingsSurfaceStandard, "Share and Settings should use the same popover surface standard");
   assert(shareStandard.rightAlignment < 1, `Share should anchor to its trigger, off by ${shareStandard.rightAlignment.toFixed(2)}px`);
-  assert(Math.abs(shareStandard.toolbarGap - 14) < 1, `Share should use the 14px toolbar rhythm, got ${shareStandard.toolbarGap.toFixed(2)}px`);
+  assert(Math.abs(shareStandard.triggerGap - shareStandard.tokenGap) < 1, `Share should use the token gap from its trigger, got ${shareStandard.triggerGap.toFixed(2)}px`);
   assert.equal(shareStandard.shellPadding, "6px");
   assert.equal(shareStandard.itemPaddingTop, "8px");
   assert.equal(shareStandard.itemPaddingBottom, "8px");
@@ -464,6 +522,7 @@ async function verifyCanvasBranching() {
   await page.keyboard.press("Escape");
   await page.waitForSelector("#sharemenu:not(.visible)", { state: "attached" });
   assert.equal(await page.getAttribute("#t-share", "aria-expanded"), "false");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-share", "closing Share should restore focus to its trigger");
 
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");

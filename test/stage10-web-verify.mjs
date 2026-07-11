@@ -600,6 +600,10 @@ async function verifyCanvasBranching() {
     onProviderCall: () => { providerCalls += 1; },
     streams: [
       [
+        "TITLE: Card follow-up\n",
+        "Card drawer keyboard submission created this follow-up child.",
+      ],
+      [
         "TITLE: Euler branch\n",
         "Euler identity connects rotation, growth, and zero in one compact statement.\n\n",
         "```show\n<style>.flow{display:grid;gap:8px}.box{border:1px solid var(--border);padding:8px;border-radius:6px}</style><div class='flow'><div class='box'>rotation</div><div class='box'>cancellation</div></div>\n```\n",
@@ -777,6 +781,62 @@ async function verifyCanvasBranching() {
   await page.waitForSelector(".node .hljs");
   await page.waitForSelector(".node .viz-show");
 
+  const rootDrawer = page.locator(".node.root .nc-handle");
+  const rootDrawerId = await rootDrawer.getAttribute("aria-controls");
+  assert.equal(await rootDrawer.getAttribute("aria-expanded"), "false", "card drawer handle should expose its closed disclosure state");
+  assert(rootDrawerId, "card drawer handle should reference its input region");
+  assert.equal(await page.locator(`#${rootDrawerId}`).count(), 1, "card drawer aria-controls should resolve to the input region");
+  const canvasModeBeforeDrawer = await page.locator("body").getAttribute("class");
+  await rootDrawer.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-inner textarea"));
+  assert.equal(await rootDrawer.getAttribute("aria-expanded"), "true", "opening a card drawer should expand its disclosure state");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-handle"));
+  assert.equal(await rootDrawer.getAttribute("aria-expanded"), "false", "Escape should close the card drawer disclosure");
+  assert.equal(await page.locator("body").getAttribute("class"), canvasModeBeforeDrawer, "drawer Escape should not change the canvas mode class");
+  await rootDrawer.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-inner textarea"));
+  await page.evaluate(() => document.querySelector(".node.root").matches = () => false);
+  await page.focus("#t-reader");
+  await page.waitForFunction(() => !document.querySelector(".node.root .node-composer").classList.contains("open"));
+  await page.evaluate(() => delete document.querySelector(".node.root").matches);
+  assert.equal(await rootDrawer.getAttribute("aria-expanded"), "false", "empty-draft blur should close an unhovered card drawer");
+
+  await rootDrawer.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-inner textarea"));
+  await page.keyboard.type("Create a card follow-up child");
+  await page.keyboard.press("Enter");
+  await waitForCanvasText(page, "Card drawer keyboard submission created this follow-up child");
+  assert.equal(await rootDrawer.getAttribute("aria-expanded"), "false", "submitting a card follow-up should close its drawer");
+  assert.equal(providerCalls, 1, "card keyboard submission should use the follow-up request path once");
+
+  const childCard = page.locator(".node:not(.root)", { hasText: "Card drawer keyboard submission" }).first();
+  const cardControls = await childCard.locator(".node-head .node-btn").evaluateAll((buttons) => buttons.map((button) => ({
+    type: button.getAttribute("type"),
+    name: button.getAttribute("aria-label") || button.textContent.trim(),
+  })));
+  assert.deepEqual(cardControls, [
+    { type: "button", name: "Remove this branch" },
+    { type: "button", name: "Smaller text" },
+    { type: "button", name: "Larger text" },
+    { type: "button", name: "Collapse document" },
+    { type: "button", name: "Expand document" },
+  ], "all five card controls should use Button kit semantics and accessible names");
+  const childPosition = await childCard.evaluate((card) => ({ left: card.style.left, top: card.style.top }));
+  const smallerBox = await childCard.locator('.node-btn[aria-label="Smaller text"]').boundingBox();
+  await page.mouse.move(smallerBox.x + smallerBox.width / 2, smallerBox.y + smallerBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(smallerBox.x + 50, smallerBox.y + 40);
+  await page.mouse.up();
+  assert.deepEqual(await childCard.evaluate((card) => ({ left: card.style.left, top: card.style.top })), childPosition, "card controls should remain excluded from card dragging");
+  await childCard.locator(".node-btn.danger").click();
+  await page.waitForSelector("#confirm.visible");
+  await page.click("#cf-remove");
+  await childCard.waitFor({ state: "detached" });
+
   await page.click("#t-reader");
   await page.waitForSelector("body:not(.mode-canvas)");
   await page.focus("#r-textup");
@@ -926,7 +986,7 @@ async function verifyCanvasBranching() {
   await page.keyboard.type("Why does this matter?");
   await page.keyboard.press("Enter");
   await waitForCanvasText(page, "Euler identity connects rotation");
-  assert.equal(providerCalls, 1);
+  assert.equal(providerCalls, 2);
 
   const branchMark = page.locator('mark[data-child].mark-ready').first();
   assert.deepEqual(await branchMark.evaluate((mark) => ({ tabIndex: mark.tabIndex, role: mark.getAttribute("role"), name: mark.getAttribute("aria-label") })),
@@ -996,15 +1056,16 @@ async function verifyCanvasBranching() {
   assert.equal(await page.locator("#peek.visible").count(), 0, "Enter on a mark should open its branch and dismiss peek");
 
   if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
-  const childDelete = page.locator('.node:not(.root) .node-btn.danger').first();
+  const childDelete = page.locator('.node:not(.root)', { hasText: "Euler identity connects rotation" }).locator('.node-btn.danger');
   await childDelete.focus();
+  await page.evaluate(() => { window.__deleteTrigger = document.activeElement; });
   await page.keyboard.press("Enter");
   await page.waitForSelector("#confirm.visible");
   await page.waitForFunction(() => document.activeElement?.id === "cf-keep");
   await page.waitForTimeout(140);
   assert.equal(await page.evaluate(() => document.activeElement?.id), "cf-keep", "delete confirmation should initially focus Keep");
   const confirmAnchor = await page.evaluate(() => {
-    const trigger = document.querySelector('.node:not(.root) .node-btn.danger').getBoundingClientRect();
+    const trigger = window.__deleteTrigger.getBoundingClientRect();
     const confirm = document.getElementById("confirm").getBoundingClientRect();
     const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap"));
     return { placement: document.getElementById("confirm").dataset.placement, delta: confirm.top - trigger.bottom, gap };
@@ -1035,7 +1096,7 @@ async function verifyCanvasBranching() {
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
   await page.locator("#reader-main", { hasText: "Second branch explains the geometric view" }).waitFor();
-  assert.equal(providerCalls, 2);
+  assert.equal(providerCalls, 3);
 
   await page.waitForTimeout(900);
   await page.reload({ waitUntil: "networkidle" });

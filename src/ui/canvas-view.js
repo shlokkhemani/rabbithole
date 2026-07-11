@@ -55,6 +55,7 @@ import {
   zoomLabel
 } from "./core.js";
 import { applyChildHighlights, openNode } from "./reader.js";
+import { buttonMarkup, iconButtonMarkup } from "./primitives/button.js";
 
 var canvasHooks = {
   hideAsk: function(){},
@@ -151,15 +152,14 @@ export function createNodeEl(node, enter){
     }
     var titleEl = document.createElement("span"); titleEl.className = "node-title"; titleEl.textContent = node.title || "…";
     titleEl.title = node.title || "";
-    var aDown = mkBtn("A−", "Smaller text"); var aUp = mkBtn("A+", "Larger text");
-    aDown.classList.add("node-font-btn"); aUp.classList.add("node-font-btn");
-    var collapseBtn = mkIconBtn(NODE_COLLAPSE_ICON, "Collapse");
-    var openBtn = mkIconBtn(NODE_EXPAND_ICON, "Expand");
+    var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A−", ariaLabel: "Smaller text", title: "Smaller text" }));
+    var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
+    var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
+    var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
     var divider = document.createElement("span"); divider.className = "node-act-divider"; divider.setAttribute("aria-hidden", "true");
     var acts = document.createElement("span"); acts.className = "node-acts";
     if (node.id !== rootId){
-      var delBtn = mkBtn("✕", "Remove this branch");
-      delBtn.classList.add("danger");
+      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "✕", ariaLabel: "Remove this branch", title: "Remove this branch" }));
       delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasHooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
@@ -214,8 +214,11 @@ export function diveToNode(node, source){
     var ty = vh / 2 - (node.y + effH(node) / 2) * ts;
     animateView(tx, ty, ts, { source: source, duration: 270, ease: "inOut" });
   }
-  function mkBtn(txt, title){ var b = document.createElement("button"); b.className = "node-btn"; b.textContent = txt; b.title = title; return b; }
-  function mkIconBtn(svg, title){ var b = mkBtn("", title); b.innerHTML = svg; b.setAttribute("aria-label", title); return b; }
+  function cardButton(markup){
+    var template = document.createElement("template");
+    template.innerHTML = markup;
+    return template.content.firstElementChild;
+  }
 
   // ---------- per-card follow-up composer ----------
   var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -228,21 +231,22 @@ export function autoGrowEl(ta, max){
   }
   function buildCardComposer(node){
     var comp = document.createElement("div"); comp.className = "node-composer";
-    var clip = document.createElement("div"); clip.className = "nc-clip";
+    var clip = document.createElement("div"); clip.className = "nc-clip"; clip.id = cardDrawerId(node);
     var inner = document.createElement("div"); inner.className = "nc-inner";
     var ta = document.createElement("textarea"); ta.rows = 1;
     var send = document.createElement("button"); send.className = "send-btn"; send.title = "Send (↵)"; send.setAttribute("aria-label", "Send follow-up"); send.innerHTML = SEND_ICON;
     var handle = document.createElement("button"); handle.type = "button"; handle.className = "nc-handle"; handle.title = "Ask a follow-up about this document";
+    handle.setAttribute("aria-expanded", "false"); handle.setAttribute("aria-controls", clip.id);
     var plus = document.createElement("span"); plus.className = "nc-plus"; plus.textContent = "+";
     handle.appendChild(plus); handle.appendChild(document.createTextNode(" Follow-up"));
     inner.appendChild(ta); inner.appendChild(send); clip.appendChild(inner);
     comp.appendChild(clip); comp.appendChild(handle);
-    node.ncComp = comp; node.ncInner = inner; node.ncText = ta; node.ncSend = send;
+    node.ncComp = comp; node.ncInner = inner; node.ncText = ta; node.ncSend = send; node.ncHandle = handle;
     handle.addEventListener("click", function(e){ e.stopPropagation(); openCardDrawer(node); });
     ta.addEventListener("input", function(){ autoGrowEl(ta, 90); updateCardComposer(node); });
     ta.addEventListener("keydown", function(e){
       if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
-      else if (e.key === "Escape"){ e.stopPropagation(); closeCardDrawer(node); ta.blur(); }
+      else if (e.key === "Escape"){ e.stopPropagation(); closeCardDrawer(node); handle.focus({ preventScroll: true }); }
     });
     // Click-away with an empty drawer tucks it back in (a draft keeps it out).
     ta.addEventListener("blur", function(){
@@ -251,14 +255,21 @@ export function autoGrowEl(ta, max){
     send.addEventListener("click", function(e){ e.stopPropagation(); submitCardFollowup(node, motionSourceFromEvent(e)); });
     return comp;
   }
+  function cardDrawerId(node){
+    return "card-followup-" + String(node.id).replace(/[^A-Za-z0-9_-]/g, function(ch){ return "-" + ch.charCodeAt(0).toString(16) + "-"; });
+  }
   // preventScroll matters: a plain focus() would yank the overflow-hidden
   // viewport around to reveal the textarea, fighting the canvas transform.
   function openCardDrawer(node){
+    // This is a card-embedded disclosure, not a floating surface: its
+    // hover/draft lifecycle owns dismissal, so it does not join the layer stack.
     node.ncComp.classList.add("open");
+    node.ncHandle.setAttribute("aria-expanded", "true");
     node.ncText.focus({ preventScroll: true });
   }
   function closeCardDrawer(node){
     node.ncComp.classList.remove("open");
+    node.ncHandle.setAttribute("aria-expanded", "false");
   }
   // Same honest states as the reader's composer: an away agent doesn't disable
   // asking (questions queue server-side); only a pending doc or a dead session does.

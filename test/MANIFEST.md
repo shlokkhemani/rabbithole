@@ -157,6 +157,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | selection-bar virtual anchor placement | C2 | Requires token-gap flip/clamp placement from a live Range at viewport edges and a non-focus-stealing open. | Chrome: anchored surfaces at viewport edges |
 | selection-bar Escape isolation | C2 | Requires layer-owned Escape to preserve the live selection, focus the owning card/reader container, and prevent propagation to canvas shortcuts. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
 | selection-bar keyboard round trip | C2 | Requires Tab entry into the question box, typed question input, and Enter submission. | Chrome: keyboard-only completion |
+| card header control semantics | C2 | Requires all five per-card controls to declare `type="button"`, expose their specified accessible names, and remain excluded from card dragging. | Chrome: toolbar accessibility; pointer gesture isolation |
+| card drawer disclosure contract | C2 | Requires resolvable `aria-controls`, synchronized `aria-expanded`, isolated Escape with focus returned to the owning handle, unchanged canvas mode, and preserved empty-draft blur dismissal. | Chrome: keyboard-only completion; focus restoration after disclosures |
+| card drawer keyboard round trip | C2 | Opens the embedded disclosure from its handle, types and submits a question with Enter, spawns the follow-up child through the existing request path, and closes after submission. | Chrome: keyboard-only completion; Generation: follow-up submission |
 | selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
@@ -285,11 +288,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 112 |
+| C2 behavioral product contract | 115 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **168** |
+| **Total** | **171** |
 
 ## Known-defect fossils
 

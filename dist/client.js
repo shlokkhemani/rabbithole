@@ -2978,6 +2978,52 @@ var RabbitholeClient = (() => {
     readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
   }
 
+  // src/core/utils.js
+  var LINE_SEP = new RegExp(String.fromCharCode(8232), "g");
+  var PARA_SEP = new RegExp(String.fromCharCode(8233), "g");
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // src/core/html/button-markup.js
+  var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
+  function attribute(name, value) {
+    if (value === void 0 || value === false || value === null) return "";
+    return " " + name + (value === true ? "" : '="' + escapeHtml(String(value)) + '"');
+  }
+  function buttonAttributes(options2, iconOnly) {
+    var _a2;
+    const label = String(options2.label || "").trim();
+    const ariaLabel = String(options2.ariaLabel || "").trim();
+    if (iconOnly && !ariaLabel) throw new Error("IconButton requires aria-label");
+    if (!iconOnly && !label && !ariaLabel) throw new Error("Button requires an accessible name");
+    const baseClass = options2.bare ? "" : iconOnly ? "tool-btn tool-icon" : "tool-btn";
+    const className = [baseClass, options2.className].filter(Boolean).join(" ");
+    let result = attribute("class", className || void 0) + attribute("id", options2.id) + attribute("type", "button") + attribute("role", options2.role) + attribute("tabindex", options2.tabIndex) + attribute("title", options2.title) + attribute("aria-label", ariaLabel || void 0);
+    for (const [name, value] of Object.entries(options2.dataAttrs || {})) {
+      const attrName = "data-" + String(name).replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase());
+      result += attribute(attrName, value);
+    }
+    for (const name of STATEFUL_ARIA) {
+      const camelName = name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+      result += attribute(name, (_a2 = options2[name]) != null ? _a2 : options2[camelName]);
+    }
+    const aria = options2.aria || {};
+    for (const [name, value] of Object.entries(aria)) {
+      const attrName = name.startsWith("aria-") ? name : "aria-" + name;
+      if (!STATEFUL_ARIA.includes(attrName) && attrName !== "aria-label") result += attribute(attrName, value);
+    }
+    return result + attribute("hidden", options2.hidden) + attribute("disabled", options2.disabled);
+  }
+  function buttonMarkup(options2 = {}) {
+    const content = (options2.svgIconHtml || "") + escapeHtml(String(options2.label || "")) + (options2.kbdHint ? "<kbd>" + escapeHtml(String(options2.kbdHint)) + "</kbd>" : "");
+    return "<button" + buttonAttributes(options2, false) + ">" + content + "</button>";
+  }
+  function iconButtonMarkup(options2 = {}) {
+    const content = options2.svgIconHtml || escapeHtml(String(options2.icon || ""));
+    return "<button" + buttonAttributes(options2, true) + ">" + content + "</button>";
+  }
+
   // src/ui/canvas-view.js
   var canvasHooks = {
     hideAsk: function() {
@@ -3099,20 +3145,17 @@ var RabbitholeClient = (() => {
     titleEl.className = "node-title";
     titleEl.textContent = node.title || "\u2026";
     titleEl.title = node.title || "";
-    var aDown = mkBtn("A\u2212", "Smaller text");
-    var aUp = mkBtn("A+", "Larger text");
-    aDown.classList.add("node-font-btn");
-    aUp.classList.add("node-font-btn");
-    var collapseBtn = mkIconBtn(NODE_COLLAPSE_ICON, "Collapse");
-    var openBtn = mkIconBtn(NODE_EXPAND_ICON, "Expand");
+    var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A\u2212", ariaLabel: "Smaller text", title: "Smaller text" }));
+    var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
+    var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
+    var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
     var divider = document.createElement("span");
     divider.className = "node-act-divider";
     divider.setAttribute("aria-hidden", "true");
     var acts = document.createElement("span");
     acts.className = "node-acts";
     if (node.id !== rootId) {
-      var delBtn = mkBtn("\u2715", "Remove this branch");
-      delBtn.classList.add("danger");
+      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "\u2715", ariaLabel: "Remove this branch", title: "Remove this branch" }));
       delBtn.addEventListener("click", function(e) {
         e.stopPropagation();
         canvasHooks.confirmDelete(node, delBtn);
@@ -3194,18 +3237,10 @@ var RabbitholeClient = (() => {
     var ty = vh / 2 - (node.y + effH(node) / 2) * ts;
     animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
   }
-  function mkBtn(txt, title) {
-    var b = document.createElement("button");
-    b.className = "node-btn";
-    b.textContent = txt;
-    b.title = title;
-    return b;
-  }
-  function mkIconBtn(svg, title) {
-    var b = mkBtn("", title);
-    b.innerHTML = svg;
-    b.setAttribute("aria-label", title);
-    return b;
+  function cardButton(markup) {
+    var template = document.createElement("template");
+    template.innerHTML = markup;
+    return template.content.firstElementChild;
   }
   var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function autoGrowEl(ta, max) {
@@ -3218,6 +3253,7 @@ var RabbitholeClient = (() => {
     comp.className = "node-composer";
     var clip = document.createElement("div");
     clip.className = "nc-clip";
+    clip.id = cardDrawerId(node);
     var inner2 = document.createElement("div");
     inner2.className = "nc-inner";
     var ta = document.createElement("textarea");
@@ -3231,6 +3267,8 @@ var RabbitholeClient = (() => {
     handle.type = "button";
     handle.className = "nc-handle";
     handle.title = "Ask a follow-up about this document";
+    handle.setAttribute("aria-expanded", "false");
+    handle.setAttribute("aria-controls", clip.id);
     var plus = document.createElement("span");
     plus.className = "nc-plus";
     plus.textContent = "+";
@@ -3245,6 +3283,7 @@ var RabbitholeClient = (() => {
     node.ncInner = inner2;
     node.ncText = ta;
     node.ncSend = send;
+    node.ncHandle = handle;
     handle.addEventListener("click", function(e) {
       e.stopPropagation();
       openCardDrawer(node);
@@ -3260,7 +3299,7 @@ var RabbitholeClient = (() => {
       } else if (e.key === "Escape") {
         e.stopPropagation();
         closeCardDrawer(node);
-        ta.blur();
+        handle.focus({ preventScroll: true });
       }
     });
     ta.addEventListener("blur", function() {
@@ -3272,12 +3311,19 @@ var RabbitholeClient = (() => {
     });
     return comp;
   }
+  function cardDrawerId(node) {
+    return "card-followup-" + String(node.id).replace(/[^A-Za-z0-9_-]/g, function(ch2) {
+      return "-" + ch2.charCodeAt(0).toString(16) + "-";
+    });
+  }
   function openCardDrawer(node) {
     node.ncComp.classList.add("open");
+    node.ncHandle.setAttribute("aria-expanded", "true");
     node.ncText.focus({ preventScroll: true });
   }
   function closeCardDrawer(node) {
     node.ncComp.classList.remove("open");
+    node.ncHandle.setAttribute("aria-expanded", "false");
   }
   function updateCardComposer(node) {
     if (!node.ncText) return;
@@ -5031,52 +5077,6 @@ var RabbitholeClient = (() => {
       for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
       syncPalActiveDescendant();
     }
-  }
-
-  // src/core/utils.js
-  var LINE_SEP = new RegExp(String.fromCharCode(8232), "g");
-  var PARA_SEP = new RegExp(String.fromCharCode(8233), "g");
-  function escapeHtml(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-
-  // src/core/html/button-markup.js
-  var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
-  function attribute(name, value) {
-    if (value === void 0 || value === false || value === null) return "";
-    return " " + name + (value === true ? "" : '="' + escapeHtml(String(value)) + '"');
-  }
-  function buttonAttributes(options2, iconOnly) {
-    var _a2;
-    const label = String(options2.label || "").trim();
-    const ariaLabel = String(options2.ariaLabel || "").trim();
-    if (iconOnly && !ariaLabel) throw new Error("IconButton requires aria-label");
-    if (!iconOnly && !label && !ariaLabel) throw new Error("Button requires an accessible name");
-    const baseClass = options2.bare ? "" : iconOnly ? "tool-btn tool-icon" : "tool-btn";
-    const className = [baseClass, options2.className].filter(Boolean).join(" ");
-    let result = attribute("class", className || void 0) + attribute("id", options2.id) + attribute("type", "button") + attribute("role", options2.role) + attribute("tabindex", options2.tabIndex) + attribute("title", options2.title) + attribute("aria-label", ariaLabel || void 0);
-    for (const [name, value] of Object.entries(options2.dataAttrs || {})) {
-      const attrName = "data-" + String(name).replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase());
-      result += attribute(attrName, value);
-    }
-    for (const name of STATEFUL_ARIA) {
-      const camelName = name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-      result += attribute(name, (_a2 = options2[name]) != null ? _a2 : options2[camelName]);
-    }
-    const aria = options2.aria || {};
-    for (const [name, value] of Object.entries(aria)) {
-      const attrName = name.startsWith("aria-") ? name : "aria-" + name;
-      if (!STATEFUL_ARIA.includes(attrName) && attrName !== "aria-label") result += attribute(attrName, value);
-    }
-    return result + attribute("hidden", options2.hidden) + attribute("disabled", options2.disabled);
-  }
-  function buttonMarkup(options2 = {}) {
-    const content = (options2.svgIconHtml || "") + escapeHtml(String(options2.label || "")) + (options2.kbdHint ? "<kbd>" + escapeHtml(String(options2.kbdHint)) + "</kbd>" : "");
-    return "<button" + buttonAttributes(options2, false) + ">" + content + "</button>";
-  }
-  function iconButtonMarkup(options2 = {}) {
-    const content = options2.svgIconHtml || escapeHtml(String(options2.icon || ""));
-    return "<button" + buttonAttributes(options2, true) + ">" + content + "</button>";
   }
 
   // src/core/html/shell.js

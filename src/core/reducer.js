@@ -1,5 +1,6 @@
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeStoredBaseUrlFields } from "./base-url.js";
 import { normalizeBlockIds } from "./blocks.js";
+import { cloneJson } from "./schema.js";
 import {
   applyNodeUpdateFields,
   collectSubtreeIds,
@@ -20,6 +21,7 @@ import {
 /** @typedef {import("./contracts/engine.js").NodeUpdateEvent} NodeUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodesUpdateEvent} NodesUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodeOriginEvent} NodeOriginEvent */
+/** @typedef {import("./contracts/engine.js").BlockStateEvent} BlockStateEvent */
 
 /** @param {Parameters<import("./contracts/engine.js").createHoleState>[0]} [input] @returns {HoleState} */
 export function createHoleState({ hole_id, title, root_id, created_at = null, view_state = null, nodes = [] } = {}) {
@@ -104,9 +106,28 @@ export function reduceHoleEvent(state, event, options = {}) {
       return withState({ ...state, title: String(/** @type {import("./contracts/engine.js").HoleTitleEvent} */ (event).title ?? state.title) });
     case "node_origin":
       return reduceNodeOrigin(state, /** @type {NodeOriginEvent} */ (event));
+    case "block_state":
+      return reduceBlockState(state, /** @type {BlockStateEvent} */ (event));
     default:
       throw new Error(`Unsupported hole event: ${type}`);
   }
+}
+
+/** @param {HoleState} state @param {BlockStateEvent} event */
+function reduceBlockState(state, event) {
+  const nodeId = String(event.node_id || "");
+  const blockId = String(event.block_id || "");
+  const node = state.nodes.get(nodeId);
+  if (!node || !blockId || !event.state || typeof event.state !== "object" || Array.isArray(event.state)) return withState(state);
+  const extensions = cloneJson(node.extensions ?? {});
+  const learn = /** @type {Record<string, any>} */ (extensions.learn && typeof extensions.learn === "object" && !Array.isArray(extensions.learn)
+    ? extensions.learn : {});
+  const previous = learn[blockId] && typeof learn[blockId] === "object" && !Array.isArray(learn[blockId])
+    ? learn[blockId] : {};
+  extensions.learn = { ...learn, [blockId]: { ...previous, ...cloneJson(event.state) } };
+  const nodes = cloneNodes(state);
+  nodes.set(nodeId, { ...node, extensions });
+  return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
 /** @param {HoleState} state @param {ReduceEffects} [effects] @returns {ReduceResult} */

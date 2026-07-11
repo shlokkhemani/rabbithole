@@ -1,5 +1,6 @@
 import { initCore, registerCoreHooks } from "./core.js";
-import { mountVisuals } from "./visuals.js";
+import { mountVisuals, registerVisualHooks } from "./visuals.js";
+import { nodes } from "./core.js";
 import { mountDocImages } from "./image-ux.js";
 import {
   initReader,
@@ -41,6 +42,7 @@ function refreshStatus() {}
 
 export function startRabbithole(hydration) {
   initCore(hydration);
+  registerVisualHooks({ post: post, getNode: function(id){ return nodes[id] || null; } });
   registerCoreHooks({
     post: post,
     openNode: openNode,

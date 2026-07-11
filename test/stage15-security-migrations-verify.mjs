@@ -77,6 +77,8 @@ async function verifyLiveAndBuildSnapshot() {
     localStorage.setItem("rh-web-settings", JSON.stringify({ preset: "openrouter", session_only: false }));
   }, SECRET);
   const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+  const snapshotPayload = JSON.parse(snapshot.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
+  assert(snapshotPayload.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot strips a populated learner extension bag");
   assert(!snapshot.includes(SECRET), "credentials must not occur in frozen HTML");
   assert(!snapshot.includes("rh-web-settings"), "preferences must not occur in frozen HTML");
   await context.close();
@@ -266,9 +268,9 @@ function portableFixture() {
   return {
     format: "rabbithole", format_version: 1,
     hole: {
-      schema_version: 1, hole_id: "stage15-hostile", title: "Stage 15 hostile", root_id: "root",
+      schema_version: 2, hole_id: "stage15-hostile", title: "Stage 15 hostile", root_id: "root",
       created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", view_state: null,
-      nodes: [{ id: "root", parent_id: null, title: "Hostile", markdown: HOSTILE, base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-01-01T00:00:00.000Z" }],
+      nodes: [{ id: "root", parent_id: null, title: "Hostile", markdown: HOSTILE, base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-01-01T00:00:00.000Z", extensions: { learn: { c8lb3: { attempts: 2, last: { option: 1, correct: true }, revealed: true } } } }],
     },
     assets: { [ASSET]: ASSET_BASE64 },
   };

@@ -1,5 +1,6 @@
 import { initCore, registerCoreHooks } from "./core.js";
-import { mountVisuals } from "./visuals.js";
+import { mountVisuals, registerVisualHooks } from "./visuals.js";
+import { nodes } from "./core.js";
 import { mountDocImages } from "./image-ux.js";
 import {
   initReader,
@@ -46,6 +47,7 @@ import { setSnapshotHooks } from "./snapshot.js";
 export function startRabbithole(hydration, options) {
   setSnapshotHooks(options && options.snapshotHooks);
   setTransportAdapter(options && options.transport);
+  registerVisualHooks({ post: post, getNode: function(id){ return nodes[id] || null; } });
   initCore(hydration);
   registerCoreHooks({
     post: post,

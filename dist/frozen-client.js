@@ -2479,10 +2479,49 @@ var RabbitholeFrozenClient = (() => {
     },
     security: "sanitize-html"
   });
+  function parseCheck(source2) {
+    let model;
+    try {
+      model = JSON.parse(String(source2 != null ? source2 : ""));
+    } catch (error) {
+      throw new Error(`Check body must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!model || typeof model !== "object" || Array.isArray(model)) throw new Error("Check body must be a JSON object");
+    if (typeof model.question !== "string" || !model.question.trim()) throw new Error("Check question must be a non-empty string");
+    if (!Array.isArray(model.options)) throw new Error("Check options must be an array of 2-6 strings");
+    if (model.options.length < 2 || model.options.length > 6) throw new Error("Check options must contain 2-6 strings");
+    if (model.options.some((option) => typeof option !== "string")) throw new Error("Check options must contain only strings");
+    if (!Number.isInteger(model.answer)) throw new Error("Check answer must be an integer option index");
+    if (model.answer < 0 || model.answer >= model.options.length) throw new Error("Check answer must index an existing option");
+    if (model.explanation !== void 0 && typeof model.explanation !== "string") throw new Error("Check explanation must be a string when provided");
+    return {
+      question: model.question,
+      options: [...model.options],
+      answer: model.answer,
+      ...model.explanation !== void 0 ? { explanation: model.explanation } : {}
+    };
+  }
+  registerBlockType({
+    type: "check",
+    version: 1,
+    parse: parseCheck,
+    toPlainText(model) {
+      return [model.question, ...model.options].join("\n");
+    },
+    security: "sanitize-html"
+  });
 
   // src/ui/visuals.js
   var visualSurfaceCaches = {};
   var blockMounts = {};
+  var visualHooks = {
+    post: function() {
+      return Promise.resolve({ ok: true });
+    },
+    getNode: function() {
+      return null;
+    }
+  };
   var visualHooksReady = false;
   var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
   var VISUAL_SANITIZE_CONFIG = {
@@ -2495,6 +2534,10 @@ var RabbitholeFrozenClient = (() => {
     ALLOWED_URI_REGEXP: VISUAL_ALLOWED_URI
   };
   var VISUAL_BASE_CSS = ":host{display:block;width:100%;max-width:100%;margin:0.55em 0 1em;contain:content;color:var(--fg);background:transparent;font:inherit;}.rh-viz-frame{box-sizing:border-box;width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;overscroll-behavior-x:contain;border:1px solid var(--border);border-radius:8px;padding:0.85em 1em;background:var(--node-bg);color:var(--fg);font:inherit;}.rh-viz-content{box-sizing:border-box;min-width:100%;width:auto;color:inherit;font:inherit;}.rh-viz-content *,.rh-viz-content *::before,.rh-viz-content *::after{box-sizing:border-box;}.rh-viz-content svg{max-width:none;height:auto;}.rh-viz-content img{max-width:100%;height:auto;}.rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}.rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
+  var CHECK_CSS = ".rh-check{display:grid;gap:.75em;}.rh-check-question{font-weight:650;line-height:1.4;}.rh-check-options{display:grid;gap:.5em;}.rh-check-option,.rh-check-reset{appearance:none;border:1px solid var(--border);border-radius:7px;background:var(--node-bg);color:var(--fg);font:inherit;text-align:left;padding:.62em .75em;cursor:pointer;}.rh-check-option:hover:not(:disabled),.rh-check-option:focus-visible,.rh-check-reset:hover,.rh-check-reset:focus-visible{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);outline-offset:1px;}.rh-check-option:disabled{cursor:default;opacity:1;}.rh-check-option.is-correct{border-color:color-mix(in srgb,#2f9e44 70%,var(--border));background:color-mix(in srgb,#2f9e44 13%,var(--node-bg));}.rh-check-option.is-incorrect{border-color:color-mix(in srgb,#e03131 70%,var(--border));background:color-mix(in srgb,#e03131 12%,var(--node-bg));}.rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}.rh-check-actions{display:flex;justify-content:flex-end;}.rh-check-reset{padding:.45em .7em;text-align:center;}";
+  function registerVisualHooks(hooks) {
+    visualHooks = Object.assign({}, visualHooks, hooks || {});
+  }
   function registerBlockMount(type, mountSpec) {
     var key = String(type || "").toLowerCase();
     var descriptor = getBlockType(key);
@@ -2555,14 +2598,14 @@ var RabbitholeFrozenClient = (() => {
   function buildShowVisual(model) {
     return String(model == null ? "" : model);
   }
-  function buildMountedVisual(descriptor, mountSpec, model) {
+  function buildMountedVisual(descriptor, mountSpec, model, context) {
     var host = document.createElement("div");
     host.className = "viz-mounted viz-" + descriptor.type;
     host.setAttribute("data-viz-mounted", descriptor.type);
     host.style.contain = "content";
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
-    style.textContent = VISUAL_BASE_CSS;
+    style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
     var frame = document.createElement("div");
     frame.className = "rh-viz-frame";
     var content = document.createElement("div");
@@ -2575,7 +2618,7 @@ var RabbitholeFrozenClient = (() => {
     frame.appendChild(content);
     shadow.appendChild(style);
     shadow.appendChild(frame);
-    if (mountSpec.wire) mountSpec.wire(content, model);
+    if (mountSpec.wire) mountSpec.wire(content, model, context);
     return host;
   }
   function getSurfaceCache(surfaceKey) {
@@ -2584,6 +2627,7 @@ var RabbitholeFrozenClient = (() => {
     return visualSurfaceCaches[key];
   }
   function mountVisuals(containerEl, surfaceKey) {
+    var _a2;
     if (!containerEl || !containerEl.querySelectorAll) return;
     var placeholders = containerEl.querySelectorAll(".viz");
     if (!placeholders.length) {
@@ -2616,8 +2660,8 @@ var RabbitholeFrozenClient = (() => {
         candidate.blockId = "";
       }
     }
-    for (var m = 0; m < mountable.length; m++) {
-      var item = mountable[m];
+    for (let m = 0; m < mountable.length; m++) {
+      let item = mountable[m];
       var idx = used[item.key] || 0;
       used[item.key] = idx + 1;
       if (!cache[item.key]) cache[item.key] = [];
@@ -2632,7 +2676,25 @@ var RabbitholeFrozenClient = (() => {
           mounted = visualFallback("", "Unable to decode visual source.");
         }
         if (!mounted) try {
-          mounted = descriptor && mountSpec ? buildMountedVisual(descriptor, mountSpec, descriptor.parse(source2)) : visualFallback(source2, "Unsupported visual type. Showing source.");
+          var nodeId = String(item.el.closest && ((_a2 = item.el.closest("[data-node-id]")) == null ? void 0 : _a2.getAttribute("data-node-id")) || item.key && String(surfaceKey || "").split(":").slice(1).join(":") || "");
+          var node = visualHooks.getNode(nodeId);
+          var learn = node && node.extensions && node.extensions.learn;
+          var currentState = item.blockId && learn && typeof learn === "object" ? learn[item.blockId] : null;
+          var context = {
+            node_id: nodeId,
+            block_id: item.blockId,
+            state: currentState && typeof currentState === "object" ? currentState : {},
+            recordBlockState: function(nextState) {
+              if (!item.blockId || !nodeId) return Promise.resolve({ ok: true });
+              if (node) {
+                node.extensions = node.extensions && typeof node.extensions === "object" ? node.extensions : {};
+                node.extensions.learn = node.extensions.learn && typeof node.extensions.learn === "object" ? node.extensions.learn : {};
+                node.extensions.learn[item.blockId] = Object.assign({}, node.extensions.learn[item.blockId] || {}, nextState);
+              }
+              return Promise.resolve(visualHooks.post({ type: "block_state", node_id: nodeId, block_id: item.blockId, state: nextState }));
+            }
+          };
+          mounted = descriptor && mountSpec ? buildMountedVisual(descriptor, mountSpec, descriptor.parse(source2), context) : visualFallback(source2, "Unsupported visual type. Showing source.");
         } catch (e) {
           mounted = visualFallback(source2, "Unable to render visual. Showing source.");
         }
@@ -2647,6 +2709,58 @@ var RabbitholeFrozenClient = (() => {
     }
   }
   registerBlockMount("show", { renderHtml: buildShowVisual });
+  function escapeCheckText(value) {
+    return String(value != null ? value : "").replace(/[&<>"']/g, function(char) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+    });
+  }
+  function buildCheckVisual(model) {
+    var options2 = model.options.map(function(option, index) {
+      return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeCheckText(option) + "</button>";
+    }).join("");
+    return '<section class="rh-check"><div class="rh-check-question">' + escapeCheckText(model.question) + '</div><div class="rh-check-options">' + options2 + '</div><div class="rh-check-explanation" hidden>' + escapeCheckText(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
+  }
+  function wireCheck(root, model, ctx) {
+    var options2 = Array.from(root.querySelectorAll(".rh-check-option"));
+    var explanation = root.querySelector(".rh-check-explanation");
+    var actions = root.querySelector(".rh-check-actions");
+    var reset = root.querySelector(".rh-check-reset");
+    var state = ctx && ctx.state && typeof ctx.state === "object" ? ctx.state : {};
+    var attempts = Number.isInteger(state.attempts) && state.attempts >= 0 ? state.attempts : 0;
+    var currentLast = state.last || null;
+    function paint(last, revealed) {
+      options2.forEach(function(button, index) {
+        button.disabled = !!revealed;
+        button.classList.remove("is-correct", "is-incorrect");
+        button.removeAttribute("aria-pressed");
+        if (revealed && last && index === last.option) {
+          button.classList.add(last.correct ? "is-correct" : "is-incorrect");
+          button.setAttribute("aria-pressed", "true");
+        }
+        if (revealed && index === model.answer) button.classList.add("is-correct");
+      });
+      explanation.hidden = !revealed;
+      actions.hidden = !revealed;
+    }
+    paint(state.last, state.revealed === true);
+    options2.forEach(function(button, index) {
+      button.addEventListener("click", function() {
+        if (button.disabled) return;
+        attempts += 1;
+        var last = { option: index, correct: index === model.answer };
+        currentLast = last;
+        paint(last, true);
+        if (ctx) ctx.recordBlockState({ attempts, last, revealed: true });
+      });
+    });
+    reset.addEventListener("click", function() {
+      var _a2;
+      paint(null, false);
+      (_a2 = options2[0]) == null ? void 0 : _a2.focus();
+      if (ctx) ctx.recordBlockState({ attempts, last: currentLast, revealed: false });
+    });
+  }
+  registerBlockMount("check", { renderHtml: buildCheckVisual, wire: wireCheck });
 
   // src/ui/reader.js
   var readerHooks = {
@@ -32613,6 +32727,9 @@ ${text2}</tr>
   }
   function startRabbithole(hydration2) {
     initCore(hydration2);
+    registerVisualHooks({ post: post2, getNode: function(id) {
+      return nodes[id] || null;
+    } });
     registerCoreHooks({
       post: post2,
       openNode,

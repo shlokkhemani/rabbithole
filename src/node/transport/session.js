@@ -750,6 +750,10 @@ export class RabbitHoleSession {
         return this.handleNodeUpdate(payload);
       case "nodes_update":
         return this.handleNodesUpdate(payload);
+      case "block_state":
+        this.dispatchHoleEvent({ ...payload, type: "block_state" });
+        this.scheduleSave();
+        return { ok: true };
       case "delete_node":
         return this.handleDeleteNode(payload);
       case "view_state":

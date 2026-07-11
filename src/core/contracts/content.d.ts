@@ -4,7 +4,7 @@
  * Runtime block authority is {@link ../blocks.js}. Its descriptor registry
  * drives closed-fence placeholders and pending-fence recognition in
  * {@link ../markdown-renderer.js}; unknown fences remain highlighted/plain
- * code. `show` is the only built-in descriptor.
+ * code. `show` and `check` are the built-in descriptors.
  *
  * Client mounts are bound to those same descriptors in
  * {@link ../../ui/visuals.js}. Both
@@ -38,7 +38,22 @@ export interface BlockTypeDescriptor<Model = unknown> {
 
 export interface BlockMountSpec<Model = unknown> {
   renderHtml?(model: Model): string;
-  wire?(rootElement: HTMLElement, model: Model): void;
+  wire?(rootElement: HTMLElement, model: Model, context: BlockMountContext): void;
+}
+
+/** PROVISIONAL plain-text Check v1 model; authored field text is not Markdown. */
+export interface CheckModel {
+  question: string;
+  options: string[];
+  answer: number;
+  explanation?: string;
+}
+
+export interface BlockMountContext {
+  node_id: string;
+  block_id: string;
+  state: Record<string, unknown>;
+  recordBlockState(state: Record<string, unknown>): Promise<unknown>;
 }
 
 /** Vocabulary projection of today's two-argument fence registration. */

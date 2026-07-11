@@ -104,10 +104,20 @@ export interface ViewStateEvent { type: "view_state"; state?: unknown; }
 export interface HoleTitleEvent { type: "hole_title"; title?: unknown; }
 /** Internal engine event; not part of the MCP/SSE wire vocabulary. */
 export interface NodeOriginEvent extends NodeTarget { type: "node_origin"; origin?: unknown; }
+export interface BlockStateEvent extends NodeTarget {
+  type: "block_state";
+  block_id?: unknown;
+  state?: unknown;
+  /**
+   * User interaction state is deliberately tolerant: an absent/invalid block
+   * id or unknown node is ignored. It never participates in the generation
+   * `{id,seq}` run guard, just as untagged progress remains permissive.
+   */
+}
 
 export type DocEvent = BranchRequestEvent | NodeProgressEvent | NodeAnsweredEvent |
   DeleteNodeEvent | NodeUpdateEvent | NodesUpdateEvent | ViewStateEvent |
-  HoleTitleEvent | NodeOriginEvent;
+  HoleTitleEvent | NodeOriginEvent | BlockStateEvent;
 
 export interface ReduceEffects {
   node_id?: string;

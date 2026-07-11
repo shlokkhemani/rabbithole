@@ -72,6 +72,10 @@ export class DirectRabbitholeHost {
           this.dispatch({ ...payload, type: "nodes_update" });
           this.scheduleSave();
           return { ok: true };
+        case "block_state":
+          this.dispatch({ ...payload, type: "block_state" });
+          this.scheduleSave();
+          return { ok: true };
         case "delete_node":
           return await this.handleDeleteNode(payload);
         case "view_state":

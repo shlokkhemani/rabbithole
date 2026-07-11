@@ -110,3 +110,35 @@ registerBlockType({
   toPlainText() { return ""; },
   security: "sanitize-html",
 });
+
+/** @param {string} source */
+function parseCheck(source) {
+  let model;
+  try {
+    model = JSON.parse(String(source ?? ""));
+  } catch (error) {
+    throw new Error(`Check body must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!model || typeof model !== "object" || Array.isArray(model)) throw new Error("Check body must be a JSON object");
+  if (typeof model.question !== "string" || !model.question.trim()) throw new Error("Check question must be a non-empty string");
+  if (!Array.isArray(model.options)) throw new Error("Check options must be an array of 2-6 strings");
+  if (model.options.length < 2 || model.options.length > 6) throw new Error("Check options must contain 2-6 strings");
+  if (model.options.some((/** @type {unknown} */ option) => typeof option !== "string")) throw new Error("Check options must contain only strings");
+  if (!Number.isInteger(model.answer)) throw new Error("Check answer must be an integer option index");
+  if (model.answer < 0 || model.answer >= model.options.length) throw new Error("Check answer must index an existing option");
+  if (model.explanation !== undefined && typeof model.explanation !== "string") throw new Error("Check explanation must be a string when provided");
+  return {
+    question: model.question,
+    options: [...model.options],
+    answer: model.answer,
+    ...(model.explanation !== undefined ? { explanation: model.explanation } : {}),
+  };
+}
+
+registerBlockType({
+  type: "check",
+  version: 1,
+  parse: parseCheck,
+  toPlainText(model) { return [model.question, ...model.options].join("\n"); },
+  security: "sanitize-html",
+});

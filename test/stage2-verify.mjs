@@ -9,7 +9,7 @@ import { createMarkdownRenderer } from "../src/core/markdown-renderer.js";
 import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../src/core/blocks.js";
 import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { getDompurifyScript } from "../src/node/html/built-assets.js";
-import { mountVisuals, registerBlockMount, visualSurfaceCaches } from "../src/ui/visuals.js";
+import { buildCheckVisual, mountVisuals, registerBlockMount, visualSurfaceCaches } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -43,6 +43,13 @@ async function runMarkdownFixtures() {
   assert(pendingShow.includes("Drawing…"));
   assert(!pendingShow.includes("```show"));
   assert(!pendingShow.includes("<div>half"));
+
+  const pendingCheck = await renderMarkdownToHtml(['```check id=c8lb3', '{"question":"half"}'].join("\n"));
+  assert(pendingCheck.includes('class="viz viz-pending"'));
+  assert(pendingCheck.includes('data-viz="check"'));
+  assert(pendingCheck.includes('data-block-id="c8lb3"'));
+  assert(pendingCheck.includes("Drawing…"));
+  assert(!pendingCheck.includes("question"));
 
   const pendingMath = await renderMarkdownToHtml(["Math", "$$", "x + y"].join("\n"));
   assert(pendingMath.includes('class="math-pending"'));
@@ -81,6 +88,31 @@ function runBlockRegistryContract() {
   assert.throws(() => registerBlockType({ type: "bad-security", version: 1, parse: (source) => source, toPlainText: () => "", security: "trusted" }), /security must be/);
   assert.throws(() => registerBlockMount("not-registered", {}), /unknown block type/);
   console.log("ok blocks: descriptor validation, duplicate rejection, mount binding");
+}
+
+function runCheckDescriptorGoldens() {
+  assert.deepEqual(listBlockTypes().filter(({ type }) => type === "show" || type === "check").map(({ type, version, security }) => ({ type, version, security })), [
+    { type: "show", version: 1, security: "sanitize-html" },
+    { type: "check", version: 1, security: "sanitize-html" },
+  ]);
+  const descriptor = getBlockType("check");
+  const model = descriptor.parse('{"question":"Which is <larger>?","options":["1 & 1","2"],"answer":1,"explanation":"Because 2 > 1."}');
+  assert.deepEqual(model, { question: "Which is <larger>?", options: ["1 & 1", "2"], answer: 1, explanation: "Because 2 > 1." });
+  assert.equal(descriptor.toPlainText(model), "Which is <larger>?\n1 & 1\n2");
+  const rejections = [
+    ["{", /valid JSON/], ["[]", /JSON object/], ['{"options":["a","b"],"answer":0}', /question/],
+    ['{"question":"Q","answer":0}', /options/], ['{"question":"Q","options":["a"],"answer":0}', /2-6/],
+    ['{"question":"Q","options":["a",2],"answer":0}', /only strings/], ['{"question":"Q","options":["a","b"],"answer":1.5}', /integer/],
+    ['{"question":"Q","options":["a","b"],"answer":2}', /existing option/], ['{"question":"Q","options":["a","b"],"answer":0,"explanation":2}', /explanation/],
+  ];
+  for (const [source, pattern] of rejections) assert.throws(() => descriptor.parse(source), pattern);
+  const html = buildCheckVisual(model);
+  assert.match(html, /^<section class="rh-check"><div class="rh-check-question">Which is &lt;larger&gt;\?<\/div>/);
+  assert.equal(count(html, 'class="rh-check-option"'), 2);
+  assert(html.includes("1 &amp; 1"));
+  assert(html.includes('class="rh-check-explanation" hidden>Because 2 &gt; 1.</div>'));
+  assert(html.includes('<button class="rh-check-reset" type="button">Try again</button>'));
+  console.log("ok check: registration metadata, strict parse/rejections, prose projection, and escaped mount structure");
 }
 
 function runDerivedFenceRecognition() {
@@ -421,6 +453,7 @@ async function assertPageAssembly() {
 
 runBlockIdNormalization();
 runBlockRegistryContract();
+runCheckDescriptorGoldens();
 runDerivedFenceRecognition();
 await runMarkdownFixtures();
 await runClientMountSimulation();

@@ -29,6 +29,10 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | block descriptor and mount registration contract | C2 | Requires validated descriptors, unique block types, and mounts bound to known descriptors. | — |
 | pending block recognition derives from the registry | C2 | Proves registered types receive streaming placeholders while unknown fences remain plain code. | Rendering: unclosed fence mid-stream; unknown fence language |
 | mount framework sanitizes adapter HTML before wiring | C2 | Makes sanitizer enforcement a framework property rather than a handler convention. | Rendering: injection via fences/imported payloads (live path) |
+| built-in block registration metadata golden | C2 | Pins `show@1` and `check@1` plus their sanitizer modes; Check v1 deliberately accepts plain text only, with no Markdown-in-Check support. | Rendering: per-type security policy |
+| Check strict parse and legible rejection golden | C2 | Defines the authored JSON model and field-specific failures for malformed questions, options, answers, and explanations. | Data: malformed JSON |
+| Check prose projection golden | C2 | Requires Check content to remain available to text-only consumers as question plus newline-separated options. | — |
+| Check escaped mount structure golden | C2 | Pins native option buttons, hidden explanation, Try again affordance, and plain-text escaping before framework sanitization. | Rendering: injection via fences; Chrome: keyboard-only completion |
 | DOMPurify/page assembly order and script parse | C3 | Pins one-script assembly and library placement. | — |
 
 ## `stage3-base-url-verify.mjs`
@@ -94,6 +98,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | legacy view leaves stored markdown byte-unchanged | C1 | Opening and viewing legacy persisted content must not silently migrate its block syntax. | Migration/deploy: new code, old storage without read-side mutation |
 | canonical MCP export, renderer capabilities, and web-import round trip | C1 | Protects the public inert snapshot shape, portable bootstrap, offline math/code/show/asset rendering, and MCP-authored snapshot → web import compatibility. Reclassified from C2 because the route now emits the public portable artifact format rather than a product-only frozen hydration. | Data: snapshot external format and cross-host portability; Rendering: frozen viewing fully offline (structural evidence only) |
 | MCP resume refuses a newer schema with exact recovery copy | C1 | Prevents an older MCP host from opening and later truncating a newer document. | Data: future schema version; Migration/deploy: CLI version skew |
+| MCP block_state persistence and agent-context exclusion | C1 | Proves the additive browser event persists learner state while rehydration/branch payloads remain lean and snapshot payloads omit the extension bag. | Migration/deploy: additive wire compatibility; Data: snapshot extension stripping |
 
 ## `stage9-store-contract.mjs` (filesystem store)
 
@@ -126,6 +131,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | calm landing, three-path composer, path copy, dismiss-without-create | C2 | Protects first-run navigation and empty state. | — |
+| stateful Check live/reload/portable/frozen cycle | C2 | Drives native-keyboard selection through the real UI, persistence and hydration, portable state retention, snapshot stripping, and offline frozen interaction. | Rendering: live/frozen parity; Data: learner progress portability and share exclusion; Chrome: keyboard-only completion |
 | blank-state centering and composer initial focus | C2 | Protects visible placement and initial keyboard focus. | Chrome: keyboard-only completion (small opening/closing subset) |
 | Dialog composer containment, dismissal, and restoration | C2 | Requires live-content Tab/Shift+Tab wrapping, enforced modal labeling, Escape and backdrop dismissal, and deterministic toolbar/N-trigger focus restoration while first-visit auto-open remains triggerless-safe. | Chrome: keyboard-only completion; focus restoration after transient surfaces; outside-pointer dismissal |
 | toolbar Button kit conformance | C2 | Requires every reader/canvas toolbar button to declare `type="button"` and expose a non-empty accessible name. | Chrome: toolbar accessibility |
@@ -276,6 +282,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | hole_title replaces document title | C2 | Internal title changes must flow through the immutable engine without changing MCP/SSE vocabulary. | — |
 | node_origin replaces opaque metadata | C2 | Internal origin changes must flow through the immutable engine without changing MCP/SSE vocabulary. | — |
 | malformed known node_progress is a no-op | C2 | Pins the reducer's current coercive/no-validation behavior for malformed trusted-engine input. | — |
+| block_state deep merge and tolerant invalid targets | C2 | Preserves unrelated extension data, shallow-merges per-block state, and safely ignores absent ids and unknown nodes without generation ordering guards. | Data: extension-bag preservation; Migration/deploy: additive events |
 | unknown event type throws | C2 | Unsupported vocabulary must fail explicitly rather than silently diverge. | — |
 | frozen-input reducer immutability | C2 | The reducer must not mutate its input state, node map, event, or node objects; changed nodes receive fresh identity. | — |
 | Node/Chromium reducer parity | C2 | The deterministic DOM-free reducer must produce identical projections in both supported execution contexts. | — |
@@ -360,7 +367,9 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `61 + 159 + 10 + 1 + 0 = 231` total cases.
+Current inventory arithmetic: `62 + 165 + 10 + 1 + 0 = 238` total cases.
+
+Phase 8 Slice 4 adds one C1 case for the additive MCP state wire and six C2 cases for Check registration, parsing, prose projection, escaped mount structure, reducer semantics, and the real live/reload/export/frozen cycle: C1 `61 + 1 = 62`, C2 `159 + 6 = 165`, and total `231 + 7 = 238`, yielding `62 + 165 + 10 + 1 + 0 = 238`.
 
 Phase 8 Slice 1 adds seven C1 cases: MCP resume refusal, filesystem and IndexedDB load refusal, web import refusal, non-object bag validation, the v1 forward-safety cycle, and portable/snapshot bag projection: `52 + 7 = 59` and `218 + 7 = 225`, yielding `59 + 154 + 11 + 1 + 0 = 225`.
 
@@ -372,12 +381,12 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 61 |
-| C2 behavioral product contract | 159 |
+| C1 compatibility contract | 62 |
+| C2 behavioral product contract | 165 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 1 |
 | C5 design target | 0 |
-| **Total** | **231** |
+| **Total** | **238** |
 
 ## Known-defect fossils
 

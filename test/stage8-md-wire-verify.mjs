@@ -170,6 +170,10 @@ async function runMarkdownWireFixture() {
     "<div>diagram</div>",
     "```",
     "",
+    "```check",
+    '{"question":"Which number is even?","options":["3","4"],"answer":1,"explanation":"Four is divisible by two."}',
+    "```",
+    "",
     "![diagram](asset:diagram-1.png)",
   ].join("\n");
 
@@ -188,7 +192,21 @@ async function runMarkdownWireFixture() {
   const liveHydration = parseHydration(liveHtml);
   assertNoContentHtml(liveHydration, "live hydration");
   assert.match(liveHydration.nodes[0].markdown, /```show id=[a-z0-9]{4,8}\n/);
+  const checkId = liveHydration.nodes[0].markdown.match(/```check id=([a-z0-9]{4,8})\n/)?.[1];
+  assert(checkId, "completed authoring should mint Check identity");
   assert(!liveHtml.includes('<h1 id="root">Root</h1>'), "live page should not include server-rendered root markdown HTML");
+
+  assert.deepEqual(await postEvent(session, {
+    type: "block_state", node_id: session.rootId, block_id: checkId,
+    state: { attempts: 1, last: { option: 1, correct: true }, revealed: true },
+  }), { ok: true });
+  await session.flushSave();
+  const persistedCheck = await new FsStore().loadHole(session.holeId);
+  assert.deepEqual(persistedCheck.nodes.find((node) => node.id === session.rootId).extensions.learn[checkId], {
+    attempts: 1, last: { option: 1, correct: true }, revealed: true,
+  });
+  assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("extensions"), false, "agent rehydration stays lean");
+  assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("attempts"), false, "learner state never enters agent rehydration");
 
   const requestId = "req-stage8";
   const nodeId = "node-stage8";
@@ -261,6 +279,7 @@ async function runMarkdownWireFixture() {
   const exportHydration = snapshotProjectionToFrozenHydration(projection);
   assert.equal(exportHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "export should contain exactly one inert payload");
   assertNoContentHtml(projection, "export projection");
+  assert(projection.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot payload strips learner extensions");
   assertIncludes(exportHtml, "RabbitholeFrozenClient.startPortableSnapshot", "export should use the portable snapshot bootstrap");
   assert.deepEqual(Object.keys(projection.assets), ["diagram-1.png"], "export should include referenced assets only");
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));
@@ -276,6 +295,7 @@ async function runMarkdownWireFixture() {
   assertIncludes(frozenRootHtml, 'class="katex-display"', "frozen markdown should render math");
   assertIncludes(frozenRootHtml, 'class="language-js hljs"', "frozen markdown should render highlighted code");
   assertIncludes(frozenRootHtml, 'class="viz"', "frozen markdown should render show placeholders");
+  assertIncludes(frozenRootHtml, 'data-viz="check"', "frozen markdown should retain interactive Check placeholders without learner state");
   assertIncludes(frozenRootHtml, `src="data:image/png;base64,${PNG_BYTES.toString("base64")}"`, "frozen markdown should render data URI images");
 
   const importStore = new FsStore();

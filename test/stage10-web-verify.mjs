@@ -40,6 +40,7 @@ const browser = await chromium.launch();
 try {
   await verifyNoticePrimitive();
   await verifyLandingAndComposer();
+  await verifyStatefulCheckCycle();
   await verifyComboboxCatalogStates();
   await verifyAskKeyUxAndRail();
   await verifyCanvasBranching();
@@ -48,6 +49,53 @@ try {
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
+}
+
+async function verifyStatefulCheckCycle() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.keyboard.press("Escape");
+  await createDocument(page, [
+    "# Check cycle", "", "```check", '{"question":"Which is even?","options":["Three","Four"],"answer":1,"explanation":"Four divides by two."}', "```",
+  ].join("\n"));
+  await page.waitForSelector(".viz-check .rh-check-option:visible");
+  const blockId = await page.locator('.doc-content .viz[data-viz="check"]').getAttribute("data-block-id").catch(() => null)
+    || await page.evaluate(() => document.querySelector(".viz-check")?.getRootNode()?.host?.dataset?.blockId || "");
+  const markdown = await page.evaluate(() => window.__rabbitholeTest.readStoredHole().then((hole) => hole.nodes[0].markdown));
+  const durableId = blockId || markdown.match(/```check id=([a-z0-9]{4,8})/)?.[1];
+  assert(durableId, "Check should have a durable persisted id");
+
+  const second = page.locator(".viz-check .rh-check-option:visible").nth(1);
+  await second.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await second.evaluate((button) => button.classList.contains("is-correct")), true, "native Check buttons should answer from the keyboard");
+  assert.equal(await page.locator(".viz-check .rh-check-explanation:visible").count() > 0, true);
+
+  const portable = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
+  const learned = portable.hole.nodes[0].extensions.learn[durableId];
+  assert.deepEqual(learned, { attempts: 1, last: { option: 1, correct: true }, revealed: true }, ".rabbithole export carries learner state");
+  const stored = await page.evaluate(() => window.__rabbitholeTest.readStoredHole());
+  assert.deepEqual(stored.nodes[0].extensions.learn[durableId], learned, "real UI block_state flushes to IndexedDB");
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".viz-check .rh-check-option.is-correct:visible");
+  assert.equal(await page.locator(".viz-check .rh-check-explanation:visible").count() > 0, true, "reload restores answered/revealed Check state");
+  assert.equal(await page.locator(".viz-check .rh-check-option:disabled:visible").count(), 2, "restored answer disables selection until reset");
+
+  const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+  const payload = JSON.parse(extractSnapshotPayload(snapshot));
+  assert(payload.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot payload excludes the populated learn bag");
+  const frozen = await context.newPage();
+  await frozen.setContent(snapshot, { waitUntil: "load" });
+  await frozen.waitForSelector(".viz-check .rh-check-option:visible");
+  assert.equal(await frozen.locator(".viz-check .rh-check-option:visible").count(), 2, "frozen Check keeps the live DOM structure");
+  await frozen.locator(".viz-check .rh-check-option:visible").first().focus();
+  await frozen.keyboard.press("Enter");
+  assert.equal(await frozen.locator(".viz-check .rh-check-explanation:visible").count() > 0, true, "frozen Check remains interactive offline");
+  await frozen.close();
+  await context.close();
+  console.log("ok stage10: Check UI persists, hydrates, exports state portably, strips snapshot progress, and stays keyboard-interactive frozen");
 }
 
 async function verifyNoticePrimitive() {

@@ -114,5 +114,12 @@
     "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "before" }] },
     "expected_effects": {}
   },
+  {
+    "name": "block_state deep-merges learner state and tolerates invalid targets",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "extensions": { "kept": { "nested": [1] }, "learn": { "c8lb3": { "attempts": 1, "revealed": false }, "other": { "score": 9 } } } }] },
+    "events": [{ "event": { "type": "block_state", "node_id": "ghost", "block_id": "c8lb3", "state": { "attempts": 99 } } }, { "event": { "type": "block_state", "node_id": "root", "state": { "attempts": 99 } } }, { "event": { "type": "block_state", "node_id": "root", "block_id": "c8lb3", "state": { "attempts": 2, "last": { "option": 1, "correct": true }, "revealed": true } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "extensions": { "kept": { "nested": [1] }, "learn": { "c8lb3": { "attempts": 2, "revealed": true, "last": { "option": 1, "correct": true } }, "other": { "score": 9 } } } }] },
+    "expected_effects": { "node_id": "root" }
+  },
   { "name": "unknown event type throws", "initial": { "nodes": [] }, "events": [{ "event": { "type": "future_event" } }], "expected_error": "Unsupported hole event: future_event" }
 ]

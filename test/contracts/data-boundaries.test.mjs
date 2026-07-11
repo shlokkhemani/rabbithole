@@ -164,6 +164,16 @@ console.log("ok data boundaries: non-object node extensions are legibly rejected
 }
 console.log("ok data boundaries: v1 open-modify-save-reopen preserves the schema-v2 extension bag");
 
+{
+  const hostile = validHole({ nodes: [validNode({ origin: { anchor: { offset_start: 4, offset_end: 12,
+    pdf: { page: 7.9, rect: { x: -8, y: .95, w: 6, h: 9 } } } } })] });
+  const migrated = migratePersistedHole(hostile);
+  assert.equal(migrated.changed, true);
+  assert.deepEqual(migrated.hole.nodes[0].origin.anchor, { offset_start: 4, offset_end: 12,
+    pdf: { page: 7, rect: { x: 0, y: .95, w: 1, h: 1 - .95 } } });
+}
+console.log("ok data boundaries: hostile imported anchor.pdf geometry is independently clamped");
+
 assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ format: "rabbithole", format_version: 2, hole: {}, assets: {} })),
   /unsupported Rabbithole file format/i,

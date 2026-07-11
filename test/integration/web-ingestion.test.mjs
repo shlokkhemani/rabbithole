@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 import { ensureWebDist } from "../support/build.mjs";
 import { serveStatic } from "../support/static-server.mjs";
+import { corsHeaders, sse } from "../support/provider-mock.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -55,6 +56,10 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
     ] }),
   });
 });
+await page.route("http://localhost:11434/v1/chat/completions", async (route) => {
+  if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
+  await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body: sse(["# PDF branch\n\n", "Streamed from selected prose."]) });
+});
 
 try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -88,8 +93,32 @@ try {
   assert(pdfState.raw.includes('"version":1'));
   assert(pdfState.raw.includes("Browser PDF page one"));
   assert(pdfState.raw.includes("Integral int_0^1"));
+  const selected = await page.evaluate(() => {
+    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("Browser PDF page one"));
+    const text = span.firstChild, start = text.data.indexOf("Browser PDF page one"), range = document.createRange();
+    range.setStart(text, start); range.setEnd(text, start + "Browser PDF page one".length);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    return selection.toString();
+  });
+  assert.equal(selected, "Browser PDF page one");
+  await page.waitForSelector("#ask.visible");
+  await page.click('#ask-lenses .lens[data-lens="explain"]');
+  const mark = page.locator(".node .rh-pdf-mark.mark-ready").first();
+  await mark.waitFor();
+  assert.equal(await mark.getAttribute("role"), "link");
+  assert.equal(await mark.getAttribute("tabindex"), "0");
+  assert.equal(await page.locator("#edges path").count() > 0, true, "PDF branch should retain an anchored canvas edge");
+  const storedAnchor = await page.evaluate(async () => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole.nodes.find((node) => node.parent_id)?.origin?.anchor;
+  });
+  assert.equal(storedAnchor.pdf.page, 1);
+  assert(storedAnchor.offset_end > storedAnchor.offset_start);
+  assert(storedAnchor.pdf.rect.w > 0 && storedAnchor.pdf.rect.h > 0);
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
+  await page.waitForSelector(".rh-pdf-mark.mark-ready", { state: "attached" });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await setFetchProxy(page, `${baseUrl}/proxy`);
@@ -218,14 +247,7 @@ function buildTinyPdf(pageTexts) {
 }
 
 async function dropPdf(page, bytes, name = "math-fixture.pdf", type = "application/pdf") {
-  await page.evaluate(({ pdfBytes, name, type }) => {
-    const file = new File([new Uint8Array(pdfBytes)], name, { type });
-    const data = new DataTransfer();
-    data.items.add(file);
-    const target = document.querySelector("#composer-card");
-    target.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: data }));
-    target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
-  }, { pdfBytes: bytes, name, type });
+  await page.setInputFiles("#file-md", { name, mimeType: type, buffer: Buffer.from(bytes) });
 }
 
 async function setFetchProxy(page, url) {

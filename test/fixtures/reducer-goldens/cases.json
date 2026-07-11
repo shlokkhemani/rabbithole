@@ -115,6 +115,13 @@
     "expected_effects": { "node_id": "root" }
   },
   {
+    "name": "branch_request normalizes and preserves a PDF selection anchor",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }] },
+    "events": [{ "event": { "type": "branch_request", "parent_id": "root", "node_id": "pdf-child", "selected_text": "picked", "anchor": { "offset_start": -2, "offset_end": 18, "pdf": { "page": 2.8, "rect": { "x": -1, "y": 0.9, "w": 3, "h": 0.4 } } } }, "options": { "now": "fixed" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "pdf-child", "parent_id": "root", "title": "…", "markdown": "", "base_url": null, "base_url_source": null, "origin": { "selected_text": "picked", "question": "", "lens": null, "synthesis": false, "anchor": { "offset_start": 0, "offset_end": 18, "pdf": { "page": 2, "rect": { "x": 0, "y": 0.9, "w": 1, "h": 0.09999999999999998 } } }, "branch_type": "selection" }, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "pending", "read": false, "created_at": "fixed", "extensions": {} }] },
+    "expected_effects": { "createdNodeId": "pdf-child" }
+  },
+  {
     "name": "malformed known node_progress is a no-op",
     "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "before" }] },
     "events": [{ "event": { "type": "node_progress" } }],

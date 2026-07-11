@@ -1,6 +1,7 @@
 import { childrenOf, nodes } from "./core.js";
 
 export function applyChildHighlights(dc, node){
+  if (dc && dc.classList.contains("rh-pdf")) return;
   var kids = childrenOf(node.id).filter(function(k){ return k.origin && k.origin.anchor; });
   kids.sort(function(a,b){ return b.origin.anchor.offset_start - a.origin.anchor.offset_start; });
   kids.forEach(function(k){
@@ -12,7 +13,7 @@ export function applyChildHighlights(dc, node){
 }
 
 export function wrapInContainer(dc, anchor, childId, cls){
-  if (!dc || !anchor) return;
+  if (!dc || !anchor || dc.classList.contains("rh-pdf") || anchor.pdf) return;
   var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
   if (rr){ try { wrapRange(rr, childId, cls); } catch(e){} }
 }
@@ -61,12 +62,28 @@ export function charOffset(container, node, offset){
 
 export function wrapTextNode(textNode, childId, cls){
   var m = document.createElement("mark");
+  initializeMark(m, childId, cls);
+  textNode.parentNode.insertBefore(m, textNode);
+  m.appendChild(textNode);
+}
+
+export function initializeMark(m, childId, cls){
   m.className = cls; m.dataset.child = childId;
   m.tabIndex = 0; m.setAttribute("role", "link");
   var child = nodes[childId];
   m.setAttribute("aria-label", "Open branch: " + ((child && child.title) || "Untitled"));
-  textNode.parentNode.insertBefore(m, textNode);
-  m.appendChild(textNode);
+  return m;
+}
+
+export function mountPdfRectMark(container, anchor, childId, cls) {
+  if (!container || !anchor || !anchor.pdf) return null;
+  var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(anchor.pdf.page)) + '"]');
+  if (!page) return null;
+  var layer = page.querySelector(".rh-pdf-marks"), r = anchor.pdf.rect || {}, clamp = function(v){ return Math.min(1, Math.max(0, Number(v) || 0)); };
+  var x = clamp(r.x), y = clamp(r.y), w = Math.min(clamp(r.w), 1-x), h = Math.min(clamp(r.h), 1-y);
+  var mark = initializeMark(document.createElement("mark"), childId, cls);
+  mark.style.left = (x*100) + "%"; mark.style.top = (y*100) + "%"; mark.style.width = (w*100) + "%"; mark.style.height = (h*100) + "%";
+  layer.appendChild(mark); return mark;
 }
 
 export function wrapRange(range, childId, cls){

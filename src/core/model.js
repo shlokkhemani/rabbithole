@@ -81,11 +81,31 @@ export function normalizeSize(size) {
 }
 
 /** @param {unknown} anchor */
-function normalizeAnchor(anchor) {
+export function normalizeAnchor(anchor) {
   if (!anchor) return null;
   const start = Math.max(0, Number(/** @type {{ offset_start?: unknown }} */ (anchor).offset_start) || 0);
   const end = Math.max(start, Number(/** @type {{ offset_end?: unknown }} */ (anchor).offset_end) || start);
-  return { offset_start: start, offset_end: end };
+  /** @type {{ offset_start: number, offset_end: number, pdf?: { page: number, rect: { x: number, y: number, w: number, h: number } } }} */
+  const out = { offset_start: start, offset_end: end };
+  const rawPdf = /** @type {{ pdf?: unknown }} */ (anchor).pdf;
+  if (rawPdf && typeof rawPdf === "object") {
+    const page = Math.floor(Number(/** @type {{ page?: unknown }} */ (rawPdf).page));
+    const rawRect = /** @type {{ rect?: unknown }} */ (rawPdf).rect;
+    if (page > 0 && rawRect && typeof rawRect === "object") {
+      const clamp = (/** @type {unknown} */ value) => Math.min(1, Math.max(0, Number(value) || 0));
+      const x = clamp(/** @type {{ x?: unknown }} */ (rawRect).x);
+      const y = clamp(/** @type {{ y?: unknown }} */ (rawRect).y);
+      out.pdf = {
+        page,
+        rect: {
+          x, y,
+          w: Math.min(clamp(/** @type {{ w?: unknown }} */ (rawRect).w), 1 - x),
+          h: Math.min(clamp(/** @type {{ h?: unknown }} */ (rawRect).h), 1 - y),
+        },
+      };
+    }
+  }
+  return out;
 }
 
 /** @param {unknown} state @returns {PersistedViewState | null} */

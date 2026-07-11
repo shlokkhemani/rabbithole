@@ -46,7 +46,7 @@ import {
   ensureThread,
   renderSidebar
 } from "./reader.js";
-import { charOffset, wrapInContainer } from "./text-marks.js";
+import { charOffset, mountPdfRectMark, wrapInContainer } from "./text-marks.js";
 import { easeOutMotion } from "./easing.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
 import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
@@ -123,6 +123,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     var anchor = sel.anchorNode && sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
     var dc = anchor && anchor.closest ? anchor.closest(".doc-content") : null;
     if (!dc) return;
+    if (dc.classList.contains("rh-pdf")) return;
     var parentId = dc.dataset.nodeId;
     if (!parentId || !nodes[parentId] || nodes[parentId].status === "pending") return;
     // Asks stay open while the agent is merely away (they queue server-side and
@@ -165,6 +166,33 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     autoGrowEl(askText, 110);
   }
   var pendingAsk = null;
+export function showAskFromSelection(options){
+    var parentId = options && options.parentId;
+    var parent = parentId && nodes[parentId];
+    if (!parent || parent.status === "pending") return false;
+    if (closed){
+      flashHint(frozen ? "This is a read-only snapshot — asking needs the live Rabbithole."
+        : "Session ended — reopen this Rabbithole from your terminal to keep asking.");
+      return false;
+    }
+    var anchorEl = options.anchorRectEl;
+    pendingAsk = { parentId: parentId, container: anchorEl && anchorEl.closest ? anchorEl.closest(".doc-content") : null,
+      selectedText: String(options.selectedText || "").trim(), startOff: options.mdStart,
+      endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: null };
+    askText.value = "";
+    askText.placeholder = "Ask about this… ↵ = Explain";
+    ask.classList.add("visible");
+    var owner = selectionOwner(pendingAsk.container);
+    askTabOwner = owner;
+    askOwnerCleanup = askLifecycle.scope
+      ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown)
+      : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
+    askPosition = openAnchoredSurface({ surface: ask, anchor: anchorEl,
+      placement: "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
+      onClose: function(reason){ var escapeOwner = reason === "escape" ? owner : null; hideAsk(); if (escapeOwner) focusAskOwner(escapeOwner); } });
+    autoGrowEl(askText, 110);
+    return true;
+  }
 export function hideAsk(){
     if (askPosition){ askPosition.dispose(); askPosition = null; }
     if (askOwnerCleanup){ var cleanup = askOwnerCleanup; askOwnerCleanup = null; cleanup(); }
@@ -217,6 +245,7 @@ export function disposeAskFollowups(){
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_SELECTION);
     var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
+    if (pendingAsk.pdfAnchor) anchor.pdf = pendingAsk.pdfAnchor;
     var node = {
 	      id: childId, parent_id: parent.id,
 	      title: lens ? lensLabel(lens) : (question ? truncate(question, 48) : "…"),
@@ -234,7 +263,11 @@ export function disposeAskFollowups(){
     // Mark inline in whichever views currently render the parent doc. Wrap via
     // offsets (always text-node endpoints) — a live Range can end on an element
     // boundary, which the text-walker can't terminate on.
-    if (mode === "reader"){
+    if (pendingAsk.pdfAnchor) {
+      if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
+      if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
+      scheduleEdges();
+    } else if (mode === "reader"){
       var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
       wrapInContainer(rdc, anchor, childId, "hl mark-pending");
       if (currentNodeId === parent.id) renderSidebar();

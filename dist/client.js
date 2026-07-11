@@ -2941,6 +2941,7 @@ var RabbitholeClient = (() => {
 
   // src/ui/text-marks.js
   function applyChildHighlights(dc, node) {
+    if (dc && dc.classList.contains("rh-pdf")) return;
     var kids = childrenOf(node.id).filter(function(k) {
       return k.origin && k.origin.anchor;
     });
@@ -2955,7 +2956,7 @@ var RabbitholeClient = (() => {
     });
   }
   function wrapInContainer(dc, anchor, childId, cls) {
-    if (!dc || !anchor) return;
+    if (!dc || !anchor || dc.classList.contains("rh-pdf") || anchor.pdf) return;
     var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
     if (rr) {
       try {
@@ -3023,14 +3024,34 @@ var RabbitholeClient = (() => {
   }
   function wrapTextNode(textNode, childId, cls) {
     var m = document.createElement("mark");
+    initializeMark(m, childId, cls);
+    textNode.parentNode.insertBefore(m, textNode);
+    m.appendChild(textNode);
+  }
+  function initializeMark(m, childId, cls) {
     m.className = cls;
     m.dataset.child = childId;
     m.tabIndex = 0;
     m.setAttribute("role", "link");
     var child = nodes[childId];
     m.setAttribute("aria-label", "Open branch: " + (child && child.title || "Untitled"));
-    textNode.parentNode.insertBefore(m, textNode);
-    m.appendChild(textNode);
+    return m;
+  }
+  function mountPdfRectMark(container, anchor, childId, cls) {
+    if (!container || !anchor || !anchor.pdf) return null;
+    var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(anchor.pdf.page)) + '"]');
+    if (!page) return null;
+    var layer = page.querySelector(".rh-pdf-marks"), r2 = anchor.pdf.rect || {}, clamp2 = function(v) {
+      return Math.min(1, Math.max(0, Number(v) || 0));
+    };
+    var x = clamp2(r2.x), y = clamp2(r2.y), w = Math.min(clamp2(r2.w), 1 - x), h = Math.min(clamp2(r2.h), 1 - y);
+    var mark = initializeMark(document.createElement("mark"), childId, cls);
+    mark.style.left = x * 100 + "%";
+    mark.style.top = y * 100 + "%";
+    mark.style.width = w * 100 + "%";
+    mark.style.height = h * 100 + "%";
+    layer.appendChild(mark);
+    return mark;
   }
   function wrapRange(range, childId, cls) {
     var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
@@ -4822,6 +4843,7 @@ var RabbitholeClient = (() => {
     var anchor = sel.anchorNode && sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
     var dc = anchor && anchor.closest ? anchor.closest(".doc-content") : null;
     if (!dc) return;
+    if (dc.classList.contains("rh-pdf")) return;
     var parentId = dc.dataset.nodeId;
     if (!parentId || !nodes[parentId] || nodes[parentId].status === "pending") return;
     if (closed) {
@@ -4868,6 +4890,47 @@ var RabbitholeClient = (() => {
     autoGrowEl(askText, 110);
   }
   var pendingAsk = null;
+  function showAskFromSelection(options2) {
+    var parentId = options2 && options2.parentId;
+    var parent = parentId && nodes[parentId];
+    if (!parent || parent.status === "pending") return false;
+    if (closed) {
+      flashHint(frozen ? "This is a read-only snapshot \u2014 asking needs the live Rabbithole." : "Session ended \u2014 reopen this Rabbithole from your terminal to keep asking.");
+      return false;
+    }
+    var anchorEl = options2.anchorRectEl;
+    pendingAsk = {
+      parentId,
+      container: anchorEl && anchorEl.closest ? anchorEl.closest(".doc-content") : null,
+      selectedText: String(options2.selectedText || "").trim(),
+      startOff: options2.mdStart,
+      endOff: options2.mdEnd,
+      pdfAnchor: options2.pdfAnchor || null,
+      range: null
+    };
+    askText.value = "";
+    askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
+    ask.classList.add("visible");
+    var owner = selectionOwner(pendingAsk.container);
+    askTabOwner = owner;
+    askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
+      document.removeEventListener("keydown", onAskOwnerKeydown);
+    };
+    askPosition = openAnchoredSurface({
+      surface: ask,
+      anchor: anchorEl,
+      placement: "bottom-start",
+      restoreFocus: false,
+      preventOutsidePointerDefault: false,
+      onClose: function(reason) {
+        var escapeOwner = reason === "escape" ? owner : null;
+        hideAsk();
+        if (escapeOwner) focusAskOwner(escapeOwner);
+      }
+    });
+    autoGrowEl(askText, 110);
+    return true;
+  }
   function hideAsk() {
     if (askPosition) {
       askPosition.dispose();
@@ -4932,6 +4995,7 @@ var RabbitholeClient = (() => {
     var requestId = uuid(), childId = uuid();
     var pos = placeChild2(parent, BRANCH_SELECTION);
     var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
+    if (pendingAsk.pdfAnchor) anchor.pdf = pendingAsk.pdfAnchor;
     var node = {
       id: childId,
       parent_id: parent.id,
@@ -4958,7 +5022,11 @@ var RabbitholeClient = (() => {
       renderVisibility();
       drawEdges();
     }
-    if (mode === "reader") {
+    if (pendingAsk.pdfAnchor) {
+      if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
+      if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
+      scheduleEdges();
+    } else if (mode === "reader") {
       var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
       wrapInContainer(rdc, anchor, childId, "hl mark-pending");
       if (currentNodeId === parent.id) renderSidebar();
@@ -33771,13 +33839,60 @@ ${text2}</tr>
   }
 
   // src/ui/pdf-view.js
+  function pdfSelectionOffsets(range, spans) {
+    var startSpan = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer.closest("span[data-line]");
+    var endSpan = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer.closest("span[data-line]");
+    if (!startSpan || !endSpan) return null;
+    var startLine = spans[Number(startSpan.dataset.line)], endLine = spans[Number(endSpan.dataset.line)];
+    if (!startLine || !endLine) return null;
+    var start = startLine.s + Math.max(0, Math.min(startLine.e - startLine.s, range.startOffset));
+    var end = endLine.s + Math.max(0, Math.min(endLine.e - endLine.s, range.endOffset));
+    return start <= end ? { start, end } : { start: end, end: start };
+  }
+  function normalizeRectUnion(rects, pageRect) {
+    var live = Array.from(rects).filter(function(r2) {
+      return r2.width > 0 && r2.height > 0;
+    });
+    if (!live.length || !pageRect.width || !pageRect.height) return null;
+    var left = Math.min.apply(null, live.map(function(r2) {
+      return r2.left;
+    }));
+    var top = Math.min.apply(null, live.map(function(r2) {
+      return r2.top;
+    }));
+    var right = Math.max.apply(null, live.map(function(r2) {
+      return r2.right;
+    }));
+    var bottom = Math.max.apply(null, live.map(function(r2) {
+      return r2.bottom;
+    }));
+    var clamp2 = function(v) {
+      return Math.min(1, Math.max(0, v));
+    };
+    var x = clamp2((left - pageRect.left) / pageRect.width), y = clamp2((top - pageRect.top) / pageRect.height);
+    return { x, y, w: Math.min(clamp2((right - left) / pageRect.width), 1 - x), h: Math.min(clamp2((bottom - top) / pageRect.height), 1 - y) };
+  }
   function mountPdfView(container, node) {
+    var _a2, _b;
     var pdf = normalizePdfExtension(node);
     if (!pdf || pdf.converted) return null;
+    var markdown2 = String((_b = (_a2 = node.markdown) != null ? _a2 : node.md) != null ? _b : "");
     container.className = "doc-content rh-pdf";
     var disposed = false;
     var pageEls = [];
     var observer = null;
+    var resizeObserver = null;
+    function fitText(pageEl) {
+      var spans = pageEl.querySelectorAll(".rh-pdf-textlayer span");
+      for (var i2 = 0; i2 < spans.length; i2++) {
+        var span = spans[i2], line = pdf.lines[Number(span.dataset.line)];
+        span.style.fontSize = line.h * pageEl.clientHeight + "px";
+        span.style.width = "auto";
+        span.style.transform = "none";
+        var natural = span.scrollWidth || 1, target = line.w * pageEl.clientWidth;
+        span.style.transform = "scaleX(" + target / natural + ")";
+      }
+    }
     function mountWindow(index) {
       for (var i2 = 0; i2 < pageEls.length; i2++) {
         var img = pageEls[i2].querySelector("img");
@@ -33800,8 +33915,34 @@ ${text2}</tr>
       pageEl.className = "rh-pdf-page";
       pageEl.dataset.page = page.n;
       pageEl.style.aspectRatio = page.w + " / " + page.h;
+      var textLayer = document.createElement("div");
+      textLayer.className = "rh-pdf-textlayer";
+      pdf.lines.forEach(function(line, lineIndex) {
+        if (line.p !== page.n) return;
+        var span = document.createElement("span");
+        span.dataset.line = lineIndex;
+        span.textContent = markdown2.slice(line.s, line.e);
+        span.style.left = line.x * 100 + "%";
+        span.style.top = line.y * 100 + "%";
+        span.style.height = line.h * 100 + "%";
+        textLayer.appendChild(span);
+      });
+      pageEl.appendChild(textLayer);
+      var marks = document.createElement("div");
+      marks.className = "rh-pdf-marks";
+      pageEl.appendChild(marks);
       pageEls.push(pageEl);
       container.appendChild(pageEl);
+      if (typeof ResizeObserver === "function") {
+        if (!resizeObserver) resizeObserver = new ResizeObserver(function(entries) {
+          entries.forEach(function(entry) {
+            fitText(entry.target);
+          });
+        });
+        resizeObserver.observe(pageEl);
+      } else setTimeout(function() {
+        fitText(pageEl);
+      }, 0);
       if (typeof IntersectionObserver === "function") {
         if (!observer) observer = new IntersectionObserver(function(entries) {
           entries.forEach(function(entry) {
@@ -33811,11 +33952,33 @@ ${text2}</tr>
         observer.observe(pageEl);
       }
     });
+    childrenOf(node.id).forEach(function(child) {
+      if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending"));
+    });
+    container.addEventListener("mouseup", function(e) {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+      var range = sel.getRangeAt(0), pageEl = e.target.closest && e.target.closest(".rh-pdf-page");
+      if (!pageEl || !pageEl.contains(range.startContainer) || !pageEl.contains(range.endContainer)) return;
+      var offsets = pdfSelectionOffsets(range, pdf.lines), rect = normalizeRectUnion(range.getClientRects(), pageEl.getBoundingClientRect());
+      if (!offsets || offsets.end <= offsets.start || !rect) return;
+      showAskFromSelection({
+        parentId: node.id,
+        selectedText: sel.toString().trim(),
+        mdStart: offsets.start,
+        mdEnd: offsets.end,
+        pdfAnchor: { page: Number(pageEl.dataset.page), rect },
+        anchorRectEl: { getBoundingClientRect: function() {
+          return range.getBoundingClientRect();
+        }, contextElement: pageEl }
+      });
+    });
     mountWindow(0);
     return function dispose() {
       if (disposed) return;
       disposed = true;
       if (observer) observer.disconnect();
+      if (resizeObserver) resizeObserver.disconnect();
       pageEls.forEach(function(pageEl) {
         var img = pageEl.querySelector("img");
         if (img) {

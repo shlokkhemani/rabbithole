@@ -479,4 +479,10 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .doc-content.rh-pdf { display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
 .rh-pdf-page { position: relative; width: 100%; overflow: hidden; background: white; border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
 .rh-pdf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; user-select: none; }
+.rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
+.rh-pdf-textlayer { z-index: 2; cursor: text; }
+.rh-pdf-textlayer span { position: absolute; display: block; color: transparent; white-space: pre; line-height: 1; overflow: visible; transform-origin: left top; user-select: text; }
+.rh-pdf-marks { z-index: 3; pointer-events: none; }
+.rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; background: var(--mark); pointer-events: auto; cursor: pointer; opacity: .42; }
+.rh-pdf-mark.mark-pending { background: var(--mark-pending); }
 `;

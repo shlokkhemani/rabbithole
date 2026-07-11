@@ -43,11 +43,21 @@ const session = getSession(opened.session_id);
 const holeId = session.holeId;
 await session.handleBrowserEvent({ type: "node_extensions_patch", node_id: session.rootId, namespace: "pdf", value: staged.pdfExtension });
 assert(session.outboundEvents.some((entry) => entry.data.type === "node_extensions_patch"), "node host must forward extension patches to SSE");
+await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-request", node_id: "pdf-child", parent_id: session.rootId,
+  selected_text: "Same host", question: "Explain", lens: null, branch_type: "selection",
+  anchor: { offset_start: staged.pdfExtension.lines[0].s, offset_end: staged.pdfExtension.lines[0].s + 9,
+    pdf: { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } } }, position: { x: 10, y: 20 } });
+const branch = await session.waitForEvent();
+assert.equal(branch.status, "branch_request");
+assert.equal(branch.selected_text, "Same host");
+assert.equal(Object.hasOwn(branch, "region"), false, "Slice 2 node-host request stays lean");
 await closeAllSessions("persist_native_pdf");
 const hole = await loadHole(holeId);
 const root = hole.nodes.find((node) => node.id === hole.root_id);
 assert.equal(root.markdown, staged.markdown, "node host must use the shared canonical builder");
 assert.deepEqual(root.extensions.pdf.lines, staged.pdfExtension.lines, "line geometry must match the shared host fixture");
+assert.deepEqual(hole.nodes.find((node) => node.id === "pdf-child").origin.anchor.pdf,
+  { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } });
 assert.equal(root.extensions.pdf.pages.length, 2);
 assert.deepEqual(await listAssets(holeId), ["page-001.jpg", "page-002.jpg"]);
 for (const page of root.extensions.pdf.pages) {

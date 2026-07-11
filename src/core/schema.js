@@ -73,10 +73,28 @@ export function migratePersistedHole(raw) {
   }
 
   changed = backfillNodeExtensions(hole) || changed;
+  changed = normalizeImportedPdfAnchors(hole) || changed;
 
   changed = backfillLegacyHoleBaseUrls(hole) || changed;
   validatePersistedHole(hole);
   return { hole, changed, fromVersion, toVersion: CURRENT_SCHEMA_VERSION };
+}
+
+/** Imported origins are otherwise opaque; only the documented PDF rectangle is consumer-normalized. @param {Record<string, any>} hole */
+function normalizeImportedPdfAnchors(hole) {
+  if (!Array.isArray(hole.nodes)) return false;
+  let changed = false;
+  const clamp = (/** @type {unknown} */ value) => Math.min(1, Math.max(0, Number(value) || 0));
+  for (const node of hole.nodes) {
+    const pdf = node?.origin?.anchor?.pdf;
+    if (!pdf || typeof pdf !== "object" || !pdf.rect || typeof pdf.rect !== "object") continue;
+    const page = Math.floor(Number(pdf.page));
+    if (!(page > 0)) { delete node.origin.anchor.pdf; changed = true; continue; }
+    const x = clamp(pdf.rect.x), y = clamp(pdf.rect.y);
+    const normalized = { page, rect: { x, y, w: Math.min(clamp(pdf.rect.w), 1 - x), h: Math.min(clamp(pdf.rect.h), 1 - y) } };
+    if (JSON.stringify(pdf) !== JSON.stringify(normalized)) { node.origin.anchor.pdf = normalized; changed = true; }
+  }
+  return changed;
 }
 
 /** @param {Record<string, any>} hole */

@@ -203,6 +203,13 @@ reference accounting as markdown `asset:` references. PDF files opened by web
 upload or MCP `file_path` use the same normalized builder and persist the same
 body/provenance shape; page JPEG encoder bytes may differ by host.
 
+Selection branches on native PDF nodes retain the ordinary markdown
+`offset_start`/`offset_end` pair and may additionally carry
+`anchor.pdf { page, rect: { x, y, w, h } }`. Page numbers are positive integers
+and normalized rectangle values are bounded to the page. Older consumers may
+ignore this additive field; live PDF renderers use it for rectangle marks and
+must never pass its markdown offsets into rendered-DOM range machinery.
+
 Persisted schema safety applies equally to MCP resume: a newer saved schema is
 refused before a session opens. Host-specific durable-ask semantics are also
 preserved. Browser-authored pending nodes may retain partial Markdown; the MCP

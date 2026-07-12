@@ -25,6 +25,9 @@ export function anchorSurface(trigger, surface, options) {
     if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
     updating = true;
     var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport = viewportRect();
+    // A 0×0 anchor at the origin is a dead anchor (collapsed range, detached
+    // node) — hold the last good position rather than glide to the corner.
+    if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) { updating = false; return; }
     var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
     var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
     var left, top;

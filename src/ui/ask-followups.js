@@ -103,7 +103,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
   var askPosition = null, askTabOwner = null, askOwnerCleanup = null;
 
   function selectionOwner(dc){
-    return dc.closest(".node") || readerMain;
+    return (dc && dc.closest && dc.closest(".node")) || readerMain;
   }
   function onAskOwnerKeydown(e){
     if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
@@ -176,9 +176,12 @@ export function showAskFromSelection(options){
       return false;
     }
     var anchorEl = options.anchorRectEl;
-    pendingAsk = { parentId: parentId, container: anchorEl && anchorEl.closest ? anchorEl.closest(".doc-content") : null,
+    // Virtual anchors (a selection range) carry their element as contextElement.
+    var anchorNode = anchorEl && anchorEl.closest ? anchorEl : anchorEl && anchorEl.contextElement ? anchorEl.contextElement : null;
+    pendingAsk = { parentId: parentId, container: anchorNode && anchorNode.closest ? anchorNode.closest(".doc-content") : null,
       selectedText: String(options.selectedText || "").trim(), startOff: options.mdStart,
-      endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: null };
+      endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: options.range || null };
+    if (pendingAsk.range) paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this… ↵ = Explain";
     ask.classList.add("visible");

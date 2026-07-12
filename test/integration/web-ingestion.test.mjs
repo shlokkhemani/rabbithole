@@ -287,7 +287,9 @@ try {
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.click(".node .rh-pdf-convert");
   await page.waitForSelector(".node .rh-pdf-convert-progress");
-  assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Converting — page/);
+  assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Converting to document/);
+  assert((await page.locator(".node .rh-pdf-convert-progress .sk-line").count()) > 0, "converting must show the loading skeleton");
+  assert(!(await page.textContent(".node .doc-content")).includes("Abort page one"), "the raw extraction must not render while converting");
   await page.click(".node .rh-pdf-convert-cancel");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   const abortedState = await page.evaluate(async () => {

@@ -2864,6 +2864,35 @@ var RabbitholeFrozenClient = (() => {
     wrap.appendChild(sk);
     return wrap;
   }
+  function buildConvertProgress(node, pdfExt, committed) {
+    var done = node._pdfProgress ? node._pdfProgress.done : 0;
+    var total = node._pdfProgress ? node._pdfProgress.total : pdfExt.pages ? pdfExt.pages.length : 0;
+    var wrap = document.createElement("div");
+    wrap.className = "rh-pdf-convert-progress" + (committed ? "" : " loading rh-pdf-converting");
+    var st = document.createElement("div");
+    st.className = "loading-status";
+    var label = "Converting to document";
+    if (committed && done > 0 && done < total) label += " \u2014 page " + done + " of " + total;
+    else if (!committed && total) label += " \u2014 " + total + (total === 1 ? " page" : " pages");
+    st.innerHTML = (committed ? "" : LOADING_BUNNY_HTML) + '<span class="shimmer-text">' + label + "</span>";
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "node-btn rh-pdf-convert-cancel";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", function(event) {
+      event.stopPropagation();
+      cancel.disabled = true;
+      postBrowserEvent({ type: "convert_cancel", node_id: node.id });
+    });
+    st.appendChild(cancel);
+    wrap.appendChild(st);
+    if (!committed) {
+      var sk = document.createElement("div");
+      sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
+      wrap.appendChild(sk);
+    }
+    return wrap;
+  }
   function visualSurfaceKey(node, base) {
     return (base === CANVAS_BASE ? "canvas:" : "reader:") + (node && node.id || "unknown");
   }
@@ -2929,22 +2958,11 @@ var RabbitholeFrozenClient = (() => {
         dc._rhDispose = dispose;
       } else {
         dc.innerHTML = node.html || "";
-        if (node.extensions && node.extensions.pdf && node.extensions.pdf.converting) {
-          var progress = document.createElement("div");
-          progress.className = "rh-pdf-convert-progress";
-          var done = node._pdfProgress ? node._pdfProgress.done : 0, total = node._pdfProgress ? node._pdfProgress.total : node.extensions.pdf.pages.length;
-          progress.textContent = "Converting \u2014 page " + done + " of " + total;
-          var cancel = document.createElement("button");
-          cancel.type = "button";
-          cancel.className = "node-btn rh-pdf-convert-cancel";
-          cancel.textContent = "Cancel";
-          cancel.addEventListener("click", function(event) {
-            event.stopPropagation();
-            cancel.disabled = true;
-            postBrowserEvent({ type: "convert_cancel", node_id: node.id });
-          });
-          progress.appendChild(cancel);
-          dc.prepend(progress);
+        var pdfExt = node.extensions && node.extensions.pdf;
+        if (pdfExt && pdfExt.converting) {
+          var committed = String(node.md || "") !== String(pdfExt.original_markdown != null ? pdfExt.original_markdown : "");
+          if (!committed) dc.innerHTML = "";
+          dc.prepend(buildConvertProgress(node, pdfExt, committed));
         }
         mountDocMedia(dc, node, base);
       }
@@ -4661,6 +4679,10 @@ var RabbitholeFrozenClient = (() => {
       if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
       updating = true;
       var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport2 = viewportRect();
+      if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) {
+        updating = false;
+        return;
+      }
       var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
       var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
       var left, top;
@@ -4827,7 +4849,7 @@ var RabbitholeFrozenClient = (() => {
   var askTabOwner = null;
   var askOwnerCleanup = null;
   function selectionOwner(dc) {
-    return dc.closest(".node") || readerMain;
+    return dc && dc.closest && dc.closest(".node") || readerMain;
   }
   function onAskOwnerKeydown(e) {
     if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;

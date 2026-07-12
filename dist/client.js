@@ -2859,6 +2859,35 @@ var RabbitholeClient = (() => {
     wrap.appendChild(sk);
     return wrap;
   }
+  function buildConvertProgress(node, pdfExt, committed) {
+    var done = node._pdfProgress ? node._pdfProgress.done : 0;
+    var total = node._pdfProgress ? node._pdfProgress.total : pdfExt.pages ? pdfExt.pages.length : 0;
+    var wrap = document.createElement("div");
+    wrap.className = "rh-pdf-convert-progress" + (committed ? "" : " loading rh-pdf-converting");
+    var st = document.createElement("div");
+    st.className = "loading-status";
+    var label = "Converting to document";
+    if (committed && done > 0 && done < total) label += " \u2014 page " + done + " of " + total;
+    else if (!committed && total) label += " \u2014 " + total + (total === 1 ? " page" : " pages");
+    st.innerHTML = (committed ? "" : LOADING_BUNNY_HTML) + '<span class="shimmer-text">' + label + "</span>";
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "node-btn rh-pdf-convert-cancel";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", function(event) {
+      event.stopPropagation();
+      cancel.disabled = true;
+      postBrowserEvent({ type: "convert_cancel", node_id: node.id });
+    });
+    st.appendChild(cancel);
+    wrap.appendChild(st);
+    if (!committed) {
+      var sk = document.createElement("div");
+      sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
+      wrap.appendChild(sk);
+    }
+    return wrap;
+  }
   function visualSurfaceKey(node, base) {
     return (base === CANVAS_BASE ? "canvas:" : "reader:") + (node && node.id || "unknown");
   }
@@ -2924,22 +2953,11 @@ var RabbitholeClient = (() => {
         dc._rhDispose = dispose;
       } else {
         dc.innerHTML = node.html || "";
-        if (node.extensions && node.extensions.pdf && node.extensions.pdf.converting) {
-          var progress = document.createElement("div");
-          progress.className = "rh-pdf-convert-progress";
-          var done = node._pdfProgress ? node._pdfProgress.done : 0, total = node._pdfProgress ? node._pdfProgress.total : node.extensions.pdf.pages.length;
-          progress.textContent = "Converting \u2014 page " + done + " of " + total;
-          var cancel = document.createElement("button");
-          cancel.type = "button";
-          cancel.className = "node-btn rh-pdf-convert-cancel";
-          cancel.textContent = "Cancel";
-          cancel.addEventListener("click", function(event) {
-            event.stopPropagation();
-            cancel.disabled = true;
-            postBrowserEvent({ type: "convert_cancel", node_id: node.id });
-          });
-          progress.appendChild(cancel);
-          dc.prepend(progress);
+        var pdfExt = node.extensions && node.extensions.pdf;
+        if (pdfExt && pdfExt.converting) {
+          var committed = String(node.md || "") !== String(pdfExt.original_markdown != null ? pdfExt.original_markdown : "");
+          if (!committed) dc.innerHTML = "";
+          dc.prepend(buildConvertProgress(node, pdfExt, committed));
         }
         mountDocMedia(dc, node, base);
       }
@@ -4675,6 +4693,10 @@ var RabbitholeClient = (() => {
       if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
       updating = true;
       var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport2 = viewportRect();
+      if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) {
+        updating = false;
+        return;
+      }
       var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
       var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
       var left, top;
@@ -4841,7 +4863,7 @@ var RabbitholeClient = (() => {
   var askTabOwner = null;
   var askOwnerCleanup = null;
   function selectionOwner(dc) {
-    return dc.closest(".node") || readerMain;
+    return dc && dc.closest && dc.closest(".node") || readerMain;
   }
   function onAskOwnerKeydown(e) {
     if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
@@ -4922,15 +4944,17 @@ var RabbitholeClient = (() => {
       return false;
     }
     var anchorEl = options2.anchorRectEl;
+    var anchorNode = anchorEl && anchorEl.closest ? anchorEl : anchorEl && anchorEl.contextElement ? anchorEl.contextElement : null;
     pendingAsk = {
       parentId,
-      container: anchorEl && anchorEl.closest ? anchorEl.closest(".doc-content") : null,
+      container: anchorNode && anchorNode.closest ? anchorNode.closest(".doc-content") : null,
       selectedText: String(options2.selectedText || "").trim(),
       startOff: options2.mdStart,
       endOff: options2.mdEnd,
       pdfAnchor: options2.pdfAnchor || null,
-      range: null
+      range: options2.range || null
     };
+    if (pendingAsk.range) paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
     ask.classList.add("visible");
@@ -33930,6 +33954,7 @@ ${text2}</tr>
     var resizeObserver = null;
     var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
     var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
+    var spansByPage = [];
     function setBoxMode(active) {
       boxMode = !!active;
       container.classList.toggle("rh-pdf-box-mode", boxMode);
@@ -33995,6 +34020,8 @@ ${text2}</tr>
       pageEl.style.aspectRatio = page.w + " / " + page.h;
       var textLayer = document.createElement("div");
       textLayer.className = "rh-pdf-textlayer";
+      var pageSpans = [];
+      spansByPage.push(pageSpans);
       pdf.lines.forEach(function(line, lineIndex) {
         if (line.p !== page.n) return;
         var span = document.createElement("span");
@@ -34004,6 +34031,7 @@ ${text2}</tr>
         span.style.top = line.y * 100 + "%";
         span.style.height = line.h * 100 + "%";
         textLayer.appendChild(span);
+        if (span.firstChild) pageSpans.push({ index: lineIndex, span });
       });
       pageEl.appendChild(textLayer);
       var marks = document.createElement("div");
@@ -34146,23 +34174,117 @@ ${text2}</tr>
     childrenOf(node.id).forEach(function(child) {
       if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending"));
     });
-    container.addEventListener("mouseup", function(e) {
+    function caretAtPoint(pageEl, pageSpans, clientX, clientY) {
+      var rect = pageEl.getBoundingClientRect();
+      if (!rect.width || !rect.height || !pageSpans.length) return null;
+      var nx = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      var ny = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+      var best = null, bestScore = Infinity;
+      for (var i2 = 0; i2 < pageSpans.length; i2++) {
+        var candidate = pdf.lines[pageSpans[i2].index];
+        var dx = nx < candidate.x ? candidate.x - nx : nx > candidate.x + candidate.w ? nx - (candidate.x + candidate.w) : 0;
+        var dy = ny < candidate.y ? candidate.y - ny : ny > candidate.y + candidate.h ? ny - (candidate.y + candidate.h) : 0;
+        var hx = dx * rect.width * 3, vy = dy * rect.height, score = hx * hx + vy * vy;
+        if (score < bestScore) {
+          bestScore = score;
+          best = pageSpans[i2];
+        }
+      }
+      var text2 = best && best.span.firstChild;
+      if (!text2) return null;
+      var line = pdf.lines[best.index], len = text2.nodeValue.length, offset;
+      if (nx <= line.x) offset = 0;
+      else if (nx >= line.x + line.w) offset = len;
+      else {
+        offset = nativeCaretOffset(text2, clientX, rect.top + (line.y + line.h / 2) * rect.height);
+        if (offset == null) offset = Math.max(0, Math.min(len, Math.round((nx - line.x) / line.w * len)));
+      }
+      return { node: text2, offset };
+    }
+    function nativeCaretOffset(textNode, clientX, clientY) {
+      var pos = null;
+      if (document.caretPositionFromPoint) {
+        var p = document.caretPositionFromPoint(clientX, clientY);
+        if (p) pos = { node: p.offsetNode, offset: p.offset };
+      } else if (document.caretRangeFromPoint) {
+        var r2 = document.caretRangeFromPoint(clientX, clientY);
+        if (r2) pos = { node: r2.startContainer, offset: r2.startOffset };
+      }
+      return pos && pos.node === textNode ? pos.offset : null;
+    }
+    function wordBoundsIn(text2, index) {
+      var isWord = function(ch2) {
+        return !!ch2 && !/[\s.,;:!?()\[\]{}"'`]/.test(ch2);
+      };
+      var i2 = Math.max(0, Math.min(index, text2.length - 1));
+      if (!isWord(text2[i2]) && isWord(text2[i2 - 1])) i2--;
+      if (!isWord(text2[i2])) return { start: i2, end: Math.min(text2.length, i2 + 1) };
+      var start = i2, end = i2 + 1;
+      while (start > 0 && isWord(text2[start - 1])) start--;
+      while (end < text2.length && isWord(text2[end])) end++;
+      return { start, end };
+    }
+    function maybeAskFromSelection() {
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-      var range = sel.getRangeAt(0), pageEl = e.target.closest && e.target.closest(".rh-pdf-page");
-      if (!pageEl || !pageEl.contains(range.startContainer) || !pageEl.contains(range.endContainer)) return;
+      var live = sel.getRangeAt(0);
+      var startEl = live.startContainer.nodeType === 3 ? live.startContainer.parentElement : live.startContainer;
+      var pageEl = startEl && startEl.closest ? startEl.closest(".rh-pdf-page") : null;
+      if (!pageEl || !container.contains(pageEl) || !pageEl.contains(live.endContainer)) return;
+      var range = live.cloneRange();
       var offsets = pdfSelectionOffsets(range, pdf.lines), rect = normalizeRectUnion(range.getClientRects(), pageEl.getBoundingClientRect());
       if (!offsets || offsets.end <= offsets.start || !rect) return;
       showAskFromSelection({
         parentId: node.id,
-        selectedText: sel.toString().trim(),
+        selectedText: markdown2.slice(offsets.start, offsets.end).trim(),
         mdStart: offsets.start,
         mdEnd: offsets.end,
         pdfAnchor: { page: Number(pageEl.dataset.page), rect },
+        range,
         anchorRectEl: { getBoundingClientRect: function() {
           return range.getBoundingClientRect();
         }, contextElement: pageEl }
       });
+    }
+    container.addEventListener("mousedown", function(event) {
+      if (boxMode || event.button !== 0 || disposed) return;
+      if (event.target.closest && event.target.closest(".rh-pdf-toolbar, .rh-pdf-mark")) return;
+      var pageEl = event.target.closest ? event.target.closest(".rh-pdf-page") : null;
+      event.preventDefault();
+      var pageIndex = pageEl ? pageEls.indexOf(pageEl) : -1;
+      var sel = window.getSelection();
+      if (!sel || pageIndex < 0 || !spansByPage[pageIndex].length) {
+        if (sel && !sel.isCollapsed) sel.removeAllRanges();
+        return;
+      }
+      var anchor = caretAtPoint(pageEl, spansByPage[pageIndex], event.clientX, event.clientY);
+      if (!anchor) return;
+      if (event.detail >= 2) {
+        var bounds = event.detail === 2 ? wordBoundsIn(anchor.node.nodeValue, anchor.offset) : { start: 0, end: anchor.node.nodeValue.length };
+        sel.setBaseAndExtent(anchor.node, bounds.start, anchor.node, bounds.end);
+      }
+      var dragged = false, downX = event.clientX, downY = event.clientY, detail = event.detail;
+      function move(moveEvent) {
+        if (!dragged && Math.abs(moveEvent.clientX - downX) < 4 && Math.abs(moveEvent.clientY - downY) < 4) return;
+        dragged = true;
+        var focus3 = caretAtPoint(pageEl, spansByPage[pageIndex], moveEvent.clientX, moveEvent.clientY);
+        if (focus3) sel.setBaseAndExtent(anchor.node, anchor.offset, focus3.node, focus3.offset);
+        moveEvent.preventDefault();
+      }
+      function up(upEvent) {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        if (!dragged && detail === 1) {
+          if (!sel.isCollapsed) sel.removeAllRanges();
+          return;
+        }
+        if (upEvent && !container.contains(upEvent.target)) maybeAskFromSelection();
+      }
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    container.addEventListener("mouseup", function() {
+      maybeAskFromSelection();
     });
     mountWindow(0);
     return function dispose() {

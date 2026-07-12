@@ -39,6 +39,7 @@ export function mountPdfView(container, node) {
   var resizeObserver = null;
   var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
   var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
+  var spansByPage = [];
   function setBoxMode(active) {
     boxMode = !!active;
     container.classList.toggle("rh-pdf-box-mode", boxMode);
@@ -88,11 +89,13 @@ export function mountPdfView(container, node) {
     pageEl.dataset.page = page.n;
     pageEl.style.aspectRatio = page.w + " / " + page.h;
     var textLayer = document.createElement("div"); textLayer.className = "rh-pdf-textlayer";
+    var pageSpans = []; spansByPage.push(pageSpans);
     pdf.lines.forEach(function(line, lineIndex){
       if (line.p !== page.n) return;
       var span = document.createElement("span"); span.dataset.line = lineIndex; span.textContent = markdown.slice(line.s, line.e);
       span.style.left = (line.x*100) + "%"; span.style.top = (line.y*100) + "%"; span.style.height = (line.h*100) + "%";
       textLayer.appendChild(span);
+      if (span.firstChild) pageSpans.push({ index: lineIndex, span: span });
     });
     pageEl.appendChild(textLayer);
     var marks = document.createElement("div"); marks.className = "rh-pdf-marks"; pageEl.appendChild(marks);
@@ -168,15 +171,102 @@ export function mountPdfView(container, node) {
   function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); event.stopPropagation(); setBoxMode(false); } }
   document.addEventListener("keydown", onKeydown, true);
   childrenOf(node.id).forEach(function(child){ if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending")); });
-  container.addEventListener("mouseup", function(e){
+  // --- text selection engine --------------------------------------------------
+  // Native DOM selection hit-tests the empty gaps between absolutely-positioned
+  // line spans and resolves them in document order, so a drag inside one column
+  // sweeps the neighboring column too. We own the selection instead: geometric,
+  // column-aware hit-testing against the ingest line map, then a programmatic
+  // Selection — the same model Chrome's built-in PDF viewer uses.
+  function caretAtPoint(pageEl, pageSpans, clientX, clientY) {
+    var rect = pageEl.getBoundingClientRect();
+    if (!rect.width || !rect.height || !pageSpans.length) return null;
+    var nx = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    var ny = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    var best = null, bestScore = Infinity;
+    for (var i = 0; i < pageSpans.length; i++) {
+      var candidate = pdf.lines[pageSpans[i].index];
+      var dx = nx < candidate.x ? candidate.x - nx : nx > candidate.x + candidate.w ? nx - (candidate.x + candidate.w) : 0;
+      var dy = ny < candidate.y ? candidate.y - ny : ny > candidate.y + candidate.h ? ny - (candidate.y + candidate.h) : 0;
+      // Horizontal misses cost 3x vertical ones: a pointer in the gap between
+      // lines of one column must snap within that column, never across the gutter.
+      var hx = dx * rect.width * 3, vy = dy * rect.height, score = hx * hx + vy * vy;
+      if (score < bestScore) { bestScore = score; best = pageSpans[i]; }
+    }
+    var text = best && best.span.firstChild;
+    if (!text) return null;
+    var line = pdf.lines[best.index], len = text.nodeValue.length, offset;
+    if (nx <= line.x) offset = 0;
+    else if (nx >= line.x + line.w) offset = len;
+    else {
+      offset = nativeCaretOffset(text, clientX, rect.top + (line.y + line.h / 2) * rect.height);
+      if (offset == null) offset = Math.max(0, Math.min(len, Math.round(((nx - line.x) / line.w) * len)));
+    }
+    return { node: text, offset: offset };
+  }
+  // Exact glyph-boundary offsets come from the browser's own caret probe, aimed
+  // at the line's vertical center so the gap above/below the glyphs can't miss.
+  function nativeCaretOffset(textNode, clientX, clientY) {
+    var pos = null;
+    if (document.caretPositionFromPoint) { var p = document.caretPositionFromPoint(clientX, clientY); if (p) pos = { node: p.offsetNode, offset: p.offset }; }
+    else if (document.caretRangeFromPoint) { var r = document.caretRangeFromPoint(clientX, clientY); if (r) pos = { node: r.startContainer, offset: r.startOffset }; }
+    return pos && pos.node === textNode ? pos.offset : null;
+  }
+  function wordBoundsIn(text, index) {
+    var isWord = function(ch){ return !!ch && !/[\s.,;:!?()\[\]{}"'`]/.test(ch); };
+    var i = Math.max(0, Math.min(index, text.length - 1));
+    if (!isWord(text[i]) && isWord(text[i - 1])) i--;
+    if (!isWord(text[i])) return { start: i, end: Math.min(text.length, i + 1) };
+    var start = i, end = i + 1;
+    while (start > 0 && isWord(text[start - 1])) start--;
+    while (end < text.length && isWord(text[end])) end++;
+    return { start: start, end: end };
+  }
+  function maybeAskFromSelection() {
     var sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-    var range = sel.getRangeAt(0), pageEl = e.target.closest && e.target.closest(".rh-pdf-page");
-    if (!pageEl || !pageEl.contains(range.startContainer) || !pageEl.contains(range.endContainer)) return;
+    var live = sel.getRangeAt(0);
+    var startEl = live.startContainer.nodeType === 3 ? live.startContainer.parentElement : live.startContainer;
+    var pageEl = startEl && startEl.closest ? startEl.closest(".rh-pdf-page") : null;
+    if (!pageEl || !container.contains(pageEl) || !pageEl.contains(live.endContainer)) return;
+    // Clone the range: the live one collapses the moment focus moves into the
+    // ask box, and the popup keeps re-anchoring against this rect while open.
+    var range = live.cloneRange();
     var offsets = pdfSelectionOffsets(range, pdf.lines), rect = normalizeRectUnion(range.getClientRects(), pageEl.getBoundingClientRect());
     if (!offsets || offsets.end <= offsets.start || !rect) return;
-    showAskFromSelection({ parentId: node.id, selectedText: sel.toString().trim(), mdStart: offsets.start, mdEnd: offsets.end,
-      pdfAnchor: { page: Number(pageEl.dataset.page), rect: rect }, anchorRectEl: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); }, contextElement: pageEl } });
+    showAskFromSelection({ parentId: node.id, selectedText: markdown.slice(offsets.start, offsets.end).trim(), mdStart: offsets.start, mdEnd: offsets.end,
+      pdfAnchor: { page: Number(pageEl.dataset.page), rect: rect }, range: range,
+      anchorRectEl: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); }, contextElement: pageEl } });
+  }
+  container.addEventListener("mousedown", function(event) {
+    if (boxMode || event.button !== 0 || disposed) return;
+    if (event.target.closest && event.target.closest(".rh-pdf-toolbar, .rh-pdf-mark")) return;
+    var pageEl = event.target.closest ? event.target.closest(".rh-pdf-page") : null;
+    event.preventDefault();
+    var pageIndex = pageEl ? pageEls.indexOf(pageEl) : -1;
+    var sel = window.getSelection();
+    if (!sel || pageIndex < 0 || !spansByPage[pageIndex].length) { if (sel && !sel.isCollapsed) sel.removeAllRanges(); return; }
+    var anchor = caretAtPoint(pageEl, spansByPage[pageIndex], event.clientX, event.clientY);
+    if (!anchor) return;
+    if (event.detail >= 2) {
+      var bounds = event.detail === 2 ? wordBoundsIn(anchor.node.nodeValue, anchor.offset) : { start: 0, end: anchor.node.nodeValue.length };
+      sel.setBaseAndExtent(anchor.node, bounds.start, anchor.node, bounds.end);
+    }
+    var dragged = false, downX = event.clientX, downY = event.clientY, detail = event.detail;
+    function move(moveEvent) {
+      if (!dragged && Math.abs(moveEvent.clientX - downX) < 4 && Math.abs(moveEvent.clientY - downY) < 4) return;
+      dragged = true;
+      var focus = caretAtPoint(pageEl, spansByPage[pageIndex], moveEvent.clientX, moveEvent.clientY);
+      if (focus) sel.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+      moveEvent.preventDefault();
+    }
+    function up(upEvent) {
+      document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
+      if (!dragged && detail === 1) { if (!sel.isCollapsed) sel.removeAllRanges(); return; }
+      // A release outside the container never reaches the container's own mouseup.
+      if (upEvent && !container.contains(upEvent.target)) maybeAskFromSelection();
+    }
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
   });
+  container.addEventListener("mouseup", function(){ maybeAskFromSelection(); });
   mountWindow(0);
   return function dispose() {
     if (disposed) return;

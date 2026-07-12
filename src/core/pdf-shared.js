@@ -191,33 +191,54 @@ function clusterTextLines(items) {
   }
 
   return lines
-    .map((line) => {
+    .flatMap((line) => {
       line.items.sort((a, b) => a.x - b.x);
-      let text = "";
+      // Split a y-cluster at large horizontal gaps: two-column layouts put both
+      // columns on the same baseline, and a single merged record would glue the
+      // columns' text together and span the gutter — wrecking reading order,
+      // selection geometry, and ask anchors alike.
+      /** @type {{ items: TextGeometry[] }[]} */
+      const segments = [];
+      /** @type {{ items: TextGeometry[] } | null} */
+      let segment = null;
+      /** @type {number | null} */
       let lastRight = null;
-      let minX = Infinity;
-      let maxX = -Infinity;
       for (const item of line.items) {
-        minX = Math.min(minX, item.x);
-        maxX = Math.max(maxX, item.x + item.width);
-        const normalized = item.str.replace(/\s+/g, " ");
-        if (text.length === 0) {
-          text = normalized.trimStart();
-        } else {
-          const charWidth = item.width / Math.max(item.str.length, 1);
-          const gap = item.x - /** @type {number} */ (lastRight);
-          if (gap > Math.max(1.5, charWidth * 0.45) && !text.endsWith(" ")) text += " ";
-          text += normalized;
+        const gapLimit = Math.max(12, item.height * 1.6);
+        if (!segment || (lastRight != null && item.x - lastRight > gapLimit)) {
+          segment = { items: [] };
+          segments.push(segment);
         }
+        segment.items.push(item);
         lastRight = Math.max(lastRight ?? -Infinity, item.x + item.width);
       }
-      return {
-        y: line.y,
-        minX,
-        maxX,
-        height: Math.max(...line.items.map((item) => item.height)),
-        text: text.trimEnd(),
-      };
+      return segments.map((entry) => {
+        let text = "";
+        let right = null;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        for (const item of entry.items) {
+          minX = Math.min(minX, item.x);
+          maxX = Math.max(maxX, item.x + item.width);
+          const normalized = item.str.replace(/\s+/g, " ");
+          if (text.length === 0) {
+            text = normalized.trimStart();
+          } else {
+            const charWidth = item.width / Math.max(item.str.length, 1);
+            const gap = item.x - /** @type {number} */ (right);
+            if (gap > Math.max(1.5, charWidth * 0.45) && !text.endsWith(" ")) text += " ";
+            text += normalized;
+          }
+          right = Math.max(right ?? -Infinity, item.x + item.width);
+        }
+        return {
+          y: line.y,
+          minX,
+          maxX,
+          height: Math.max(...entry.items.map((item) => item.height)),
+          text: text.trimEnd(),
+        };
+      });
     })
     .filter((line) => line.text.trim().length > 0)
     .sort((a, b) => b.y - a.y || a.minX - b.minX);

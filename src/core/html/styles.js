@@ -495,16 +495,25 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow 180ms ease; }
 .rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: var(--control-gap); margin-bottom: -10px; pointer-events: none; }
 .rh-pdf-toolbar-info { display: flex; align-items: center; min-width: 0; }
-.rh-pdf-scanned-note, .rh-pdf-box-hint { min-width: 0; font-family: var(--font-ui); font-size: var(--text-ui); color: var(--fg-faint); background: var(--node-head); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-pdf-scanned-note, .rh-pdf-box-hint { min-width: 0; font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); color: var(--fg-faint); background: var(--node-head); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 3px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rh-pdf-box-hint { display: none; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .rh-pdf-box-hint.visible { display: inline-block; }
 .rh-pdf-box-mode .rh-pdf-scanned-note { display: none; }
 .rh-pdf-toolbar-actions { display: flex; align-items: center; gap: var(--control-gap); flex-shrink: 0; }
 .rh-pdf-toolbar-actions .node-btn span { white-space: nowrap; }
-.rh-pdf-toolbar-actions .node-btn { pointer-events: auto; width: auto; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); background: var(--node-head); border-radius: var(--radius-control); }
-.rh-pdf-toolbar-actions .node-btn:hover:not(:disabled) { color: var(--fg); background: var(--hover); }
+.rh-pdf-toolbar-actions .node-btn { pointer-events: auto; width: auto; height: 22px; gap: 4px; padding: 0 8px; font-size: calc(var(--text-ui) - 1px); font-weight: var(--weight-normal, 400); border: 1px solid var(--border); background: var(--node-head); border-radius: var(--radius-control);
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.rh-pdf-toolbar-actions .node-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, var(--node-head)); border-color: color-mix(in srgb, var(--fg) 12%, var(--border)); }
+.rh-pdf-toolbar-actions .node-btn:active:not(:disabled) { background: color-mix(in srgb, var(--fg) 7%, var(--node-head)); }
 .rh-pdf-toolbar-actions .node-btn:disabled { opacity: .55; cursor: default; }
-.rh-pdf-box-toggle svg { width: 13px; height: 13px; }
-.rh-pdf-box-toggle.active { color: var(--accent); background: var(--hover); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.rh-pdf-convert.primary:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.rh-pdf-box-toggle svg { width: 12px; height: 12px; }
+.rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--node-head)); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.rh-pdf-convert.primary:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.rh-pdf-convert-progress { margin-bottom: 1em; }
+.rh-pdf-convert-progress .loading-status { margin-bottom: 0; }
+.rh-pdf-convert-progress.loading .loading-status { margin-bottom: 0.9em; }
+.rh-pdf-convert-cancel { width: auto; height: 22px; padding: 0 9px; margin-left: 12px; font-size: calc(var(--text-ui) - 1px); border: 1px solid var(--border); border-radius: var(--radius-control);
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.rh-pdf-convert-cancel:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 12%, var(--border)); }
+.rh-pdf-convert-cancel:disabled { opacity: .55; cursor: default; }
 `;

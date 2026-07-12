@@ -200,6 +200,13 @@ extensions fall back to the deterministic markdown body. Frozen snapshots also
 use that markdown fallback because frozen projection intentionally omits
 extensions.
 
+Line extraction clusters text items by baseline and then splits each cluster at
+large horizontal gaps, so multi-column layouts yield one line record per column
+segment; reading order (and therefore the markdown body and provenance offsets)
+runs down each column, not across the gutter. Line records from older ingests
+that predate the split remain valid — geometry validation does not care how
+wide a line is.
+
 `node_extensions_patch { node_id, namespace, value }` replaces one extension
 namespace and is carried by both the local browser adapter and node-host event
 stream. Native page assets participate in the same deletion, survivor, and undo

@@ -483,8 +483,18 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-textlayer { z-index: 2; cursor: text; }
 .rh-pdf-textlayer span { position: absolute; display: block; color: transparent; white-space: pre; line-height: 1; overflow: visible; transform-origin: left top; user-select: text; }
 .rh-pdf-marks { z-index: 3; pointer-events: none; }
-.rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; background: var(--mark); pointer-events: auto; cursor: pointer; opacity: .42; }
-.rh-pdf-mark.mark-pending { background: var(--mark-pending); }
+/* Rect marks sit over the white page render in both themes, so they take the
+   accent wash directly: a lighter cousin of the live-selection tint by default,
+   selection-strength on hover / when the answer card is hovered (mark-focus). */
+.doc-content mark.rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; border-bottom: none;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+  pointer-events: auto; cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
+.doc-content mark.rh-pdf-mark.mark-pending { background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: none; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.doc-content mark.rh-pdf-mark:hover, .doc-content mark.rh-pdf-mark.mark-focus {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
 .rh-pdf-textlayer span::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-img, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
 .rh-pdf-box-draft { position: absolute; z-index: 4; border: 1.5px solid var(--accent); border-radius: 2px; pointer-events: none;

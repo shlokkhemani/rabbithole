@@ -1,5 +1,5 @@
-import { backfillLegacyHoleBaseUrls, normalizeStoredBaseUrlFields } from "./base-url.js";
-import { normalizePosition, normalizeSize, normalizeViewState } from "./model.js";
+import { normalizeStoredBaseUrlFields } from "./base-url.js";
+import { normalizePdfAnchor, normalizePosition, normalizeSize, normalizeViewState } from "./model.js";
 
 /** @typedef {import("./contracts/artifact.js").PersistedHole} PersistedHole */
 /** @typedef {import("./contracts/artifact.js").PersistedNode} PersistedNode */
@@ -31,7 +31,7 @@ export function toPersistedHole(hole, { updatedAt = new Date().toISOString(), cl
 }
 
 /** @param {Partial<PersistedNode> | null | undefined} node @param {{ cloneExtensions?: boolean }} [options] @returns {PersistedNode} */
-export function toPersistedNode(node, { cloneExtensions = true } = {}) {
+function toPersistedNode(node, { cloneExtensions = true } = {}) {
   const base = normalizeStoredBaseUrlFields(node);
   return {
     id: String(node?.id ?? ""),
@@ -53,83 +53,29 @@ export function toPersistedNode(node, { cloneExtensions = true } = {}) {
 }
 
 /** @param {unknown} raw */
-export function migratePersistedHole(raw) {
+export function parsePersistedHole(raw) {
   const hole = /** @type {Record<string, any>} */ (cloneJson(raw));
   if (!hole || typeof hole !== "object" || Array.isArray(hole)) {
     throw new Error("Persisted Rabbithole must be an object");
   }
-
-  const fromVersion = hole.schema_version == null ? 0 : Number(hole.schema_version);
-  let changed = false;
-
-  if (hole.schema_version == null || fromVersion === 1) {
-    hole.schema_version = CURRENT_SCHEMA_VERSION;
-    backfillLegacyShapeDefaults(hole);
-    changed = true;
-  } else if (fromVersion > CURRENT_SCHEMA_VERSION) {
+  if (Number(hole.schema_version) > CURRENT_SCHEMA_VERSION) {
     throw new Error(NEWER_SCHEMA_MESSAGE);
-  } else if (fromVersion !== CURRENT_SCHEMA_VERSION) {
-    throw new Error(`Unsupported Rabbithole schema_version ${JSON.stringify(hole.schema_version)}`);
   }
-
-  changed = backfillNodeExtensions(hole) || changed;
-  changed = normalizeImportedPdfAnchors(hole) || changed;
-
-  changed = backfillLegacyHoleBaseUrls(hole) || changed;
+  normalizeImportedPdfAnchors(hole);
   validatePersistedHole(hole);
-  return { hole, changed, fromVersion, toVersion: CURRENT_SCHEMA_VERSION };
+  return /** @type {PersistedHole} */ (hole);
 }
 
 /** Imported origins are otherwise opaque; only the documented PDF rectangle is consumer-normalized. @param {Record<string, any>} hole */
 function normalizeImportedPdfAnchors(hole) {
-  if (!Array.isArray(hole.nodes)) return false;
-  let changed = false;
-  const clamp = (/** @type {unknown} */ value) => Math.min(1, Math.max(0, Number(value) || 0));
+  if (!Array.isArray(hole.nodes)) return;
   for (const node of hole.nodes) {
     const pdf = node?.origin?.anchor?.pdf;
     if (!pdf || typeof pdf !== "object" || !pdf.rect || typeof pdf.rect !== "object") continue;
-    const page = Math.floor(Number(pdf.page));
-    if (!(page > 0)) { delete node.origin.anchor.pdf; changed = true; continue; }
-    const x = clamp(pdf.rect.x), y = clamp(pdf.rect.y);
-    const normalized = { page, rect: { x, y, w: Math.min(clamp(pdf.rect.w), 1 - x), h: Math.min(clamp(pdf.rect.h), 1 - y) } };
-    if (JSON.stringify(pdf) !== JSON.stringify(normalized)) { node.origin.anchor.pdf = normalized; changed = true; }
+    const normalized = normalizePdfAnchor(pdf);
+    if (normalized) node.origin.anchor.pdf = normalized;
+    else delete node.origin.anchor.pdf;
   }
-  return changed;
-}
-
-/** @param {Record<string, any>} hole */
-function backfillLegacyShapeDefaults(hole) {
-  if (!Object.prototype.hasOwnProperty.call(hole, "view_state")) hole.view_state = null;
-  if (!Array.isArray(hole.nodes)) return;
-  for (const node of hole.nodes) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
-    if (!Object.prototype.hasOwnProperty.call(node, "parent_id")) node.parent_id = null;
-    if (!Object.prototype.hasOwnProperty.call(node, "title")) node.title = "";
-    if (!Object.prototype.hasOwnProperty.call(node, "markdown")) node.markdown = "";
-    if (!Object.prototype.hasOwnProperty.call(node, "origin")) node.origin = null;
-    if (!node.position || typeof node.position !== "object") node.position = { x: 0, y: 0 };
-    if (!Object.prototype.hasOwnProperty.call(node, "size")) node.size = null;
-    if (!Object.prototype.hasOwnProperty.call(node, "font_scale")) node.font_scale = 1;
-    if (!Object.prototype.hasOwnProperty.call(node, "collapsed")) node.collapsed = false;
-    if (!Object.prototype.hasOwnProperty.call(node, "status")) node.status = "answered";
-    if (!Object.prototype.hasOwnProperty.call(node, "read")) node.read = false;
-    if (!Object.prototype.hasOwnProperty.call(node, "created_at")) node.created_at = null;
-    if (!Object.prototype.hasOwnProperty.call(node, "extensions")) node.extensions = {};
-  }
-}
-
-/** Snapshot projections deliberately omit extensions and are normalized here on import. @param {Record<string, any>} hole */
-function backfillNodeExtensions(hole) {
-  if (!Array.isArray(hole.nodes)) return false;
-  let changed = false;
-  for (const node of hole.nodes) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
-    if (!Object.prototype.hasOwnProperty.call(node, "extensions")) {
-      node.extensions = {};
-      changed = true;
-    }
-  }
-  return changed;
 }
 
 /** @param {any} hole @returns {hole is PersistedHole} */
@@ -145,7 +91,7 @@ export function validatePersistedHole(hole) {
 }
 
 /** @param {any} node @returns {node is PersistedNode} */
-export function validatePersistedNode(node) {
+function validatePersistedNode(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) throw new Error("Persisted node must be an object");
   if (typeof node.id !== "string" || !node.id) throw new Error("Persisted node id must be a non-empty string");
   if (node.parent_id !== null && typeof node.parent_id !== "string") throw new Error(`Persisted node ${node.id} parent_id must be string or null`);

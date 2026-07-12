@@ -35,8 +35,7 @@ and CSS live as pure template strings here, while Node-only assembly lives under
 - The share menu's Download snapshot flow is client-generated: it serializes the
   current markdown state, fetches referenced `asset:` files as data URIs, and
   writes a frozen single-file HTML using `dist/frozen-client.js`. The `/export`
-  route remains a compatibility shim that packages the same frozen hydration
-  shape server-side.
+  route packages the same frozen projection server-side.
 
 Behavior-preserving rules:
 

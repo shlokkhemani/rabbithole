@@ -18,15 +18,11 @@ import {
   createPortableProjection,
   validatePortableProjection,
 } from "../../src/core/portable-projection.js";
-import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../../src/core/schema.js";
+import { parsePersistedHole, toPersistedHole, validatePersistedHole } from "../../src/core/schema.js";
 import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../../src/core/store.js";
 import { FsStore } from "../../src/node/fs-store.js";
 import { importRabbitholeFile, importSnapshotFile, parseRabbitholeFile } from "../../src/web/portable.js";
-import {
-  nullSchemaLegacyFixture,
-  persistedHoleFixture,
-  portableArtifactFixture,
-} from "../fixtures/contracts/artifact-fixture.js";
+import { persistedHoleFixture, portableArtifactFixture } from "../fixtures/contracts/artifact-fixture.js";
 import { storeFixture } from "../fixtures/contracts/store-fixture.js";
 import { brainFixture, generationEventFixtures } from "../fixtures/contracts/generation-fixture.js";
 import {
@@ -119,27 +115,19 @@ assert.equal(isPrimitive({ mount: null }), false);
 console.log("ok data boundaries: typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values");
 
 {
-  const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persistedHoleFixture)));
-  assert.equal(migrated.changed, false);
-  const repersisted = toPersistedHole(migrated.hole, { updatedAt: migrated.hole.updated_at });
+  const parsedHole = parsePersistedHole(persistedHoleFixture);
+  const repersisted = toPersistedHole(parsedHole, { updatedAt: parsedHole.updated_at });
   assert.deepEqual(repersisted, persistedHoleFixture, "canonical persisted fixture is a schema fixed point");
 
-  const legacy = migratePersistedHole(JSON.parse(JSON.stringify(nullSchemaLegacyFixture)));
-  assert.deepEqual(
-    toPersistedHole(legacy.hole, { updatedAt: legacy.hole.updated_at }),
-    legacy.hole,
-    "null-schema normalization is stable after migration",
-  );
-
   const parsed = parseRabbitholeFile(JSON.stringify(portableArtifactFixture));
-  const portableHole = migratePersistedHole(parsed.hole).hole;
+  const portableHole = parsePersistedHole(parsed.hole);
   const normalizedPortable = {
     ...parsed,
     hole: toPersistedHole(portableHole, { updatedAt: portableHole.updated_at }),
   };
-  assert.deepEqual(normalizedPortable, portableArtifactFixture, "portable fixture survives parse/migrate/re-persist");
+  assert.deepEqual(normalizedPortable, portableArtifactFixture, "portable fixture survives parse and re-persist");
 }
-console.log("ok data boundaries: typed persisted, legacy, and portable artifacts round-trip with defined normalization");
+console.log("ok data boundaries: typed persisted and portable artifacts are canonical fixed points");
 
 assert.throws(
   () => validatePersistedHole(validHole({ nodes: [validNode({ extensions: [] })] })),
@@ -148,28 +136,10 @@ assert.throws(
 console.log("ok data boundaries: non-object node extensions are legibly rejected");
 
 {
-  const bag = { future_primitive: { attempts: [0, null, "雪", { correct: false }] } };
-  const v1 = validHole({ schema_version: 1, nodes: [{ ...validNode(), extensions: undefined }] });
-  delete v1.nodes[0].extensions;
-  const migrated = migratePersistedHole(v1).hole;
-  assert.equal(migrated.schema_version, 2);
-  assert.deepEqual(migrated.nodes[0].extensions, {});
-  migrated.nodes[0].extensions = bag;
-  migrated.nodes[0].read = false;
-  const store = await newStore();
-  await store.saveHole(migrated, { updatedAt: migrated.updated_at });
-  const reopened = await store.loadHole(migrated.hole_id);
-  assert.equal(reopened.schema_version, 2);
-  assert.deepEqual(reopened.nodes[0].extensions, bag);
-}
-console.log("ok data boundaries: v1 open-modify-save-reopen preserves the schema-v2 extension bag");
-
-{
   const hostile = validHole({ nodes: [validNode({ origin: { anchor: { offset_start: 4, offset_end: 12,
     pdf: { page: 7.9, rect: { x: -8, y: .95, w: 6, h: 9 } } } } })] });
-  const migrated = migratePersistedHole(hostile);
-  assert.equal(migrated.changed, true);
-  assert.deepEqual(migrated.hole.nodes[0].origin.anchor, { offset_start: 4, offset_end: 12,
+  const parsed = parsePersistedHole(hostile);
+  assert.deepEqual(parsed.nodes[0].origin.anchor, { offset_start: 4, offset_end: 12,
     pdf: { page: 7, rect: { x: 0, y: .95, w: 1, h: 1 - .95 } } });
 }
 console.log("ok data boundaries: hostile imported anchor.pdf geometry is independently clamped");
@@ -185,18 +155,6 @@ await assert.rejects(
   (error) => error?.message === NEWER_SCHEMA_MESSAGE,
 );
 console.log("ok data boundaries: future schema_version is legibly refused");
-
-{
-  const store = await newStore();
-  const legacyText = await fs.readFile(new URL("../fixtures/corpus/10-schema-null-legacy.rabbithole", import.meta.url), "utf8");
-  const result = await importRabbitholeFile(store, legacyText);
-  const loaded = await store.loadHole(result.hole_id);
-  assert.equal(loaded.schema_version, 2);
-  assert.equal(loaded.nodes[0].title, "");
-  assert.equal(loaded.nodes[0].status, "answered");
-  assert.equal((await store.loadHole(result.hole_id)).schema_version, 2, "reload remains migrated");
-}
-console.log("ok data boundaries: schema_version null backfills, persists, and reloads");
 
 assert.throws(() => parseRabbitholeFile("{ nope"), /valid JSON/);
 await assert.rejects(async () => importRabbitholeFile(await newStore(), portable(validHole(), { "bad.png": "not+base64!" })), /not valid base64/);
@@ -214,10 +172,9 @@ console.log("ok data boundaries: malformed JSON, base64, and wrong-type fields r
   const title = "Café 漢字 🐇🕳️ — مرحبا — שלום";
   const nodeTitle = "naïve 🚀 العربية עברית";
   const persisted = toPersistedHole(validHole({ title, nodes: [validNode({ title: nodeTitle })] }), { updatedAt: stamp });
-  const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persisted))).hole;
   const store = await newStore();
-  await store.saveHole(migrated);
-  const loaded = await store.loadHole(migrated.hole_id);
+  await store.saveHole(persisted);
+  const loaded = await store.loadHole(persisted.hole_id);
   assert.equal(loaded.title, title);
   assert.equal(loaded.nodes[0].title, nodeTitle);
 }
@@ -253,7 +210,7 @@ const snapshot = (payload, before = "", after = "") =>
 
   const payload = portable(validHole({ hole_id: "snapshot-valid" }));
   assert.equal(extractSnapshotPayload(snapshot(payload)), payload);
-  await assert.rejects(async () => importSnapshotFile(await newStore(), "<!doctype html><script>legacyHydrate()</script>"), /older snapshot that cannot be imported/);
+  await assert.rejects(async () => importSnapshotFile(await newStore(), "<!doctype html><script>hydrate()</script>"), /portable payload is missing/);
   await assert.rejects(async () => importSnapshotFile(await newStore(), snapshot(payload) + snapshot(payload)), /duplicate portable payload/);
   await assert.rejects(async () => importSnapshotFile(await newStore(), `${SNAPSHOT_PAYLOAD_OPEN}{ nope${SNAPSHOT_PAYLOAD_CLOSE}`), /snapshot payload must be valid JSON/);
   await assert.rejects(async () => importSnapshotFile(await newStore(), '<script id="rabbithole-portable" type="application/vnd.rabbithole+json">{}</script>'), /payload element is malformed/);
@@ -290,8 +247,8 @@ const snapshot = (payload, before = "", after = "") =>
     const hostileHole = validHole({
       hole_id: "hostile-snapshot",
       title: "safe </script> text",
-      "rh-web-api-key": "top-secret",
-      nodes: [validNode({ origin: { nested: { "rh-web-api-keys": { openai: "nested-secret" } } } })],
+      "rh-web-api-keys": { openrouter: "top-secret" },
+      nodes: [validNode({ origin: { nested: { "rh-web-api-keys": { openrouter: "nested-secret" } } } })],
     });
     const escapedPayload = portable(hostileHole).replace(/</g, "\\u003c");
     const hostile = snapshot(
@@ -304,7 +261,7 @@ const snapshot = (payload, before = "", after = "") =>
     const saved = await store.loadHole(imported.hole_id);
     assert.equal(globalThis.window.__snapshot_executed__, undefined);
     assert.equal(storage.size, 0, "HTML scripts and event handlers never execute during text-only import");
-    assert.equal(JSON.stringify(saved).includes("rh-web-api-key"), false);
+    assert.equal(JSON.stringify(saved).includes("rh-web-api-keys"), false);
     assert.equal(JSON.stringify(saved).includes("secret"), false);
     assert.equal(saved.title, "safe </script> text", "escaped breakout text does not corrupt extraction");
   } finally {

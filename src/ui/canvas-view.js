@@ -250,7 +250,7 @@ export function createNodeEl(node, enter){
   }
 
   // Glide the canvas view into a card at reading scale.
-export function diveToNode(node, source){
+function diveToNode(node, source){
     var vw = viewport.clientWidth, vh = viewport.clientHeight;
     var ts = Math.min(1, Math.max(0.75, Math.min((vw - 120) / node.w, (vh - 120) / effH(node))));
     var tx = vw / 2 - (node.x + node.w / 2) * ts;

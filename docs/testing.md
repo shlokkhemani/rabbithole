@@ -45,7 +45,7 @@ These tests should be fast and should avoid host orchestration.
   contracts.
 - `base-url.test.mjs` protects link and image URL resolution, unsafe URL rejection,
   GitHub image rewriting, frontmatter inference and precedence, child inheritance,
-  persisted legacy backfill, and MCP `base_url` validation.
+  and MCP `base_url` validation.
 - `reducer.test.mjs` is the shared document-engine conformance suite. Its reviewable
   cases live in `test/fixtures/reducer-goldens/cases.json` and run in Node and a
   browser. They cover branch creation, streaming ordering and retries, completion,
@@ -54,8 +54,8 @@ These tests should be fast and should avoid host orchestration.
 
 ### Contract tests
 
-`test/contracts/` protects formats and boundaries that other runtimes, old data,
-or untrusted input can reach. Changes here require an explicit compatibility or
+`test/contracts/` protects formats and boundaries that other runtimes or
+untrusted input can reach. Changes here require an explicit contract or
 security decision; updating an assertion is not by itself sufficient.
 
 - `assets.test.mjs` covers asset persistence, name and size validation, Markdown
@@ -63,18 +63,18 @@ security decision; updating an assertion is not by itself sufficient.
   export, and progress events.
 - `filesystem-store.test.mjs` and `indexeddb-store.test.mjs` instantiate the shared
   store contract in `test/support/store-contract.mjs`. Both backends must support
-  hole and asset CRUD, schema stamping, legacy migration, future-schema refusal,
+  hole and asset CRUD, schema stamping, future-schema refusal,
   staging and adoption, traversal rejection, and reference-aware asset cleanup.
 - `mcp-markdown-wire.test.mjs` protects renderer fixtures, Markdown-only hydration
   and progress events, MCP tool response shapes, streaming accumulation, canonical
-  export, web import, non-mutating reads of legacy Markdown, future-schema refusal,
+  export, web import, future-schema refusal,
   and the isolation of learner block state from agent context and snapshots.
 - `fetch-proxy-worker.test.mjs` protects the relay boundary: GET-only access,
   hostname allowlisting, credential stripping, CORS/content preservation, and the
   streaming response-size cap.
 - `data-boundaries.test.mjs` couples the typed store, artifact, generation, and
-  content vocabularies to runtime validators. It covers canonical and legacy
-  normalization, extension bags, unknown format/schema refusal, malformed JSON and
+  content vocabularies to runtime validators. It covers canonical normalization,
+  extension bags, unknown format/schema refusal, malformed JSON and
   base64, wrong field types, Unicode and RTL text, durable block IDs, import caps,
   secret exclusion, failure cleanup, and the exact per-asset byte boundary.
 - `artifact-roundtrip.test.mjs` runs every corpus fixture through portable import,
@@ -84,9 +84,8 @@ security decision; updating an assertion is not by itself sufficient.
   mint fresh hole IDs without changing content.
 - `compatibility-security.test.mjs` exercises hostile imported Markdown and visual
   blocks on live and frozen paths, safe KaTeX degradation and trusted structure,
-  fully offline asset-bearing snapshots, frozen control policy, preference and
-  credential migrations, migration idempotence, secret exclusion from every
-  artifact, and portable asset MIME derivation.
+  fully offline asset-bearing snapshots, frozen control policy, secret exclusion
+  from every artifact, and portable asset MIME derivation.
 
 ### Integration tests
 
@@ -108,7 +107,7 @@ host adapters without owning the broad product journey.
 - `artifact-portability.test.mjs` covers provider selection in the portable shell,
   author-stream invocation, credential-free `.rabbithole` export, download naming,
   binary asset import, and the public deployment artifact.
-- `generation-lifecycle.test.mjs` protects OpenAI-compatible and Anthropic SSE
+- `generation-lifecycle.test.mjs` protects OpenAI-compatible SSE
   framing under arbitrary fragmentation, title extraction, normalized errors,
   byte-preserving adapters, `GenerationRun` ordering and accumulation, browser and
   MCP wiring, retry guards, empty-stream policy, authoring persistence, and browser
@@ -128,8 +127,8 @@ host adapters without owning the broad product journey.
   Popover, Dialog, Notice, Select, and Combobox contracts in Chromium, Firefox,
   and WebKit. It concentrates cross-engine keyboard, focus, dismissal, labeling,
   timing, and placement behavior in one matrix.
-- `cross-host-journey.test.mjs` proves both a modern hole and the oldest supported
-  legacy fixture can travel through MCP authoring, browser interaction, snapshot
+- `cross-host-journey.test.mjs` proves a current hole can travel through MCP
+  authoring, browser interaction, snapshot
   download, fresh-profile web import, portable export, filesystem import, and MCP
   resume without content, asset, identity, or credential regressions.
 
@@ -166,28 +165,26 @@ lenses, code-aware answers, follow-ups, synthesis, long documents, title handlin
 hostile selected text, and baseline factual responses. See
 `test/evals/README.md` for credentials and invocation details.
 
-## Compatibility contracts
+## Data and protocol contracts
 
 The following surfaces are deliberately tested across versions and hosts:
 
 | Surface | Required behavior | Primary coverage |
 |---|---|---|
-| Persisted holes | Supported legacy schemas migrate idempotently; newer schemas are refused before lossy reconstruction. | Store contracts, data boundaries, cross-host journey |
+| Persisted holes | Current records round-trip canonically; other schema versions are refused before lossy reconstruction. | Store contracts, data boundaries, cross-host journey |
 | Portable `.rabbithole` files | Valid files round-trip canonically; malformed, oversized, or newer formats fail clearly; import collisions receive fresh identity. | Data boundaries, artifact round-trip, artifact portability |
 | Snapshot HTML | Exports are inert, self-contained, escaped against script breakout, offline-capable, and include only referenced assets and shareable state. | MCP wire, compatibility/security, web app, artifact round-trip |
 | MCP tools and events | Tool inputs, responses, progress events, reattachment, and hydration remain compatible with supported clients. | Assets, MCP wire, MCP rearm, reducer |
-| Browser storage | IndexedDB data and preferences migrate without drift; credentials remain device-local and never enter holes or exports. | IndexedDB contract, compatibility/security, web app |
+| Browser storage | IndexedDB data round-trips without drift; credentials remain device-local and never enter holes or exports. | IndexedDB contract, compatibility/security, web app |
 | Renderer and blocks | Markdown source remains authoritative; unsafe markup and URLs are rejected consistently on live and frozen paths; durable block IDs survive import and edits. | Renderer, content blocks, MCP wire, compatibility/security |
 | Cross-host documents | Content, referenced asset bytes, durable asks, and supported metadata survive movement between MCP, web, snapshots, and portable files. | Artifact round-trip, cross-host journey |
 
-Compatibility code can be removed only when the corresponding supported input is
-deliberately retired. Until then, keep a representative fixture and test the
-failure mode as carefully as the happy path.
+Keep the unsupported-input failure mode as carefully tested as the happy path.
 
 ## Fixtures and test support
 
 - `test/fixtures/corpus/` contains curated portable files for empty, math-heavy,
-  visual-block, asset-bearing, deep and wide, pending, Unicode, RTL, legacy,
+  visual-block, asset-bearing, deep and wide, pending, Unicode, RTL,
   code-fence, base-URL, view-state, origin, and mixed-status documents. Its README
   records the purpose of each fixture.
 - `test/fixtures/reducer-goldens/cases.json` is the reviewable state/effect corpus
@@ -208,7 +205,7 @@ commit. Never place real credentials or private documents in the corpus.
 Choose the narrowest suite that observes the contract:
 
 1. Put pure transformations and reducer behavior in `unit/`.
-2. Put public formats, persistence, protocol shapes, compatibility, limits, and
+2. Put public formats, persistence, protocol shapes, limits, and
    trust boundaries in `contracts/`.
 3. Put one capability spanning a host boundary in `integration/`.
 4. Put browser journeys and cross-host workflows in `e2e/`.
@@ -218,10 +215,10 @@ Choose the narrowest suite that observes the contract:
 Prefer observable outcomes over implementation sentinels. For browser behavior,
 assert accessible roles, focus, keyboard operation, persisted state, network
 scope, and exported artifacts rather than private function names or incidental DOM
-nesting. For compatibility behavior, prove both acceptance of supported inputs and
-clear refusal of unsupported future inputs.
+nesting. For format behavior, prove both acceptance of current inputs and clear
+refusal of unsupported inputs.
 
 Every bug fix should add a regression at the lowest layer that can reproduce it.
 If the defect crossed a public boundary or a real user journey, add that coverage
-too. Keep test output capability-named so CI failures remain understandable without
-historical context.
+too. Keep test output capability-named so CI failures remain understandable on
+their own.

@@ -46,8 +46,7 @@ const browser = await chromium.launch();
 try {
   const snapshot = await verifyLiveAndBuildSnapshot();
   await verifyFrozen(snapshot);
-  await verifyPreferenceFixtures();
-  console.log("ok compatibility and security: probes and preference/credential migration fixtures");
+  console.log("ok security: hostile content, offline snapshots, and credential isolation");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
@@ -93,13 +92,12 @@ async function verifyLiveAndBuildSnapshot() {
   assert.equal(importedAssetType, "image/gif", "portable import derives asset MIME metadata from its validated filename");
 
   await page.evaluate((secret) => {
-    localStorage.setItem("rh-web-api-key", secret);
     localStorage.setItem("rh-web-api-keys", JSON.stringify({ openrouter: secret }));
     localStorage.setItem("rh-web-settings", JSON.stringify({ preset: "openrouter", session_only: false }));
   }, SECRET);
   const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const snapshotPayload = JSON.parse(snapshot.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
-  assert(snapshotPayload.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot strips a populated learner extension bag");
+  assert(snapshotPayload.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), "snapshot clears learner extension state while staying canonical");
   assert(!snapshot.includes(SECRET), "credentials must not occur in frozen HTML");
   assert(!snapshot.includes("rh-web-settings"), "preferences must not occur in frozen HTML");
   await context.close();
@@ -163,136 +161,6 @@ async function assertSafeRender(page, label) {
   assert(result.fractions >= 1, `${label}: fraction structure must survive sanitization`);
   const assetPattern = label === "frozen" ? /^data:image\/gif;base64,/ : /^blob:/;
   assert.match(result.asset, assetPattern, `${label}: asset must resolve through its offline-capable render path`);
-}
-
-async function verifyPreferenceFixtures() {
-  const fixtures = [
-    {
-      name: "current provider-key map",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "test/model", session_only: false }, key: SECRET, keys: { openrouter: SECRET }, theme: "dark", last: "missing-hole" },
-      selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "test/model", session_only: false }, expectedKeys: { openrouter: SECRET },
-    },
-    {
-      name: "single-key era",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "legacy/model", session_only: false }, key: SECRET, theme: "dark", last: "legacy-hole" },
-      selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "legacy/model", session_only: false }, expectedKeys: { openrouter: SECRET },
-    },
-    {
-      name: "pre-popover custom/local settings",
-      seed: { settings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, key: SECRET, theme: "light", last: "local-hole" },
-      selected: "custom",
-      expectedSettings: { preset: "custom", base_url: "http://127.0.0.1:11434/v1", model: "qwen2.5", fetch_proxy_url: "https://relay.invalid/?url=", session_only: true }, expectedKeys: { openrouter: SECRET },
-    },
-    {
-      name: "removed Anthropic-direct provider",
-      seed: { settings: { preset: "anthropic", base_url: "https://api.anthropic.com/v1", model: "claude-sonnet-5", session_only: false }, key: SECRET, theme: "dark", last: "anthropic-hole" },
-      selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: { openrouter: SECRET },
-    },
-    {
-      name: "removed OpenAI provider",
-      seed: { settings: { preset: "openai", base_url: "https://api.openai.com/v1", model: "gpt-5", session_only: false }, key: SECRET, theme: "light", last: "openai-hole" },
-      selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: { openrouter: SECRET },
-    },
-    {
-      name: "malformed settings JSON",
-      seed: { rawSettings: "{not-json", theme: "dark", last: "malformed-settings-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: null,
-    },
-    {
-      name: "array credential map",
-      seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, rawKeys: "[]", theme: "light", last: "malformed-keys-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: null,
-    },
-  ];
-  for (const fixture of fixtures) {
-    const context = await browser.newContext();
-    await context.addInitScript(({ seed }) => {
-      localStorage.clear();
-      localStorage.setItem("rh-web-settings", seed.rawSettings || JSON.stringify(seed.settings));
-      if (seed.key) localStorage.setItem("rh-web-api-key", seed.key);
-      if (seed.keys) localStorage.setItem("rh-web-api-keys", JSON.stringify(seed.keys));
-      if (seed.rawKeys) localStorage.setItem("rh-web-api-keys", seed.rawKeys);
-      if (seed.theme) localStorage.setItem("rh-theme", seed.theme);
-      if (seed.last) localStorage.setItem("rh-last-hole", seed.last);
-    }, { seed: fixture.seed });
-    const page = await context.newPage();
-    await page.route("**/*", (route) => route.request().url().startsWith(baseUrl) ? route.continue() : route.abort());
-    await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.keyboard.press("Escape");
-    await page.click("#t-settings");
-    await page.waitForSelector(".provider-choice");
-    await assertPreferenceState(page, fixture);
-    await settleKeyCommit(page);
-    const once = await storageState(page);
-    await page.reload({ waitUntil: "networkidle" });
-    await page.keyboard.press("Escape");
-    await page.click("#t-settings");
-    await assertPreferenceState(page, fixture);
-    await settleKeyCommit(page);
-    assert.deepEqual(await storageState(page), once, `${fixture.name}: migration/load must be idempotent`);
-    const projections = await page.evaluate(async () => {
-      await window.__rabbitholeTest.createDocument("# Credential-free export");
-      return {
-        portable: await window.__rabbitholeTest.exportPortable(),
-        snapshot: await window.__rabbitholeTest.exportSnapshot(),
-        persisted: await window.__rabbitholeTest.readStoredHole(),
-      };
-    });
-    for (const [projection, value] of Object.entries(projections)) {
-      const serialized = typeof value === "string" ? value : JSON.stringify(value);
-      assert(!serialized.includes(SECRET), `${fixture.name}: secret must be absent from ${projection} projection (value=${serialized})`);
-      assert(!serialized.includes("rh-web-settings"), `${fixture.name}: rh-web-settings storage key must be absent from ${projection} projection (value=${serialized})`);
-    }
-    await context.close();
-  }
-}
-
-async function settleKeyCommit(page) {
-  // Opening settings asynchronously commits the prefilled key
-  // (commitSettingsKey): storage writes land immediately before the status
-  // line is set in the same continuation, so a settled, non-busy status means
-  // localStorage is final. Providers without a key section render no status
-  // element and never commit. Without this wait, the idempotence comparison
-  // can capture one load mid-commit and flake under CPU contention.
-  await page.waitForFunction(() => {
-    const status = document.querySelector("#api-key-status");
-    if (!status) return true;
-    const text = (status.textContent || "").trim();
-    return text.length > 0 && !status.classList.contains("busy");
-  });
-}
-
-async function assertPreferenceState(page, fixture) {
-  assert.equal(await page.getAttribute(`[data-provider="${fixture.selected}"]`, "aria-pressed"), "true", `${fixture.name}: provider behavior survives`);
-  const state = await storageState(page);
-  assert.equal(await page.getAttribute("html", "data-theme"), fixture.seed.theme, `${fixture.name}: theme survives`);
-  assert.equal(state["rh-last-hole"], fixture.seed.last, `${fixture.name}: last-hole preference survives`);
-  const expectedSettings = { ...fixture.expectedSettings };
-  expectedSettings.transcribe_model ||= fixture.expectedSettings.preset === "custom" ? "llama3.2" : "google/gemini-2.5-flash";
-  if (fixture.expectedSettings.preset === "custom" || fixture.expectedKeys?.openrouter) {
-    expectedSettings.generation_setup = {
-      version: 1,
-      preset: fixture.expectedSettings.preset,
-      base_url: fixture.expectedSettings.base_url.replace(/\/+$/, ""),
-      model: fixture.expectedSettings.model,
-    };
-  }
-  assert.deepEqual(JSON.parse(state["rh-web-settings"]), expectedSettings, `${fixture.name}: settings are canonical`);
-  assert.deepEqual(state["rh-web-api-keys"] === null ? null : JSON.parse(state["rh-web-api-keys"]), fixture.expectedKeys, `${fixture.name}: credential map is canonical`);
-  assert.equal(state["rh-web-api-key"], null, `${fixture.name}: legacy key slot is removed`);
-  if (fixture.expectedSettings.session_only === false && fixture.expectedKeys?.openrouter) {
-    assert.equal(await page.inputValue("#api-key"), SECRET, `${fixture.name}: remembered key remains usable`);
-  } else if (fixture.expectedSettings.preset === "custom") {
-    assert.equal(await page.locator("#api-key").count(), 0, `${fixture.name}: keyless local provider remains keyless`);
-  }
-}
-
-async function storageState(page) {
-  return page.evaluate(() => Object.fromEntries(["rh-web-settings", "rh-web-api-key", "rh-web-api-keys", "rh-theme", "rh-last-hole"].map((key) => [key, localStorage.getItem(key)])));
 }
 
 function portableFixture() {

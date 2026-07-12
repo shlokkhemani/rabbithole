@@ -16,22 +16,22 @@ export function nodeOrder(a, b) {
 }
 
 /** @param {LayoutNode | null | undefined} node */
-export function nodeX(node) {
+function nodeX(node) {
   return Number(node?.x ?? node?.position?.x) || 0;
 }
 
 /** @param {LayoutNode | null | undefined} node */
-export function nodeY(node) {
+function nodeY(node) {
   return Number(node?.y ?? node?.position?.y) || 0;
 }
 
 /** @param {LayoutNode | null | undefined} node @param {number} [fallback] */
-export function nodeW(node, fallback = DEFAULT_CHILD.w) {
+function nodeW(node, fallback = DEFAULT_CHILD.w) {
   return Number(node?.w ?? node?.size?.w) || fallback;
 }
 
 /** @param {LayoutNode | null | undefined} node @param {number} [fallback] */
-export function nodeH(node, fallback = DEFAULT_CHILD.h) {
+function nodeH(node, fallback = DEFAULT_CHILD.h) {
   return Number(node?.h ?? node?.size?.h) || fallback;
 }
 

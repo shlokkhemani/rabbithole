@@ -1,5 +1,4 @@
 /** @typedef {import("../../../src/core/contracts/artifact.js").PersistedHole} PersistedHole */
-/** @typedef {import("../../../src/core/contracts/artifact.js").LegacyPersistedHole} LegacyPersistedHole */
 /** @typedef {import("../../../src/core/contracts/artifact.js").PortableArtifact} PortableArtifact */
 
 /** @type {PersistedHole} */
@@ -19,17 +18,6 @@ export const persistedHoleFixture = {
     created_at: "2026-01-01T00:00:00.000Z",
     extensions: { fixture: { nested: [true, null, "雪"] } },
   }],
-};
-
-/** @type {LegacyPersistedHole} */
-export const nullSchemaLegacyFixture = {
-  schema_version: null,
-  hole_id: "typed-legacy",
-  title: "Legacy",
-  root_id: "root",
-  created_at: null,
-  updated_at: null,
-  nodes: [{ id: "root" }],
 };
 
 /** @type {PortableArtifact} */

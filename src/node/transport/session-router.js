@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
-import { getAssetContentType, resolveAsset } from "../fs-store.js";
+import { getAssetContentType } from "../../core/assets.js";
+import { resolveAsset } from "../fs-store.js";
 import { slugifyTitle } from "../../core/utils.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { parseRequestBody } from "./http.js";

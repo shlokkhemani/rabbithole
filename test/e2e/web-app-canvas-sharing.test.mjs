@@ -396,28 +396,6 @@ async function verifyCanvasBranching() {
 
   const frozenPayloadMatch = frozenHtml.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/);
   assert.equal(extractSnapshotPayload(frozenHtml), frozenPayloadMatch[1], "second real snapshot payload extraction should match the shipped extractor");
-  const legacyProjection = JSON.parse(frozenPayloadMatch[1]);
-  const legacyHole = legacyProjection.hole;
-  const legacyHydration = {
-    session_id: `legacy-${legacyHole.hole_id}`,
-    hole_id: legacyHole.hole_id,
-    title: legacyHole.title,
-    root_id: legacyHole.root_id,
-    last_event_id: 0,
-    agent_attached: false,
-    view_state: legacyHole.view_state,
-    frozen: true,
-    asset_data: {},
-    nodes: legacyHole.nodes,
-  };
-  const legacyHtml = frozenHtml
-    .replace(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">[\s\S]*?<\/script>\n/, "")
-    .replace(/  var payload = document\.getElementById\("rabbithole-portable"\);\n  RabbitholeFrozenClient\.startPortableSnapshot\(JSON\.parse\(payload\.textContent\)\);/, `  RabbitholeFrozenClient.startRabbithole(${JSON.stringify(legacyHydration)});`);
-  const legacyPage = await context.newPage();
-  await legacyPage.setContent(legacyHtml, { waitUntil: "load" });
-  assert.equal(await legacyPage.locator(".doc-content[data-node-id]").count() > 0, true, "legacy direct-hydration snapshots should still boot the frozen client");
-  await legacyPage.close();
-
   await page.evaluate(() => {
     window.__askRangeRect = Range.prototype.getBoundingClientRect;
     Range.prototype.getBoundingClientRect = function() {
@@ -709,4 +687,3 @@ async function selectText(page, needle) {
     throw new Error(`Text not found: ${text}`);
   }, needle);
 }
-

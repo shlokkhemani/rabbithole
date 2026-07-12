@@ -77,8 +77,8 @@ Other representations are projections of that document:
 - a frozen snapshot embeds a deliberately shareable projection, referenced
   assets, styles, sanitizer, and frozen client in one inert HTML file.
 
-Schema migration and validation happen at storage and import boundaries.
-Unsupported future versions are refused rather than reconstructed lossy.
+Schema validation happens at storage and import boundaries. Only the current
+schema is accepted; unsupported versions are refused rather than reconstructed lossy.
 Credentials and provider preferences are device-local web state, never part of
 the document or its exported projections. See [Compatibility](docs/compatibility.md)
 for the supported contracts.

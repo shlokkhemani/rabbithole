@@ -3,7 +3,7 @@
  *
  * Runtime authority for persisted documents:
  * {@link ../schema.js} (`toPersistedHole`, `toPersistedNode`,
- * `validatePersistedHole`, and `migratePersistedHole`). Runtime validation is
+ * `validatePersistedHole`, and `parsePersistedHole`). Runtime validation is
  * still required for every value crossing a trust boundary.
  *
  * Runtime authority for the portable envelope:
@@ -69,20 +69,6 @@ export interface PersistedHole {
   updated_at: string | null;
   view_state: PersistedViewState | null;
   nodes: PersistedNode[];
-}
-
-/**
- * Legacy schema-less input accepted by `migratePersistedHole`.
- * `null` and omission both mean schema version 0 today. Migration stamps v2
- * and backfills the optional node/view fields before validation.
- */
-export interface LegacyPersistedHole extends Omit<Partial<PersistedHole>, "schema_version" | "nodes"> {
-  schema_version?: null;
-  nodes?: LegacyPersistedNode[];
-}
-
-export interface LegacyPersistedNode extends Partial<PersistedNode> {
-  id: string;
 }
 
 /** Portable `.rabbithole` JSON emitted by `buildRabbitholeExport`. */

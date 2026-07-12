@@ -2,7 +2,7 @@
 import { defaultAssetUrlResolver } from "./assets.js";
 import { createMarkdownRenderer } from "./markdown-renderer.js";
 
-export { MARKDOWN_RENDERER_SENTINEL, createMarkdownRenderer } from "./markdown-renderer.js";
+export { createMarkdownRenderer } from "./markdown-renderer.js";
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 

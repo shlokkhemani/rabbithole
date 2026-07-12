@@ -12,7 +12,7 @@ import {
 } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
 
-export async function ingestPdf(source, {
+async function ingestPdf(source, {
   pages,
   includeText = true,
   onProgress = null,

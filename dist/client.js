@@ -1692,11 +1692,10 @@ var RabbitholeClient = (() => {
     return LENSES[key] ? LENSES[key].label : String(key || "");
   }
   function branchTypeOfNode(node) {
-    var _a2, _b;
+    var _a2;
     if (!node || !node.origin && !node.parent_id) return null;
     const type = (_a2 = node.origin) == null ? void 0 : _a2.branch_type;
-    if (type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP) return type;
-    return ((_b = node.origin) == null ? void 0 : _b.selected_text) ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    return type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP ? type : null;
   }
 
   // src/ui/primitives/notice.js
@@ -2912,7 +2911,7 @@ var RabbitholeClient = (() => {
     wrap.className = "rh-pdf-convert-progress" + (committed ? "" : " loading rh-pdf-converting");
     var st = document.createElement("div");
     st.className = "loading-status";
-    var label = "Converting to document";
+    var label = "Creating text version";
     if (committed && done > 0 && done < total) label += " \u2014 page " + done + " of " + total;
     else if (!committed && total) label += " \u2014 " + total + (total === 1 ? " page" : " pages");
     st.innerHTML = (committed ? "" : LOADING_BUNNY_HTML) + '<span class="shimmer-text">' + label + "</span>";
@@ -4971,22 +4970,7 @@ var RabbitholeClient = (() => {
     askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
       document.removeEventListener("keydown", onAskOwnerKeydown);
     };
-    askPosition = openAnchoredSurface({
-      surface: ask,
-      anchor: virtualAnchor,
-      placement: "bottom-start",
-      restoreFocus: false,
-      preventOutsidePointerDefault: false,
-      onClose: function(reason) {
-        var escapeOwner = reason === "escape" ? owner : null;
-        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
-        hideAsk();
-        if (escapeOwner) focusAskOwner(escapeOwner);
-        restoreSelectionRange(keepRange);
-      }
-    });
-    autoGrowEl(askText, 110);
-    askText.focus({ preventScroll: true });
+    openAskSurface(virtualAnchor, owner);
   }
   var pendingAsk = null;
   function showAskFromSelection(options2) {
@@ -5018,9 +5002,13 @@ var RabbitholeClient = (() => {
     askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
       document.removeEventListener("keydown", onAskOwnerKeydown);
     };
+    openAskSurface(anchorEl, owner);
+    return true;
+  }
+  function openAskSurface(anchor, owner) {
     askPosition = openAnchoredSurface({
       surface: ask,
-      anchor: anchorEl,
+      anchor,
       placement: "bottom-start",
       restoreFocus: false,
       preventOutsidePointerDefault: false,
@@ -5034,7 +5022,6 @@ var RabbitholeClient = (() => {
     });
     autoGrowEl(askText, 110);
     askText.focus({ preventScroll: true });
-    return true;
   }
   function restoreSelectionRange(range) {
     if (!range) return;
@@ -5097,6 +5084,11 @@ var RabbitholeClient = (() => {
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }
   }
+  function retirePdfConversionAction(parent) {
+    var _a2, _b, _c;
+    (_b = (_a2 = parent == null ? void 0 : parent.bodyEl) == null ? void 0 : _a2.querySelector(".rh-pdf-convert")) == null ? void 0 : _b.remove();
+    if (mode === "reader") (_c = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')) == null ? void 0 : _c.remove();
+  }
   function submitAsk(lensKey, source2) {
     if (!pendingAsk || closed) return;
     var parent = nodes[pendingAsk.parentId];
@@ -5131,6 +5123,7 @@ var RabbitholeClient = (() => {
       _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -5214,6 +5207,7 @@ var RabbitholeClient = (() => {
       _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -32647,7 +32641,7 @@ ${text2}</tr>
     function done() {
       flashHint(okMsg);
     }
-    function legacy() {
+    function copyWithTextarea() {
       var previousFocus = document.activeElement;
       var ta = document.createElement("textarea");
       ta.value = text2;
@@ -32669,11 +32663,11 @@ ${text2}</tr>
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text2).then(done, function() {
-        legacy();
+        copyWithTextarea();
         done();
       });
     } else {
-      legacy();
+      copyWithTextarea();
       done();
     }
   }
@@ -32832,7 +32826,7 @@ ${text2}</tr>
   }
 
   // src/ui/hydrate.js
-  function hydrateInitialState({ connectSse: connectSse2 = null, post: post2 = null, refreshStatus: refreshStatus2 = null } = {}) {
+  function hydrateInitialState({ connectSse: connectSse2 = null, refreshStatus: refreshStatus2 = null } = {}) {
     setRendererAssetData(hydration.asset_data || null);
     if (frozen) document.body.classList.add("frozen");
     (hydration.nodes || []).forEach(function(raw) {
@@ -32863,18 +32857,6 @@ ${text2}</tr>
     Object.keys(nodes).forEach(function(id) {
       nodes[id]._order = nextOrder();
     });
-    var anyRead = false, k;
-    for (k in nodes) if (nodes[k].read) anyRead = true;
-    if (!anyRead && !hydration.view_state) {
-      var legacy = [];
-      for (k in nodes) {
-        if (nodes[k].status === "answered") {
-          nodes[k].read = true;
-          legacy.push({ node_id: k, read: true });
-        }
-      }
-      if (!frozen && legacy.length && typeof post2 === "function") post2({ type: "nodes_update", nodes: legacy });
-    }
     var vs = hydration.view_state;
     if (vs && vs.node_id && nodes[vs.node_id]) {
       setCurrentNodeId(vs.node_id);
@@ -33621,11 +33603,9 @@ ${text2}</tr>
   // src/core/snapshot-projection.js
   function createSnapshotProjection(hole, viewState, assets) {
     const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
-    projection.hole = /** @type {PersistedHole} */
-    /** @type {unknown} */
-    {
+    projection.hole = {
       ...projection.hole,
-      nodes: projection.hole.nodes.map(({ extensions: _extensions, ...node }) => node)
+      nodes: projection.hole.nodes.map((node) => ({ ...node, extensions: {} }))
     };
     return projection;
   }
@@ -33929,6 +33909,7 @@ ${text2}</tr>
     var pageEls = [];
     var observer = null;
     var resizeObserver = null;
+    var toolbarScrollRoot = null, toolbarScrollHandler = null, toolbarBindTimer = 0, toolbarPlaceholder = null, toolbarNode = null;
     var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
     var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
     var spansByPage = [];
@@ -34096,50 +34077,102 @@ ${text2}</tr>
     });
     var toolbar = document.createElement("div");
     toolbar.className = "rh-pdf-toolbar";
+    var regionActions = document.createElement("div");
+    regionActions.className = "rh-pdf-toolbar-actions rh-pdf-region-actions";
+    toolbar.appendChild(regionActions);
     var toolbarInfo = document.createElement("div");
     toolbarInfo.className = "rh-pdf-toolbar-info";
     toolbar.appendChild(toolbarInfo);
     if (scanned) {
       var scannedNote = document.createElement("span");
       scannedNote.className = "rh-pdf-scanned-note";
-      scannedNote.textContent = "Scanned PDF \u2014 no selectable text. Select a region to ask, or convert.";
+      scannedNote.textContent = "No selectable text \xB7 Ask about an area or create a text version";
       toolbarInfo.appendChild(scannedNote);
     }
     boxHint = document.createElement("span");
     boxHint.className = "rh-pdf-box-hint";
-    boxHint.textContent = "Drag around a figure or region \xB7 Esc cancels";
+    boxHint.textContent = "Drag over anything you want to ask about \xB7 Esc cancels";
     toolbarInfo.appendChild(boxHint);
-    var actions = document.createElement("div");
-    actions.className = "rh-pdf-toolbar-actions";
-    toolbar.appendChild(actions);
+    var documentActions = document.createElement("div");
+    documentActions.className = "rh-pdf-toolbar-actions rh-pdf-document-actions";
+    toolbar.appendChild(documentActions);
     boxButton = document.createElement("button");
     boxButton.type = "button";
     boxButton.className = "node-btn rh-pdf-box-toggle";
-    boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Select region</span>';
-    boxButton.title = "Draw a box around a figure or region to ask about it (Esc cancels)";
-    boxButton.setAttribute("aria-label", "Select a region to ask about");
+    boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Ask about an area</span>';
+    boxButton.title = "Draw over a figure, table, or area to ask about it";
+    boxButton.setAttribute("aria-label", "Ask about an area of the PDF");
     boxButton.setAttribute("aria-pressed", "false");
     boxButton.addEventListener("click", function(event) {
       event.stopPropagation();
       setBoxMode(!boxMode);
     });
-    actions.appendChild(boxButton);
+    regionActions.appendChild(boxButton);
     container.prepend(toolbar);
-    var convertButton = document.createElement("button");
-    convertButton.type = "button";
-    convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
-    var branched = childrenOf(node.id).length > 0;
-    convertButton.textContent = branched ? "Convert before branching" : "Convert to document";
-    convertButton.disabled = branched;
-    if (branched) convertButton.title = "Conversion is available until the document has branches.";
-    convertButton.addEventListener("click", function(event) {
-      event.stopPropagation();
-      convertButton.disabled = true;
-      postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result) {
-        if (!(result == null ? void 0 : result.ok)) convertButton.disabled = false;
+    if (!childrenOf(node.id).length) {
+      var convertButton = document.createElement("button");
+      convertButton.type = "button";
+      convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
+      convertButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Create text version</span>';
+      convertButton.setAttribute("aria-label", "Create a searchable text version of this PDF");
+      convertButton.title = "Turn every page into clean, searchable text while preserving figures";
+      convertButton.addEventListener("click", function(event) {
+        event.stopPropagation();
+        convertButton.disabled = true;
+        postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result) {
+          if (!(result == null ? void 0 : result.ok)) convertButton.disabled = false;
+        });
       });
-    });
-    actions.appendChild(convertButton);
+      documentActions.appendChild(convertButton);
+    }
+    function moveToolbar(mutate, animate) {
+      var _a3;
+      var previous = toolbar.getAnimations ? toolbar.getAnimations().filter(function(item) {
+        return item.id === "pdf-toolbar-dock";
+      }) : [];
+      previous.forEach(function(item) {
+        item.cancel();
+      });
+      var from = toolbar.getBoundingClientRect();
+      mutate();
+      if (!animate || !toolbar.animate || ((_a3 = window.matchMedia) == null ? void 0 : _a3.call(window, "(prefers-reduced-motion: reduce)").matches)) return;
+      var to = toolbar.getBoundingClientRect();
+      if (!from.width || !to.width) return;
+      var movement = toolbar.animate([
+        { transform: "translateY(" + (from.top - to.top) + "px)" },
+        { transform: "translateY(0)" }
+      ], { duration: 140, easing: "cubic-bezier(.2,0,0,1)" });
+      movement.id = "pdf-toolbar-dock";
+    }
+    toolbarBindTimer = setTimeout(function() {
+      if (disposed) return;
+      toolbarScrollRoot = container.closest(".node-body") || container.closest("#reader-main");
+      if (!toolbarScrollRoot) return;
+      toolbarNode = toolbarScrollRoot.classList.contains("node-body") ? toolbarScrollRoot.closest(".node") : null;
+      toolbarScrollHandler = function(initial) {
+        var shouldDock = !!toolbarNode && (toolbarPlaceholder ? toolbarScrollRoot.scrollTop > 4 : toolbarScrollRoot.scrollTop > 20);
+        if (shouldDock && !toolbarPlaceholder) {
+          moveToolbar(function() {
+            toolbarPlaceholder = document.createElement("div");
+            toolbarPlaceholder.className = "rh-pdf-toolbar-placeholder";
+            toolbarPlaceholder.style.height = toolbar.offsetHeight + "px";
+            toolbar.before(toolbarPlaceholder);
+            toolbarNode.insertBefore(toolbar, toolbarScrollRoot);
+            toolbarNode.classList.add("pdf-toolbar-docked");
+            toolbar.classList.add("is-stuck");
+          }, initial !== true);
+        } else if (!shouldDock && toolbarPlaceholder) {
+          moveToolbar(function() {
+            toolbarPlaceholder.replaceWith(toolbar);
+            toolbarPlaceholder = null;
+            toolbarNode.classList.remove("pdf-toolbar-docked");
+            toolbar.classList.remove("is-stuck");
+          }, initial !== true);
+        }
+      };
+      toolbarScrollRoot.addEventListener("scroll", toolbarScrollHandler, { passive: true });
+      toolbarScrollHandler(true);
+    }, 0);
     function onKeydown2(event) {
       if (event.key === "Escape" && boxMode) {
         event.preventDefault();
@@ -34269,6 +34302,10 @@ ${text2}</tr>
       disposed = true;
       if (observer) observer.disconnect();
       if (resizeObserver) resizeObserver.disconnect();
+      clearTimeout(toolbarBindTimer);
+      if (toolbarScrollRoot && toolbarScrollHandler) toolbarScrollRoot.removeEventListener("scroll", toolbarScrollHandler);
+      if (toolbarPlaceholder) toolbarPlaceholder.remove();
+      toolbarNode == null ? void 0 : toolbarNode.classList.remove("pdf-toolbar-docked");
       document.removeEventListener("keydown", onKeydown2, true);
       toolbar.remove();
       setBoxMode(false);

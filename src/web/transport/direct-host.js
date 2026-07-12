@@ -142,7 +142,7 @@ export class DirectRabbitholeHost {
   handleConvertPdf(payload) {
     const nodeId = String(payload.node_id || ""), node = this.state.nodes.get(nodeId), pdf = normalizePdfExtension(node);
     if (!pdf) throw new Error("This node is not a native PDF.");
-    if ([...this.state.nodes.values()].some((candidate) => candidate.parent_id === nodeId)) throw new Error("Convert before branching.");
+    if ([...this.state.nodes.values()].some((candidate) => candidate.parent_id === nodeId)) throw new Error("Create a text version before asking follow-ups.");
     if (pdf.converting || this.abortByNode.has(nodeId)) throw new Error("Conversion is already running.");
     if (!this.brain?.transcribePages) throw new Error("Set up a transcription model before converting.");
     const controller = new AbortController(); this.abortByNode.set(nodeId, controller);
@@ -497,8 +497,7 @@ export class DirectRabbitholeHost {
         },
         complete: (activeRun, context) => ({
           ...activeRun.complete(context),
-          // Authoring replaces a source rather than answering an existing
-          // document: preserve its historical trim-or-original completion.
+          // Authoring replaces its source, falling back to that source when the model returns no text.
           markdown: activeRun.snapshot().markdown.trim() || String(source.markdown || ""),
         }),
       })) {
@@ -709,7 +708,7 @@ export function createPendingHoleFromQuestion(question) {
   return holeStateToHole(result.state);
 }
 
-export function titleFromMarkdown(markdown) {
+function titleFromMarkdown(markdown) {
   const match = /^#\s+(.+)$/m.exec(String(markdown || ""));
   return match ? truncate(match[1].trim(), 80) : "";
 }

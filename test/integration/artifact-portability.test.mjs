@@ -292,11 +292,8 @@ async function verifyPublishOutput() {
     await fs.access(path.join(publishDir, file));
   }
   const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
-  assert(redirects.includes("/app / 301"));
   assert(redirects.includes("/* /index.html 200"), "publish fallback should make Rabbithole pathnames refreshable");
-  assert(redirects.includes("/app/* /:splat 301"));
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   const llms = await fs.readFile(path.join(publishDir, "llms.txt"), "utf8");
-  assert(!llms.includes("rabbithole.ing/app"));
 }

@@ -29,7 +29,7 @@ await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.s
   preset: "custom",
   base_url: "http://localhost:11434/v1",
   model: "llama3.2",
-  model: "llama3.2",
+  transcribe_model: "llama3.2",
   session_only: true,
   generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
 })));
@@ -121,6 +121,7 @@ try {
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   const mark = page.locator(".node .rh-pdf-mark.mark-ready").first();
   await mark.waitFor();
+  assert.equal(await page.locator(".node .rh-pdf-convert").count(), 0, "creating the first branch should immediately remove the text-version action");
   assert.equal(answerBodies.length, 2, "vision rejection should trigger exactly one text-only retry");
   assert(Array.isArray(answerBodies[0].messages.at(-1).content), "equation selection should ship multimodal content parts");
   assert.equal(answerBodies[0].messages.at(-1).content[1].type, "image_url");
@@ -138,6 +139,26 @@ try {
   assert(storedAnchor.pdf.rect.w > 0 && storedAnchor.pdf.rect.h > 0);
 
   const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
+  assert.equal(await boxToggle.textContent(), "Ask about an area");
+  assert.equal(await boxToggle.getAttribute("aria-label"), "Ask about an area of the PDF");
+  const pdfToolbar = page.locator(".node .rh-pdf-toolbar").first();
+  await pdfToolbar.evaluate((el) => { const body = el.closest(".node-body"); body.scrollTop = 0; body.dispatchEvent(new Event("scroll")); });
+  assert.equal(await pdfToolbar.evaluate((el) => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)", "the resting PDF toolbar should have no dark container");
+  const toolbarScroll = await pdfToolbar.evaluate((el) => { const body = el.closest(".node-body"); body.scrollTop = 40; body.dispatchEvent(new Event("scroll")); return { top: body.scrollTop, height: body.clientHeight, content: body.scrollHeight }; });
+  assert(toolbarScroll.top > 8, `PDF body should be scrollable for sticky-toolbar coverage: ${JSON.stringify(toolbarScroll)}`);
+  await page.waitForFunction(() => document.querySelector(".node .rh-pdf-toolbar")?.classList.contains("is-stuck"));
+  assert.equal(await pdfToolbar.evaluate((el) => el.getAnimations().some((animation) => animation.id === "pdf-toolbar-dock" && animation.effect.getTiming().duration === 140)), true, "docking should use the restrained position transition");
+  await page.waitForFunction(() => !Array.from(document.querySelector(".node .rh-pdf-toolbar").getAnimations()).some((animation) => animation.id === "pdf-toolbar-dock" && animation.playState === "running"));
+  const dockedGeometry = await pdfToolbar.evaluate((el) => {
+    const node = el.closest(".node"), body = node.querySelector(".node-body"), head = node.querySelector(".node-head");
+    const barRect = el.getBoundingClientRect(), headRect = head.getBoundingClientRect();
+    return { directChild: el.parentElement === node, topGap: barRect.top - headRect.bottom, leftGap: barRect.left - headRect.left, rightGap: headRect.right - barRect.right };
+  });
+  assert.equal(dockedGeometry.directChild, true, "the compact toolbar should dock outside the scrollbar-bearing body");
+  assert(Math.abs(dockedGeometry.topGap) < 1 && Math.abs(dockedGeometry.leftGap) < 1 && Math.abs(dockedGeometry.rightGap) < 1, `docked toolbar should be flush and symmetric: ${JSON.stringify(dockedGeometry)}`);
+  await pdfToolbar.evaluate((el) => { const body = el.closest(".node").querySelector(".node-body"); body.scrollTop = 0; body.dispatchEvent(new Event("scroll")); });
+  await page.waitForFunction(() => !document.querySelector(".node .rh-pdf-toolbar.is-stuck"));
+  assert.equal(await pdfToolbar.evaluate((el) => el.parentElement.classList.contains("rh-pdf")), true, "the toolbar should return to the PDF at the top");
   await boxToggle.click();
   await page.waitForSelector(".node .rh-pdf-box-hint.visible");
   assert.equal(await boxToggle.getAttribute("aria-pressed"), "true");
@@ -248,7 +269,7 @@ try {
     "web import should surface the exact newer-version refusal",
   );
 
-  // ---- Convert to document: full journey, figures land as live assets ------
+  // ---- Text version: full journey, figures land as live assets -------------
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Convert journey page one", "Convert journey page two"]), "convert-journey.pdf");
@@ -288,7 +309,7 @@ try {
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.click(".node .rh-pdf-convert");
   await page.waitForSelector(".node .rh-pdf-convert-progress");
-  assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Converting to document/);
+  assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Creating text version/);
   assert((await page.locator(".node .rh-pdf-convert-progress .sk-line").count()) > 0, "converting must show the loading skeleton");
   assert(!(await page.textContent(".node .doc-content")).includes("Abort page one"), "the raw extraction must not render while converting");
   await page.click(".node .rh-pdf-convert-cancel");
@@ -316,10 +337,7 @@ try {
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   await page.locator(".node .rh-pdf-mark.mark-ready").first().waitFor();
   await page.reload({ waitUntil: "networkidle" });
-  const convertBtn = page.locator(".node .rh-pdf-convert").first();
-  await convertBtn.waitFor();
-  assert.equal(await convertBtn.isDisabled(), true, "convert must disable once branched");
-  assert.equal(await convertBtn.textContent(), "Convert before branching");
+  assert.equal(await page.locator(".node .rh-pdf-convert").count(), 0, "the text-version action must stay absent after reloading a branched PDF");
 
   // ---- Scanned PDFs surface the convert affordance -------------------------
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -327,7 +345,7 @@ try {
   await dropPdf(page, buildTinyPdf(["", ""]), "scanned.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.waitForSelector(".node .rh-pdf-scanned-note");
-  assert.match(await page.textContent(".node .rh-pdf-scanned-note"), /Scanned PDF/);
+  assert.match(await page.textContent(".node .rh-pdf-scanned-note"), /No selectable text/);
   await page.waitForSelector(".node .rh-pdf-convert.primary:not(:disabled)");
   const scannedBody = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).nodes[0].markdown);
   assert.match(scannedBody, /\*\(page 1: no extractable text\)\*/, "scanned pages must carry the body marker");

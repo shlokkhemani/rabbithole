@@ -8,7 +8,7 @@ import { resolveAsset } from "../fs-store.js";
 import { getDompurifyScript, getFrozenClientBundle, getKatexCss } from "../html/built-assets.js";
 
 /** @param {import("./session.js").RabbitHoleSession} session */
-export async function buildSessionSnapshotProjection(session) {
+async function buildSessionSnapshotProjection(session) {
   const hole = toPersistedHole(session.toHole(), { cloneExtensions: false });
   const referencedNames = new Set();
   for (const node of hole.nodes) {

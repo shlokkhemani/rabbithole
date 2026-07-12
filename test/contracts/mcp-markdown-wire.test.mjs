@@ -280,7 +280,7 @@ async function runMarkdownWireFixture() {
   const exportHydration = snapshotProjectionToFrozenHydration(projection);
   assert.equal(exportHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "export should contain exactly one inert payload");
   assertNoContentHtml(projection, "export projection");
-  assert(projection.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot payload strips learner extensions");
+  assert(projection.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), "snapshot payload clears learner extensions");
   assertIncludes(exportHtml, "RabbitholeFrozenClient.startPortableSnapshot", "export should use the portable snapshot bootstrap");
   assert.deepEqual(Object.keys(projection.assets), ["diagram-1.png"], "export should include referenced assets only");
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));
@@ -310,26 +310,9 @@ async function runMarkdownWireFixture() {
   console.log("ok MCP markdown wire: markdown-only hydration/SSE, tool shapes, streaming, canonical export, and web-import round trip");
 }
 
-async function assertLegacyViewDoesNotMint() {
-  const store = new FsStore();
-  const markdown = "Legacy\n\n```show\n<div>unchanged</div>\n```\n";
-  await store.saveHole({
-    hole_id: "legacy-view-only", title: "Legacy", root_id: "root", created_at: "2026-01-01T00:00:00.000Z", view_state: null,
-    nodes: [{ id: "root", parent_id: null, title: "Legacy", markdown, base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-01-01T00:00:00.000Z", extensions: {} }],
-  });
-  const opened = await openRabbithole({ holeId: "legacy-view-only" });
-  const session = getSession(opened.session_id);
-  await fetch(session.url);
-  await session.flushSave();
-  assert.equal((await store.loadHole("legacy-view-only")).nodes[0].markdown, markdown);
-  session.close("legacy_view_done");
-  console.log("ok MCP markdown wire: opening and viewing a legacy hole does not mint ids or rewrite stored markdown");
-}
-
 try {
   await runRendererGoldenFixtures();
   await runMarkdownWireFixture();
-  await assertLegacyViewDoesNotMint();
   await fs.writeFile(path.join(process.env.RABBITHOLE_DIR, "future-mcp.json"), JSON.stringify({ schema_version: 3 }));
   await assert.rejects(
     () => openRabbithole({ holeId: "future-mcp" }),

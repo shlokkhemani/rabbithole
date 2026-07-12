@@ -1,7 +1,6 @@
 export const PROVIDERS = Object.freeze({
   openrouter: Object.freeze({
     id: "openrouter",
-    aliases: Object.freeze(["anthropic", "openai"]),
     label: "OpenRouter",
     recommended: true,
     model_source: "catalog",
@@ -23,13 +22,8 @@ export const PROVIDERS = Object.freeze({
   }),
 });
 
-export function resolveProviderId(id) {
-  if (PROVIDERS[id]) return id;
-  return Object.values(PROVIDERS).find((provider) => provider.aliases?.includes(id))?.id || "openrouter";
-}
-
 export function providerFor(id) {
-  return PROVIDERS[resolveProviderId(id)];
+  return PROVIDERS[id] || PROVIDERS.openrouter;
 }
 
 export function defaultBrainSettings() {

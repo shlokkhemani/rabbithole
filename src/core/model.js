@@ -43,7 +43,7 @@ export function lensLabel(key) {
 }
 
 /** @param {unknown} lens */
-export function normalizeLens(lens) {
+function normalizeLens(lens) {
   const key = String(lens ?? "").trim();
   return Object.prototype.hasOwnProperty.call(LENSES, key) ? key : null;
 }
@@ -59,8 +59,7 @@ function normalizeBranchType(type, selectedText = "") {
 export function branchTypeOfNode(node) {
   if (!node || (!node.origin && !node.parent_id)) return null;
   const type = node.origin?.branch_type;
-  if (type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP) return type;
-  return node.origin?.selected_text ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+  return type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP ? type : null;
 }
 
 /** @param {unknown} pos @returns {Position} */
@@ -80,6 +79,26 @@ export function normalizeSize(size) {
   return { w, h };
 }
 
+/** @param {unknown} value */
+export function normalizePdfAnchor(value) {
+  if (!value || typeof value !== "object") return null;
+  const page = Math.floor(Number(/** @type {{ page?: unknown }} */ (value).page));
+  const rect = /** @type {{ rect?: unknown }} */ (value).rect;
+  if (!(page > 0) || !rect || typeof rect !== "object") return null;
+  const clamp = (/** @type {unknown} */ input) => Math.min(1, Math.max(0, Number(input) || 0));
+  const x = clamp(/** @type {{ x?: unknown }} */ (rect).x);
+  const y = clamp(/** @type {{ y?: unknown }} */ (rect).y);
+  return {
+    page,
+    rect: {
+      x,
+      y,
+      w: Math.min(clamp(/** @type {{ w?: unknown }} */ (rect).w), 1 - x),
+      h: Math.min(clamp(/** @type {{ h?: unknown }} */ (rect).h), 1 - y),
+    },
+  };
+}
+
 /** @param {unknown} anchor */
 export function normalizeAnchor(anchor) {
   if (!anchor) return null;
@@ -87,24 +106,8 @@ export function normalizeAnchor(anchor) {
   const end = Math.max(start, Number(/** @type {{ offset_end?: unknown }} */ (anchor).offset_end) || start);
   /** @type {{ offset_start: number, offset_end: number, pdf?: { page: number, rect: { x: number, y: number, w: number, h: number } } }} */
   const out = { offset_start: start, offset_end: end };
-  const rawPdf = /** @type {{ pdf?: unknown }} */ (anchor).pdf;
-  if (rawPdf && typeof rawPdf === "object") {
-    const page = Math.floor(Number(/** @type {{ page?: unknown }} */ (rawPdf).page));
-    const rawRect = /** @type {{ rect?: unknown }} */ (rawPdf).rect;
-    if (page > 0 && rawRect && typeof rawRect === "object") {
-      const clamp = (/** @type {unknown} */ value) => Math.min(1, Math.max(0, Number(value) || 0));
-      const x = clamp(/** @type {{ x?: unknown }} */ (rawRect).x);
-      const y = clamp(/** @type {{ y?: unknown }} */ (rawRect).y);
-      out.pdf = {
-        page,
-        rect: {
-          x, y,
-          w: Math.min(clamp(/** @type {{ w?: unknown }} */ (rawRect).w), 1 - x),
-          h: Math.min(clamp(/** @type {{ h?: unknown }} */ (rawRect).h), 1 - y),
-        },
-      };
-    }
-  }
+  const pdf = normalizePdfAnchor(/** @type {{ pdf?: unknown }} */ (anchor).pdf);
+  if (pdf) out.pdf = pdf;
   return out;
 }
 
@@ -210,7 +213,7 @@ export function lineageTitlesFromMap(nodes, nodeId) {
 }
 
 /** @param {NodeCollection} nodes @param {string} id @returns {ModelHoleNode | undefined} */
-export function getNode(nodes, id) {
+function getNode(nodes, id) {
   return /** @type {ModelHoleNode | undefined} */ (nodes instanceof Map ? nodes.get(id) : nodes?.[id]);
 }
 

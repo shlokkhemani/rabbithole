@@ -9,7 +9,7 @@ process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole
 
 const { openRabbithole, answerBranch } = await import("../../src/node/index.js");
 const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
-const { saveHole } = await import("../../src/node/fs-store.js");
+const { defaultFsStore } = await import("../../src/node/fs-store.js");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -131,7 +131,7 @@ async function runSavedAskRequeueFixture() {
     created_at: new Date().toISOString(),
   };
 
-  await saveHole({
+  await defaultFsStore.saveHole({
     hole_id: holeId,
     title: "MCP Rearm Saved",
     root_id: "root",

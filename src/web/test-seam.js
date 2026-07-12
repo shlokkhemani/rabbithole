@@ -7,7 +7,7 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
   window.__rabbitholeTest = Object.freeze({
     // Routing/reload tests need the raw persistence identity, which the product UI does not expose.
     currentHoleId,
-    // Persistence-migration tests need raw persistence records before product loading normalizes them.
+    // Persistence tests need raw records before the store's read boundary clones them.
     readStoredHole: async (id = currentHoleId()) => id ? readRawRecord(store, id) : null,
     // Asset-ingest tests need binary asset names and byte sizes, which rendered product content cannot reveal.
     inspectAssets: async (id = currentHoleId()) => {
@@ -16,7 +16,7 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
       for (const name of names) sizes[name] = (await store.getAsset(id, name))?.size || 0;
       return { names, sizes };
     },
-    // Asset-MIME migration tests need binary asset Blob types, which live rendering hides.
+    // Asset tests need binary Blob types, which live rendering hides.
     inspectAssetType: async (name, id = currentHoleId()) => (await store.getAsset(id, name))?.type || "",
     // Empty-store persistence tests need raw persistence record counts, which empty product chrome cannot distinguish.
     listStoredHoles: () => store.listHoles(),

@@ -210,8 +210,7 @@ assets base64-encoded into the single JSON file for portability.
 - `test/` — capability-oriented unit, contract, integration, end-to-end,
   performance, and packaging suites
 - `workers/fetch-proxy/` — optional allowlisted URL-ingestion relay
-- `website/public/` — public deployment assets consumed by `build:publish`; the
-  remaining Next.js source is not part of the current Cloudflare Pages build
+- `website/public/` — public deployment assets consumed by `build:publish`
 
 ## Development
 

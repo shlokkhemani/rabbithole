@@ -4,7 +4,7 @@
  * picker can search the whole space instead of a hardcoded shortlist.
  */
 
-export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CACHE_KEY = "rh-model-catalog-v1";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -76,7 +76,7 @@ export function searchModels(models, query) {
   });
 }
 
-export function cleanModelName(name, id) {
+function cleanModelName(name, id) {
   const label = String(name || "").replace(/^[^:]{2,24}:\s*/, "").trim();
   return label || prettyModelId(id);
 }

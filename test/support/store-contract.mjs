@@ -73,47 +73,6 @@ async function runNewerSchemaRefusalContract(store, hooks) {
   console.log("ok store contract: newer schema is refused with the update-to-open message");
 }
 
-async function runMigrationContract(store, hooks) {
-  const fixture = {
-    hole_id: "legacy-hole",
-    title: "Legacy Hole",
-    root_id: "root",
-    created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-01T00:00:00.000Z",
-    view_state: null,
-    nodes: [
-      node({
-        markdown: ["---", "base_url: https://example.com/docs/root.md", "---", "Root"].join("\n"),
-      }),
-      node({
-        id: "child",
-        parent_id: "root",
-        title: "Child",
-        markdown: "Child",
-        read: false,
-      }),
-    ].map((entry) => {
-      const { base_url, base_url_source, extensions, ...withoutBase } = entry;
-      return withoutBase;
-    }),
-  };
-  await hooks.writeRawHole("legacy-hole", fixture);
-
-  const migrated = await store.loadHole("legacy-hole");
-  assert.equal(migrated.schema_version, CURRENT_SCHEMA_VERSION);
-  assert.equal(migrated.nodes[0].base_url, "https://example.com/docs/root.md");
-  assert.equal(migrated.nodes[0].base_url_source, "frontmatter");
-  assert.equal(migrated.nodes[1].base_url, "https://example.com/docs/root.md");
-  assert.equal(migrated.nodes[1].base_url_source, "inherited");
-  assert.deepEqual(migrated.nodes.map((entry) => entry.extensions), [{}, {}], "legacy nodes should receive empty extension bags");
-
-  const saved = await hooks.readRawHole("legacy-hole");
-  assert.equal(saved.schema_version, CURRENT_SCHEMA_VERSION, "loadHole should save migrated v0 files");
-  await store.saveHole(migrated);
-  assert.equal((await store.loadHole("legacy-hole")).schema_version, CURRENT_SCHEMA_VERSION);
-  console.log("ok store contract: v0.2 fixture migrates, saves, and reloads as schema v2");
-}
-
 async function runAssetContract(store) {
   await store.putAsset("asset-hole", "diagram-1.png", PNG_BYTES);
   assert.deepEqual(await store.listAssets("asset-hole"), ["diagram-1.png"]);
@@ -180,7 +139,6 @@ async function runAssetGcFixture(store, makeDeleteHost) {
 
 export async function runStoreContract(store, hooks) {
   await runHoleContract(store, hooks);
-  await runMigrationContract(store, hooks);
   await runNewerSchemaRefusalContract(store, hooks);
   await runAssetContract(store);
   await runStagingContract(store);

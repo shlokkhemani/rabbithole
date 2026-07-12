@@ -1,7 +1,8 @@
 import { openRabbithole, answerBranch, listRabbitholes } from "../index.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/index.js";
-import { MAX_ASSETS_PER_CALL, validateAssetEntriesSync } from "../fs-store.js";
+import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
+import { validateAssetEntriesSync } from "../fs-store.js";
 import fs from "node:fs";
 
 function str(description, extra = {}) {

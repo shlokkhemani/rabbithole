@@ -38,7 +38,7 @@ export function removeMarks(root, childId){
   }
 }
 
-export function rangeFromOffsets(container, startOff, endOff){
+function rangeFromOffsets(container, startOff, endOff){
   var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   var pos = 0, sN, sO, eN, eO;
   while (walker.nextNode()){
@@ -60,14 +60,14 @@ export function charOffset(container, node, offset){
   return r.toString().length;
 }
 
-export function wrapTextNode(textNode, childId, cls){
+function wrapTextNode(textNode, childId, cls){
   var m = document.createElement("mark");
   initializeMark(m, childId, cls);
   textNode.parentNode.insertBefore(m, textNode);
   m.appendChild(textNode);
 }
 
-export function initializeMark(m, childId, cls){
+function initializeMark(m, childId, cls){
   m.className = cls; m.dataset.child = childId;
   m.tabIndex = 0; m.setAttribute("role", "link");
   var child = nodes[childId];
@@ -86,7 +86,7 @@ export function mountPdfRectMark(container, anchor, childId, cls) {
   layer.appendChild(mark); return mark;
 }
 
-export function wrapRange(range, childId, cls){
+function wrapRange(range, childId, cls){
   var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
   if (startC === endC && startC.nodeType === 3){
     if (startO === endO) return;

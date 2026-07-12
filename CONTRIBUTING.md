@@ -82,9 +82,8 @@ generated bundles.
 
 `web/dist/` and `publish/` are generated but ignored. `npm run build` recreates
 `web/dist/`; `npm run build:publish` recreates both and adds deployment metadata
-and public assets to `publish/`. The older `website/` application is not the
-hosted runtime, although `website/public/og.jpg` and
-`website/public/robots.txt` remain inputs to the publish build.
+and public assets to `publish/`. Static deployment inputs live in
+`website/public/`.
 
 ## Choosing test coverage
 
@@ -92,7 +91,7 @@ Add the smallest test that proves the behavior:
 
 1. Use `test/unit/` for deterministic transformations and reducer behavior.
 2. Use `test/contracts/` for persisted formats, protocol shapes, trust
-   boundaries, compatibility, validation, and storage implementations.
+   boundaries, format validation, and storage implementations.
 3. Use `test/integration/` for a capability spanning core code and a host.
 4. Use `test/e2e/` for browser journeys or movement between hosts.
 5. Use `test/performance/` for measured regression ceilings and
@@ -100,8 +99,8 @@ Add the smallest test that proves the behavior:
 
 Every bug fix should include a regression at the lowest layer that can
 reproduce it. Prefer observable behavior over private function names or
-incidental DOM structure. Compatibility changes need fixtures for both accepted
-historical input and clearly rejected unsupported input.
+incidental DOM structure. Format changes need fixtures for accepted current
+input and clearly rejected unsupported input.
 
 Performance budgets live in `test/budgets.json`. Do not raise a ceiling merely
 to make a check pass. If a reviewed product trade-off justifies a new baseline,
@@ -135,10 +134,9 @@ Packaging can be run separately when iterating because it creates a clean
 consumer install. Live-provider evaluations are not deterministic CI gates.
 
 Changes to persisted holes, `.rabbithole` files, snapshot HTML, MCP tool inputs
-or responses, credential storage, and asset limits are compatibility decisions,
-not ordinary refactors. Preserve supported inputs, refuse unknown future
-formats safely, and update [Compatibility](docs/compatibility.md) alongside the
-relevant fixtures.
+or responses, credential storage, and asset limits are contract decisions, not
+ordinary refactors. Refuse unknown formats safely and update
+[Compatibility](docs/compatibility.md) alongside the relevant fixtures.
 
 ## Project invariants
 

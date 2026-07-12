@@ -2,10 +2,10 @@ import { validatePortableProjection } from "./portable-projection.js";
 
 export const MAX_IMPORT_FILE_BYTES = 64 * 1024 * 1024;
 export const MAX_IMPORT_PAYLOAD_BYTES = 32 * 1024 * 1024;
-export const MAX_IMPORT_NODES = 5000;
+const MAX_IMPORT_NODES = 5000;
 export const MAX_IMPORT_ASSETS = 200;
-export const MAX_IMPORT_ASSET_BYTES = 20 * 1024 * 1024;
-export const MAX_IMPORT_AGGREGATE_ASSET_BYTES = 100 * 1024 * 1024;
+const MAX_IMPORT_ASSET_BYTES = 20 * 1024 * 1024;
+const MAX_IMPORT_AGGREGATE_ASSET_BYTES = 100 * 1024 * 1024;
 
 export const SNAPSHOT_PAYLOAD_OPEN = '<script type="application/vnd.rabbithole+json" id="rabbithole-portable">';
 export const SNAPSHOT_PAYLOAD_CLOSE = "</script>";
@@ -18,7 +18,7 @@ export function extractSnapshotPayload(html) {
     if (source.includes("rabbithole-portable") || source.includes("application/vnd.rabbithole+json")) {
       throw new Error("Snapshot import failed: the portable payload element is malformed.");
     }
-    throw new Error("Snapshot import failed: portable payload is missing. This is an older snapshot that cannot be imported; you can still view it by opening the file.");
+    throw new Error("Snapshot import failed: portable payload is missing.");
   }
   if (source.indexOf(SNAPSHOT_PAYLOAD_OPEN, first + SNAPSHOT_PAYLOAD_OPEN.length) >= 0) {
     throw new Error("Snapshot import failed: duplicate portable payload elements.");
@@ -46,7 +46,7 @@ export function parsePortableImportPayload(text, kind = "rabbithole") {
 }
 
 /** @param {string} text */
-export function assertPayloadTextSize(text) {
+function assertPayloadTextSize(text) {
   if (text.length > MAX_IMPORT_PAYLOAD_BYTES || new TextEncoder().encode(text).byteLength > MAX_IMPORT_PAYLOAD_BYTES) {
     throw new Error("Import failed: portable payload exceeds 32 MB.");
   }
@@ -83,7 +83,7 @@ function preflightPortableImportCaps(raw) {
 }
 
 /** @param {string} encoded */
-export function decodedBase64Size(encoded) {
+function decodedBase64Size(encoded) {
   const compact = encoded.replace(/\s+/g, "");
   const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
   return (compact.length / 4) * 3 - padding;

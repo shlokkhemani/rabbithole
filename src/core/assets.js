@@ -1,4 +1,4 @@
-export const ALLOWED_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const ALLOWED_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 export const MAX_ASSETS_PER_CALL = 50;
 export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 

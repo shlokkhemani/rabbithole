@@ -125,66 +125,6 @@ export function maybeUpgradeBaseUrlFromFrontmatter(node) {
   return true;
 }
 
-/** @param {LooseObject | null | undefined} hole */
-export function backfillLegacyHoleBaseUrls(hole) {
-  if (!Array.isArray(hole?.nodes)) return false;
-  /** @type {Map<string, LooseObject>} */
-  const byId = new Map();
-  for (const node of hole.nodes) {
-    if (node && typeof node === "object" && node.id != null) byId.set(String(node.id), node);
-  }
-
-  let changed = false;
-  /** @type {Map<LooseObject, BaseFields>} */
-  const resolved = new Map();
-  /** @type {Set<LooseObject>} */
-  const resolving = new Set();
-
-  /** @param {LooseObject} node @param {BaseFields} base */
-  function apply(node, base) {
-    const nodeChanged = node.base_url !== base.base_url || node.base_url_source !== base.base_url_source;
-    node.base_url = base.base_url;
-    node.base_url_source = base.base_url_source;
-    changed = changed || nodeChanged;
-    return base;
-  }
-
-  /** @param {LooseObject | null | undefined} node @returns {BaseFields} */
-  function resolve(node) {
-    if (!node || typeof node !== "object") return { base_url: null, base_url_source: null };
-    if (resolved.has(node)) return /** @type {BaseFields} */ (resolved.get(node));
-    if (resolving.has(node)) return { base_url: null, base_url_source: null };
-    resolving.add(node);
-
-    const hasStoredFields =
-      Object.prototype.hasOwnProperty.call(node, "base_url") &&
-      Object.prototype.hasOwnProperty.call(node, "base_url_source");
-    /** @type {BaseFields} */
-    let base;
-    if (hasStoredFields) {
-      base = normalizeStoredBaseUrlFields(node);
-    } else {
-      const frontmatter = inferBaseUrlFromFrontmatter(node.markdown ?? "");
-      if (frontmatter) {
-        base = { base_url: frontmatter, base_url_source: "frontmatter" };
-      } else {
-        const parent = node.parent_id == null ? null : byId.get(String(node.parent_id));
-        const inherited = resolve(parent).base_url;
-        base = inherited
-          ? { base_url: inherited, base_url_source: "inherited" }
-          : { base_url: null, base_url_source: null };
-      }
-    }
-
-    resolving.delete(node);
-    resolved.set(node, base);
-    return apply(node, base);
-  }
-
-  for (const node of hole.nodes) resolve(node);
-  return changed;
-}
-
 /** @param {unknown} raw @param {string | null} baseUrl @returns {baseUrl is string} */
 function shouldResolveUrl(raw, baseUrl) {
   if (!baseUrl) return false;

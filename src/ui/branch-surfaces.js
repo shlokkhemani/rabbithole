@@ -158,7 +158,7 @@ export function closeShare(settings){
 
   function copyText(text, okMsg){
     function done(){ flashHint(okMsg); }
-    function legacy(){
+    function copyWithTextarea(){
       var previousFocus = document.activeElement;
       var ta = document.createElement("textarea");
       ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
@@ -170,8 +170,8 @@ export function closeShare(settings){
       }
     }
     if (navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(done, function(){ legacy(); done(); });
-    } else { legacy(); done(); }
+      navigator.clipboard.writeText(text).then(done, function(){ copyWithTextarea(); done(); });
+    } else { copyWithTextarea(); done(); }
   }
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { assertRabbitholeStore } from "../../src/core/store.js";
 import { IdbStore } from "../../src/web/store/idb-store.js";
-import { DirectRabbitholeHost } from "../../src/web/transport/direct-host.js";
+import { createPendingHoleFromQuestion, DirectRabbitholeHost } from "../../src/web/transport/direct-host.js";
 import { runStoreContract } from "../support/store-contract.mjs";
 
 import "fake-indexeddb/auto";
@@ -15,7 +15,17 @@ Object.defineProperty(globalThis, "navigator", {
   },
 });
 
-await verifyVersionThreeCleanBreak();
+await verifyFreshDatabaseInitialization();
+await verifyPersistencePermissionDoesNotBlockWrites();
+
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: {
+    storage: {
+      persist: async () => true,
+    },
+  },
+});
 
 const store = assertRabbitholeStore(new IdbStore({ dbName: `rabbithole-indexeddb-store-${Date.now()}` }));
 
@@ -41,28 +51,44 @@ await runStoreContract(store, {
   },
 });
 
-async function verifyVersionThreeCleanBreak() {
-  const dbName = `rabbithole-indexeddb-upgrade-${Date.now()}`;
-  const request = indexedDB.open(dbName, 2);
-  request.onupgradeneeded = () => {
-    const db = request.result;
-    db.createObjectStore("holes", { keyPath: "hole_id" }).put({ hole_id: "legacy-uuid", title: "Legacy" });
-    db.createObjectStore("hole-summaries", { keyPath: "hole_id" }).put({ hole_id: "legacy-uuid", title: "Legacy" });
-    db.createObjectStore("assets", { keyPath: ["hole_id", "name"] }).put({ hole_id: "legacy-uuid", name: "page.png", blob: new Blob() });
-    db.createObjectStore("staging", { keyPath: ["ingest_id", "name"] }).put({ ingest_id: "ingest-old", name: "page.png", blob: new Blob() });
-    db.createObjectStore("meta", { keyPath: "key" }).put({ key: "staging:ingest-old" });
-  };
-  const legacyDb = await requestResult(request);
-  legacyDb.close();
-
-  const upgraded = new IdbStore({ dbName });
-  assert.deepEqual(await upgraded.listHoles(), [], "version 3 upgrade should clear UUID-backed browser documents");
-  const db = await upgraded.open();
+async function verifyFreshDatabaseInitialization() {
+  const store = new IdbStore({ dbName: `rabbithole-indexeddb-initialization-${Date.now()}` });
+  assert.deepEqual(await store.listHoles(), [], "a fresh browser database should start empty");
+  const db = await store.open();
   const tx = db.transaction(["holes", "hole-summaries", "assets", "staging", "meta"], "readonly");
   const counts = await Promise.all(["holes", "hole-summaries", "assets", "staging", "meta"].map((name) => requestResult(tx.objectStore(name).count())));
-  assert.deepEqual(counts, [0, 0, 0, 0, 0], "clean break should clear documents, assets, and staging metadata atomically");
-  db.close();
-  console.log("ok IndexedDB v3 clean break clears legacy browser records");
+  assert.deepEqual(counts, [0, 0, 0, 0, 0], "all current browser stores should be initialized empty");
+  store.close();
+  console.log("ok IndexedDB initializes the complete current browser store");
+}
+
+async function verifyPersistencePermissionDoesNotBlockWrites() {
+  let persistCalls = 0;
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      storage: {
+        persist: () => {
+          persistCalls += 1;
+          return new Promise(() => {});
+        },
+      },
+    },
+  });
+
+  const dbName = `rabbithole-indexeddb-persist-${Date.now()}`;
+  const persistenceStore = new IdbStore({ dbName });
+  const hole = createPendingHoleFromQuestion("Why must optional persistence never block a write?");
+  await Promise.race([
+    persistenceStore.saveHole(hole),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("saveHole waited for persistent-storage permission")), 1_000)),
+  ]);
+  assert.equal(persistCalls, 1, "persistent-storage permission should be requested once");
+  assert.equal((await persistenceStore.loadHole(hole.hole_id))?.hole_id, hole.hole_id, "the document should be saved while permission remains pending");
+  persistenceStore.close();
+  assert.equal((await persistenceStore.loadHole(hole.hole_id))?.hole_id, hole.hole_id, "the store should reopen after releasing its connection");
+  persistenceStore.close();
+  console.log("ok pending persistent-storage permission does not block IndexedDB writes");
 }
 
 function requestResult(request) {

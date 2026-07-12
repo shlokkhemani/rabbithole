@@ -9,7 +9,6 @@ import {
   normalizeBaseUrl,
 } from "../../src/core/base-url.js";
 import { RabbitHoleSession } from "../../src/node/transport/session.js";
-import { loadHole } from "../../src/node/fs-store.js";
 import { toolDefinitions } from "../../src/node/tools/manifest.js";
 
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-base-url-"));
@@ -246,62 +245,6 @@ async function runSessionLifecycleFixture() {
   console.log("ok base urls: child inheritance, streaming fallback, frontmatter upgrade");
 }
 
-async function runLegacyBackfillFixture() {
-  const legacyPath = path.join(process.env.RABBITHOLE_DIR, "legacy.json");
-  await fs.writeFile(
-    legacyPath,
-    JSON.stringify(
-      {
-        hole_id: "legacy",
-        title: "Legacy",
-        root_id: "root",
-        created_at: "2026-01-01T00:00:00.000Z",
-        nodes: [
-          {
-            id: "root",
-            parent_id: null,
-            title: "Root",
-            markdown: ["---", "url: https://legacy.example/docs/page.md", "---", "Root"].join("\n"),
-          },
-          {
-            id: "child",
-            parent_id: "root",
-            title: "Child",
-            markdown: ["Not frontmatter", "", "source: https://body.example/not.md"].join("\n"),
-          },
-          {
-            id: "grandchild",
-            parent_id: "child",
-            title: "Grandchild",
-            markdown: "Grandchild",
-          },
-        ],
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-
-  const loaded = await loadHole("legacy");
-  assert.equal(loaded.nodes[0].base_url, "https://legacy.example/docs/page.md");
-  assert.equal(loaded.nodes[0].base_url_source, "frontmatter");
-  assert.equal(loaded.nodes[1].base_url, "https://legacy.example/docs/page.md");
-  assert.equal(loaded.nodes[1].base_url_source, "inherited");
-  assert.equal(loaded.nodes[2].base_url, "https://legacy.example/docs/page.md");
-  assert.equal(loaded.nodes[2].base_url_source, "inherited");
-
-  const stored = JSON.parse(await fs.readFile(legacyPath, "utf8"));
-  assert(Object.prototype.hasOwnProperty.call(stored.nodes[0], "base_url"), "backfill should be stored on disk");
-  assert.equal(stored.nodes[0].base_url_source, "frontmatter");
-  assert.equal(stored.nodes[1].base_url_source, "inherited");
-  const afterFirstLoad = await fs.readFile(legacyPath, "utf8");
-  await loadHole("legacy");
-  assert.equal(await fs.readFile(legacyPath, "utf8"), afterFirstLoad, "legacy backfill should be idempotent");
-
-  console.log("ok base urls: legacy resume backfill persists inferred fields");
-}
-
 function runToolValidationFixture() {
   const open = toolDefinitions.find((tool) => tool.name === "open_rabbithole");
   const answer = toolDefinitions.find((tool) => tool.name === "answer_branch");
@@ -331,6 +274,5 @@ await runMarkdownResolutionFixtures();
 await runGithubImageRewriteFixture();
 runFrontmatterAndPrecedenceFixtures();
 await runSessionLifecycleFixture();
-await runLegacyBackfillFixture();
 runToolValidationFixture();
 console.log("base URL verification passed");

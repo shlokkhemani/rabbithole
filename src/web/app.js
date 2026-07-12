@@ -1,6 +1,6 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, providerFor } from "./brain/index.js";
-import { ensureCanonical, loadSettings } from "./settings/preferences-store.js";
+import { loadSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
 import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
@@ -37,7 +37,6 @@ let lastHoleCount = 0;
 let railSummaries = null;
 let toastNotice = null;
 
-ensureCanonical();
 applyInitialWebTheme();
 
 boot().catch((err) => {
@@ -155,7 +154,10 @@ function initAppChrome() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") void currentHost?.flushSave();
   });
-  window.addEventListener("pagehide", () => { void currentHost?.flushSave(); });
+  window.addEventListener("pagehide", () => {
+    void currentHost?.flushSave();
+    store.close();
+  });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
   const settingsTrigger = document.getElementById("t-settings");
@@ -449,9 +451,10 @@ async function createFromAsk(question) {
   const action = () => createFromAsk(question);
 
   try {
+    setIngestStatus("Starting Rabbithole...", "busy");
     const hole = createPendingHoleFromQuestion(question);
     await store.saveHole(hole);
-    setIngestStatus("");
+    setIngestStatus("Opening Rabbithole...", "busy");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
     const message = err?.message || String(err);

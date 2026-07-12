@@ -4,7 +4,7 @@ import {
   binaryToBase64,
   createPortableProjection,
 } from "../core/portable-projection.js";
-import { migratePersistedHole } from "../core/schema.js";
+import { parsePersistedHole } from "../core/schema.js";
 import { normalizeBlockIds } from "../core/blocks.js";
 import { slugifyTitle } from "../core/utils.js";
 import { createWhimsicalHoleId } from "./hole-id.js";
@@ -60,11 +60,11 @@ export async function importSnapshotFile(store, fileOrText, options = {}) {
 }
 
 async function persistPortableImport(store, parsed, { mintHoleId = null } = {}) {
-  const migrated = migratePersistedHole(parsed.hole).hole;
-  for (const node of migrated.nodes) node.markdown = normalizeBlockIds(node.markdown).markdown;
-  removeCredentialShapedKeys(migrated);
+  const imported = parsePersistedHole(parsed.hole);
+  for (const node of imported.nodes) node.markdown = normalizeBlockIds(node.markdown).markdown;
+  removeCredentialShapedKeys(imported);
   const assets = await decodeAssets(parsed.assets);
-  let hole = migrated;
+  let hole = imported;
   let collision = false;
   if (mintHoleId) {
     hole = { ...hole, hole_id: await freshHoleId(store, mintHoleId) };
@@ -122,7 +122,6 @@ function removeCredentialShapedKeys(value) {
     for (const item of value) removeCredentialShapedKeys(item);
     return;
   }
-  delete value["rh-web-api-key"];
   delete value["rh-web-api-keys"];
   for (const child of Object.values(value)) removeCredentialShapedKeys(child);
 }

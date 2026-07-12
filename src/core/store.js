@@ -1,3 +1,5 @@
+import { randomUuidOrFallback } from "./utils.js";
+
 /**
  * RabbitholeStore port.
  *
@@ -44,4 +46,32 @@ export function assertRabbitholeStore(store) {
     }
   }
   return /** @type {object} */ (store);
+}
+
+/** @param {unknown} holeId */
+export function assertSafeHoleId(holeId) {
+  const id = String(holeId ?? "");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new Error(`Invalid hole id: ${JSON.stringify(holeId)}`);
+  return id;
+}
+
+/** @param {unknown} ingestId */
+export function assertSafeIngestId(ingestId) {
+  const id = String(ingestId ?? "");
+  if (!/^ingest-[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error(`Invalid ingest id: ${JSON.stringify(ingestId)}`);
+  return id;
+}
+
+export function createIngestId() {
+  return `ingest-${Date.now().toString(36)}-${randomUuidOrFallback().replace(/-/g, "").slice(0, 16)}`;
+}
+
+/** @param {{ hole_id?: unknown, title?: unknown, updated_at?: unknown, nodes?: unknown[] }} hole */
+export function holeSummary(hole) {
+  return {
+    hole_id: String(hole.hole_id ?? ""),
+    title: String(hole.title ?? ""),
+    updated_at: hole.updated_at ?? null,
+    node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
+  };
 }

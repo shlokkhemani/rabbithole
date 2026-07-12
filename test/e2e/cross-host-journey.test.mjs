@@ -12,7 +12,6 @@ import { importRabbitholeFile } from "../../src/web/portable.js";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
-const LEGACY = path.join(ROOT, "test/fixtures/corpus/10-schema-null-legacy.rabbithole");
 const SECRET_KEYS = ["api_key", "apiKey", "provider_keys", "rh-web-settings", "sk-or-v1-"];
 const ASSET_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zs1sAAAAASUVORK5CYII=", "base64");
 const MODERN_MARKDOWN = [
@@ -31,7 +30,6 @@ const browser = await chromium.launch({ headless: true });
 
 try {
   await modernJourney();
-  await temporalJourney();
   console.log("cross-host journey verification passed");
 } finally {
   await browser.close();
@@ -88,43 +86,6 @@ async function modernJourney() {
   }
 }
 
-async function temporalJourney() {
-  const legacyPath = path.join(tmp, "legacy.rabbithole");
-  await fs.copyFile(LEGACY, legacyPath);
-  const first = await browser.newContext({ acceptDownloads: true });
-  try {
-    const page = await first.newPage();
-    await page.goto(webUrl);
-    await page.setInputFiles("#file-md", legacyPath);
-    await assertRendered(page, "Legacy defaults are backfilled", false);
-    const imported = await page.evaluate(() => window.__rabbitholeTest.readStoredHole());
-    assert.equal(imported.schema_version, 2, `legacy import schema: ${JSON.stringify(imported)}`);
-    const snapshotPath = await downloadShare(page, "#sm-export", "legacy-snapshot.html");
-    const snapshot = JSON.parse(extractSnapshotPayload(await fs.readFile(snapshotPath, "utf8")));
-    assert.equal(snapshot.hole.schema_version, 2);
-    assert.equal(snapshot.hole.nodes[0].markdown, "Legacy defaults are backfilled");
-
-    const second = await browser.newContext({ acceptDownloads: true });
-    try {
-      const page2 = await second.newPage();
-      await page2.goto(webUrl);
-      await page2.setInputFiles("#file-md", snapshotPath);
-      await assertRendered(page2, "Legacy defaults are backfilled", false);
-      const reimported = await page2.evaluate(() => window.__rabbitholeTest.readStoredHole());
-      assert.equal(reimported.schema_version, 2);
-      assert.equal(reimported.nodes[0].markdown, "Legacy defaults are backfilled");
-      const portablePath = await downloadShare(page2, "#sm-portable", "legacy.rabbithole");
-      const portableText = await fs.readFile(portablePath, "utf8");
-      const portable = JSON.parse(portableText);
-      assert.equal(portable.hole.schema_version, 2);
-      assert.equal(portable.hole.nodes[0].markdown, "Legacy defaults are backfilled");
-      assertNoCredentials(portableText, "legacy portable");
-      await resumePortableOverMcp(portableText, "legacy-resume", "Null schema legacy", "Legacy defaults are backfilled", null);
-    } finally { await second.close(); }
-    console.log("ok cross-host journey: v0.1 import → web → snapshot → web import → portable → MCP resume");
-  } finally { await first.close(); }
-}
-
 async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMarkdown) {
   const dir = await fs.mkdtemp(path.join(tmp, `${prefix}-`));
   const previousDir = process.env.RABBITHOLE_DIR;
@@ -140,8 +101,7 @@ async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMa
     const resumePromise = callTool(mcp.client, "open_rabbithole", { hole_id: imported.hole_id });
     const page = await context.newPage();
     await page.goto(await mcp.nextUrl());
-    const selection = rootMarkdown.includes("Select this exact phrase") ? "Select this exact phrase" : "Legacy defaults are backfilled";
-    await selectAndAsk(page, selection, "Rehydrate this tree");
+    await selectAndAsk(page, "Select this exact phrase", "Rehydrate this tree");
     const request = await resumePromise;
     assert.equal(request.status, "branch_request", `resume result: ${JSON.stringify(request)}`);
     assert(request.rehydration, `first resumed request lacks rehydration: ${JSON.stringify(request)}`);
@@ -237,7 +197,7 @@ function assertProjection(projection, expected) {
   assert.equal(projection.hole.schema_version, 2);
   assertHole(projection.hole, expected.title, expected.rootMarkdown, expected.branchMarkdown);
   assert.deepEqual(Buffer.from(projection.assets["journey.png"], "base64"), expected.asset, `asset bytes differ: ${projection.assets["journey.png"]}`);
-  if (expected.stripExtensions) assert(projection.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), `snapshot projection leaked extensions: ${JSON.stringify(projection.hole.nodes)}`);
+  if (expected.stripExtensions) assert(projection.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), `snapshot projection leaked extensions: ${JSON.stringify(projection.hole.nodes)}`);
   assertNoCredentials(JSON.stringify(projection), "projection");
 }
 

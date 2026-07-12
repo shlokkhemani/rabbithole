@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { openRabbithole, answerBranch } from "../../src/node/index.js";
 import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { loadHole, listAssets } from "../../src/node/fs-store.js";
+import { defaultFsStore } from "../../src/node/fs-store.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "5000";
@@ -95,7 +95,7 @@ function abortAfter(ms) {
   assert.equal(pdf.pages.length, 2, "conversion must preserve the page stash");
   assert(pdf.lines.length > 0, "conversion must preserve the provenance stash");
   assert.equal(pdf.original_markdown, original, "conversion must stash the original body");
-  assert((await listAssets(session.holeId)).includes("fig-p001-1.jpg"));
+  assert((await defaultFsStore.listAssets(session.holeId)).includes("fig-p001-1.jpg"));
   session.close("test_done");
   await session.savingChain;
 }
@@ -147,7 +147,7 @@ function abortAfter(ms) {
   assert.equal(finished.status, "cancelled");
   assert.equal(revived.nodes.get(revived.rootId).extensions.pdf.converted, true);
   await closeAllSessions("test_done");
-  const persisted = await loadHole(holeId);
+  const persisted = await defaultFsStore.loadHole(holeId);
   const persistedRoot = persisted.nodes.find((n) => n.id === persisted.root_id);
   assert.match(persistedRoot.markdown, /Converted After Resume/);
   assert.equal(persistedRoot.extensions.pdf.converted, true);

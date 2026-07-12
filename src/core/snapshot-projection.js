@@ -12,12 +12,11 @@ import { createPortableProjection } from "./portable-projection.js";
  */
 export function createSnapshotProjection(hole, viewState, assets) {
   const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
-  // Shares exclude personal extension state. Snapshot import runs the payload
-  // through migratePersistedHole, which restores the required empty v2 bag.
-  projection.hole = /** @type {PersistedHole} */ (/** @type {unknown} */ ({
+  // Shares exclude personal extension state while remaining valid canonical artifacts.
+  projection.hole = {
     ...projection.hole,
-    nodes: projection.hole.nodes.map(({ extensions: _extensions, ...node }) => node),
-  }));
+    nodes: projection.hole.nodes.map((node) => ({ ...node, extensions: {} })),
+  };
   return projection;
 }
 

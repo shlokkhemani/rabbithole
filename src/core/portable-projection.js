@@ -4,8 +4,8 @@ import { validatePersistedHole } from "./schema.js";
 /** @typedef {import("./contracts/artifact.js").PersistedHole} PersistedHole */
 /** @typedef {import("./contracts/artifact.js").PortableArtifact} PortableArtifact */
 
-export const RABBITHOLE_FILE_FORMAT = "rabbithole";
-export const RABBITHOLE_FILE_FORMAT_VERSION = 1;
+const RABBITHOLE_FILE_FORMAT = "rabbithole";
+const RABBITHOLE_FILE_FORMAT_VERSION = 1;
 
 /**
  * @param {PersistedHole} hole

@@ -40,6 +40,7 @@ export function mountPdfView(container, node) {
   var pageEls = [];
   var observer = null;
   var resizeObserver = null;
+  var toolbarScrollRoot = null, toolbarScrollHandler = null, toolbarBindTimer = 0, toolbarPlaceholder = null, toolbarNode = null;
   var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
   var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
   var spansByPage = [];
@@ -148,27 +149,70 @@ export function mountPdfView(container, node) {
     }
   });
   var toolbar = document.createElement("div"); toolbar.className = "rh-pdf-toolbar";
+  var regionActions = document.createElement("div"); regionActions.className = "rh-pdf-toolbar-actions rh-pdf-region-actions"; toolbar.appendChild(regionActions);
   var toolbarInfo = document.createElement("div"); toolbarInfo.className = "rh-pdf-toolbar-info"; toolbar.appendChild(toolbarInfo);
   if (scanned) {
     var scannedNote = document.createElement("span"); scannedNote.className = "rh-pdf-scanned-note";
-    scannedNote.textContent = "Scanned PDF — no selectable text. Select a region to ask, or convert.";
+    scannedNote.textContent = "No selectable text · Ask about an area or create a text version";
     toolbarInfo.appendChild(scannedNote);
   }
   boxHint = document.createElement("span"); boxHint.className = "rh-pdf-box-hint";
-  boxHint.textContent = "Drag around a figure or region · Esc cancels";
+  boxHint.textContent = "Drag over anything you want to ask about · Esc cancels";
   toolbarInfo.appendChild(boxHint);
-  var actions = document.createElement("div"); actions.className = "rh-pdf-toolbar-actions"; toolbar.appendChild(actions);
+  var documentActions = document.createElement("div"); documentActions.className = "rh-pdf-toolbar-actions rh-pdf-document-actions"; toolbar.appendChild(documentActions);
   boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
-  boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Select region</span>';
-  boxButton.title = "Draw a box around a figure or region to ask about it (Esc cancels)";
-  boxButton.setAttribute("aria-label", "Select a region to ask about"); boxButton.setAttribute("aria-pressed", "false");
-  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); actions.appendChild(boxButton);
+  boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Ask about an area</span>';
+  boxButton.title = "Draw over a figure, table, or area to ask about it";
+  boxButton.setAttribute("aria-label", "Ask about an area of the PDF"); boxButton.setAttribute("aria-pressed", "false");
+  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); regionActions.appendChild(boxButton);
   container.prepend(toolbar);
-  var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
-  var branched = childrenOf(node.id).length > 0; convertButton.textContent = branched ? "Convert before branching" : "Convert to document"; convertButton.disabled = branched;
-  if (branched) convertButton.title = "Conversion is available until the document has branches.";
-  convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
-  actions.appendChild(convertButton);
+  if (!childrenOf(node.id).length) {
+    var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
+    convertButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Create text version</span>';
+    convertButton.setAttribute("aria-label", "Create a searchable text version of this PDF");
+    convertButton.title = "Turn every page into clean, searchable text while preserving figures";
+    convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
+    documentActions.appendChild(convertButton);
+  }
+  function moveToolbar(mutate, animate){
+    var previous = toolbar.getAnimations ? toolbar.getAnimations().filter(function(item){ return item.id === "pdf-toolbar-dock"; }) : [];
+    previous.forEach(function(item){ item.cancel(); });
+    var from = toolbar.getBoundingClientRect();
+    mutate();
+    if (!animate || !toolbar.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    var to = toolbar.getBoundingClientRect();
+    if (!from.width || !to.width) return;
+    var movement = toolbar.animate([
+      { transform: "translateY(" + (from.top - to.top) + "px)" },
+      { transform: "translateY(0)" }
+    ], { duration: 140, easing: "cubic-bezier(.2,0,0,1)" });
+    movement.id = "pdf-toolbar-dock";
+  }
+  toolbarBindTimer = setTimeout(function(){
+    if (disposed) return;
+    toolbarScrollRoot = container.closest(".node-body") || container.closest("#reader-main");
+    if (!toolbarScrollRoot) return;
+    toolbarNode = toolbarScrollRoot.classList.contains("node-body") ? toolbarScrollRoot.closest(".node") : null;
+    toolbarScrollHandler = function(initial){
+      var shouldDock = !!toolbarNode && (toolbarPlaceholder ? toolbarScrollRoot.scrollTop > 4 : toolbarScrollRoot.scrollTop > 20);
+      if (shouldDock && !toolbarPlaceholder) {
+        moveToolbar(function(){
+          toolbarPlaceholder = document.createElement("div"); toolbarPlaceholder.className = "rh-pdf-toolbar-placeholder";
+          toolbarPlaceholder.style.height = toolbar.offsetHeight + "px";
+          toolbar.before(toolbarPlaceholder);
+          toolbarNode.insertBefore(toolbar, toolbarScrollRoot);
+          toolbarNode.classList.add("pdf-toolbar-docked"); toolbar.classList.add("is-stuck");
+        }, initial !== true);
+      } else if (!shouldDock && toolbarPlaceholder) {
+        moveToolbar(function(){
+          toolbarPlaceholder.replaceWith(toolbar); toolbarPlaceholder = null;
+          toolbarNode.classList.remove("pdf-toolbar-docked"); toolbar.classList.remove("is-stuck");
+        }, initial !== true);
+      }
+    };
+    toolbarScrollRoot.addEventListener("scroll", toolbarScrollHandler, { passive: true });
+    toolbarScrollHandler(true);
+  }, 0);
   // Capture phase: while region-select is active, Escape means "exit region
   // select" and nothing else — the app-level Escape (open reader) must not fire.
   function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); event.stopPropagation(); setBoxMode(false); } }
@@ -276,6 +320,10 @@ export function mountPdfView(container, node) {
     disposed = true;
     if (observer) observer.disconnect();
     if (resizeObserver) resizeObserver.disconnect();
+    clearTimeout(toolbarBindTimer);
+    if (toolbarScrollRoot && toolbarScrollHandler) toolbarScrollRoot.removeEventListener("scroll", toolbarScrollHandler);
+    if (toolbarPlaceholder) toolbarPlaceholder.remove();
+    toolbarNode?.classList.remove("pdf-toolbar-docked");
     document.removeEventListener("keydown", onKeydown, true);
     toolbar.remove(); setBoxMode(false);
     if (askWatcher) askWatcher();

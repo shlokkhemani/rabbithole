@@ -52,12 +52,7 @@ async function copyContents(sourceDir, targetDir) {
 }
 
 function redirectsText() {
-  return [
-    "/app / 301",
-    "/app/* /:splat 301",
-    "/* /index.html 200",
-    "",
-  ].join("\n");
+  return "/* /index.html 200\n";
 }
 
 function llmsText() {

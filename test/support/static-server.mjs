@@ -38,7 +38,7 @@ export async function serveStatic(rootDir, { routes = {}, spaFallback = false } 
   return server;
 }
 
-export function contentType(filePath) {
+function contentType(filePath) {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
   if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";

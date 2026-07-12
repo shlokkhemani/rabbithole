@@ -60,7 +60,7 @@ async function verifyStatefulCheckCycle() {
 
   const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const payload = JSON.parse(extractSnapshotPayload(snapshot));
-  assert(payload.hole.nodes.every((node) => !Object.hasOwn(node, "extensions")), "snapshot payload excludes the populated learn bag");
+  assert(payload.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), "snapshot payload clears the populated learn bag");
   const frozen = await context.newPage();
   await frozen.setContent(snapshot, { waitUntil: "load" });
   await frozen.waitForSelector(".viz-check .rh-check-option:visible");
@@ -232,4 +232,3 @@ async function selectText(page, needle) {
     throw new Error(`Text not found: ${text}`);
   }, needle);
 }
-

@@ -90,7 +90,7 @@ async function verifyLandingAndComposer() {
   await page.waitForSelector("#blank-start:not([hidden])");
   await page.keyboard.press("N");
   await page.waitForSelector("#composer-modal:not([hidden])");
-  assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("rail-open")), false, "legacy sidebar state should not override the calm default");
+  assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("rail-open")), false, "the sidebar should start closed");
   assert.equal(await page.locator(".web-home").count(), 0, "form-based home page must be gone");
   assert.equal(await page.locator("#toolbar .toolbar-brand").count(), 1, "browser toolbar should carry the Rabbithole mark");
   const toolbarConformance = await page.locator("#reader-top button, #toolbar button").evaluateAll((buttons) => buttons.map((button) => ({
@@ -540,7 +540,6 @@ async function verifyAskKeyUxAndRail() {
     "Escape with the rail focused must close only the rail, not fall through to the canvas client's open-the-reader shortcut"
   );
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").openrouter), MOCK_KEY, "remembered key should stay in this browser's provider-key map");
-  assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "legacy single-key storage should stay retired");
   await page.click('.node-btn[aria-label="Collapse document"]');
   assert.equal(await page.locator(".node").first().evaluate((node) => node.classList.contains("collapsed")), true, "real UI mutation should collapse the document immediately");
   const mutationSnapshot = JSON.parse(extractSnapshotPayload(await page.evaluate(() => window.__rabbitholeTest.exportSnapshot())));
@@ -569,7 +568,7 @@ async function verifyAskKeyUxAndRail() {
   const normalizedPortable = structuredClone(portableProjection);
   normalizedPortable.hole.view_state = snapshotProjection.hole.view_state;
   normalizedPortable.hole.updated_at = snapshotProjection.hole.updated_at;
-  for (const node of normalizedPortable.hole.nodes) delete node.extensions;
+  for (const node of normalizedPortable.hole.nodes) node.extensions = {};
   normalizedPortable.assets = Object.fromEntries(Object.entries(normalizedPortable.assets).filter(([name]) => referencedAssets.has(name)));
   assert.deepEqual(
     snapshotProjection,
@@ -580,7 +579,7 @@ async function verifyAskKeyUxAndRail() {
   assert.deepEqual(
     snapshotProjection.hole.nodes.map((node) => node.created_at),
     portableProjection.hole.nodes.map((node) => node.created_at),
-    "canonical node timestamps must survive instead of passing through the retired hydration allowlist"
+    "canonical node timestamps must survive snapshot projection"
   );
   assert(!snapshotHtml.includes('var hydration = {"session_id"'), "new snapshots must not execute an embedded document hydration object");
   assert.match(snapshotHtml, /startPortableSnapshot\(JSON\.parse\(payload\.textContent\)\)/, "bootstrap should derive hydration from inert DOM text");
@@ -667,7 +666,6 @@ async function verifyAskKeyUxAndRail() {
   await sessionPage.fill("#composer-input", "Check session-only storage");
   await sessionPage.click("#composer-primary");
   await waitForCanvasText(sessionPage, "This root verifies session-only storage");
-  assert.equal(await sessionPage.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "opting out of remember must keep the key out of localStorage");
   assert.equal(await sessionPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").openrouter), undefined, "opting out of remember must keep the provider-key map clean");
   await sessionContext.close();
 }

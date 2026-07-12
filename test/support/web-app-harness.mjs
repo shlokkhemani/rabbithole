@@ -5,7 +5,7 @@ import { ensureWebDist } from "./build.mjs";
 import { serveStatic } from "./static-server.mjs";
 
 export const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
-export const WEB_DIST = path.join(ROOT, "web/dist");
+const WEB_DIST = path.join(ROOT, "web/dist");
 
 export async function bootWebApp() {
   try {

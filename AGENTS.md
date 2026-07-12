@@ -20,8 +20,7 @@ Plain ES modules, a small esbuild-based browser build, and script-driven tests.
 - `src/core/html/` — shared self-contained shell, tokens, and stylesheet source
 - `dist/` — committed live and frozen UI bundles; regenerate after UI changes
 - `test/` — capability-oriented suites documented in `docs/testing.md`
-- `website/public/` — live public assets copied by `build:publish`; the remaining
-  Next.js source is not used by the current Cloudflare Pages build
+- `website/public/` — live public assets copied by `build:publish`
 
 ## Run / debug
 

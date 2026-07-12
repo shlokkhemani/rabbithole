@@ -9,7 +9,7 @@ import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/po
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
 import { CANVAS_STYLES } from "../../src/core/html/styles.js";
-import { addAssetsToHole, listAssets } from "../../src/node/fs-store.js";
+import { addAssetsToHole, defaultFsStore } from "../../src/node/fs-store.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
@@ -138,7 +138,7 @@ async function runLiveSnapshotDownload() {
         collapsed: false, status: "pending", read: false, created_at: now,
       },
     ],
-    assetNames: new Set(await listAssets("image-live-snapshot")),
+    assetNames: new Set(await defaultFsStore.listAssets("image-live-snapshot")),
     isResume: false,
     renderPage: (hydration) => buildCanvasHtml(hydration),
   });

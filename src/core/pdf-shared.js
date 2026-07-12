@@ -1,8 +1,8 @@
 export const MAX_PDF_BYTES = 100 * 1024 * 1024;
-export const DEFAULT_PAGE_CAP = 40;
+const DEFAULT_PAGE_CAP = 40;
 export const PDF_RENDER_SCALE = 2;
-export const PDF_CROP_MAX_LONG_EDGE = 1568;
-export const PDF_CROP_PADDING = 0.02;
+const PDF_CROP_MAX_LONG_EDGE = 1568;
+const PDF_CROP_PADDING = 0.02;
 
 /** @param {any} rect @param {number} sourceWidth @param {number} sourceHeight @param {{padding?: number, maxLongEdge?: number}} [options] */
 export function planPdfCrop(rect, sourceWidth, sourceHeight, { padding = PDF_CROP_PADDING, maxLongEdge = PDF_CROP_MAX_LONG_EDGE } = {}) {
@@ -59,14 +59,13 @@ export function rewriteFigureRefs(markdown, replacements = []) {
   }
   return output + String(markdown).slice(cursor);
 }
-export const PDF_MAGIC = "%PDF";
 // Page + figure budgets are sized so a maxed-out hole still exports: base64
 // inflates assets 4/3, and the portable payload cap is 32 MB —
 // (20 + 2) * 4/3 ≈ 29.4 MB, leaving headroom for JSON structure and markdown.
 export const MAX_PDF_PAGE_ASSET_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_FIGURE_ASSET_BYTES = 2 * 1024 * 1024;
-export const MAX_PDF_PAGES = 100;
-export const MAX_PDF_LINES = 25000;
+const MAX_PDF_PAGES = 100;
+const MAX_PDF_LINES = 25000;
 
 import { validateAssetName } from "./assets.js";
 import { normalizeBlockIds } from "./blocks.js";

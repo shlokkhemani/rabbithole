@@ -152,18 +152,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     // The box takes focus on open so the question can be typed immediately —
     // focusing collapses the native selection, so the cloned Range plus the
     // painted highlight carry it, and Escape puts the selection back.
-    askPosition = openAnchoredSurface({ surface: ask, anchor: virtualAnchor,
-      placement: "bottom-start", restoreFocus: false,
-      preventOutsidePointerDefault: false, onClose: function(reason){
-        var escapeOwner = reason === "escape" ? owner : null;
-        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
-        hideAsk();
-        if (escapeOwner) focusAskOwner(escapeOwner);
-        restoreSelectionRange(keepRange);
-      } });
-    // Grow only once visible — scrollHeight reads 0 inside display:none.
-    autoGrowEl(askText, 110);
-    askText.focus({ preventScroll: true });
+    openAskSurface(virtualAnchor, owner);
   }
   var pendingAsk = null;
 export function showAskFromSelection(options){
@@ -190,7 +179,11 @@ export function showAskFromSelection(options){
     askOwnerCleanup = askLifecycle.scope
       ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown)
       : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
-    askPosition = openAnchoredSurface({ surface: ask, anchor: anchorEl,
+    openAskSurface(anchorEl, owner);
+    return true;
+  }
+  function openAskSurface(anchor, owner){
+    askPosition = openAnchoredSurface({ surface: ask, anchor: anchor,
       placement: "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
       onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
@@ -199,9 +192,8 @@ export function showAskFromSelection(options){
         if (escapeOwner) focusAskOwner(escapeOwner);
         restoreSelectionRange(keepRange);
       } });
-    autoGrowEl(askText, 110);
+    autoGrowEl(askText, 110); // Must run after the surface leaves display:none.
     askText.focus({ preventScroll: true });
-    return true;
   }
   function restoreSelectionRange(range){
     if (!range) return;
@@ -250,6 +242,11 @@ export function disposeAskFollowups(){
     }
   }
 
+  function retirePdfConversionAction(parent){
+    parent?.bodyEl?.querySelector(".rh-pdf-convert")?.remove();
+    if (mode === "reader") readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')?.remove();
+  }
+
   function submitAsk(lensKey, source){
     if (!pendingAsk || closed) return;
     var parent = nodes[pendingAsk.parentId];
@@ -272,6 +269,7 @@ export function disposeAskFollowups(){
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
 
     // Mark inline in whichever views currently render the parent doc. Wrap via
@@ -338,6 +336,7 @@ export function sendFollowup(parent, question, lens, synthesis){
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
     if (currentNodeId === parent.id && mode === "reader"){
       if (synthesis) renderSidebar();
@@ -422,10 +421,10 @@ function rollbackBranch(node){
     flashHint("Couldn't reach the agent — that ask was undone.");
   }
 
-export function subtreeBounds(node){
+function subtreeBounds(node){
     return sharedSubtreeBounds(node, { childrenOf: childrenOf, effH: effH, sort: nodeOrder });
   }
-export function placeChild(parent, branchType){
+function placeChild(parent, branchType){
     return sharedPlaceChild(parent, branchType, {
       childrenOf: childrenOf,
       effH: effH,

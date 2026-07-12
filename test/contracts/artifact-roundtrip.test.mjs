@@ -11,7 +11,7 @@ import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile } from 
 
 const corpusDir = new URL("../fixtures/corpus/", import.meta.url);
 const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWith(".rabbithole")).sort();
-assert.equal(fixtureNames.length, 20, "the curated corpus must contain exactly 20 portable fixtures");
+assert.equal(fixtureNames.length, 18, "the curated corpus must contain exactly 18 portable fixtures");
 
 async function storeAt(label) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), `rabbithole-artifact-roundtrip-${label}-`));
@@ -47,12 +47,6 @@ async function exporterSnapshot(store, hole) {
   };
 }
 
-// Fixtures 10 and 11 are legacy-era shapes whose import deliberately migrates
-// them to the modern schema, so export cannot reproduce their source bytes.
-// Their modern projection is still pinned by the exported2/exported3
-// idempotence assertions below.
-const MIGRATION_FIXTURES = new Set(["10-schema-null-legacy.rabbithole", "11-v02-legacy.rabbithole"]);
-
 for (const name of fixtureNames) {
   const text = await fs.readFile(new URL(name, corpusDir), "utf8");
   const first = await storeAt("first");
@@ -61,10 +55,8 @@ for (const name of fixtureNames) {
   // Anchor the projection to the source file, not merely to itself: comparing
   // exports against exports lets a field silently dropped by the export path
   // cancel out on both sides (proven by a smoke-detector probe).
-  if (!MIGRATION_FIXTURES.has(name)) {
-    assert.deepEqual(normalized(exported1), normalized(JSON.parse(text)),
-      `${name}: export(import(source)) must reproduce the source file without dropping or rewriting fields`);
-  }
+  assert.deepEqual(normalized(exported1), normalized(JSON.parse(text)),
+    `${name}: export(import(source)) must reproduce the source file without dropping or rewriting fields`);
 
   const second = await storeAt("second");
   const imported2 = await importRabbitholeFile(second.store, JSON.stringify(exported1));
@@ -104,10 +96,10 @@ console.log(`ok artifact round trip: all ${fixtureNames.length} corpus fixtures 
   const persisted = await portableStore.store.loadHole(imported.hole_id);
   const snapshot = await exporterSnapshot(portableStore.store, persisted);
   const payload = JSON.parse(snapshot.html.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
-  assert.equal(Object.hasOwn(payload.hole.nodes[0], "extensions"), false, "snapshot normalization strips the personal extension bag");
+  assert.deepEqual(payload.hole.nodes[0].extensions, {}, "snapshot normalization clears the personal extension bag");
   const snapshotStore = await storeAt("extensions-snapshot");
   const snapshotImported = await importSnapshotFile(snapshotStore.store, snapshot.html);
-  assert.deepEqual((await snapshotStore.store.loadHole(snapshotImported.hole_id)).nodes[0].extensions, {}, "snapshot import re-normalizes the omitted bag to empty");
+  assert.deepEqual((await snapshotStore.store.loadHole(snapshotImported.hole_id)).nodes[0].extensions, {}, "snapshot import preserves the cleared extension bag");
 }
 console.log("ok artifact round trip: extension bags survive portable round trips and are stripped from snapshots");
 

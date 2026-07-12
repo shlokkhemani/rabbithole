@@ -309,14 +309,6 @@ assert.equal(failedAuthoringSaves.length, 0);
 assert.equal(failedAuthoringHost.saveTimer, 0);
 console.log("ok generation lifecycle: document authoring saves only once on completion and saves nothing on failure");
 
-const productionGenerationSources = await Promise.all([
-  new URL("../../src/web/brain/generation-events.js", import.meta.url),
-  new URL("../../src/web/transport/direct-host.js", import.meta.url),
-  new URL("../../src/web/app.js", import.meta.url),
-].map((url) => fs.readFile(url, "utf8")));
-assert.equal(productionGenerationSources.join("\n").includes("textDeltaFromGenerationEvent"), false);
-console.log("ok generation lifecycle: retired GenerationEvent text-delta seam is absent from production sources");
-
 const appSource = await fs.readFile(new URL("../../src/web/app.js", import.meta.url), "utf8");
 assert.match(appSource, /document\.addEventListener\("visibilitychange"[\s\S]*document\.visibilityState === "hidden"[\s\S]*currentHost\?\.flushSave\(\)/);
 assert.match(appSource, /window\.addEventListener\("pagehide"[\s\S]*currentHost\?\.flushSave\(\)/);

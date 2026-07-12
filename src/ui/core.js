@@ -38,7 +38,7 @@ export var mode = "reader";
 export var view = { x: 0, y: 0, scale: 1 };
 export var closed = false;
 export var closedReason = null;
-export var agentAttached = true;
+var agentAttached = true;
 export var agentReason = null;
 export var connLost = false;
 var sseFails = 0;
@@ -287,14 +287,10 @@ export function fontPx(node, base){ return Math.round(base * (node.font_scale ||
 export function nodeOrder(a,b){
     return sharedNodeOrder(a, b);
   }
-export function branchTypeOf(n){
+function branchTypeOf(n){
     return branchTypeOfNode(n);
   }
 export function isSelectionBranch(n){ return branchTypeOf(n) === BRANCH_SELECTION; }
-  // A follow-up is a branch with no selection: asked from the composer, shown
-  // as an inline chat turn beneath its parent document. Legacy nodes without an
-  // explicit branch_type fall back to selected_text: present means selection,
-  // absent means follow-up.
 export function isFollowup(n){ return branchTypeOf(n) === BRANCH_FOLLOWUP; }
 export function followupsOf(id){
     return childrenOf(id).filter(isFollowup).sort(nodeOrder);
@@ -311,7 +307,7 @@ export function shiftBounds(b, dx, dy){
 export function boundsOverlap(a,b){
     return sharedBoundsOverlap(a, b);
   }
-export function agentDown(){ return closed || connLost || !agentAttached; }
+function agentDown(){ return closed || connLost || !agentAttached; }
 export function sessionPhase(){
     if (frozen) return "frozen";
     if (closed) return "closed";
@@ -423,7 +419,7 @@ export function refreshAmbient(){
     if (pend.length) goToNode(pend[pend.length - 1], source);
   }
   // "Since you left" strip — a re-entry announcement only: armed at load when
-  // unread answers were waiting, retired as they're opened (or on dismiss).
+  // unread answers were waiting, cleared as they're opened (or on dismiss).
   // Answers landing live mid-session never resurrect it.
   var sinceDismissed = false, sinceArmed = false;
 export function updateSince(){
@@ -492,13 +488,13 @@ export function buildLoading(node){
     wrap.appendChild(sk);
     return wrap;
   }
-export function buildConvertProgress(node, pdfExt, committed){
+function buildConvertProgress(node, pdfExt, committed){
     var done = node._pdfProgress ? node._pdfProgress.done : 0;
     var total = node._pdfProgress ? node._pdfProgress.total : (pdfExt.pages ? pdfExt.pages.length : 0);
     var wrap = document.createElement("div");
     wrap.className = "rh-pdf-convert-progress" + (committed ? "" : " loading rh-pdf-converting");
     var st = document.createElement("div"); st.className = "loading-status";
-    var label = "Converting to document";
+    var label = "Creating text version";
     if (committed && done > 0 && done < total) label += " — page " + done + " of " + total;
     else if (!committed && total) label += " — " + total + (total === 1 ? " page" : " pages");
     st.innerHTML = (committed ? "" : LOADING_BUNNY_HTML) + '<span class="shimmer-text">' + label + '</span>';

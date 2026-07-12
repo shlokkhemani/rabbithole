@@ -1577,8 +1577,7 @@ var RabbitholeFrozenClient = (() => {
   // src/ui/frozen-entry.js
   var frozen_entry_exports = {};
   __export(frozen_entry_exports, {
-    startPortableSnapshot: () => startPortableSnapshot,
-    startRabbithole: () => startRabbithole
+    startPortableSnapshot: () => startPortableSnapshot
   });
 
   // src/core/assets.js
@@ -1703,11 +1702,10 @@ var RabbitholeFrozenClient = (() => {
     return LENSES[key] ? LENSES[key].label : String(key || "");
   }
   function branchTypeOfNode(node) {
-    var _a2, _b;
+    var _a2;
     if (!node || !node.origin && !node.parent_id) return null;
     const type = (_a2 = node.origin) == null ? void 0 : _a2.branch_type;
-    if (type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP) return type;
-    return ((_b = node.origin) == null ? void 0 : _b.selected_text) ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    return type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP ? type : null;
   }
 
   // src/core/snapshot-projection.js
@@ -2917,7 +2915,7 @@ var RabbitholeFrozenClient = (() => {
     wrap.className = "rh-pdf-convert-progress" + (committed ? "" : " loading rh-pdf-converting");
     var st = document.createElement("div");
     st.className = "loading-status";
-    var label = "Converting to document";
+    var label = "Creating text version";
     if (committed && done > 0 && done < total) label += " \u2014 page " + done + " of " + total;
     else if (!committed && total) label += " \u2014 " + total + (total === 1 ? " page" : " pages");
     st.innerHTML = (committed ? "" : LOADING_BUNNY_HTML) + '<span class="shimmer-text">' + label + "</span>";
@@ -4957,9 +4955,13 @@ var RabbitholeFrozenClient = (() => {
     askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
       document.removeEventListener("keydown", onAskOwnerKeydown);
     };
+    openAskSurface(virtualAnchor, owner);
+  }
+  var pendingAsk = null;
+  function openAskSurface(anchor, owner) {
     askPosition = openAnchoredSurface({
       surface: ask,
-      anchor: virtualAnchor,
+      anchor,
       placement: "bottom-start",
       restoreFocus: false,
       preventOutsidePointerDefault: false,
@@ -4974,7 +4976,6 @@ var RabbitholeFrozenClient = (() => {
     autoGrowEl(askText, 110);
     askText.focus({ preventScroll: true });
   }
-  var pendingAsk = null;
   function restoreSelectionRange(range) {
     if (!range) return;
     try {
@@ -5036,6 +5037,11 @@ var RabbitholeFrozenClient = (() => {
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }
   }
+  function retirePdfConversionAction(parent) {
+    var _a2, _b, _c;
+    (_b = (_a2 = parent == null ? void 0 : parent.bodyEl) == null ? void 0 : _a2.querySelector(".rh-pdf-convert")) == null ? void 0 : _b.remove();
+    if (mode === "reader") (_c = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')) == null ? void 0 : _c.remove();
+  }
   function submitAsk(lensKey, source2) {
     if (!pendingAsk || closed) return;
     var parent = nodes[pendingAsk.parentId];
@@ -5070,6 +5076,7 @@ var RabbitholeFrozenClient = (() => {
       _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -5153,6 +5160,7 @@ var RabbitholeFrozenClient = (() => {
       _startTs: Date.now()
     };
     registerNode(node);
+    retirePdfConversionAction(parent);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -32586,7 +32594,7 @@ ${text2}</tr>
     function done() {
       flashHint(okMsg);
     }
-    function legacy() {
+    function copyWithTextarea() {
       var previousFocus = document.activeElement;
       var ta = document.createElement("textarea");
       ta.value = text2;
@@ -32608,11 +32616,11 @@ ${text2}</tr>
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text2).then(done, function() {
-        legacy();
+        copyWithTextarea();
         done();
       });
     } else {
-      legacy();
+      copyWithTextarea();
       done();
     }
   }
@@ -32771,7 +32779,7 @@ ${text2}</tr>
   }
 
   // src/ui/hydrate.js
-  function hydrateInitialState({ connectSse = null, post = null, refreshStatus = null } = {}) {
+  function hydrateInitialState({ connectSse = null, refreshStatus = null } = {}) {
     setRendererAssetData(hydration.asset_data || null);
     if (frozen) document.body.classList.add("frozen");
     (hydration.nodes || []).forEach(function(raw) {
@@ -32802,18 +32810,6 @@ ${text2}</tr>
     Object.keys(nodes).forEach(function(id) {
       nodes[id]._order = nextOrder();
     });
-    var anyRead = false, k;
-    for (k in nodes) if (nodes[k].read) anyRead = true;
-    if (!anyRead && !hydration.view_state) {
-      var legacy = [];
-      for (k in nodes) {
-        if (nodes[k].status === "answered") {
-          nodes[k].read = true;
-          legacy.push({ node_id: k, read: true });
-        }
-      }
-      if (!frozen && legacy.length && typeof post === "function") post({ type: "nodes_update", nodes: legacy });
-    }
     var vs = hydration.view_state;
     if (vs && vs.node_id && nodes[vs.node_id]) {
       setCurrentNodeId(vs.node_id);

@@ -6,8 +6,6 @@ import {
 var assetData = null;
 var assetNames = null;
 
-export { MARKDOWN_RENDERER_SENTINEL };
-
 export function setRendererAssetData(data) {
   assetData = data && typeof data === "object" ? data : null;
   assetNames = assetData ? new Set(Object.keys(assetData)) : null;
@@ -48,7 +46,7 @@ var markdownRenderer = createMarkdownRenderer({
   resolveAssetUrl: resolveAssetUrl
 });
 
-export function renderMarkdownToHtml(markdown, options) {
+function renderMarkdownToHtml(markdown, options) {
   return markdownRenderer.renderMarkdownToHtml(markdown, options || {});
 }
 

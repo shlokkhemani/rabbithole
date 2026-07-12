@@ -5,15 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
+import { MAX_ASSET_BYTES } from "../../src/core/assets.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 import {
-  MAX_ASSET_BYTES,
   addAssetsToHole,
-  deleteAsset,
-  listAssets,
+  defaultFsStore,
   resolveAsset,
 } from "../../src/node/fs-store.js";
 import { toolDefinitions } from "../../src/node/tools/manifest.js";
@@ -61,13 +60,13 @@ async function runStorageFixtures() {
 
   const added = await addAssetsToHole("storage-hole", [{ name: "diagram-1.png", file_path: source }]);
   assert.equal(added[0].name, "diagram-1.png");
-  assert.deepEqual(await listAssets("storage-hole"), ["diagram-1.png"]);
+  assert.deepEqual(await defaultFsStore.listAssets("storage-hole"), ["diagram-1.png"]);
   assert.deepEqual(await fs.readFile(await resolveAsset("storage-hole", "diagram-1.png")), PNG_BYTES);
 
   await addAssetsToHole("storage-hole", [{ name: "diagram-1.png", file_path: source2 }]);
   assert.deepEqual(await fs.readFile(await resolveAsset("storage-hole", "diagram-1.png")), PNG_BYTES_2);
 
-  await deleteAsset("storage-hole", "diagram-1.png");
+  await defaultFsStore.deleteAsset("storage-hole", "diagram-1.png");
   assert.equal(await resolveAsset("storage-hole", "diagram-1.png"), null);
 
   await fs.writeFile(oversize, "");
@@ -180,7 +179,7 @@ async function runSessionFixtures(source, source2) {
     { name: "diagram-1.png", file_path: source },
     { name: "unused.png", file_path: source2 },
   ]);
-  const assetNames = new Set(await listAssets("session-hole"));
+  const assetNames = new Set(await defaultFsStore.listAssets("session-hole"));
   const markdown = "Root asset ![fig](asset:diagram-1.png)";
   const root = {
     id: "root",

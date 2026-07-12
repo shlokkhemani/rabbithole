@@ -37,12 +37,25 @@ export function mountPdfView(container, node) {
   var pageEls = [];
   var observer = null;
   var resizeObserver = null;
-  var boxButton = null, boxMode = false, draft = null;
+  var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
+  var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
   function setBoxMode(active) {
     boxMode = !!active;
     container.classList.toggle("rh-pdf-box-mode", boxMode);
     if (boxButton) { boxButton.classList.toggle("active", boxMode); boxButton.setAttribute("aria-pressed", boxMode ? "true" : "false"); }
+    if (boxHint) boxHint.classList.toggle("visible", boxMode);
     if (!boxMode && draft) { draft.remove(); draft = null; }
+  }
+  // The settled box stays on the page as the visual anchor of the open ask,
+  // then retires the moment the ask closes — submit or cancel alike (a submit
+  // replaces it with the pending rect mark).
+  function retireBoxWhenAskCloses(boxEl) {
+    var askEl = document.getElementById("ask");
+    if (askWatcher) askWatcher();
+    if (!askEl || typeof MutationObserver !== "function") { boxEl.remove(); return; }
+    var watcher = new MutationObserver(function(){ if (!askEl.classList.contains("visible")) askWatcher && askWatcher(); });
+    askWatcher = function(){ watcher.disconnect(); boxEl.remove(); askWatcher = null; };
+    watcher.observe(askEl, { attributes: true, attributeFilter: ["class"] });
   }
   function fitText(pageEl) {
     var spans = pageEl.querySelectorAll(".rh-pdf-textlayer span");
@@ -106,12 +119,16 @@ export function mountPdfView(container, node) {
       }
       function up(upEvent) {
         pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel);
-        var rect = draft && draft._rect, anchorEl = draft;
-        if (!rect || rect.w <= 0 || rect.h <= 0) { cancel(); return; }
-        var enclosed = enclosedPdfLines(pdf.lines, page.n, rect, markdown);
+        var rect = draft && draft._rect, boxEl = draft;
         draft = null; setBoxMode(false);
-        showAskFromSelection({ parentId: node.id, selectedText: enclosed.text, mdStart: enclosed.start, mdEnd: enclosed.end,
-          pdfAnchor: { page: page.n, rect: rect }, anchorRectEl: anchorEl });
+        // A sub-8px drop is a stray click, not a region — vanish quietly.
+        var bounds = pageEl.getBoundingClientRect();
+        if (!rect || rect.w * bounds.width < 8 || rect.h * bounds.height < 8) { if (boxEl) boxEl.remove(); return; }
+        var enclosed = enclosedPdfLines(pdf.lines, page.n, rect, markdown);
+        boxEl.classList.add("settled");
+        var shown = showAskFromSelection({ parentId: node.id, selectedText: enclosed.text, mdStart: enclosed.start, mdEnd: enclosed.end,
+          pdfAnchor: { page: page.n, rect: rect }, anchorRectEl: boxEl });
+        if (shown) retireBoxWhenAskCloses(boxEl); else boxEl.remove();
         upEvent.preventDefault(); upEvent.stopPropagation();
       }
       function cancel() { pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel); setBoxMode(false); }
@@ -125,15 +142,31 @@ export function mountPdfView(container, node) {
     }
   });
   var toolbar = document.createElement("div"); toolbar.className = "rh-pdf-toolbar";
+  var toolbarInfo = document.createElement("div"); toolbarInfo.className = "rh-pdf-toolbar-info"; toolbar.appendChild(toolbarInfo);
+  if (scanned) {
+    var scannedNote = document.createElement("span"); scannedNote.className = "rh-pdf-scanned-note";
+    scannedNote.textContent = "Scanned PDF — no selectable text. Select a region to ask, or convert.";
+    toolbarInfo.appendChild(scannedNote);
+  }
+  boxHint = document.createElement("span"); boxHint.className = "rh-pdf-box-hint";
+  boxHint.textContent = "Drag around a figure or region · Esc cancels";
+  toolbarInfo.appendChild(boxHint);
+  var actions = document.createElement("div"); actions.className = "rh-pdf-toolbar-actions"; toolbar.appendChild(actions);
   boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
-  boxButton.textContent = "□ Draw box"; boxButton.title = "Draw a selection box"; boxButton.setAttribute("aria-label", "Draw a selection box"); boxButton.setAttribute("aria-pressed", "false");
-  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); toolbar.appendChild(boxButton); container.prepend(toolbar);
-  var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert";
+  boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Select region</span>';
+  boxButton.title = "Draw a box around a figure or region to ask about it (Esc cancels)";
+  boxButton.setAttribute("aria-label", "Select a region to ask about"); boxButton.setAttribute("aria-pressed", "false");
+  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); actions.appendChild(boxButton);
+  container.prepend(toolbar);
+  var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
   var branched = childrenOf(node.id).length > 0; convertButton.textContent = branched ? "Convert before branching" : "Convert to document"; convertButton.disabled = branched;
+  if (branched) convertButton.title = "Conversion is available until the document has branches.";
   convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
-  toolbar.appendChild(convertButton);
-  function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); setBoxMode(false); } }
-  document.addEventListener("keydown", onKeydown);
+  actions.appendChild(convertButton);
+  // Capture phase: while region-select is active, Escape means "exit region
+  // select" and nothing else — the app-level Escape (open reader) must not fire.
+  function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); event.stopPropagation(); setBoxMode(false); } }
+  document.addEventListener("keydown", onKeydown, true);
   childrenOf(node.id).forEach(function(child){ if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending")); });
   container.addEventListener("mouseup", function(e){
     var sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return;
@@ -150,8 +183,9 @@ export function mountPdfView(container, node) {
     disposed = true;
     if (observer) observer.disconnect();
     if (resizeObserver) resizeObserver.disconnect();
-    document.removeEventListener("keydown", onKeydown);
+    document.removeEventListener("keydown", onKeydown, true);
     toolbar.remove(); setBoxMode(false);
+    if (askWatcher) askWatcher();
     pageEls.forEach(function(pageEl){
       var img = pageEl.querySelector("img");
       if (img) { img.removeAttribute("src"); img.remove(); }

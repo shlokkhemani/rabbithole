@@ -114,8 +114,8 @@ Follow these steps exactly:
    For Codex, also add `tool_timeout_sec = 600` under
    `[mcp_servers.rabbithole]` in `~/.codex/config.toml`; `codex mcp add` cannot
    set that field.
-3. **Verify**: after the client reconnects, four tools should be available —
-   `open_rabbithole`, `answer_branch`, `ingest_pdf`, `list_rabbitholes`. (In Claude Code,
+3. **Verify**: after the client reconnects, three tools should be available —
+   `open_rabbithole`, `answer_branch`, `list_rabbitholes`. (In Claude Code,
    `claude mcp list` should show `rabbithole` as connected. The server itself
    also responds to a standard MCP `initialize` with server name `rabbithole`.)
 4. **Tell your human what to do next**: they should start a session and say
@@ -137,9 +137,8 @@ cached. If the browser must not auto-open (headless), set
 
 | Tool | What it does |
 |------|--------------|
-| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`, optional `ingest_id`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
-| `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. |
-| `ingest_pdf` | Extract a local PDF into page PNGs (`page-001.png`...), opportunistic embedded rasters (`embed-p001-01.png`...), metadata, and per-page text. Author the markdown yourself, reference returned asset names with `asset:`, then pass `ingest_id` to `open_rabbithole`; or pass `hole_id` to ingest directly into an existing hole. |
+| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`) or resume one (`{ hole_id }`). A PDF `file_path` opens natively: rendered pages, selectable text, and box-select — no markdown authoring needed (`title` optional; PDF metadata or filename is used). Opens the canvas in the browser and blocks until the human asks something. |
+| `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. A `branch_request` from a PDF may include `region.image_path` — read that image before answering. Also streams "Convert to document" transcriptions when a `convert_request` arrives. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 
 The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.

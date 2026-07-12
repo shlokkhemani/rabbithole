@@ -57,9 +57,20 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
     ] }),
   });
 });
+const transcribeBodies = [];
+let transcribeMode = "stream";
 await page.route("http://localhost:11434/v1/chat/completions", async (route) => {
   if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
-  const body = route.request().postDataJSON(); answerBodies.push(body);
+  const body = route.request().postDataJSON();
+  if (JSON.stringify(body.messages).includes("Transcribe the supplied PDF page images")) {
+    transcribeBodies.push(body);
+    if (transcribeMode === "hang") return; // held open — cancel aborts client-side
+    return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body: sse([
+      "# Converted Doc\n\nClean text section one.\n\n",
+      "![Attention diagram](figure:page-002:0.1,0.1,0.8,0.5)\n\nTail text.",
+    ]) });
+  }
+  answerBodies.push(body);
   if (answerBodies.length === 1) return route.fulfill({ status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "model does not support images" } }) });
   await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body: sse(["# PDF branch\n\n", "Streamed from selected prose."]) });
 });
@@ -127,6 +138,12 @@ try {
 
   const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
   await boxToggle.click();
+  await page.waitForSelector(".node .rh-pdf-box-hint.visible");
+  assert.equal(await boxToggle.getAttribute("aria-pressed"), "true");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".node .rh-pdf-box-hint.visible"));
+  assert.equal(await boxToggle.getAttribute("aria-pressed"), "false", "Escape must exit region-select mode");
+  await boxToggle.click();
   const secondPage = page.locator(".node .rh-pdf-page[data-page='2']").first();
   const pageBox = await secondPage.boundingBox();
   await page.mouse.move(pageBox.x + pageBox.width * .05, pageBox.y + pageBox.height * .65);
@@ -136,6 +153,7 @@ try {
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   await page.waitForFunction(() => document.querySelectorAll(".node .rh-pdf-mark.mark-ready").length >= 2);
+  await page.waitForFunction(() => document.querySelectorAll(".rh-pdf-box-draft").length === 0, undefined, { timeout: 5000 });
   assert.equal(answerBodies.length, 3);
   assert(Array.isArray(answerBodies[2].messages.at(-1).content), "box ask should ship its crop as an image part");
   const boxAnchor = await page.evaluate(async () => {
@@ -228,6 +246,94 @@ try {
     NEWER_SCHEMA_MESSAGE,
     "web import should surface the exact newer-version refusal",
   );
+
+  // ---- Convert to document: full journey, figures land as live assets ------
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await dropPdf(page, buildTinyPdf(["Convert journey page one", "Convert journey page two"]), "convert-journey.pdf");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
+  await page.click(".node .rh-pdf-convert");
+  await page.waitForFunction(() => {
+    const dc = document.querySelector(".node .doc-content:not(.rh-pdf)");
+    if (!dc || !dc.textContent.includes("Converted Doc")) return false;
+    const img = dc.querySelector("img[alt='Attention diagram']");
+    return !!img && img.complete && img.naturalWidth > 0;
+  });
+  assert(transcribeBodies.length >= 1, "convert must call the transcription model");
+  assert.equal(transcribeBodies[0].model, "llama3.2", "conversion must use the transcribe model setting");
+  const transcribeParts = transcribeBodies[0].messages[0].content;
+  assert(Array.isArray(transcribeParts) && transcribeParts.filter((part) => part.type === "image_url").length === 2, "one image part per page in the batch");
+  const convertedState = await page.evaluate(async () => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    const { names } = await window.__rabbitholeTest.inspectAssets(hole.hole_id);
+    return { root: hole.nodes.find((node) => !node.parent_id), names };
+  });
+  assert.equal(convertedState.root.extensions.pdf.converted, true);
+  assert.match(convertedState.root.extensions.pdf.original_markdown, /Convert journey page one/, "the native body must stay stashed");
+  assert.equal(convertedState.root.extensions.pdf.pages.length, 2, "the page stash must survive conversion");
+  assert.match(convertedState.root.markdown, /!\[Attention diagram\]\(asset:fig-p002-1\.jpg\)/);
+  assert(convertedState.names.includes("fig-p002-1.jpg"));
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => {
+    const dc = document.querySelector(".node .doc-content:not(.rh-pdf)");
+    return !!dc && dc.textContent.includes("Converted Doc");
+  });
+
+  // ---- Cancel mid-run restores the native paged view -----------------------
+  transcribeMode = "hang";
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await dropPdf(page, buildTinyPdf(["Abort page one", "Abort page two"]), "abort-journey.pdf");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
+  await page.click(".node .rh-pdf-convert");
+  await page.waitForSelector(".node .rh-pdf-convert-progress");
+  assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Converting — page/);
+  await page.click(".node .rh-pdf-convert-cancel");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
+  const abortedState = await page.evaluate(async () => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole.nodes.find((node) => !node.parent_id);
+  });
+  assert.equal(abortedState.extensions.pdf.converting, false);
+  assert.match(abortedState.markdown, /Abort page one/, "cancel must keep the native body");
+  transcribeMode = "stream";
+
+  // ---- Convert is disabled once the document has branches ------------------
+  const askSelected = await page.evaluate(() => {
+    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("Abort page one"));
+    const text = span.firstChild, range = document.createRange();
+    range.setStart(text, 0); range.setEnd(text, 5);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    return selection.toString();
+  });
+  assert.equal(askSelected, "Abort");
+  await page.waitForSelector("#ask.visible");
+  await page.click('#ask-lenses .lens[data-lens="explain"]');
+  await page.locator(".node .rh-pdf-mark.mark-ready").first().waitFor();
+  await page.reload({ waitUntil: "networkidle" });
+  const convertBtn = page.locator(".node .rh-pdf-convert").first();
+  await convertBtn.waitFor();
+  assert.equal(await convertBtn.isDisabled(), true, "convert must disable once branched");
+  assert.equal(await convertBtn.textContent(), "Convert before branching");
+
+  // ---- Scanned PDFs surface the convert affordance -------------------------
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await dropPdf(page, buildTinyPdf(["", ""]), "scanned.pdf");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
+  await page.waitForSelector(".node .rh-pdf-scanned-note");
+  assert.match(await page.textContent(".node .rh-pdf-scanned-note"), /Scanned PDF/);
+  await page.waitForSelector(".node .rh-pdf-convert.primary:not(:disabled)");
+  const scannedBody = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).nodes[0].markdown);
+  assert.match(scannedBody, /\*\(page 1: no extractable text\)\*/, "scanned pages must carry the body marker");
+
+  // ---- A corrupt PDF fails with an actionable message, no stranded hole ----
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await dropPdf(page, [...Buffer.from("%PDF-1.4\nthis is not really a pdf")], "corrupt.pdf");
+  await page.waitForSelector("#ingest-status.error");
+  assert.match(await page.textContent("#ingest-status"), /could not be opened by pdf\.js/i);
 
   console.log("web ingestion verification passed");
 } finally {

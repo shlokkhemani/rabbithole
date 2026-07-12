@@ -304,7 +304,7 @@ export async function resolveStagedAssetDir(ingestId) {
 export async function adoptStagedAssets(holeId, ingestId) {
   const sourceDir = await resolveStagedAssetDir(ingestId);
   if (!sourceDir) {
-    throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; run ingest_pdf again.`);
+    throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; restart the PDF import.`);
   }
   const destDir = await ensureAssetDir(holeId);
   const entries = await fs.readdir(sourceDir, { withFileTypes: true });

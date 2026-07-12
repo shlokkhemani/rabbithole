@@ -171,7 +171,11 @@ to `open_rabbithole { file_path }`. Their declared input schemas, validation lim
 result status meanings are compatibility surfaces. So are the long-poll loop and
 its durable session behavior:
 
-- `branch_request` hands one saved ask to the agent.
+- `branch_request` hands one saved ask to the agent. On a native-PDF parent it
+  may carry `region { page, image_path }`, a local path to a transient JPEG crop
+  of the selected region. Region files are not durable hole assets: each is
+  removed once its request is answered and the rest at session close; a resumed
+  saved ask re-crops its region under a fresh request ID.
 - `answer_branch` accepts verbatim partial chunks and a final chunk.
 - `keep_listening` directs the client to call `open_rabbithole` again with the
   returned hole ID without resending content.
@@ -203,13 +207,26 @@ reference accounting as markdown `asset:` references. PDF files opened by web
 upload or MCP `file_path` use the same normalized builder and persist the same
 body/provenance shape; page JPEG encoder bytes may differ by host.
 
+Page assets are budgeted at ingest (20 MB aggregate, with per-page scale
+reduction) and conversion figures at 2 MB, on both hosts. Those numbers are
+sized so a maxed-out hole still round-trips through the portable format: base64
+inflates assets 4/3 against the 32 MB import payload cap, and
+`test/integration/pdf-portability-caps.test.mjs` fails any budget change that
+breaks that arithmetic.
+
 Conversion adds browser events `convert_pdf { node_id }` and `convert_cancel`,
 plus the emitted-only `pdf_convert_progress { node_id, markdown, page_done,
 page_total }`. During a run `extensions.pdf.converting` is true and
 `original_markdown` is retained for abort/reload recovery; successful completion
-sets `converted`. The node-host agent loop may return `status=convert_request`
-with local page image paths and inline transcription rules. The web preferences
-key `transcribe_model` is independent of author/answer model setup readiness.
+sets `converted` while preserving the page/provenance stash. Mid-run persistence
+may capture the streamed body — hydration and resume restore the stashed
+original on both hosts, and a conversion whose agent was never listening (or
+died mid-run) resurfaces as `status=convert_request` with `saved=true`. The
+node-host agent loop returns `status=convert_request` with local page image
+paths and inline transcription rules; an unanswered `convert_request` is
+redelivered across wait/rearm cycles like any in-flight request. Asks targeting
+a converting node are refused host-side. The web preferences key
+`transcribe_model` is independent of author/answer model setup readiness.
 
 Selection branches on native PDF nodes retain the ordinary markdown
 `offset_start`/`offset_end` pair and may additionally carry

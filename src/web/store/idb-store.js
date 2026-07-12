@@ -189,7 +189,7 @@ export class IdbStore {
     const staged = await getAllForIngest(tx.objectStore(STAGING), safeIngestId, this.IDBKeyRange);
     if (!staged.length) {
       tx.abort();
-      throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; run ingest_pdf again.`);
+      throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; restart the PDF import.`);
     }
     const assetStore = tx.objectStore(ASSETS);
     const stagingStore = tx.objectStore(STAGING);

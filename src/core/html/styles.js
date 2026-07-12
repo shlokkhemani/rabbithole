@@ -485,9 +485,26 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-marks { z-index: 3; pointer-events: none; }
 .rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; background: var(--mark); pointer-events: auto; cursor: pointer; opacity: .42; }
 .rh-pdf-mark.mark-pending { background: var(--mark-pending); }
+.rh-pdf-textlayer span::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-img, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
-.rh-pdf-box-draft { position: absolute; z-index: 4; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; }
-.rh-pdf-box-toggle.active { color: var(--accent); background: var(--hover); }
-.rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: flex; justify-content: flex-end; margin-bottom: -10px; pointer-events: none; }
-.rh-pdf-toolbar .rh-pdf-box-toggle { pointer-events: auto; width: auto; padding: 4px 8px; border: 1px solid var(--border); background: var(--node-head); border-radius: var(--radius-control); }
+.rh-pdf-box-draft { position: absolute; z-index: 4; border: 1.5px solid var(--accent); border-radius: 2px; pointer-events: none;
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, black 26%, transparent), inset 0 0 0 1px color-mix(in srgb, white 35%, transparent); }
+.rh-pdf-box-draft::before, .rh-pdf-box-draft::after { content: ""; position: absolute; width: 8px; height: 8px; border: 2px solid var(--accent); }
+.rh-pdf-box-draft::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 3px; }
+.rh-pdf-box-draft::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 3px; }
+.rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow 180ms ease; }
+.rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: var(--control-gap); margin-bottom: -10px; pointer-events: none; }
+.rh-pdf-toolbar-info { display: flex; align-items: center; min-width: 0; }
+.rh-pdf-scanned-note, .rh-pdf-box-hint { min-width: 0; font-family: var(--font-ui); font-size: var(--text-ui); color: var(--fg-faint); background: var(--node-head); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-pdf-box-hint { display: none; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.rh-pdf-box-hint.visible { display: inline-block; }
+.rh-pdf-box-mode .rh-pdf-scanned-note { display: none; }
+.rh-pdf-toolbar-actions { display: flex; align-items: center; gap: var(--control-gap); flex-shrink: 0; }
+.rh-pdf-toolbar-actions .node-btn span { white-space: nowrap; }
+.rh-pdf-toolbar-actions .node-btn { pointer-events: auto; width: auto; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); background: var(--node-head); border-radius: var(--radius-control); }
+.rh-pdf-toolbar-actions .node-btn:hover:not(:disabled) { color: var(--fg); background: var(--hover); }
+.rh-pdf-toolbar-actions .node-btn:disabled { opacity: .55; cursor: default; }
+.rh-pdf-box-toggle svg { width: 13px; height: 13px; }
+.rh-pdf-box-toggle.active { color: var(--accent); background: var(--hover); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.rh-pdf-convert.primary:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 `;

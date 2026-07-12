@@ -1,6 +1,21 @@
 import { planPdfCrop } from "../core/pdf-shared.js";
 
 export async function cropPdfAssetToDataUrl(blob, rect) {
+  const canvas = await cropToCanvas(blob, rect);
+  const result = await canvasToDataUrl(canvas);
+  releaseCanvas(canvas);
+  return result;
+}
+
+// Blob straight from the canvas — never fetch(data:), which the app's CSP blocks.
+export async function cropPdfAssetToBlob(blob, rect) {
+  const canvas = await cropToCanvas(blob, rect);
+  const result = await canvasToBlob(canvas);
+  releaseCanvas(canvas);
+  return result;
+}
+
+async function cropToCanvas(blob, rect) {
   if (!blob) throw new Error("PDF page asset is missing.");
   const image = await decodeImage(blob);
   try {
@@ -10,16 +25,8 @@ export async function cropPdfAssetToDataUrl(blob, rect) {
     const context = canvas.getContext("2d", { alpha: false });
     context.fillStyle = "white"; context.fillRect(0, 0, plan.width, plan.height);
     context.drawImage(image, plan.sx, plan.sy, plan.sw, plan.sh, 0, 0, plan.width, plan.height);
-    const result = await canvasToDataUrl(canvas);
-    try { canvas.width = 0; canvas.height = 0; } catch {}
-    return result;
+    return canvas;
   } finally { image.close?.(); }
-}
-
-export async function cropPdfAssetToBlob(blob, rect) {
-  const url = await cropPdfAssetToDataUrl(blob, rect);
-  const response = await fetch(url);
-  return response.blob();
 }
 
 async function decodeImage(blob) {
@@ -36,6 +43,17 @@ async function decodeImage(blob) {
 function createCanvas(width, height) {
   if (typeof OffscreenCanvas === "function") return new OffscreenCanvas(width, height);
   const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; return canvas;
+}
+
+function releaseCanvas(canvas) {
+  try { canvas.width = 0; canvas.height = 0; } catch {}
+}
+
+async function canvasToBlob(canvas) {
+  if (typeof canvas.convertToBlob === "function") return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error("Canvas could not be encoded as JPEG.")); }, "image/jpeg", 0.85);
+  });
 }
 
 async function canvasToDataUrl(canvas) {

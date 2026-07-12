@@ -1,4 +1,3 @@
-import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import {
   MAX_PDF_BYTES,
   MAX_PDF_PAGE_ASSET_BYTES,
@@ -21,7 +20,7 @@ export async function ingestPdf(source, {
 } = {}) {
   const { data, name } = await readPdfSource(source);
   validatePdfBytes(data, name);
-  configurePdfjs();
+  const pdfjs = await loadPdfjs();
 
   const loadingTask = pdfjs.getDocument({
     data,
@@ -103,13 +102,14 @@ export async function ingestPdfToStoredHole({
   onProgress = null,
   includeText = true,
   baseUrl = null,
+  ingest = ingestPdf, // injectable so failure-path cleanup is testable without pdf.js
 } = {}) {
   if (!store) throw new Error("PDF import needs a store.");
   const staging = await store.createStaging();
   let adopted = false;
   let savedHole = null;
   try {
-    const result = await ingestPdf(source, {
+    const result = await ingest(source, {
       pages, includeText, onProgress,
       onAsset: (_asset, blob) => store.putStagedAsset(staging.ingest_id, _asset.name, blob),
     });
@@ -170,8 +170,15 @@ function validatePdfBytes(data, name) {
   }
 }
 
-function configurePdfjs() {
-  pdfjs.GlobalWorkerOptions.workerSrc = webAssetUrl("pdf.worker.mjs");
+// Lazy so this module stays importable where pdf.js can't run (the staging
+// orchestration is host-neutral and unit-tested in Node).
+let pdfjsModule = null;
+async function loadPdfjs() {
+  pdfjsModule ||= import("pdfjs-dist/build/pdf.mjs").then((pdfjs) => {
+    pdfjs.GlobalWorkerOptions.workerSrc = webAssetUrl("pdf.worker.mjs");
+    return pdfjs;
+  });
+  return pdfjsModule;
 }
 
 async function renderPageToJpegBlob(page, pageNumber, targetBytes) {

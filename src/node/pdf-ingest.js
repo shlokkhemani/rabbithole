@@ -3,6 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import {
   MAX_PDF_BYTES,
+  MAX_PDF_PAGE_ASSET_BYTES,
   PDF_RENDER_SCALE,
   buildPdfDocument,
   describePdfOpenError,
@@ -65,23 +66,36 @@ export async function ingestPdfDocument({ filePath, store, title = "", pages } =
     const processedPages = resolvePagesToProcess(doc.numPages, pages, notes);
     const pageAssets = [];
     const pageLines = [];
-    for (const pageNumber of processedPages) {
+    let assetBytes = 0;
+    for (let index = 0; index < processedPages.length; index += 1) {
+      const pageNumber = processedPages[index];
       const page = await doc.getPage(pageNumber);
       try {
         pageLines.push({ page: pageNumber, lines: await extractPdfPageLines(page) });
-        const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-        const width = Math.ceil(viewport.width);
-        const height = Math.ceil(viewport.height);
-        const surface = canvas.createCanvas(width, height);
-        const context = surface.getContext("2d");
-        context.fillStyle = "white";
-        context.fillRect(0, 0, width, height);
-        await page.render({ canvasContext: context, viewport }).promise;
+        // Same aggregate budget discipline as the web host: dense pages
+        // re-render at reduced scale so the document stays exportable.
+        const remaining = processedPages.length - index;
+        const targetBytes = Math.max(0, MAX_PDF_PAGE_ASSET_BYTES - assetBytes) / Math.max(remaining, 1);
+        let scale = PDF_RENDER_SCALE;
+        let bytes, width, height;
+        do {
+          const viewport = page.getViewport({ scale });
+          width = Math.ceil(viewport.width);
+          height = Math.ceil(viewport.height);
+          const surface = canvas.createCanvas(width, height);
+          const context = surface.getContext("2d");
+          context.fillStyle = "white";
+          context.fillRect(0, 0, width, height);
+          await page.render({ canvasContext: context, viewport }).promise;
+          bytes = surface.toBuffer("image/jpeg", 85);
+          surface.width = 0; surface.height = 0;
+          if (bytes.length <= Math.min(20 * 1024 * 1024, Math.max(targetBytes, 256 * 1024)) || scale <= 0.5) break;
+          scale *= 0.75;
+        } while (true);
+        assetBytes += bytes.length;
         const name = pdfPageAssetName(pageNumber);
-        const bytes = surface.toBuffer("image/jpeg", 85);
         await store.putStagedAsset(staging.ingest_id, name, bytes);
         pageAssets.push({ page: pageNumber, name, width, height });
-        surface.width = 0; surface.height = 0;
       } finally { page.cleanup?.(); }
     }
     const resolvedTitle = title || normalizePdfTitle(metadata) || path.basename(absolute, path.extname(absolute));

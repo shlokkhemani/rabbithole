@@ -6,7 +6,7 @@ import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
-import { normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
+import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
 import { cropPdfAssetToBlob, cropPdfAssetToDataUrl } from "../pdf-crop.js";
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -42,8 +42,11 @@ export class DirectRabbitholeHost {
     this.disposed = false;
     this.subscriptions = new Set();
     for (const node of this.state.nodes.values()) {
-      const pdf = normalizePdfExtension(node);
-      if (pdf?.converting) this.restorePdfConversion(node.id, pdf);
+      // Raw read on purpose: a mid-run save persists the streamed body, which
+      // normalizePdfExtension would reject against the original line offsets —
+      // and that is exactly the state hydration must repair.
+      const raw = node?.extensions?.pdf;
+      if (raw?.version === 1 && raw.converting) this.restorePdfConversion(node.id, raw);
     }
   }
 
@@ -120,7 +123,9 @@ export class DirectRabbitholeHost {
 
   async handleBranchRequest(payload) {
     const parent = this.state.nodes.get(String(payload.parent_id || ""));
-    if (normalizePdfExtension(parent)?.converting) throw new Error("This PDF is being converted. Wait for conversion to finish before branching.");
+    // Raw flag on purpose — normalization fails against the mid-run streamed
+    // body, and the lock must hold precisely then.
+    if (parent?.extensions?.pdf?.converting) throw new Error("This PDF is being converted. Wait for conversion to finish before branching.");
     const result = this.dispatch({ ...payload, type: "branch_request" }, { now: new Date().toISOString() });
     const node = result.createdNode;
     await this.flushSave();
@@ -150,13 +155,14 @@ export class DirectRabbitholeHost {
     const node = this.state.nodes.get(nodeId), pdf = normalizePdfExtension(node);
     const batches = []; for (let i = 0; i < pdf.pages.length; i += 5) batches.push(pdf.pages.slice(i, i + 5));
     let committed = "";
+    const figureBudget = { bytes: 0 };
     const start = (batch, tail) => this.transcribePdfBatch(batch, tail, controller.signal);
     let pending = batches.length ? start(batches[0], "") : Promise.resolve("");
     for (let i = 0; i < batches.length; i++) {
       let chunk = await pending;
       if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
       pending = i + 1 < batches.length ? start(batches[i + 1], (committed + chunk).slice(-500)) : null;
-      chunk = await this.materializeWebFigures(nodeId, chunk, pdf, i);
+      chunk = await this.materializeWebFigures(nodeId, chunk, pdf, i, figureBudget);
       committed += (committed && chunk ? "\n\n" : "") + chunk;
       this.dispatch({ type: "node_progress", node_id: nodeId, markdown: committed });
       this.emit({ type: "pdf_convert_progress", node_id: nodeId, markdown: committed, page_done: batches[i].at(-1).n, page_total: pdf.pages.length });
@@ -164,7 +170,10 @@ export class DirectRabbitholeHost {
     }
     const current = this.state.nodes.get(nodeId);
     this.dispatch({ ...buildNodeAnsweredEvent(current), markdown: committed });
-    this.patchPdf(nodeId, { ...normalizePdfExtension(this.state.nodes.get(nodeId)), converting: false, converted: true });
+    // Spread the extension captured at run start: the body is now the converted
+    // document, so re-normalizing would fail and the patch would wipe the
+    // pages/lines/original_markdown stash the extension exists to keep.
+    this.patchPdf(nodeId, { ...pdf, converting: false, converted: true });
     this.abortByNode.delete(nodeId); this.emit(buildNodeAnsweredEvent(this.state.nodes.get(nodeId))); await this.flushSave();
   }
 
@@ -174,15 +183,19 @@ export class DirectRabbitholeHost {
     return output.trim();
   }
 
-  async materializeWebFigures(nodeId, markdown, pdf, batchIndex) {
+  async materializeWebFigures(nodeId, markdown, pdf, batchIndex, figureBudget = { bytes: 0 }) {
     const replacements = []; let ordinal = 0;
     for (const ref of parseFigureRefs(markdown)) {
       const page = pdf.pages.find((entry) => entry.n === ref.page); let replacement = `*${ref.caption || "Figure"}*`;
-      if (page && ref.rect) try {
+      // Figures share the export headroom (§ portable caps) — past the byte
+      // budget or the asset cap they degrade to caption text, never fail the run.
+      if (page && ref.rect && figureBudget.bytes < MAX_PDF_FIGURE_ASSET_BYTES) try {
         const names = await this.store.listAssets(this.holeId); if (names.length >= 200) throw new Error("asset limit");
         const blob = await cropPdfAssetToBlob(await this.store.getAsset(this.holeId, page.asset), ref.rect);
+        if (figureBudget.bytes + blob.size > MAX_PDF_FIGURE_ASSET_BYTES) throw new Error("figure budget");
         const name = `fig-p${String(ref.page).padStart(3, "0")}-${batchIndex * 20 + (++ordinal)}.jpg`;
-        await this.store.putAsset(this.holeId, name, blob); this.registerAssetUrl?.(name, blob); replacement = `![${ref.caption}](asset:${name})`;
+        await this.store.putAsset(this.holeId, name, blob); this.registerAssetUrl?.(name, blob);
+        figureBudget.bytes += blob.size; replacement = `![${ref.caption}](asset:${name})`;
       } catch {}
       replacements.push({ ref, markdown: replacement });
     }
@@ -191,7 +204,7 @@ export class DirectRabbitholeHost {
 
   patchPdf(nodeId, value) { this.dispatch({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.emit({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.scheduleSave(); }
   restorePdfConversion(nodeId, pdf) { this.dispatch({ type: "node_progress", node_id: nodeId, markdown: String(pdf.original_markdown ?? this.state.nodes.get(nodeId)?.markdown ?? "") }); this.patchPdf(nodeId, { ...pdf, converting: false, converted: false }); }
-  failPdfConversion(nodeId, error) { const pdf = normalizePdfExtension(this.state.nodes.get(nodeId)); if (pdf) this.restorePdfConversion(nodeId, pdf); this.abortByNode.delete(nodeId); if (error?.name !== "AbortError") this.onToast?.({ message: `PDF conversion failed: ${error?.message || error}` }); }
+  failPdfConversion(nodeId, error) { const raw = this.state.nodes.get(nodeId)?.extensions?.pdf; if (raw?.version === 1) this.restorePdfConversion(nodeId, raw); this.abortByNode.delete(nodeId); if (error?.name !== "AbortError") this.onToast?.({ message: `PDF conversion failed: ${error?.message || error}` }); }
 
   handleExtensionsPatch(payload) {
     const result = this.applyPersistedBrowserEvent(payload);

@@ -60,7 +60,11 @@ export function rewriteFigureRefs(markdown, replacements = []) {
   return output + String(markdown).slice(cursor);
 }
 export const PDF_MAGIC = "%PDF";
-export const MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
+// Page + figure budgets are sized so a maxed-out hole still exports: base64
+// inflates assets 4/3, and the portable payload cap is 32 MB —
+// (20 + 2) * 4/3 ≈ 29.4 MB, leaving headroom for JSON structure and markdown.
+export const MAX_PDF_PAGE_ASSET_BYTES = 20 * 1024 * 1024;
+export const MAX_PDF_FIGURE_ASSET_BYTES = 2 * 1024 * 1024;
 export const MAX_PDF_PAGES = 100;
 export const MAX_PDF_LINES = 25000;
 

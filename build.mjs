@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { CANVAS_STYLES } from "./src/core/html/styles.js";
@@ -15,6 +16,11 @@ const absOutdir = path.resolve(rootDir, outdir);
 // empty value ships the app with no default relay.
 const PUBLIC_FETCH_PROXY_URL = "https://rabbithole-fetch-proxy.khemanishlok.workers.dev";
 const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL ?? PUBLIC_FETCH_PROXY_URL);
+
+// This runs in the parser-blocking head, before the external stylesheet or app
+// module can produce a frame. Keep it tiny: its hash is pinned in the CSP below.
+const INITIAL_THEME_SCRIPT = `(function(){var theme="";try{theme=localStorage.getItem("rh-theme")||"";}catch(error){}if(theme!=="dark"&&theme!=="light"){theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",theme);})();`;
+const INITIAL_THEME_STYLE = `:root{color-scheme:dark;background:#1a1918}:root[data-theme="light"]{color-scheme:light;background:#f5f3ee}`;
 
 const KATEX_FONT_SRC =
   /src:\s*url\((fonts\/[^)]+\.woff2)\)\s*format\("woff2"\),\s*url\((fonts\/[^)]+\.woff)\)\s*format\("woff"\),\s*url\((fonts\/[^)]+\.ttf)\)\s*format\("truetype"\);/g;
@@ -167,9 +173,10 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
   if (proxyOrigin && !connectSrc.includes(proxyOrigin)) {
     connectSrc.push(proxyOrigin);
   }
+  const initialThemeHash = createHash("sha256").update(INITIAL_THEME_SCRIPT).digest("base64");
   const csp = [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self' 'sha256-${initialThemeHash}'`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' blob: data: https:",
@@ -179,11 +186,13 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
     "form-action 'none'",
   ].join("; ");
   return `<!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
+<style id="initial-theme-style">${INITIAL_THEME_STYLE}</style>
+<script id="initial-theme-script">${INITIAL_THEME_SCRIPT}</script>
 <title>Rabbithole — an infinite canvas for learning</title>
 <meta name="description" content="Rabbithole is an infinite canvas for learning. Open a document, ask from selections, and branch your understanding.">
 <link rel="canonical" href="https://rabbithole.ing/">

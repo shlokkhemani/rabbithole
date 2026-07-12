@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -290,5 +291,17 @@ async function verifyPublishOutput() {
   assert(redirects.includes("/* /index.html 200"), "publish fallback should make Rabbithole pathnames refreshable");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
+  assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
+  const initialStyleAt = html.indexOf('id="initial-theme-style"');
+  const initialScriptAt = html.indexOf('id="initial-theme-script"');
+  const stylesheetAt = html.indexOf('rel="stylesheet"');
+  const appModuleAt = html.indexOf('type="module"');
+  assert(initialStyleAt > 0 && initialStyleAt < initialScriptAt, "the dark-safe root background should precede theme selection");
+  assert(initialScriptAt < stylesheetAt && stylesheetAt < appModuleAt, "theme selection must run before stylesheet and app loading");
+  const initialScript = html.match(/<script id="initial-theme-script">([\s\S]*?)<\/script>/)?.[1] || "";
+  assert(initialScript.includes('localStorage.getItem("rh-theme")'), "the first-paint theme should honor the saved choice");
+  assert(initialScript.includes("prefers-color-scheme: dark"), "the first-paint theme should fall back to the system preference");
+  const initialScriptHash = createHash("sha256").update(initialScript).digest("base64");
+  assert(html.includes(`script-src 'self' 'sha256-${initialScriptHash}'`), "CSP should permit only the exact inline theme bootstrap");
   const llms = await fs.readFile(path.join(publishDir, "llms.txt"), "utf8");
 }

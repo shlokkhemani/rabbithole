@@ -17,6 +17,7 @@ const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
+  await verifyThemeBeforeAppRuntime();
   await verifyLandingAndComposer();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
@@ -24,6 +25,40 @@ try {
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyThemeBeforeAppRuntime() {
+  const cases = [
+    { system: "dark", saved: "", expected: "dark", background: "rgb(26, 25, 24)" },
+    { system: "light", saved: "", expected: "light", background: "rgb(245, 243, 238)" },
+    { system: "light", saved: "dark", expected: "dark", background: "rgb(26, 25, 24)" },
+    { system: "dark", saved: "light", expected: "light", background: "rgb(245, 243, 238)" },
+  ];
+  for (const testCase of cases) {
+    const context = await browser.newContext({ colorScheme: testCase.system });
+    try {
+      await context.addInitScript((saved) => {
+        if (saved) localStorage.setItem("rh-theme", saved);
+      }, testCase.saved);
+      const page = await context.newPage();
+      await page.route("**/app.js", (route) => route.abort());
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+      const initialTheme = await page.evaluate(() => ({
+        attribute: document.documentElement.getAttribute("data-theme"),
+        background: getComputedStyle(document.documentElement).backgroundColor,
+        colorScheme: getComputedStyle(document.documentElement).colorScheme,
+        appStarted: !!window.__rabbitholeTest,
+      }));
+      assert.deepEqual(initialTheme, {
+        attribute: testCase.expected,
+        background: testCase.background,
+        colorScheme: testCase.expected,
+        appStarted: false,
+      }, `theme should be correct before app.js for ${JSON.stringify(testCase)}`);
+    } finally {
+      await context.close();
+    }
+  }
 }
 
 async function verifyLandingAndComposer() {

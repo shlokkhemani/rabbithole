@@ -51,9 +51,11 @@ Behavior-preserving rules:
 
 Web CSP:
 
-- `web/dist/index.html` sets `default-src 'self'`, keeps scripts self-only, allows
-  inline styles for the existing canvas runtime's dynamic positioning/sizing, and
-  pins `connect-src` to the
+- `web/dist/index.html` sets `default-src 'self'`, keeps external scripts
+  self-only, and permits one hash-pinned inline script that selects the saved or
+  system theme before first paint. Inline styles remain allowed for the early
+  theme background and the canvas runtime's dynamic positioning/sizing.
+  `connect-src` is pinned to the
   built-in BYOK providers plus localhost custom endpoints:
   OpenRouter, OpenAI, Anthropic, `localhost`, and `127.0.0.1`.
 - Remote custom providers are deliberately not wildcarded. To use one from the

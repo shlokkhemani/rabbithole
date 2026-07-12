@@ -8,6 +8,7 @@ import {
 } from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
 import { escapeHtml } from "../core/utils.js";
+import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { createCleanupScope } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
 import {
@@ -435,16 +436,7 @@ export function lensLabel(key){ return sharedLensLabel(key); }
 export function lensBadgeHtml(key){ return '<span class="lens-badge">' + escapeHtml(lensLabel(key)) + '</span>'; }
 
   // ---------- loading placeholder (pending answers) ----------
-  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' +
-    '<svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true">' +
-    '<circle cx="8.2" cy="18.2" r="3.6"/>' +
-    '<path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/>' +
-    '<path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/>' +
-    '<path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/>' +
-    '<path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/>' +
-    '<path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/>' +
-    '</svg>' +
-    '</span>';
+  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' + BUNNY_MARK_SVG + '</span>';
 export function buildLoading(node){
     if (node && node.error){
       var errWrap = document.createElement("div");

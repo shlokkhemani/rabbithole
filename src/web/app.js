@@ -1,6 +1,7 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, providerFor } from "./brain/index.js";
-import { loadSettings } from "./settings/preferences-store.js";
+import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./brain/pdf-transcription.js";
+import { loadSettings, saveSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
 import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
@@ -9,8 +10,10 @@ import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
+import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
 import { openDialog } from "../ui/primitives/dialog.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
+import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
@@ -36,6 +39,8 @@ let composerPath = "";
 let lastHoleCount = 0;
 let railSummaries = null;
 let toastNotice = null;
+let currentPdfTranscriptionCapability = pdfTranscriptionCapability(loadSettings());
+let pdfTranscriptionCheckToken = 0;
 
 applyInitialWebTheme();
 
@@ -79,7 +84,7 @@ function renderShell() {
       <div class="composer-card" id="composer-card" tabindex="-1">
         <section id="composer-start" class="composer-start">
           <header class="composer-start-head">
-            <span class="composer-title-mark" aria-hidden="true">${bunnyMarkSvg()}</span>
+            <span class="composer-title-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
             <h1 id="composer-title">Enter a Rabbithole</h1>
           </header>
           <div class="composer-paths" role="group" aria-label="Choose how to begin">
@@ -116,14 +121,16 @@ function renderShell() {
       </div>
     </div>
     <div id="blank-start" class="blank-start" hidden>
-      ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
+      <span id="blank-start-new-wrap" class="blank-start-new-wrap">
+        ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
+        <span id="blank-start-status" class="blank-start-tooltip" role="tooltip">Set up AI before starting a Rabbithole.</span>
+      </span>
       ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
-      <p id="blank-start-status" class="blank-start-sub">Set up AI before starting a Rabbithole.</p>
     </div>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
   document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
-    `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${bunnyMarkSvg()}</span><span class="sep toolbar-brand-sep"></span>`);
+    `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${BUNNY_MARK_SVG}</span><span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
   syncRailPosition();
@@ -163,7 +170,12 @@ function initAppChrome() {
   const settingsTrigger = document.getElementById("t-settings");
   settingsController = createSettingsPopover({
     trigger: settingsTrigger,
-    onSettingsChange: () => { refreshCurrentBrain(); syncGenerationSetupUi(); },
+    onSettingsChange: () => {
+      refreshCurrentBrain();
+      syncGenerationSetupUi();
+      if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
+      else currentPdfTranscriptionCapability = pdfTranscriptionCapability(loadSettings());
+    },
     eyeSvg,
     setKeyStatus,
     validateKey: validateKeyForPreset,
@@ -180,12 +192,6 @@ function initAppChrome() {
       event.preventDefault();
       event.stopPropagation();
       await deleteHoleFromRail(id);
-      return;
-    }
-    if (event.target.closest(".rail-export")) {
-      event.preventDefault();
-      event.stopPropagation();
-      await exportHoleFromRail(id);
       return;
     }
     if (event.target.closest(".rail-open")) {
@@ -338,12 +344,14 @@ function syncGenerationSetupUi() {
   const newButtons = [document.getElementById("blank-start-new"), document.getElementById("t-new")].filter(Boolean);
   newButtons.forEach((button) => { button.disabled = !setup.ready; });
   const blankNew = document.getElementById("blank-start-new");
+  const blankNewWrap = document.getElementById("blank-start-new-wrap");
   const setupButton = document.getElementById("blank-start-setup");
   const status = document.getElementById("blank-start-status");
   if (blankNew) {
     if (setup.ready) blankNew.removeAttribute("aria-describedby");
     else blankNew.setAttribute("aria-describedby", "blank-start-status");
   }
+  if (blankNewWrap) blankNewWrap.toggleAttribute("data-disabled", !setup.ready);
   if (setupButton) setupButton.textContent = setup.ready ? "Model settings" : "Set up AI";
   if (status) status.hidden = setup.ready;
 }
@@ -626,6 +634,9 @@ async function mountHole(hole, { replace = false } = {}) {
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
+  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted)) {
+    await refreshPdfTranscriptionCapability();
+  }
   const settings = loadSettings();
   const key = getApiKey(settings);
   const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
@@ -644,6 +655,7 @@ async function mountHole(hole, { replace = false } = {}) {
     onRestore: () => { if (currentHost === host) location.reload(); },
     onAuthRequired: (...args) => { if (currentHost === host) return handleBranchAuthRequired(...args); },
     onRootAnswered: () => { if (currentHost === host) return renderRail(); },
+    getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
   });
   currentHost = host;
 
@@ -654,9 +666,11 @@ async function mountHole(hole, { replace = false } = {}) {
     currentUi = startRabbithole(hydration, {
       transport: host.adapter(),
       exportPortable: exportCurrentRabbithole,
+      getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
     });
     document.getElementById("r-canvas")?.click();
-    await renderRail({ refresh: !railSummaries?.some((summary) => summary.hole_id === hole.hole_id) });
+    const isNewRailItem = !railSummaries?.some((summary) => summary.hole_id === hole.hole_id);
+    await renderRail({ refresh: isNewRailItem, firstHoleId: isNewRailItem ? hole.hole_id : null });
     host.startRootAnswer();
   } catch (error) {
     await disposeCurrentHole();
@@ -730,11 +744,13 @@ async function exportCurrentRabbithole() {
   return { filename: rabbitholeFilename(payload.hole?.title), payload };
 }
 
-async function renderRail({ refresh = true } = {}) {
+async function renderRail({ refresh = true, firstHoleId = null } = {}) {
   const rail = document.getElementById("web-rail");
   if (!rail) return;
   if (refresh || !railSummaries) railSummaries = await store.listHoles();
-  const summaries = railSummaries;
+  const summaries = firstHoleId
+    ? [...railSummaries].sort((a, b) => (b.hole_id === firstHoleId) - (a.hole_id === firstHoleId))
+    : railSummaries;
   lastHoleCount = summaries.length;
   let inner = rail.querySelector(":scope > .rail-inner");
   let list = inner?.querySelector(":scope > .rail-list");
@@ -754,6 +770,7 @@ async function renderRail({ refresh = true } = {}) {
     empty.className = "rail-empty"; empty.textContent = "No Rabbitholes yet."; next.push(empty);
   }
   list.replaceChildren(...next);
+  if (firstHoleId) list.scrollTop = 0;
   applyRailState();
 }
 
@@ -761,7 +778,7 @@ function createRailIconButton(className, label, paths) {
   const button = document.createElement("button");
   button.className = `rail-icon ${className}`; button.type = "button"; button.setAttribute("aria-label", label);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  for (const [name, value] of Object.entries({ width: "15", height: "15", viewBox: "0 0 16 16", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none", "aria-hidden": "true" })) svg.setAttribute(name, value);
+  for (const [name, value] of Object.entries({ width: "16", height: "16", viewBox: "0 0 16 16", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none", "aria-hidden": "true" })) svg.setAttribute(name, value);
   for (const d of paths) { const path = document.createElementNS(svg.namespaceURI, "path"); path.setAttribute("d", d); svg.appendChild(path); }
   button.appendChild(svg);
   return button;
@@ -773,10 +790,7 @@ function createRailRow(holeId) {
   const copy = document.createElement("span"); copy.className = "rail-row-copy";
   const title = document.createElement("span"); title.className = "rail-title"; copy.appendChild(title); open.appendChild(copy);
   const actions = document.createElement("span"); actions.className = "rail-actions";
-  actions.append(
-    createRailIconButton("rail-export", "Export", ["M8 2.75v7", "M5.25 7.1 8 9.85l2.75-2.75", "M3.25 12.75h9.5"]),
-    createRailIconButton("rail-delete", "Delete", ["M3.25 4.25h9.5", "M6.25 2.75h3.5", "M5.25 4.25v8.25h5.5V4.25", "M7 6.5v3.75", "M9 6.5v3.75"])
-  );
+  actions.append(createRailIconButton("rail-delete", "Delete", ["M3.25 4.5h9.5", "M6.25 2.75h3.5", "M4.75 4.5l.6 8h5.3l.6-8"]));
   row.append(open, actions);
   return row;
 }
@@ -787,7 +801,6 @@ function patchRailRow(row, summary) {
   row.classList.toggle("current", summary.hole_id === currentHoleId);
   row.querySelector(".rail-title").textContent = title;
   const open = row.querySelector(".rail-open"); open.setAttribute("aria-label", title); open.title = updated;
-  row.querySelector(".rail-export").setAttribute("aria-label", `Export ${title}`);
   row.querySelector(".rail-delete").setAttribute("aria-label", `Delete ${title}`);
 }
 
@@ -830,16 +843,6 @@ async function deleteHoleFromRail(holeId) {
   }
 }
 
-async function exportHoleFromRail(holeId) {
-  try {
-    if (holeId === currentHoleId) await currentHost?.flushSave();
-    const payload = await downloadRabbitholeExport(store, holeId);
-    showToast({ message: `Exported ${rabbitholeFilename(payload.hole?.title)}.` });
-  } catch (err) {
-    showToast({ message: err?.message || String(err) });
-  }
-}
-
 function toggleRail() {
   setRailOpen(!railOpen);
 }
@@ -878,6 +881,28 @@ function refreshCurrentBrain(settings = loadSettings()) {
   if (!currentHost) return;
   const key = getApiKey(settings);
   currentHost.brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+}
+
+function currentHoleNeedsPdfTranscription() {
+  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted);
+}
+
+async function refreshPdfTranscriptionCapability(settings = loadSettings()) {
+  const token = ++pdfTranscriptionCheckToken;
+  currentPdfTranscriptionCapability = pdfTranscriptionCapability(settings);
+  syncPdfTranscriptionControls(document, currentPdfTranscriptionCapability);
+  let detected = await detectPdfTranscriptionCapability(settings);
+  if (token !== pdfTranscriptionCheckToken) return currentPdfTranscriptionCapability;
+  if (detected.recommendedModel) {
+    const next = { ...settings, transcribe_model: detected.recommendedModel };
+    saveSettings({ ...next, api_key: getApiKey(settings) });
+    refreshCurrentBrain(next);
+    detected = await detectPdfTranscriptionCapability(next);
+    if (token !== pdfTranscriptionCheckToken) return currentPdfTranscriptionCapability;
+  }
+  currentPdfTranscriptionCapability = detected;
+  syncPdfTranscriptionControls(document, detected);
+  return detected;
 }
 
 function handleBranchAuthRequired({ node, error, retry }) {
@@ -1050,14 +1075,4 @@ function safeLocalStorageGet(key) {
 
 function safeLocalStorageSet(key, value) {
   try { localStorage.setItem(key, value); } catch {}
-}
-
-function bunnyMarkSvg() {
-  return `<svg width="24" height="24" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true">
-    <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"></ellipse>
-    <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"></ellipse>
-    <circle cx="21" cy="33" r="9.5"></circle>
-    <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
-    <circle cx="52.5" cy="49" r="5"></circle>
-  </svg>`;
 }

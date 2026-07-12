@@ -1853,6 +1853,16 @@ var RabbitholeFrozenClient = (() => {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
+  // src/core/html/bunny-markup.js
+  var BUNNY_MARK_SHAPES = `
+  <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"></ellipse>
+  <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"></ellipse>
+  <circle cx="21" cy="33" r="9.5"></circle>
+  <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
+  <circle cx="52.5" cy="49" r="5"></circle>`;
+  var BUNNY_MARK_SVG = `<svg viewBox="0 0 64 64" fill="currentColor" focusable="false" aria-hidden="true">${BUNNY_MARK_SHAPES}
+</svg>`;
+
   // src/ui/lifecycle.js
   function createCleanupScope() {
     var cleanups = /* @__PURE__ */ new Set();
@@ -2869,7 +2879,7 @@ var RabbitholeFrozenClient = (() => {
   function lensBadgeHtml(key) {
     return '<span class="lens-badge">' + escapeHtml(lensLabel2(key)) + "</span>";
   }
-  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
+  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' + BUNNY_MARK_SVG + "</span>";
   function buildLoading(node) {
     if (node && node.error) {
       var errWrap = document.createElement("div");
@@ -3032,6 +3042,50 @@ var RabbitholeFrozenClient = (() => {
     hintNotice.show({ message: msg, duration: 4e3 });
   }
 
+  // src/ui/scroll-position.js
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+  function scrollRange(scroller) {
+    return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  }
+  function captureContentPosition(scroller) {
+    var _a2;
+    if (!scroller) return null;
+    var range = scrollRange(scroller);
+    var position = { progress: range ? scroller.scrollTop / range : 0, block: -1, offset: 0 };
+    var content = (_a2 = scroller.querySelector) == null ? void 0 : _a2.call(scroller, ".doc-content");
+    if (!content) return position;
+    var viewportTop = scroller.getBoundingClientRect().top;
+    var blocks = Array.from(content.children);
+    for (var i2 = 0; i2 < blocks.length; i2++) {
+      var rect = blocks[i2].getBoundingClientRect();
+      if (rect.bottom > viewportTop) {
+        position.block = i2;
+        position.offset = (viewportTop - rect.top) / Math.max(1, rect.height);
+        break;
+      }
+    }
+    return position;
+  }
+  function restoreContentPosition(scroller, position) {
+    var _a2;
+    if (!scroller || !position) return;
+    var range = scrollRange(scroller);
+    var content = (_a2 = scroller.querySelector) == null ? void 0 : _a2.call(scroller, ".doc-content");
+    var block2 = content && position.block >= 0 ? content.children[position.block] : null;
+    if (block2) {
+      var scrollerRect = scroller.getBoundingClientRect();
+      var viewportTop = scrollerRect.top;
+      var rect = block2.getBoundingClientRect();
+      var targetTop = rect.top + clamp(position.offset, -1, 1) * rect.height;
+      var visualScale = scroller.offsetHeight ? scrollerRect.height / scroller.offsetHeight : 1;
+      scroller.scrollTop = clamp(scroller.scrollTop + (targetTop - viewportTop) / (visualScale || 1), 0, range);
+      return;
+    }
+    scroller.scrollTop = clamp((Number(position.progress) || 0) * range, 0, range);
+  }
+
   // src/ui/text-marks.js
   function applyChildHighlights(dc, node) {
     if (dc && dc.classList.contains("rh-pdf")) return;
@@ -3124,10 +3178,10 @@ var RabbitholeFrozenClient = (() => {
     if (!container || !anchor || !anchor.pdf) return null;
     var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(anchor.pdf.page)) + '"]');
     if (!page) return null;
-    var layer = page.querySelector(".rh-pdf-marks"), r2 = anchor.pdf.rect || {}, clamp2 = function(v) {
+    var layer = page.querySelector(".rh-pdf-marks"), r2 = anchor.pdf.rect || {}, clamp3 = function(v) {
       return Math.min(1, Math.max(0, Number(v) || 0));
     };
-    var x = clamp2(r2.x), y = clamp2(r2.y), w = Math.min(clamp2(r2.w), 1 - x), h = Math.min(clamp2(r2.h), 1 - y);
+    var x = clamp3(r2.x), y = clamp3(r2.y), w = Math.min(clamp3(r2.w), 1 - x), h = Math.min(clamp3(r2.h), 1 - y);
     var mark = initializeMark(document.createElement("mark"), childId, cls);
     mark.style.left = x * 100 + "%";
     mark.style.top = y * 100 + "%";
@@ -3206,6 +3260,7 @@ var RabbitholeFrozenClient = (() => {
   var sidebarNodes = {};
   function openNode(id) {
     if (!nodes[id]) return;
+    var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
     var prev = nodes[currentNodeId];
     if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
     setCurrentNodeId(id);
@@ -3215,6 +3270,10 @@ var RabbitholeFrozenClient = (() => {
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
+    if (transferredPosition) {
+      restoreContentPosition(readerMain, transferredPosition);
+      nodes[id]._scrollTop = readerMain.scrollTop;
+    }
     renderSidebar();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
@@ -3848,7 +3907,7 @@ var RabbitholeFrozenClient = (() => {
     if (node.id === rootId) {
       var badge = document.createElement("span");
       badge.className = "node-badge";
-      badge.textContent = "\u{1F407}";
+      badge.innerHTML = BUNNY_MARK_SVG;
       badge.title = "Where this Rabbithole begins";
       head.appendChild(badge);
     }
@@ -4281,7 +4340,7 @@ var RabbitholeFrozenClient = (() => {
   function effH(n) {
     return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
   }
-  function clamp(lo, hi, v) {
+  function clamp2(lo, hi, v) {
     return Math.max(lo, Math.min(hi, v));
   }
   function edgeSides(p, n) {
@@ -4302,12 +4361,12 @@ var RabbitholeFrozenClient = (() => {
         if (mr.height > 0) {
           var er = p.el.getBoundingClientRect();
           var br2 = p.bodyEl.getBoundingClientRect();
-          ay = p.y + clamp(
+          ay = p.y + clamp2(
             (br2.top - er.top) / view.scale + 10,
             (br2.bottom - er.top) / view.scale - 10,
             (mr.top + mr.height / 2 - er.top) / view.scale
           );
-          ax = p.x + clamp(
+          ax = p.x + clamp2(
             (br2.left - er.left) / view.scale + 10,
             (br2.right - er.left) / view.scale - 10,
             (mr.left + mr.width / 2 - er.left) / view.scale
@@ -4619,15 +4678,21 @@ var RabbitholeFrozenClient = (() => {
     applyTransform();
   }
   function setMode(m) {
+    var transferredPosition = null;
     if (m === "canvas" && mode === "reader") {
       var cur = nodes[currentNodeId];
-      if (cur) cur._scrollTop = readerMain.scrollTop;
+      if (cur) {
+        cur._scrollTop = readerMain.scrollTop;
+        transferredPosition = captureContentPosition(readerMain);
+      }
     }
     setModeValue(m);
     if (m === "canvas") {
       ensureCanvasBuilt();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function() {
+        var active = nodes[currentNodeId];
+        if (transferredPosition && (active == null ? void 0 : active.bodyEl)) restoreContentPosition(active.bodyEl, transferredPosition);
         rebuildEdges();
         if (!canvasFramed) {
           setCanvasFramed(true);

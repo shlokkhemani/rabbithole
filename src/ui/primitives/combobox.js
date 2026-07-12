@@ -3,7 +3,7 @@ import { openPopover } from "./popover.js";
 
 export function comboboxMarkup(options) {
   var valueId = options.valueId || options.id + "-value";
-  return '<button id="' + escapeHtml(options.id) + '" class="' + escapeHtml(options.className || "settings-select") + '" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="' + escapeHtml(options.labelledBy + " " + valueId) + '" data-value="' + escapeHtml(options.value || "") + '"' + (options.title ? ' title="' + escapeHtml(options.title) + '"' : "") + '>' +
+  return '<button id="' + escapeHtml(options.id) + '" class="' + escapeHtml(options.className || "settings-select") + '" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="' + escapeHtml(options.labelledBy + " " + valueId) + '" data-value="' + escapeHtml(options.value || "") + '"' + (options.title ? ' title="' + escapeHtml(options.title) + '"' : "") + (options.disabled ? " disabled" : "") + (options.describedBy ? ' aria-describedby="' + escapeHtml(options.describedBy) + '"' : "") + '>' +
     '<span id="' + escapeHtml(valueId) + '">' + escapeHtml(options.label || options.value || "") + "</span>" + (options.iconHtml || "") + "</button>";
 }
 

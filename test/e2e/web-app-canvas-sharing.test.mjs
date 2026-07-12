@@ -211,6 +211,11 @@ async function verifyCanvasBranching() {
     "<style>.flow{display:grid;gap:8px}.box{border:1px solid var(--border);padding:8px;border-radius:6px}</style>",
     "<div class='flow'><div class='box'>Select</div><div class='box' style='background:var(--hl)'>Ask</div></div>",
     "```",
+    ...Array.from({ length: 12 }, (_, index) => [
+      "",
+      `## Reading position ${index + 1}`,
+      "A deliberately long section keeps both reading surfaces scrollable so mode transitions can preserve the same semantic location.",
+    ].join("\n")),
   ].join("\n");
 
   await createDocument(page, markdown);
@@ -274,15 +279,51 @@ async function verifyCanvasBranching() {
   await page.click("#cf-remove");
   await childCard.waitFor({ state: "detached" });
 
+  const canvasReadingPosition = await page.evaluate(() => {
+    const scroller = document.querySelector(".node.root .node-body");
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * 0.4;
+    const top = scroller.getBoundingClientRect().top;
+    const blocks = Array.from(scroller.querySelector(".doc-content").children);
+    const block = blocks.findIndex((item) => item.getBoundingClientRect().bottom > top);
+    const rect = blocks[block].getBoundingClientRect();
+    return { block, offset: (top - rect.top) / rect.height };
+  });
   await page.click("#t-reader");
   await page.waitForSelector("body:not(.mode-canvas)");
+  const readerReadingPosition = await page.locator("#reader-main").evaluate((scroller) => {
+    const top = scroller.getBoundingClientRect().top;
+    const blocks = Array.from(scroller.querySelector(".doc-content").children);
+    const block = blocks.findIndex((item) => item.getBoundingClientRect().bottom > top);
+    const rect = blocks[block].getBoundingClientRect();
+    return { block, offset: (top - rect.top) / rect.height };
+  });
+  assert.equal(readerReadingPosition.block, canvasReadingPosition.block, "canvas-to-reader should preserve the visible content block");
+  assert(Math.abs(readerReadingPosition.offset - canvasReadingPosition.offset) < 0.2, `canvas-to-reader should preserve the position within the visible block: ${JSON.stringify({ canvasReadingPosition, readerReadingPosition })}`);
   await page.focus("#r-textup");
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "r-canvas");
   const readerFocusRing = await page.evaluate(() => getComputedStyle(document.getElementById("r-canvas")).outlineStyle);
   assert.notEqual(readerFocusRing, "none", "keyboard focus should show the reader-toolbar focus-visible ring");
+  const readerReturnPosition = await page.locator("#reader-main").evaluate((scroller) => {
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * 0.35;
+    const top = scroller.getBoundingClientRect().top;
+    const blocks = Array.from(scroller.querySelector(".doc-content").children);
+    const block = blocks.findIndex((item) => item.getBoundingClientRect().bottom > top);
+    const rect = blocks[block].getBoundingClientRect();
+    return { block, offset: (top - rect.top) / rect.height };
+  });
   await page.keyboard.press("Enter");
   await page.waitForSelector("body.mode-canvas");
+  await page.waitForTimeout(50);
+  const canvasReturnPosition = await page.locator(".node.root .node-body").evaluate((scroller) => {
+    const top = scroller.getBoundingClientRect().top;
+    const blocks = Array.from(scroller.querySelector(".doc-content").children);
+    const block = blocks.findIndex((item) => item.getBoundingClientRect().bottom > top);
+    const rect = blocks[block].getBoundingClientRect();
+    return { block, offset: (top - rect.top) / rect.height };
+  });
+  assert.equal(canvasReturnPosition.block, readerReturnPosition.block, "reader-to-canvas should preserve the visible content block");
+  assert(Math.abs(canvasReturnPosition.offset - readerReturnPosition.offset) < 0.2, `reader-to-canvas should preserve the position within the visible block: ${JSON.stringify({ readerReturnPosition, canvasReturnPosition })}`);
   await page.focus("#t-new");
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-reader");

@@ -29,7 +29,7 @@ await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.s
   preset: "custom",
   base_url: "http://localhost:11434/v1",
   model: "llama3.2",
-  transcribe_model: "llama3.2",
+  transcribe_model: "llama3.2-vision",
   session_only: true,
   generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
 })));
@@ -59,6 +59,12 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
 });
 const transcribeBodies = [];
 let transcribeMode = "stream";
+let localVisionAvailable = true;
+await page.route("http://localhost:11434/v1/models", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }, { id: "llama3.2-vision" }] }) }));
+await page.route("http://localhost:11434/api/show", (route) => {
+  const model = route.request().postDataJSON()?.model || "";
+  return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ capabilities: localVisionAvailable && model === "llama3.2-vision" ? ["completion", "vision"] : ["completion"] }) });
+});
 await page.route("http://localhost:11434/v1/chat/completions", async (route) => {
   if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
   const body = route.request().postDataJSON();
@@ -92,8 +98,9 @@ try {
     return !!img && img.complete && img.naturalWidth > 0;
   });
 
-  const externalDuringPdf = requests.filter((url) => !url.startsWith(baseUrl) && !url.startsWith("blob:"));
+  const externalDuringPdf = requests.filter((url) => !url.startsWith(baseUrl) && !url.startsWith("blob:") && !url.startsWith("http://localhost:11434/"));
   assert.deepEqual(externalDuringPdf, [], `PDF ingest made external request(s): ${externalDuringPdf.join(", ")}`);
+  assert.equal(answerBodies.length, 0, "PDF import may inspect local model capabilities but must not invoke model inference");
 
   const pdfState = await page.evaluate(async () => {
     const holeId = window.__rabbitholeTest.currentHoleId();
@@ -282,7 +289,7 @@ try {
     return !!img && img.complete && img.naturalWidth > 0;
   });
   assert(transcribeBodies.length >= 1, "convert must call the transcription model");
-  assert.equal(transcribeBodies[0].model, "llama3.2", "conversion must use the transcribe model setting");
+  assert.equal(transcribeBodies[0].model, "llama3.2-vision", "conversion must use the confirmed local vision model setting");
   const transcribeParts = transcribeBodies[0].messages[0].content;
   assert(Array.isArray(transcribeParts) && transcribeParts.filter((part) => part.type === "image_url").length === 2, "one image part per page in the batch");
   const convertedState = await page.evaluate(async () => {
@@ -349,6 +356,15 @@ try {
   await page.waitForSelector(".node .rh-pdf-convert.primary:not(:disabled)");
   const scannedBody = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).nodes[0].markdown);
   assert.match(scannedBody, /\*\(page 1: no extractable text\)\*/, "scanned pages must carry the body marker");
+
+  // ---- No local vision model keeps import available but gates conversion ----
+  localVisionAvailable = false;
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await dropPdf(page, buildTinyPdf(["Local text-only model PDF"]), "no-local-vision.pdf");
+  await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
+  await page.waitForSelector(".node .rh-pdf-convert:disabled");
+  assert.equal(await page.locator(".node .rh-pdf-transcription-note").innerText(), "Install a local model that supports vision to enable PDF transcription.");
 
   // ---- A corrupt PDF fails with an actionable message, no stranded hole ----
   await page.goto(baseUrl, { waitUntil: "networkidle" });

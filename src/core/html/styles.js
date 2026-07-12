@@ -149,9 +149,9 @@ html[data-theme="dark"] .rh-lightbox-img { padding: 8px; background: #f4f4f1; bo
 }
 .loading { padding: 0.2em 0; }
 .loading-status { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); font-size: 12px; margin-bottom: 0.9em; }
-.loading-bunny { display: inline-flex; align-items: flex-end; justify-content: center; width: 22px; height: 17px; flex: 0 0 22px; line-height: 1;
+.loading-bunny { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: 0 0 22px; line-height: 1;
   color: var(--fg-dim); transform-origin: 50% 100%; animation: bunny-hop 1.45s infinite; }
-.loading-status svg { display: block; width: 22px; height: 17px; overflow: visible; }
+.loading-status svg { display: block; width: 20px; height: 20px; overflow: visible; }
 .loading-time { color: var(--fg-faint); font-variant-numeric: tabular-nums; font-size: 11px; }
 .ll-stalled, .ll-closed { display: none; color: var(--fg-faint); font-weight: 500; }
 body.agent-down .ll-live { display: none; }
@@ -286,7 +286,8 @@ body.mode-canvas #viewport { display: block; }
 .node-head { position: relative; display: flex; align-items: center; padding: var(--space-4) var(--space-6); background: var(--node-head); border-bottom: var(--border-default); border-radius: var(--radius-card) var(--radius-card) 0 0; cursor: grab; user-select: none; flex-shrink: 0; }
 .node-head:active { cursor: grabbing; }
 .node-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; color: var(--fg-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.node-badge { font-size: 12px; line-height: 1; margin-right: 7px; flex-shrink: 0; cursor: default; }
+.node-badge { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-right: 7px; flex: 0 0 14px; color: var(--fg-dim); cursor: default; }
+.node-badge svg { display: block; width: 14px; height: 14px; }
 .node-acts { position: absolute; top: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 7px 0 30px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--node-head) 28%); border-radius: 0 var(--radius-card) 0 0; }
 @media (hover: none) { .node-acts { position: static; padding: 0 0 0 8px; background: none; } }
 .node-act-divider { width: 1px; height: 14px; margin: 0 3px; background: var(--border); flex-shrink: 0; opacity: 0; transition: opacity 150ms ease; }
@@ -351,10 +352,13 @@ body.mode-canvas #viewport { display: block; }
 @media (hover: none), (pointer: coarse) { .nc-handle { opacity: 1; pointer-events: auto; transition: none; } .node-composer.open .nc-handle { opacity: 0; pointer-events: none; } }
 .origin-quote { font-family: var(--font-doc); font-size: 12px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding-left: 9px; margin-bottom: 12px; font-style: italic; }
 
-#toolbar { position: fixed; top: 14px; left: 14px; z-index: 50; display: none; align-items: center; gap: 8px; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
+#toolbar { position: fixed; top: 14px; left: 14px; z-index: 50; display: none; align-items: center; gap: var(--space-3); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
 body.mode-canvas #toolbar { display: flex; }
 #toolbar .sep { width: 1px; height: 18px; background: var(--border); }
-#zoom-label { height: 24px; min-width: 46px; padding: 0 6px; font-size: 11px; color: var(--fg-faint); text-align: center; font-variant-numeric: tabular-nums; }
+.zoom-controls { display: inline-flex; align-items: center; gap: 1px; margin-inline: -2px; }
+.zoom-controls .tool-icon { width: var(--control-h-xs); height: var(--control-h-xs); }
+#t-new svg { transform: scale(1.08); }
+#zoom-label { height: 24px; min-width: 40px; padding: 0 4px; font-size: 11px; color: var(--fg-faint); text-align: center; font-variant-numeric: tabular-nums; }
 
 /* ---------- ask popup — a small command palette for the selection ----------
    Two rows, nothing else: a borderless input with the shared circular send, and
@@ -494,7 +498,8 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .node > .rh-pdf-toolbar.is-stuck { width: 100%; min-height: 34px; margin: 0; padding: 4px 8px; flex-shrink: 0; background: var(--node-head); border-bottom: 1px solid var(--border); box-shadow: 0 4px 10px color-mix(in srgb, black 10%, transparent); }
 .rh-pdf-toolbar-placeholder { flex: 0 0 auto; }
 .rh-pdf-toolbar-info { display: flex; align-items: center; justify-content: center; min-width: 0; }
-.rh-pdf-scanned-note, .rh-pdf-box-hint { min-width: 0; font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); color: var(--fg-faint); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-pdf-scanned-note, .rh-pdf-box-hint, .rh-pdf-transcription-note { min-width: 0; font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); color: var(--fg-faint); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-pdf-transcription-note { color: var(--warn); }
 .rh-pdf-box-hint { display: none; color: var(--accent); }
 .rh-pdf-box-hint.visible { display: inline-block; }
 .rh-pdf-box-mode .rh-pdf-scanned-note { display: none; }
@@ -509,6 +514,7 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-convert:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 9%, transparent); }
 .rh-pdf-convert.primary:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+.rh-pdf-convert:disabled { opacity: .48; cursor: not-allowed; }
 .rh-pdf-convert-progress { margin-bottom: 1em; }
 .rh-pdf-convert-progress .loading-status { margin-bottom: 0; }
 .rh-pdf-convert-progress.loading .loading-status { margin-bottom: 0.9em; }

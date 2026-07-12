@@ -19,6 +19,15 @@ const assets = new Map(Array.from({ length: 6 }, (_, i) => [`page-${String(i + 1
 const store = { saveHole: async () => {}, getAsset: async (_id, name) => assets.get(name), listAssets: async () => [...assets.keys()], putAsset: async (_id, name, blob) => assets.set(name, blob) };
 const settle = async (predicate) => { for (let i = 0; i < 100 && !predicate(); i++) await new Promise((resolve) => setTimeout(resolve, 5)); };
 
+// ---- capability gate rejects conversion before starting --------------------
+{
+  const brain = { async *transcribePages() { throw new Error("must not run"); } };
+  const host = new DirectRabbitholeHost({ store, hole: fixture(), brain, getPdfTranscriptionCapability: () => ({ available: false, reason: "Install a local vision model." }) });
+  const result = await host.handleBrowserEvent({ type: "convert_pdf", node_id: host.state.root_id });
+  assert.deepEqual(result, { ok: false, error: "Install a local vision model." });
+  assert.equal(host.state.nodes.get(host.state.root_id).extensions.pdf.converting, false);
+}
+
 // ---- streamed commit, converted flag, and stash preservation ---------------
 {
   const brain = { async *transcribePages({ pages, tail }) { assert.equal(pages.length, 2); assert.equal(tail, ""); yield { type: "text", delta: "# Converted\n\nFaithful text." }; } };

@@ -12,6 +12,7 @@ const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
 const MODEL_URL = "https://openrouter.ai/api/v1/models";
 const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
+const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
@@ -64,9 +65,22 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
   assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
+  assert.equal(await page.locator("#blank-start-status").isVisible(), false, "setup guidance should not remain as persistent copy");
+  await page.hover("#blank-start-new-wrap");
+  assert.deepEqual(await page.locator("#blank-start-status").evaluate((tooltip) => ({
+    role: tooltip.getAttribute("role"),
+    opacity: getComputedStyle(tooltip).opacity,
+    visibility: getComputedStyle(tooltip).visibility,
+    transitionDuration: getComputedStyle(tooltip).transitionDuration,
+    transitionDelay: getComputedStyle(tooltip).transitionDelay,
+  })), { role: "tooltip", opacity: "1", visibility: "visible", transitionDuration: "0s", transitionDelay: "0s" }, "disabled New Rabbithole guidance should appear immediately as a tooltip");
   await page.keyboard.press("N");
   await page.waitForSelector("#web-settings-popover");
   assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.equal(await page.locator(".settings-info-trigger").count(), 1);
+  assert.equal(await page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images go to OpenRouter.");
+  await page.locator(".settings-info-trigger").focus();
+  assert.equal(await page.locator("#transcribe-model-help").evaluate((tooltip) => getComputedStyle(tooltip).visibility), "visible", "PDF transcription help should appear immediately for keyboard focus");
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "N should open setup, not the composer, before readiness");
   await page.fill("#api-key", MOCK_KEY);
@@ -76,6 +90,7 @@ async function verifyLandingAndComposer() {
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false);
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Model settings");
+  assert.equal(await page.locator("#blank-start-status").isVisible(), false, "setup tooltip should stay hidden once creation is enabled");
   await page.keyboard.press("N");
   await page.waitForSelector("#composer-modal:not([hidden])");
   assert.deepEqual(await page.locator("#composer-card").evaluate((dialog) => ({
@@ -101,6 +116,10 @@ async function verifyLandingAndComposer() {
   assert(toolbarConformance.length > 0, "reader and canvas toolbars should render buttons");
   assert(toolbarConformance.every(({ type }) => type === "button"), `every toolbar button should declare type=button (${JSON.stringify(toolbarConformance)})`);
   assert(toolbarConformance.every(({ name }) => name.length > 0), `every toolbar button should have an accessible name (${JSON.stringify(toolbarConformance)})`);
+  const toolbarIconSystem = await page.locator("#toolbar .tool-icon svg").evaluateAll((icons) => icons.map((icon) => ({ width: icon.getAttribute("width"), height: icon.getAttribute("height") })));
+  assert(toolbarIconSystem.length >= 8, "toolbar actions should use the shared SVG icon system");
+  assert(toolbarIconSystem.every(({ width, height }) => width === "16" && height === "16"), `toolbar glyph boxes should stay 16×16: ${JSON.stringify(toolbarIconSystem)}`);
+  assert.equal(await page.locator("#t-new svg path").count(), 2, "New Rabbithole should use a compose silhouette with no plus glyph");
   assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should offer exactly three starting paths");
   assert.equal(await page.locator("#composer-title").innerText(), "Enter a Rabbithole");
   assert.equal(await page.locator(".composer-title-mark svg").count(), 1, "composer title should include the rabbit mark");
@@ -166,11 +185,14 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "blank-start-new", "backdrop dismissal should restore focus to its trigger");
 
   const first = await createDocument(page, "# First hole\n\nEuler identity $e^{i\\pi}+1=0$.");
+  await page.waitForSelector(".node.root .node-badge svg");
+  assert.equal(await page.locator(".node.root .node-badge").innerText(), "", "root document badge should use the shared bunny SVG, not emoji");
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
 
   const second = await createDocument(page, "# Second hole\n\nA second saved document.");
   assert.notEqual(first, second, "creating a second document should open a distinct hole");
+  assert.equal(await page.locator(".rail-row").first().getAttribute("data-hole"), second, "a newly created Rabbithole should appear at the top immediately");
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, second);
 
@@ -182,11 +204,23 @@ async function verifyLandingAndComposer() {
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, second);
   await ensureRailOpen(page);
   const railIcon = await page.evaluate(() => ({
-    filled: document.getElementById("t-rail").classList.contains("rail-on"),
+    active: document.getElementById("t-rail").classList.contains("rail-on"),
     expanded: document.getElementById("t-rail").getAttribute("aria-expanded"),
+    fillCount: document.querySelectorAll("#t-rail .rail-fill").length,
+    background: getComputedStyle(document.getElementById("t-rail")).backgroundColor,
   }));
   assert.equal(railIcon.expanded, "true");
-  assert.equal(railIcon.filled, true, "rail toggle icon should switch to its filled state while the rail is open");
+  assert.equal(railIcon.active, true, "rail toggle should expose its active state while the rail is open");
+  assert.equal(railIcon.fillCount, 0, "rail toggle should keep one unchanged icon in both states");
+  assert.notEqual(railIcon.background, "rgba(0, 0, 0, 0)", "open rail toggle should be visibly highlighted");
+  const zoomGeometry = await page.evaluate(() => {
+    const out = document.getElementById("t-zout").getBoundingClientRect();
+    const label = document.getElementById("zoom-label").getBoundingClientRect();
+    const inside = document.getElementById("t-zin").getBoundingClientRect();
+    return { outWidth: out.width, inWidth: inside.width, labelWidth: label.width, leftGap: label.left - out.right, rightGap: inside.left - label.right };
+  });
+  assert(zoomGeometry.outWidth === 24 && zoomGeometry.inWidth === 24 && zoomGeometry.labelWidth <= 40, `zoom controls should share the toolbar's icon target while staying compact: ${JSON.stringify(zoomGeometry)}`);
+  assert(Math.abs(zoomGeometry.leftGap) <= 1 && Math.abs(zoomGeometry.rightGap) <= 1, `zoom controls should keep a tight, even internal rhythm: ${JSON.stringify(zoomGeometry)}`);
   assert.equal(await page.locator(`.rail-row[data-hole="${second}"] .rail-delete`).count(), 1);
   let postBaselineLoads = 0;
   page.on("load", () => { postBaselineLoads += 1; });
@@ -354,6 +388,7 @@ async function verifySetupReadinessInvalidation() {
   })));
   const localPage = await local.newPage();
   await localPage.route(LOCAL_MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }] }) }));
+  await localPage.route(LOCAL_SHOW_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ capabilities: ["completion"] }) }));
   await localPage.goto(baseUrl, { waitUntil: "networkidle" });
   assert.equal(await localPage.locator("#blank-start-new").isDisabled(), false, "matching local endpoint fingerprint should unlock creation");
   await localPage.click("#blank-start-setup");
@@ -372,24 +407,35 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     const page = await context.newPage();
     await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
     await page.route(LOCAL_MODEL_URL, handler);
+    await page.route(LOCAL_SHOW_URL, (route) => {
+      const model = route.request().postDataJSON()?.model || "";
+      return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ capabilities: model === "llava:7b" ? ["completion", "vision"] : ["completion"] }) });
+    });
     await openFreshSettings(page);
     await switchSettingsToLocal(page);
     return { context, page };
   };
 
-  const found = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "nomic-embed-text:latest" }, { id: "llama3.2" }, { id: "qwen3:8b" }] }) }));
-  await found.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("2 installed models"));
+  const found = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "nomic-embed-text:latest" }, { id: "llama3.2" }, { id: "qwen3:8b" }, { id: "llava:7b" }] }) }));
+  await found.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("3 installed models"));
+  await found.page.waitForFunction(() => document.querySelector("#transcribe-model-status")?.textContent.includes("1 installed vision model"));
+  assert.equal(await found.page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images stay on your local endpoint.");
+  assert.equal(await found.page.locator("#transcribe-model").isDisabled(), false);
+  assert.equal(await found.page.locator("#transcribe-model").getAttribute("data-value"), "llava:7b");
   await found.page.click("#local-model");
   assert.equal(await found.page.locator(".model-option[data-value='nomic-embed-text:latest']").count(), 0, "embedding-only Ollama models should not be offered for generation");
   await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
+  assert.equal(await found.page.locator(".model-option[data-value='qwen3:8b'] .model-option-price").innerText(), "", "local model rows should not claim to be free");
   await found.page.click(".model-option[data-value='qwen3:8b']");
   const foundSettings = await found.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")));
-  assert.equal(foundSettings.model, "qwen3:8b"); assert.equal(foundSettings.model, "qwen3:8b");
+  assert.equal(foundSettings.model, "qwen3:8b"); assert.equal(foundSettings.transcribe_model, "llava:7b");
   await found.context.close();
 
   const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
   await none.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("No installed models"));
   assert.equal(await none.page.locator("#local-model-retry").count(), 1);
+  assert.equal(await none.page.locator("#transcribe-model").isDisabled(), true);
+  assert.match(await none.page.locator("#transcribe-model-status").innerText(), /disabled.*no local models/i);
   await none.context.close();
 
   let attempts = 0;
@@ -511,7 +557,7 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(railDetailGeometry.paddingTop, "8px");
   assert.equal(railDetailGeometry.paddingBottom, "8px", "row should consume the shared row-padding token symmetrically");
   assert(Math.abs(railDetailGeometry.textTopGap - railDetailGeometry.textBottomGap) <= 1, "row label should sit optically centered");
-  assert.equal(railDetailGeometry.actionBackground, "none", "row actions should not sit on a dark backing plate");
+  assert.match(railDetailGeometry.actionBackground, /linear-gradient/, "overlaid row actions should fade title text cleanly beneath them");
   assert.equal(railDetailGeometry.iconBackground, "rgba(0, 0, 0, 0)", "row icons should remain unboxed");
   const railGeometry = await page.locator("#web-rail").evaluate((rail) => {
     const rect = rail.getBoundingClientRect();
@@ -632,6 +678,9 @@ async function verifyAskKeyUxAndRail() {
     "$1.25 · $10",
     "picker rows should show per-million pricing from the catalog",
   );
+  await page.fill("#model-select-input", "auto router");
+  assert.equal(await page.locator(".model-option[data-value='openrouter/auto'] .model-option-price").innerText(), "Varies", "router pricing should explain that the routed model determines cost");
+  await page.fill("#model-select-input", "gpt");
   await page.click(".model-option[data-value='openai/gpt-5']");
   await page.waitForSelector("#model-select-listbox", { state: "detached" });
   assert.equal(await page.locator("#model-select-name").innerText(), "GPT-5");

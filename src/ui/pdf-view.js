@@ -31,7 +31,7 @@ export function normalizeRectUnion(rects, pageRect) {
   return { x: x, y: y, w: Math.min(clamp((right-left)/pageRect.width), 1-x), h: Math.min(clamp((bottom-top)/pageRect.height), 1-y) };
 }
 
-export function mountPdfView(container, node) {
+export function mountPdfView(container, node, options) {
   var pdf = normalizePdfExtension(node);
   if (!pdf || pdf.converted || pdf.converting) return null;
   var markdown = String(node.markdown ?? node.md ?? "");
@@ -174,6 +174,7 @@ export function mountPdfView(container, node) {
     convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
     documentActions.appendChild(convertButton);
   }
+  syncPdfTranscriptionControls(container, options?.getTranscriptionCapability?.() || options?.transcriptionCapability);
   function moveToolbar(mutate, animate){
     var previous = toolbar.getAnimations ? toolbar.getAnimations().filter(function(item){ return item.id === "pdf-toolbar-dock"; }) : [];
     previous.forEach(function(item){ item.cancel(); });
@@ -332,4 +333,30 @@ export function mountPdfView(container, node) {
       if (img) { img.removeAttribute("src"); img.remove(); }
     });
   };
+}
+
+export function syncPdfTranscriptionControls(root, capability) {
+  if (!root?.querySelectorAll) return;
+  var available = capability?.available !== false;
+  var reason = String(capability?.reason || "Set up a vision-capable PDF transcription model in Model settings.");
+  var containers = root.matches?.(".doc-content.rh-pdf") ? [root] : Array.from(root.querySelectorAll(".doc-content.rh-pdf"));
+  containers.forEach(function(container) {
+    var button = container.querySelector(".rh-pdf-convert");
+    var info = container.querySelector(".rh-pdf-toolbar-info");
+    var scannedNote = container.querySelector(".rh-pdf-scanned-note");
+    var note = container.querySelector(".rh-pdf-transcription-note");
+    if (button) {
+      button.disabled = !available;
+      button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;
+      button.setAttribute("aria-label", available ? "Create a searchable text version of this PDF" : `Create text version unavailable. ${reason}`);
+    }
+    if (!available && info) {
+      if (!note) { note = document.createElement("span"); note.className = "rh-pdf-transcription-note"; info.appendChild(note); }
+      note.textContent = reason;
+      note.title = reason;
+    } else note?.remove();
+    if (scannedNote) scannedNote.textContent = available
+      ? "No selectable text · Ask about an area or create a text version"
+      : "No selectable text · Ask about an area";
+  });
 }

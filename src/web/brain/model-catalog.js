@@ -97,6 +97,8 @@ export function prettyModelId(id) {
 
 export function formatModelPrice(model) {
   if (!model) return "";
+  if (!Number.isFinite(model.promptPrice) && !Number.isFinite(model.completionPrice)) return "";
+  if (model.promptPrice < 0 || model.completionPrice < 0) return "Varies";
   if (!model.promptPrice && !model.completionPrice) return "Free";
   return `$${perMillion(model.promptPrice)} · $${perMillion(model.completionPrice)}`;
 }

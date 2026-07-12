@@ -32,7 +32,7 @@ export function startRabbithole(hydration, options) {
       dispose: disposeTransportStatus
     },
     capabilities: {
-      mountPdfView: mountPdfView,
+      mountPdfView: function(container, node){ return mountPdfView(container, node, { getTranscriptionCapability: options.getPdfTranscriptionCapability }); },
       exportSnapshot: downloadSnapshot,
       exportPortable: options.exportPortable || null
     }

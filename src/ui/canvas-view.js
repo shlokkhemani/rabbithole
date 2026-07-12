@@ -49,7 +49,9 @@ import { openNode } from "./reader.js";
 import { applyChildHighlights } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
+import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { createModuleLifecycle } from "./lifecycle.js";
+import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
 
 function defaultCanvasHooks(){
@@ -188,7 +190,7 @@ export function createNodeEl(node, enter){
     var head = document.createElement("div");
     head.className = "node-head";
     if (node.id === rootId){
-      var badge = document.createElement("span"); badge.className = "node-badge"; badge.textContent = "🐇";
+      var badge = document.createElement("span"); badge.className = "node-badge"; badge.innerHTML = BUNNY_MARK_SVG;
       badge.title = "Where this Rabbithole begins";
       head.appendChild(badge);
     }
@@ -770,17 +772,23 @@ function ensureCanvasBuilt(){
     applyTransform();
   }
 export function setMode(m){
+    var transferredPosition = null;
     if (m === "canvas" && mode === "reader"){
       // display:none resets the reader's scrollTop — remember it first so
       // toggling out to the canvas and back lands exactly where you were.
       var cur = nodes[currentNodeId];
-      if (cur) cur._scrollTop = readerMain.scrollTop;
+      if (cur) {
+        cur._scrollTop = readerMain.scrollTop;
+        transferredPosition = captureContentPosition(readerMain);
+      }
     }
     setModeValue(m);
     if (m === "canvas"){
       ensureCanvasBuilt();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function(){
+        var active = nodes[currentNodeId];
+        if (transferredPosition && active?.bodyEl) restoreContentPosition(active.bodyEl, transferredPosition);
         rebuildEdges();
         // Frame everything only the first time; afterwards the canvas keeps the
         // pan/zoom you left it at.

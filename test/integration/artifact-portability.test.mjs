@@ -125,12 +125,7 @@ try {
   assert.equal(typeof exported.assets["page-001.jpg"], "string");
 
   await ensureRailOpen(page);
-  assert.equal(await page.locator(".rail-row", { hasText: "pdf document" }).first().locator(".rail-export").count(), 1);
-  await page.locator(`.rail-row[data-hole="${original.holeId}"]`).hover();
-  const homeDownloadPromise = page.waitForEvent("download");
-  await page.locator(`.rail-row[data-hole="${original.holeId}"] .rail-export`).click();
-  const homeDownload = await homeDownloadPromise;
-  assert.match(homeDownload.suggestedFilename(), /^pdf-document\.rabbithole$/);
+  assert.equal(await page.locator(".rail-export").count(), 0, "sidebar rows should reserve their full width for titles");
 
   const fresh = await browser.newContext({ acceptDownloads: true });
   const importPage = await fresh.newPage();

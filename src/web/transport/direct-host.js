@@ -14,7 +14,7 @@ const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, registerAssetUrl = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
+  constructor({ store, hole, brain = null, registerAssetUrl = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, getPdfTranscriptionCapability = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = null;
@@ -23,6 +23,7 @@ export class DirectRabbitholeHost {
     this.onRestore = onRestore;
     this.onAuthRequired = onAuthRequired;
     this.onRootAnswered = onRootAnswered;
+    this.getPdfTranscriptionCapability = getPdfTranscriptionCapability;
     this.mintGenerationRunId = mintGenerationRunId;
     this.registerAssetUrl = registerAssetUrl;
     this.state = createHoleState(hole);
@@ -144,6 +145,8 @@ export class DirectRabbitholeHost {
     if (!pdf) throw new Error("This node is not a native PDF.");
     if ([...this.state.nodes.values()].some((candidate) => candidate.parent_id === nodeId)) throw new Error("Create a text version before asking follow-ups.");
     if (pdf.converting || this.abortByNode.has(nodeId)) throw new Error("Conversion is already running.");
+    const capability = this.getPdfTranscriptionCapability?.();
+    if (capability?.available === false) throw new Error(capability.reason || "Set up a vision-capable PDF transcription model before converting.");
     if (!this.brain?.transcribePages) throw new Error("Set up a transcription model before converting.");
     const controller = new AbortController(); this.abortByNode.set(nodeId, controller);
     const original = node.markdown;

@@ -2,6 +2,7 @@ const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
 const MODEL_URL = "https://openrouter.ai/api/v1/models";
 const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
+const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
 const MOCK_KEY = `sk-or-v1-${"x".repeat(64)}`;
 
 export const MOCK_MODEL = "anthropic/claude-sonnet-5";
@@ -24,12 +25,21 @@ export async function routeProvider(page, { keyStatus, streams = [], onProviderC
     headers: { ...corsHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ data: [{ id: "llama3.2", name: "llama3.2" }, { id: "deepseek-r1:7b", name: "deepseek-r1:7b" }] }),
   }));
+  await page.route(LOCAL_SHOW_URL, (route) => {
+    const model = route.request().postDataJSON()?.model || "";
+    return route.fulfill({
+      status: 200,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ capabilities: /vision|llava/i.test(model) ? ["completion", "vision"] : ["completion"] }),
+    });
+  });
   await page.route(MODEL_URL, (route) => route.fulfill({
     status: 200,
     headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({ data: [
       { id: MOCK_MODEL, name: "Anthropic: Claude Sonnet 5", context_length: 1000000, pricing: { prompt: "0.000003", completion: "0.000015" } },
       { id: "openai/gpt-5", name: "OpenAI: GPT-5", context_length: 400000, pricing: { prompt: "0.00000125", completion: "0.00001" } },
+      { id: "openrouter/auto", name: "Auto Router", context_length: 2000000, pricing: { prompt: "-1", completion: "-1" } },
       { id: "deepseek/deepseek-v4-flash", name: "DeepSeek: DeepSeek V4 Flash", context_length: 164000, pricing: { prompt: "0", completion: "0" } },
     ] }),
   }));

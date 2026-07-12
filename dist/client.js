@@ -1829,6 +1829,16 @@ var RabbitholeClient = (() => {
     return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(LINE_SEP, "\\u2028").replace(PARA_SEP, "\\u2029");
   }
 
+  // src/core/html/bunny-markup.js
+  var BUNNY_MARK_SHAPES = `
+  <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"></ellipse>
+  <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"></ellipse>
+  <circle cx="21" cy="33" r="9.5"></circle>
+  <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
+  <circle cx="52.5" cy="49" r="5"></circle>`;
+  var BUNNY_MARK_SVG = `<svg viewBox="0 0 64 64" fill="currentColor" focusable="false" aria-hidden="true">${BUNNY_MARK_SHAPES}
+</svg>`;
+
   // src/ui/lifecycle.js
   function createCleanupScope() {
     var cleanups = /* @__PURE__ */ new Set();
@@ -2865,7 +2875,7 @@ var RabbitholeClient = (() => {
   function lensBadgeHtml(key) {
     return '<span class="lens-badge">' + escapeHtml(lensLabel2(key)) + "</span>";
   }
-  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
+  var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' + BUNNY_MARK_SVG + "</span>";
   function buildLoading(node) {
     if (node && node.error) {
       var errWrap = document.createElement("div");
@@ -3028,6 +3038,50 @@ var RabbitholeClient = (() => {
     hintNotice.show({ message: msg, duration: 4e3 });
   }
 
+  // src/ui/scroll-position.js
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+  function scrollRange(scroller) {
+    return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  }
+  function captureContentPosition(scroller) {
+    var _a2;
+    if (!scroller) return null;
+    var range = scrollRange(scroller);
+    var position = { progress: range ? scroller.scrollTop / range : 0, block: -1, offset: 0 };
+    var content = (_a2 = scroller.querySelector) == null ? void 0 : _a2.call(scroller, ".doc-content");
+    if (!content) return position;
+    var viewportTop = scroller.getBoundingClientRect().top;
+    var blocks = Array.from(content.children);
+    for (var i2 = 0; i2 < blocks.length; i2++) {
+      var rect = blocks[i2].getBoundingClientRect();
+      if (rect.bottom > viewportTop) {
+        position.block = i2;
+        position.offset = (viewportTop - rect.top) / Math.max(1, rect.height);
+        break;
+      }
+    }
+    return position;
+  }
+  function restoreContentPosition(scroller, position) {
+    var _a2;
+    if (!scroller || !position) return;
+    var range = scrollRange(scroller);
+    var content = (_a2 = scroller.querySelector) == null ? void 0 : _a2.call(scroller, ".doc-content");
+    var block2 = content && position.block >= 0 ? content.children[position.block] : null;
+    if (block2) {
+      var scrollerRect = scroller.getBoundingClientRect();
+      var viewportTop = scrollerRect.top;
+      var rect = block2.getBoundingClientRect();
+      var targetTop = rect.top + clamp(position.offset, -1, 1) * rect.height;
+      var visualScale = scroller.offsetHeight ? scrollerRect.height / scroller.offsetHeight : 1;
+      scroller.scrollTop = clamp(scroller.scrollTop + (targetTop - viewportTop) / (visualScale || 1), 0, range);
+      return;
+    }
+    scroller.scrollTop = clamp((Number(position.progress) || 0) * range, 0, range);
+  }
+
   // src/ui/text-marks.js
   function applyChildHighlights(dc, node) {
     if (dc && dc.classList.contains("rh-pdf")) return;
@@ -3130,10 +3184,10 @@ var RabbitholeClient = (() => {
     if (!container || !anchor || !anchor.pdf) return null;
     var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(anchor.pdf.page)) + '"]');
     if (!page) return null;
-    var layer = page.querySelector(".rh-pdf-marks"), r2 = anchor.pdf.rect || {}, clamp2 = function(v) {
+    var layer = page.querySelector(".rh-pdf-marks"), r2 = anchor.pdf.rect || {}, clamp3 = function(v) {
       return Math.min(1, Math.max(0, Number(v) || 0));
     };
-    var x = clamp2(r2.x), y = clamp2(r2.y), w = Math.min(clamp2(r2.w), 1 - x), h = Math.min(clamp2(r2.h), 1 - y);
+    var x = clamp3(r2.x), y = clamp3(r2.y), w = Math.min(clamp3(r2.w), 1 - x), h = Math.min(clamp3(r2.h), 1 - y);
     var mark = initializeMark(document.createElement("mark"), childId, cls);
     mark.style.left = x * 100 + "%";
     mark.style.top = y * 100 + "%";
@@ -3212,6 +3266,7 @@ var RabbitholeClient = (() => {
   var sidebarNodes = {};
   function openNode(id) {
     if (!nodes[id]) return;
+    var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
     var prev = nodes[currentNodeId];
     if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
     setCurrentNodeId(id);
@@ -3221,6 +3276,10 @@ var RabbitholeClient = (() => {
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
+    if (transferredPosition) {
+      restoreContentPosition(readerMain, transferredPosition);
+      nodes[id]._scrollTop = readerMain.scrollTop;
+    }
     renderSidebar();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
@@ -3863,7 +3922,7 @@ var RabbitholeClient = (() => {
     if (node.id === rootId) {
       var badge = document.createElement("span");
       badge.className = "node-badge";
-      badge.textContent = "\u{1F407}";
+      badge.innerHTML = BUNNY_MARK_SVG;
       badge.title = "Where this Rabbithole begins";
       head.appendChild(badge);
     }
@@ -4296,7 +4355,7 @@ var RabbitholeClient = (() => {
   function effH(n) {
     return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
   }
-  function clamp(lo, hi, v) {
+  function clamp2(lo, hi, v) {
     return Math.max(lo, Math.min(hi, v));
   }
   function edgeSides(p, n) {
@@ -4317,12 +4376,12 @@ var RabbitholeClient = (() => {
         if (mr.height > 0) {
           var er = p.el.getBoundingClientRect();
           var br2 = p.bodyEl.getBoundingClientRect();
-          ay = p.y + clamp(
+          ay = p.y + clamp2(
             (br2.top - er.top) / view.scale + 10,
             (br2.bottom - er.top) / view.scale - 10,
             (mr.top + mr.height / 2 - er.top) / view.scale
           );
-          ax = p.x + clamp(
+          ax = p.x + clamp2(
             (br2.left - er.left) / view.scale + 10,
             (br2.right - er.left) / view.scale - 10,
             (mr.left + mr.width / 2 - er.left) / view.scale
@@ -4634,15 +4693,21 @@ var RabbitholeClient = (() => {
     applyTransform();
   }
   function setMode(m) {
+    var transferredPosition = null;
     if (m === "canvas" && mode === "reader") {
       var cur = nodes[currentNodeId];
-      if (cur) cur._scrollTop = readerMain.scrollTop;
+      if (cur) {
+        cur._scrollTop = readerMain.scrollTop;
+        transferredPosition = captureContentPosition(readerMain);
+      }
     }
     setModeValue(m);
     if (m === "canvas") {
       ensureCanvasBuilt();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function() {
+        var active = nodes[currentNodeId];
+        if (transferredPosition && (active == null ? void 0 : active.bodyEl)) restoreContentPosition(active.bodyEl, transferredPosition);
         rebuildEdges();
         if (!canvasFramed) {
           setCanvasFramed(true);
@@ -33640,21 +33705,23 @@ ${text2}</tr>
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
 <div id="toolbar">
-  ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes \xB7 S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/><rect class="rail-fill" x="3.55" y="3.8" width="1.65" height="8.4" rx="0.82" fill="currentColor" stroke="none"/></svg>' })}
-  ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole \xB7 N", ariaLabel: "New Rabbithole", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
+  ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes \xB7 S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/></svg>' })}
+  ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole \xB7 N", ariaLabel: "New Rabbithole", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M9.75 3.25H4.5c-.7 0-1.25.55-1.25 1.25v7c0 .7.55 1.25 1.25 1.25h7c.7 0 1.25-.55 1.25-1.25V6.25"/><path d="m7.25 9.25.35-1.7 4.55-4.55a.85.85 0 0 1 1.2 1.2L8.8 8.75z"/></svg>' })}
   <span class="sep" id="app-sep"></span>
   ${buttonMarkup({ id: "t-reader", title: "Back to reading", label: "Reader", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>' })}
   <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", icon: "\u2212" })}
-  ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
-  ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", icon: "+" })}
+  <span class="zoom-controls">
+    ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M4 8h8"/></svg>' })}
+    ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
+    ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 4v8M4 8h8"/></svg>' })}
+  </span>
   ${iconButtonMarkup({ id: "t-frame", title: "Frame everything \xB7 F", ariaLabel: "Frame everything \xB7 F", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/></svg>' })}
-  <span class="sep"></span>
   ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout \xB7 T", ariaLabel: "Tidy up layout \xB7 T", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/></svg>' })}
   <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", icon: "\u2197" })}
-  ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", icon: "\u25D1" })}
-  ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><g transform="translate(12 12) scale(0.92) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg>' })}
+  ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5 11 11.25 4.75"/><path d="M7.5 4.75h3.75V8.5"/></svg>' })}
+  <span class="sep"></span>
+  ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.25"/><path d="M8 2.75a5.25 5.25 0 0 0 0 10.5z" fill="currentColor" stroke="none"/></svg>' })}
+  ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><g transform="translate(12 12) scale(0.78) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg>' })}
   <span class="sep" id="act-sep" style="display:none"></span>
   ${iconButtonMarkup({ bare: true, className: "activity", id: "act-canvas", title: "Jump to it", ariaLabel: "Jump to active answer" })}
 </div>
@@ -33893,14 +33960,14 @@ ${text2}</tr>
       bottom = Math.max(bottom, r2.bottom);
     }
     if (!found || !pageRect.width || !pageRect.height) return null;
-    var clamp2 = function(v) {
+    var clamp3 = function(v) {
       return Math.min(1, Math.max(0, v));
     };
-    var x = clamp2((left - pageRect.left) / pageRect.width), y = clamp2((top - pageRect.top) / pageRect.height);
-    return { x, y, w: Math.min(clamp2((right - left) / pageRect.width), 1 - x), h: Math.min(clamp2((bottom - top) / pageRect.height), 1 - y) };
+    var x = clamp3((left - pageRect.left) / pageRect.width), y = clamp3((top - pageRect.top) / pageRect.height);
+    return { x, y, w: Math.min(clamp3((right - left) / pageRect.width), 1 - x), h: Math.min(clamp3((bottom - top) / pageRect.height), 1 - y) };
   }
-  function mountPdfView(container, node) {
-    var _a2, _b;
+  function mountPdfView(container, node, options2) {
+    var _a2, _b, _c;
     var pdf = normalizePdfExtension(node);
     if (!pdf || pdf.converted || pdf.converting) return null;
     var markdown2 = String((_b = (_a2 = node.markdown) != null ? _a2 : node.md) != null ? _b : "");
@@ -34125,6 +34192,7 @@ ${text2}</tr>
       });
       documentActions.appendChild(convertButton);
     }
+    syncPdfTranscriptionControls(container, ((_c = options2 == null ? void 0 : options2.getTranscriptionCapability) == null ? void 0 : _c.call(options2)) || (options2 == null ? void 0 : options2.transcriptionCapability));
     function moveToolbar(mutate, animate) {
       var _a3;
       var previous = toolbar.getAnimations ? toolbar.getAnimations().filter(function(item) {
@@ -34319,6 +34387,34 @@ ${text2}</tr>
       });
     };
   }
+  function syncPdfTranscriptionControls(root, capability) {
+    var _a2;
+    if (!(root == null ? void 0 : root.querySelectorAll)) return;
+    var available = (capability == null ? void 0 : capability.available) !== false;
+    var reason = String((capability == null ? void 0 : capability.reason) || "Set up a vision-capable PDF transcription model in Model settings.");
+    var containers = ((_a2 = root.matches) == null ? void 0 : _a2.call(root, ".doc-content.rh-pdf")) ? [root] : Array.from(root.querySelectorAll(".doc-content.rh-pdf"));
+    containers.forEach(function(container) {
+      var button = container.querySelector(".rh-pdf-convert");
+      var info = container.querySelector(".rh-pdf-toolbar-info");
+      var scannedNote = container.querySelector(".rh-pdf-scanned-note");
+      var note = container.querySelector(".rh-pdf-transcription-note");
+      if (button) {
+        button.disabled = !available;
+        button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;
+        button.setAttribute("aria-label", available ? "Create a searchable text version of this PDF" : `Create text version unavailable. ${reason}`);
+      }
+      if (!available && info) {
+        if (!note) {
+          note = document.createElement("span");
+          note.className = "rh-pdf-transcription-note";
+          info.appendChild(note);
+        }
+        note.textContent = reason;
+        note.title = reason;
+      } else note == null ? void 0 : note.remove();
+      if (scannedNote) scannedNote.textContent = available ? "No selectable text \xB7 Ask about an area or create a text version" : "No selectable text \xB7 Ask about an area";
+    });
+  }
 
   // src/ui/entry.js
   function startRabbithole(hydration2, options2) {
@@ -34339,7 +34435,9 @@ ${text2}</tr>
         dispose: disposeTransportStatus
       },
       capabilities: {
-        mountPdfView,
+        mountPdfView: function(container, node) {
+          return mountPdfView(container, node, { getTranscriptionCapability: options2.getPdfTranscriptionCapability });
+        },
         exportSnapshot: downloadSnapshot,
         exportPortable: options2.exportPortable || null
       }

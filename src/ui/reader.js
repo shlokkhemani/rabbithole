@@ -34,6 +34,7 @@ import {
 } from "./core.js";
 import { escapeHtml } from "../core/utils.js";
 import { createModuleLifecycle } from "./lifecycle.js";
+import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { mountVisuals } from "./visuals.js";
 import { applyChildHighlights } from "./text-marks.js";
 
@@ -64,6 +65,9 @@ var sidebarNodes = {};
   // ===========================================================================
 export function openNode(id){
     if (!nodes[id]) return;
+    var transferredPosition = document.body.classList.contains("mode-canvas")
+      ? captureContentPosition(nodes[id].bodyEl)
+      : null;
     // Snapshot the outgoing document's position (belt & braces alongside the
     // scroll listener) so every window keeps its place when you come back.
     // Only while the reader is actually visible — hidden (canvas mode) it
@@ -77,6 +81,10 @@ export function openNode(id){
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
+    if (transferredPosition) {
+      restoreContentPosition(readerMain, transferredPosition);
+      nodes[id]._scrollTop = readerMain.scrollTop;
+    }
     renderSidebar();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);

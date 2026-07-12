@@ -4,6 +4,7 @@ import { getApiKey } from "./credential-store.js";
 import { getGenerationSetupStatus, markGenerationSetupComplete } from "./setup-readiness.js";
 import { loadModelCatalog, searchModels, formatModelPrice, prettyModelId, SUGGESTED_MODEL_IDS, RECOMMENDED_MODEL_ID } from "../brain/model-catalog.js";
 import { discoverLocalModels } from "../brain/local-model-catalog.js";
+import { PDF_TRANSCRIPTION_HELP, localVisionModels, pdfTranscriptionCapability } from "../brain/pdf-transcription.js";
 import { escapeHtml } from "../../core/utils.js";
 import { openPopover } from "../../ui/primitives/popover.js";
 import { fieldMarkup, wireField } from "../../ui/primitives/field.js";
@@ -11,6 +12,7 @@ import { comboboxMarkup, wireCombobox } from "../../ui/primitives/combobox.js";
 
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
 const chevron = `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>`;
+const infoIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.35"/><path d="M8 7.15v4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="8" cy="4.7" r=".75" fill="currentColor"/></svg>`;
 
 export function createSettingsPopover(options) {
   const defaultTrigger = options.trigger;
@@ -49,6 +51,22 @@ export function createSettingsPopover(options) {
     return "Looking for Ollama on this computer…";
   }
 
+  function transcriptionHelpMarkup(preset) {
+    const destination = preset.id === "custom"
+      ? " Page images stay on your local endpoint."
+      : " Page images go to OpenRouter.";
+    return `<span class="settings-label-with-info"><span class="settings-label" id="transcribe-model-label">PDF transcription</span><span class="settings-info"><button class="settings-info-trigger" type="button" aria-label="About PDF transcription" aria-describedby="transcribe-model-help">${infoIcon}</button><span class="settings-info-tooltip" id="transcribe-model-help" role="tooltip">${escapeHtml(PDF_TRANSCRIPTION_HELP + destination)}</span></span></span>`;
+  }
+
+  function transcriptionStatusCopy(capability) {
+    if (capability.status === "checking") return "Checking installed models for vision support…";
+    if (capability.available) {
+      const count = capability.visionModels?.length || 1;
+      return `${count} installed vision model${count === 1 ? "" : "s"} found.`;
+    }
+    return capability.reason;
+  }
+
   function renderConditionalSections() {
     const host = surface?.querySelector("#settings-conditional-sections");
     if (!host) return;
@@ -56,12 +74,21 @@ export function createSettingsPopover(options) {
     const preset = providerFor(settings.preset);
     const currentModel = settings.model || preset.model;
     const transcribeModel = settings.transcribe_model || preset.transcribe_model || currentModel;
+    const localCapability = preset.id === "custom"
+      ? pdfTranscriptionCapability(settings, localDiscovery === "success" || localDiscovery === "empty"
+        ? { models: localModels || [] }
+        : { models: null, discoveryError: localDiscovery === "error" })
+      : pdfTranscriptionCapability(settings);
+    const transcribeDisabled = preset.id === "custom" && !localCapability.available;
+    const transcribeLabel = transcribeDisabled
+      ? (localCapability.status === "checking" ? "Checking…" : "Unavailable")
+      : transcribeModel;
     surface.querySelector("#settings-panel").dataset.preset = preset.id;
     host.innerHTML = `${recoveryStatus ? `<div class="settings-section settings-recovery" role="status">${escapeHtml(recoveryStatus)}</div>` : ""}
-      ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: modelDisplayName(currentModel), title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}${localDiscovery === "error" || localDiscovery === "empty" ? ` <button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</small></div>`}
+      ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}${localDiscovery === "error" || localDiscovery === "empty" ? ` <button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</small></div>`}
       ${preset.requires_key ? `<div class="settings-section key-section">${fieldMarkup({ id: "api-key", type: "password", label: `${preset.label} key`, value: getApiKey(settings), placeholder: apiKeyPlaceholder(settings.preset), autocomplete: "off", spellcheck: "false", toggleId: "api-key-toggle", toggleHtml: options.eyeSvg(false), labelAfterHtml: preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : "", status: { id: "api-key-status", className: "key-status idle visible", text: keyIdleWhisper(preset) } })}<label class="settings-row remember-row" for="session-only"><span class="switch-copy"><strong>Remember on this device</strong><small>Turn off on shared computers.</small></span><span class="switch" aria-hidden="true"><input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}><span class="switch-track"></span></span></label></div>` : ""}
       ${preset.id === "custom" ? `<details class="settings-advanced"><summary>Connection settings</summary><div class="settings-advanced-grid">${fieldMarkup({ id: "provider-base", label: "Endpoint", value: settings.base_url || "", placeholder: "http://localhost:11434/v1", hint: "Use an OpenAI-compatible endpoint." })}</div></details>` : ""}
-      <div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="transcribe-model-label">PDF transcription</span>${comboboxMarkup({ id: "transcribe-model", labelledBy: "transcribe-model-label", value: transcribeModel, label: modelDisplayName(transcribeModel), title: transcribeModel, iconHtml: chevron })}</div></div>
+      <div class="settings-section model-section transcription-model-section"><div class="settings-row">${transcriptionHelpMarkup(preset)}${comboboxMarkup({ id: "transcribe-model", labelledBy: "transcribe-model-label", describedBy: preset.id === "custom" ? "transcribe-model-status" : "", value: transcribeDisabled ? "" : transcribeModel, label: transcribeLabel, title: transcribeDisabled ? localCapability.reason : transcribeModel, iconHtml: chevron, disabled: transcribeDisabled })}</div>${preset.id === "custom" ? `<small id="transcribe-model-status" class="field-hint transcription-status ${escapeHtml(localCapability.status)}">${escapeHtml(transcriptionStatusCopy(localCapability))}${!localCapability.available && localCapability.status !== "checking" ? ` <button id="local-vision-retry" class="settings-text-action" type="button">Check again</button>` : ""}</small>` : ""}</div>
       ${purpose !== "settings" || !getGenerationSetupStatus(settings).ready ? `<div class="settings-section settings-complete-section"><button id="complete-model-setup" class="web-primary" type="button">Finish setup</button></div>` : ""}`;
     wireConditionalSections(host);
     popover?.update();
@@ -82,6 +109,7 @@ export function createSettingsPopover(options) {
     }
     host.querySelector("#provider-base")?.addEventListener("change", (event) => { applyPatch({ base_url: event.target.value.trim() }); void runLocalDiscovery(); });
     host.querySelector("#local-model-retry")?.addEventListener("click", () => void runLocalDiscovery());
+    host.querySelector("#local-vision-retry")?.addEventListener("click", () => void runLocalDiscovery());
     host.querySelector("#complete-model-setup")?.addEventListener("click", () => void completeSetup());
   }
 
@@ -110,9 +138,13 @@ export function createSettingsPopover(options) {
       localDiscovery = models.length ? "success" : "empty";
       if (models.length) {
         const settings = loadSettings();
-        if (!models.some((model) => model.id === settings.model) && !getGenerationSetupStatus(settings).ready) {
-          applyPatch({ model: models[0].id });
+        const patch = {};
+        if (!models.some((model) => model.id === settings.model) && !getGenerationSetupStatus(settings).ready) patch.model = models[0].id;
+        const visionModels = localVisionModels(models);
+        if (visionModels.length && !visionModels.some((model) => model.id === settings.transcribe_model)) {
+          patch.transcribe_model = visionModels.find((model) => model.id === (patch.model || settings.model))?.id || visionModels[0].id;
         }
+        if (Object.keys(patch).length) applyPatch(patch);
       }
     } catch (error) {
       if (token !== localDiscoveryToken) return;
@@ -154,9 +186,16 @@ export function createSettingsPopover(options) {
       load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)),
       filter: (models, query) => query ? searchModels(models, query).map((model, index) => ({ model, itemIndex: index })) : [...SUGGESTED_MODEL_IDS.map((id) => models.find((model) => model.id === id)).filter(Boolean).map((model, index) => ({ model, itemIndex: models.indexOf(model), group: index === 0 ? "Suggested" : "", recommended: model.id === RECOMMENDED_MODEL_ID })), ...models.map((model, index) => ({ model, itemIndex: index, group: index === 0 ? "All models" : "" }))],
       renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().model, ...entry }), loading: () => `<div class="model-note combobox-loading">Loading models…</div>`, empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching models." : "OpenRouter returned no models."}</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't reach OpenRouter for the model list. ${retry}</div>` }, onChange: commit });
-    wireCombobox(root, { id: "transcribe-model", labelledBy: "transcribe-model-label", placeholder: "Choose a PDF transcription model…", surfaceClassName: "combobox-surface model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, freeText: renderExactModelRow, source: {
-      load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)), filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })),
-      renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().transcribe_model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Loading models…</div>`, empty: () => `<div class="model-note combobox-empty">No matching models.</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't load models. ${retry}</div>` }, onChange: (id) => { if (id) applyPatch({ transcribe_model: id }); } });
+    const preset = providerFor(loadSettings().preset);
+    if (preset.id === "custom") {
+      wireCombobox(root, { id: "transcribe-model", labelledBy: "transcribe-model-label", placeholder: "Search installed vision models…", surfaceClassName: "combobox-surface local-model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, source: {
+        load: async () => localVisionModels(localModels || await discoverLocalModels(loadSettings().base_url)), filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })),
+        renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().transcribe_model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Checking installed vision models…</div>`, empty: () => `<div class="model-note combobox-empty">No installed vision models.</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't verify local vision models. ${retry}</div>` }, onChange: (id) => { if (id) applyPatch({ transcribe_model: id }); } });
+    } else {
+      wireCombobox(root, { id: "transcribe-model", labelledBy: "transcribe-model-label", placeholder: "Choose a PDF transcription model…", surfaceClassName: "combobox-surface model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, freeText: renderExactModelRow, source: {
+        load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)), filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })),
+        renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().transcribe_model, itemIndex: entry.itemIndex }), loading: () => `<div class="model-note combobox-loading">Loading models…</div>`, empty: () => `<div class="model-note combobox-empty">No matching models.</div>`, error: (retry) => `<div class="model-note combobox-error">Couldn't load models. ${retry}</div>` }, onChange: (id) => { if (id) applyPatch({ transcribe_model: id }); } });
+    }
     if (!root.querySelector("#local-model")) return;
     wireCombobox(root, { id: "local-model", labelledBy: "local-model-label", placeholder: "Search installed Ollama models…", surfaceClassName: "combobox-surface local-model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, searchAfterHtml: "<kbd>esc</kbd>", freeText: renderExactModelRow, source: {
       load: async () => localModels || discoverLocalModels(loadSettings().base_url),

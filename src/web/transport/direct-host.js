@@ -14,7 +14,7 @@ const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, registerAssetUrl = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, getPdfTranscriptionCapability = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
+  constructor({ store, hole, brain = null, registerAssetUrl = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onProviderFailure = null, onRootAnswered = null, getPdfTranscriptionCapability = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = null;
@@ -22,6 +22,7 @@ export class DirectRabbitholeHost {
     this.onDone = onDone;
     this.onRestore = onRestore;
     this.onAuthRequired = onAuthRequired;
+    this.onProviderFailure = onProviderFailure;
     this.onRootAnswered = onRootAnswered;
     this.getPdfTranscriptionCapability = getPdfTranscriptionCapability;
     this.mintGenerationRunId = mintGenerationRunId;
@@ -528,6 +529,8 @@ export class DirectRabbitholeHost {
     const normalized = normalizeProviderError(err);
     if (isAuthError(normalized)) {
       this.onAuthRequired?.({ node, error: normalized, retry: () => this.handleRetry({ node_id: nodeId }) });
+    } else if (normalized.code === "network") {
+      this.onProviderFailure?.({ node, error: normalized, retry: () => this.handleRetry({ node_id: nodeId }) });
     }
     this.emit({
       type: "node_error",

@@ -4,6 +4,7 @@ import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./
 import { loadSettings, saveSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
+import { createOllamaRecoveryDialog } from "./settings/ollama-recovery.js";
 import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
 import { getGenerationSetupStatus, invalidateGenerationSetup } from "./settings/setup-readiness.js";
 import { installTestSeam } from "./test-seam.js";
@@ -35,6 +36,7 @@ let railOpen = false;
 let blankZoom = 1;
 let composerDialog = null;
 let settingsController = null;
+let ollamaRecoveryController = null;
 let composerPath = "";
 let lastHoleCount = 0;
 let railSummaries = null;
@@ -168,6 +170,16 @@ function initAppChrome() {
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
   const settingsTrigger = document.getElementById("t-settings");
+  ollamaRecoveryController = createOllamaRecoveryDialog({
+    onResolved: async ({ model, transcribeModel }) => {
+      const current = loadSettings();
+      saveSettings({ ...current, model, transcribe_model: transcribeModel, api_key: getApiKey(current) });
+      settingsController?.completeLocalSetup?.();
+      refreshCurrentBrain();
+      syncGenerationSetupUi();
+      if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
+    },
+  });
   settingsController = createSettingsPopover({
     trigger: settingsTrigger,
     onSettingsChange: () => {
@@ -179,6 +191,7 @@ function initAppChrome() {
     eyeSvg,
     setKeyStatus,
     validateKey: validateKeyForPreset,
+    openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
   });
   settingsTrigger?.addEventListener("click", () => settingsController.open());
   document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
@@ -654,6 +667,7 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     onRestore: () => { if (currentHost === host) location.reload(); },
     onAuthRequired: (...args) => { if (currentHost === host) return handleBranchAuthRequired(...args); },
+    onProviderFailure: (...args) => { if (currentHost === host) return handleBranchProviderFailure(...args); },
     onRootAnswered: () => { if (currentHost === host) return renderRail(); },
     getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
   });
@@ -914,6 +928,20 @@ function handleBranchAuthRequired({ node, error, retry }) {
     status: error?.message || "Reconnect your model to continue.",
     focusKey: providerFor(loadSettings().preset).requires_key,
     onReady: async () => {
+      refreshCurrentBrain();
+      retry?.();
+      showToast({ message: `Retrying "${node?.title || "ask"}".` });
+    },
+  });
+}
+
+function handleBranchProviderFailure({ node, retry }) {
+  const settings = loadSettings();
+  if (providerFor(settings.preset).id !== "custom") return;
+  ollamaRecoveryController.open({
+    settings,
+    trigger: document.getElementById("t-settings"),
+    onResolved: async () => {
       refreshCurrentBrain();
       retry?.();
       showToast({ message: `Retrying "${node?.title || "ask"}".` });

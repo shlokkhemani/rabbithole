@@ -13,6 +13,8 @@ const KEY_URL = "https://openrouter.ai/api/v1/key";
 const MODEL_URL = "https://openrouter.ai/api/v1/models";
 const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
 const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
+const LOCAL_VERSION_URL = "http://localhost:11434/api/version";
+const LOCAL_CHAT_URL = "http://localhost:11434/v1/chat/completions";
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
@@ -509,6 +511,8 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     const page = await context.newPage();
     await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
     await page.route(LOCAL_MODEL_URL, handler);
+    await page.route(LOCAL_VERSION_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ version: "0.24.0" }) }));
+    await page.route(LOCAL_CHAT_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ choices: [{ message: { content: "ready" } }] }) }));
     await page.route(LOCAL_SHOW_URL, (route) => {
       const model = route.request().postDataJSON()?.model || "";
       return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ capabilities: model === "llava:7b" ? ["completion", "vision"] : ["completion"] }) });
@@ -524,6 +528,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   assert.equal(await found.page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images stay on your local endpoint.");
   assert.equal(await found.page.locator("#transcribe-model").isDisabled(), false);
   assert.equal(await found.page.locator("#transcribe-model").getAttribute("data-value"), "llava:7b");
+  assert.equal(await found.page.locator("#ollama-recovery-modal").count(), 0, "a healthy existing Ollama connection must never enter recovery");
   await found.page.click("#local-model");
   assert.equal(await found.page.locator(".model-option[data-value='nomic-embed-text:latest']").count(), 0, "embedding-only Ollama models should not be offered for generation");
   await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
@@ -546,19 +551,39 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     return route.fulfill(attempts === 1 ? { status: 500, headers: corsHeaders(), body: "failed" }
       : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "recovered:latest" }] }) });
   });
-  await failed.page.waitForSelector("#local-model-retry");
-  await failed.page.click("#local-model-retry");
-  await failed.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("1 installed model"));
+  await failed.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await failed.page.click("#ollama-primary-action");
+  await failed.page.waitForSelector("#ollama-recovery-modal", { state: "detached" });
   assert.equal(attempts, 2);
+  assert.equal((await failed.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "recovered:latest");
   await failed.context.close();
 
   const free = await run((route) => route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" }));
-  await free.page.click("#local-model");
-  await free.page.waitForSelector(".combobox-error");
-  await free.page.fill("#local-model-input", "manual:7b");
-  await free.page.keyboard.press("Enter");
-  assert.equal((await free.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "manual:7b", "failed local discovery should commit an exact id");
+  await free.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await free.page.click("#ollama-primary-action");
+  await free.page.waitForFunction(() => /Allow rabbithole\.ing|list models/i.test(document.querySelector("#ollama-recovery-content")?.textContent || ""));
+  assert.match(await free.page.locator("#ollama-recovery-content").innerText(), /Allow rabbithole\.ing|list models/i, "a local endpoint failure should stay inside the focused Ollama recovery guide");
+  assert.deepEqual(await free.page.locator("#ollama-recovery-card").evaluate((dialog) => ({
+    role: dialog.getAttribute("role"), modal: dialog.getAttribute("aria-modal"), labelledby: dialog.getAttribute("aria-labelledby"),
+  })), { role: "dialog", modal: "true", labelledby: "ollama-recovery-title" }, "Ollama recovery should be a real accessible modal");
+  assert.equal(await free.page.locator("#ollama-recovery-card svg, #ollama-recovery-card details, #ollama-recovery-card footer").count(), 0, "recovery should stay concise without diagrams, technical disclosures, or footer copy");
   await free.context.close();
+
+  const absentContext = await browser.newContext();
+  await absentContext.addInitScript(() => {
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: async () => ({ state: "granted" }) } });
+  });
+  const absentPage = await absentContext.newPage();
+  await absentPage.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
+  await absentPage.route(LOCAL_MODEL_URL, (route) => route.abort());
+  await absentPage.route(LOCAL_VERSION_URL, (route) => route.abort());
+  await openFreshSettings(absentPage);
+  await absentPage.click('[data-provider="custom"]');
+  await absentPage.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await absentPage.waitForSelector("#ollama-recovery-content >> text=Start Ollama");
+  assert.equal(await absentPage.getAttribute(`a[href="https://ollama.com/download/mac"]`, "target"), "_blank", "missing Ollama guidance should offer the official Mac download");
+  assert.doesNotMatch(await absentPage.locator("#ollama-recovery-content").innerText(), /OLLAMA_ORIGINS/, "an unreachable endpoint must not receive origin guidance");
+  await absentContext.close();
 }
 
 async function openFreshSettings(page) {
@@ -572,7 +597,6 @@ async function openFreshSettings(page) {
 
 async function switchSettingsToLocal(page) {
   await page.click('[data-provider="custom"]');
-  await page.waitForSelector("#local-model");
 }
 
 async function verifyAskKeyUxAndRail() {
@@ -762,8 +786,7 @@ async function verifyAskKeyUxAndRail() {
   })), [
     { id: "provider-base", named: true, described: true },
   ], "Local endpoint Field should have a label name and connected hint");
-  await page.focus("#local-model");
-  await page.keyboard.press("Enter");
+  await page.click("#local-model");
   await page.fill("#local-model-input", "deepseek-r1:7b");
   await page.waitForSelector("#local-model-listbox [role=option][data-value='deepseek-r1:7b']");
   await page.keyboard.press("Enter");

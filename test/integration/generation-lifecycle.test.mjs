@@ -8,7 +8,7 @@ import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } fr
 import { TitleSentinelParser } from "../../src/web/brain/title-sentinel.js";
 import { GenerationIngress } from "../../src/node/transport/generation-ingress.js";
 import { RabbitHoleSession } from "../../src/node/transport/session.js";
-import { DirectRabbitholeHost, createHoleFromMarkdown, generationDocEvents } from "../../src/web/transport/direct-host.js";
+import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion, generationDocEvents } from "../../src/web/transport/direct-host.js";
 
 async function collect(iterable) {
   const out = [];
@@ -87,6 +87,21 @@ assert.equal(network.message, "socket closed");
 assert.equal(network.code, "network");
 assert.equal(network.retryable, true);
 console.log("ok generation lifecycle: provider error normalization shapes");
+
+const failedHole = createPendingHoleFromQuestion("Why?");
+let providerFailure = null;
+let authFailure = null;
+const failureHost = new DirectRabbitholeHost({
+  store: { saveHole: async () => {} },
+  hole: failedHole,
+  onProviderFailure: (failure) => { providerFailure = failure; },
+  onAuthRequired: (failure) => { authFailure = failure; },
+});
+failureHost.handleAnswerError(failedHole.root_id, new TypeError("Failed to fetch"), new AbortController().signal);
+assert.equal(providerFailure?.error?.code, "network");
+assert.equal(typeof providerFailure?.retry, "function");
+assert.equal(authFailure, null);
+console.log("ok generation lifecycle: local network failures have a dedicated recover-and-retry hook");
 
 async function* fixtureChunks(parts) { yield* parts; }
 const rawBranch = "TITLE: Adapter title\n\nParagraph one.\nParagraph two.";

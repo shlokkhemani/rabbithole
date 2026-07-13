@@ -1493,6 +1493,286 @@ body.blank-dragging .composer-card {
   font-family: var(--font-ui);
 }
 
+/* Ollama recovery */
+.ollama-recovery-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 38%),
+    color-mix(in srgb, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  animation: settings-scrim-in var(--duration-fast) var(--ease-out) both;
+}
+
+.ollama-recovery-card {
+  --recovery-pad-x: 24px;
+  display: grid;
+  align-content: start;
+  width: min(440px, 100%);
+  max-height: min(88vh, 640px);
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--border-focus) 55%, var(--border));
+  border-radius: 16px;
+  outline: none;
+  background: color-mix(in srgb, var(--node-bg) 96%, var(--bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg-bold) 4%, transparent), var(--shadow-modal);
+  animation: ollama-card-in var(--duration-enter) var(--ease-out) both;
+}
+
+@keyframes ollama-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+.ollama-recovery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 16px 0 var(--recovery-pad-x);
+}
+
+.ollama-recovery-header h1 {
+  margin: 0;
+  color: var(--fg-bold);
+  font: var(--weight-semibold) var(--text-body)/1.2 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+
+.ollama-recovery-close {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control-lg);
+  background: transparent;
+  color: var(--fg-faint);
+  padding: 0 0 2px;
+  font: 20px/1 var(--font-ui);
+  cursor: pointer;
+  transition: var(--transition-color), transform var(--duration-fast) var(--ease-out);
+}
+
+.ollama-recovery-close:hover { background: var(--hl); color: var(--fg-bold); }
+.ollama-recovery-close:active { transform: scale(0.94); }
+
+.ollama-recovery-steps {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px 12px;
+  padding: 16px var(--recovery-pad-x) 0;
+  font: var(--weight-medium) var(--text-sm)/1 var(--font-ui);
+}
+
+.ollama-recovery-steps > span:first-child { color: var(--fg); }
+.ollama-recovery-steps > span:nth-child(2) { color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+.ollama-recovery-steps > div { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.ollama-recovery-steps i { height: 3px; border-radius: var(--radius-pill); background: var(--border); transition: background-color 240ms var(--ease-standard); }
+.ollama-recovery-steps i.done { background: var(--accent); }
+.ollama-recovery-steps i.active { background: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+.ollama-recovery-content { display: grid; overflow: hidden; }
+
+.ollama-recovery-stage {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  padding: 22px var(--recovery-pad-x) 24px;
+  text-align: left;
+  animation: ollama-stage-in 180ms var(--ease-out) both;
+}
+
+@keyframes ollama-stage-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+.ollama-recovery-stage h2 {
+  margin: 0;
+  color: var(--fg-bold);
+  font: var(--weight-semibold) 18px/1.25 var(--font-ui);
+  letter-spacing: -0.02em;
+}
+
+.ollama-recovery-stage[data-tone="warn"] h2::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 8px 3px 0;
+  border-radius: 50%;
+  background: var(--warn);
+  vertical-align: middle;
+}
+
+.ollama-recovery-stage > p {
+  max-width: 42ch;
+  margin: 6px 0 0;
+  color: var(--fg-dim);
+  font: var(--text-body)/1.55 var(--font-ui);
+}
+
+.ollama-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ollama-recovery-actions .web-primary {
+  display: inline-flex;
+  min-height: var(--control-h-md);
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control-lg);
+  padding: 0 16px;
+  transition: var(--transition-color), transform var(--duration-enter) var(--ease-out);
+}
+
+.ollama-recovery-actions .web-primary:active { transform: scale(0.98); }
+
+.ollama-btn-label {
+  display: inline-block;
+  transition: opacity var(--duration-fast) var(--ease-standard), filter var(--duration-fast) var(--ease-standard);
+}
+
+.ollama-btn-label.is-swapping { opacity: 0; filter: blur(2px); }
+
+.ollama-secondary {
+  display: inline-flex;
+  min-height: var(--control-h-md);
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control-lg);
+  background: transparent;
+  color: var(--fg);
+  padding: 0 14px;
+  font: var(--weight-semibold) var(--text-body)/1 var(--font-ui);
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition-color), transform var(--duration-enter) var(--ease-out);
+}
+
+.ollama-secondary:hover { border-color: var(--border-focus); background: var(--hl); color: var(--fg-bold); }
+.ollama-secondary:active { transform: scale(0.98); }
+
+.ollama-command {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--code-bg);
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.ollama-command code {
+  display: block;
+  color: var(--fg);
+  font: var(--text-ui)/1.7 var(--font-mono);
+}
+
+.ollama-command-line {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-left: 1.4em;
+  text-indent: -1.4em;
+}
+
+.ollama-model-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 5%, var(--node-bg));
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.ollama-model-glyph {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--radius-control-lg);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: var(--text-body);
+}
+
+.ollama-model-card strong { display: block; color: var(--fg-bold); font: var(--weight-semibold) var(--text-body)/1.3 var(--font-mono); letter-spacing: -0.01em; }
+.ollama-model-card small { display: block; margin-top: 2px; color: var(--fg-dim); font: var(--text-sm)/1.4 var(--font-ui); }
+.ollama-model-size { color: var(--fg-faint); font: var(--weight-medium) var(--text-ui)/1 var(--font-ui); font-variant-numeric: tabular-nums; }
+
+.ollama-progress {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  margin-top: 20px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.ollama-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width 260ms var(--ease-out); }
+.ollama-progress:not([aria-valuenow]) span { width: 40%; animation: ollama-indeterminate 1.1s var(--ease-standard) infinite; transition: none; }
+@keyframes ollama-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+
+.ollama-progress-meta {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--fg-dim);
+  font: var(--text-ui)/1.4 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.ollama-progress-percent { color: var(--fg); font-weight: var(--weight-medium); }
+
+.ollama-recovery-checking { align-content: center; justify-items: center; min-height: 124px; text-align: center; }
+.ollama-recovery-checking h2 { font: var(--weight-medium) var(--text-base)/1.3 var(--font-ui); color: var(--fg); letter-spacing: -0.01em; }
+.ollama-checking-note { margin: 6px 0 0; color: var(--fg-faint); font: var(--text-ui)/1.4 var(--font-ui); }
+.ollama-spinner { width: 16px; height: 16px; margin-bottom: 12px; border: 2px solid color-mix(in srgb, var(--fg) 16%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ollama-spin .6s linear infinite; }
+@keyframes ollama-spin { to { transform: rotate(360deg); } }
+
+.ollama-recovery-success { align-content: center; justify-items: center; min-height: 124px; text-align: center; }
+.ollama-recovery-success p { margin-top: 6px; }
+.ollama-success-check {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--success);
+  color: var(--bg);
+  font: var(--weight-bold) 15px/1 var(--font-ui);
+  animation: ollama-check-pop 320ms var(--ease-spring) both;
+}
+
+@keyframes ollama-check-pop {
+  from { opacity: 0; transform: scale(0.55); }
+}
+
 .web-primary:focus-visible,
 .provider-retry:focus-visible,
 .web-toast button:focus-visible,
@@ -1510,6 +1790,8 @@ body.blank-dragging .composer-card {
 .key-get:focus-visible,
 .key-input-wrap button:focus-visible,
 .settings-advanced summary:focus-visible,
+.ollama-recovery-close:focus-visible,
+.ollama-secondary:focus-visible,
 .switch input:focus-visible + .switch-track {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);
@@ -1536,6 +1818,20 @@ body.blank-dragging .composer-card {
     animation: none;
     transition: none;
   }
+
+  .ollama-recovery-modal,
+  .ollama-recovery-card,
+  .ollama-recovery-stage,
+  .ollama-recovery-steps i,
+  .ollama-success-check,
+  .ollama-btn-label,
+  .ollama-spinner,
+  .ollama-progress span {
+    animation: none;
+    transition: none;
+  }
+
+  .ollama-progress:not([aria-valuenow]) span { width: 100%; opacity: 0.35; }
 
   .ingest-status.busy::after {
     animation: none;
@@ -1596,5 +1892,8 @@ body.blank-dragging .composer-card {
     align-items: start;
     padding-top: 76px;
   }
+
+  .ollama-recovery-modal { align-items: start; padding: 16px; padding-top: 44px; }
+  .ollama-recovery-card { --recovery-pad-x: 20px; }
 
 }

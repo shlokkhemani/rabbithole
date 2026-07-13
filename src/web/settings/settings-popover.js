@@ -29,6 +29,7 @@ export function createSettingsPopover(options) {
   let localDiscovery = "idle";
   let localDiscoveryMessage = "";
   let localDiscoveryToken = 0;
+  let pendingLocalReadyCallback = null;
 
   function applyPatch(patch) {
     const current = loadSettings();
@@ -112,8 +113,8 @@ export function createSettingsPopover(options) {
       host.querySelector("#session-only")?.addEventListener("change", (event) => applyPatch({ session_only: !event.target.checked }));
     }
     host.querySelector("#provider-base")?.addEventListener("change", (event) => { applyPatch({ base_url: event.target.value.trim() }); void runLocalDiscovery(); });
-    host.querySelector("#local-model-retry")?.addEventListener("click", () => void runLocalDiscovery());
-    host.querySelector("#local-vision-retry")?.addEventListener("click", () => void runLocalDiscovery());
+    host.querySelector("#local-model-retry")?.addEventListener("click", launchOllamaRecovery);
+    host.querySelector("#local-vision-retry")?.addEventListener("click", launchOllamaRecovery);
     host.querySelector("#complete-model-setup")?.addEventListener("click", () => void completeSetup());
   }
 
@@ -127,11 +128,11 @@ export function createSettingsPopover(options) {
       surface.querySelectorAll("[data-provider]").forEach((choice) => choice.setAttribute("aria-pressed", choice.dataset.provider === id ? "true" : "false"));
       recoveryStatus = ""; localModels = null; localDiscovery = "idle";
       renderConditionalSections();
-      if (id === "custom") void runLocalDiscovery();
+      if (id === "custom") void runLocalDiscovery({ recoverOnError: true });
     }));
   }
 
-  async function runLocalDiscovery() {
+  async function runLocalDiscovery({ recoverOnError = false } = {}) {
     if (providerFor(loadSettings().preset).id !== "custom") return;
     const token = ++localDiscoveryToken;
     localDiscovery = "loading"; localDiscoveryMessage = ""; renderConditionalSections();
@@ -154,8 +155,18 @@ export function createSettingsPopover(options) {
       if (token !== localDiscoveryToken) return;
       localModels = null; localDiscovery = "error";
       localDiscoveryMessage = "";
+      if (recoverOnError) { launchOllamaRecovery(); return; }
     }
     renderConditionalSections();
+  }
+
+  function launchOllamaRecovery() {
+    if (providerFor(loadSettings().preset).id !== "custom") return;
+    const recoveryTrigger = activeTrigger;
+    pendingLocalReadyCallback = readyCallback || pendingLocalReadyCallback;
+    readyCallback = null;
+    close();
+    options.openOllamaRecovery?.({ settings: loadSettings(), trigger: recoveryTrigger });
   }
 
   async function completeSetup() {
@@ -165,7 +176,7 @@ export function createSettingsPopover(options) {
       const ok = await commitSettingsKey({ required: true });
       if (!ok) return;
     } else if (localDiscovery !== "success" || !localModels?.some((model) => model.id === settings.model)) {
-      localDiscovery = "error"; localDiscoveryMessage = "Connect to a local model before finishing setup."; renderConditionalSections(); return;
+      launchOllamaRecovery(); return;
     }
     markGenerationSetupComplete();
     options.onSettingsChange?.();
@@ -236,7 +247,9 @@ export function createSettingsPopover(options) {
     const placement = activeTrigger?.id === "blank-start-setup" ? "center" : "bottom-end";
     const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
     popover = openPopover({ trigger: activeTrigger, surface, placement, initialFocus: explicit || (focusKey && !coarsePointer ? surface.querySelector("#api-key") : surface), onClose: close });
-    if (preset.id === "custom") void runLocalDiscovery();
+    if (preset.id === "custom") {
+      void runLocalDiscovery({ recoverOnError: !getGenerationSetupStatus(settings).ready || purpose !== "settings" });
+    }
   }
 
   function close() {
@@ -248,7 +261,15 @@ export function createSettingsPopover(options) {
     readyCallback = null; options.onClose?.();
   }
 
-  return { open, close };
+  function completeLocalSetup() {
+    markGenerationSetupComplete();
+    options.onSettingsChange?.();
+    const callback = pendingLocalReadyCallback || readyCallback;
+    pendingLocalReadyCallback = null; readyCallback = null;
+    void callback?.();
+  }
+
+  return { open, close, completeLocalSetup };
 }
 
 function keyIdleWhisper(preset) { return `Stored only in this browser, sent directly to ${preset.label}.`; }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { webkit } from "playwright";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { serializeForInlineScript } from "../../src/core/utils.js";
 import { MOCK_MODEL, corsHeaders, routeProvider, seedConfiguredOpenRouter } from "../support/provider-mock.mjs";
@@ -20,11 +21,131 @@ assert.deepEqual(JSON.parse(hostilePayloadJson), hostilePayloadValue, "escaped i
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
+const mobileWebKit = await webkit.launch();
 try {
+  await verifyMobileSelectionSurface(browser, "chromium");
+  await verifyMobileSelectionSurface(mobileWebKit, "webkit");
   await verifyCanvasBranching();
   console.log("web app verification passed");
 } finally {
+  await mobileWebKit.close();
   await app.close();
+}
+
+async function verifyMobileSelectionSurface(browserEngine, engineName) {
+  const context = await browserEngine.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+    isMobile: true,
+  });
+  await seedConfiguredOpenRouter(context);
+  try {
+    const canvasPage = await context.newPage();
+    await routeProvider(canvasPage, {
+      streams: [["TITLE: Mobile custom branch\n", "Mobile custom question completed."]],
+      providerDelayMs: 220,
+    });
+    await canvasPage.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(canvasPage, "# Mobile selection\n\nLong-press selection should open a reliable action sheet.");
+
+    await canvasPage.evaluate(() => {
+      const root = document.querySelector(".node .doc-content[data-node-id]");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const start = node.nodeValue.indexOf("Long-press selection");
+        if (start < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, start + "Long-press selection".length);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      throw new Error("Mobile selection fixture text not found");
+    });
+    await canvasPage.waitForSelector("#ask.visible.mobile-sheet");
+
+    const initial = await canvasPage.locator("#ask").evaluate((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const input = document.getElementById("ask-text");
+      const lenses = Array.from(surface.querySelectorAll(".lens"));
+      return {
+        active: document.activeElement?.id || "",
+        placement: surface.dataset.placement,
+        selection: window.getSelection().toString(),
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+        viewport: { left: viewport.offsetLeft, right: viewport.offsetLeft + viewport.width, top: viewport.offsetTop, bottom: viewport.offsetTop + viewport.height },
+        inputFont: parseFloat(getComputedStyle(input).fontSize),
+        lensColumns: getComputedStyle(document.getElementById("ask-lenses")).gridTemplateColumns.split(" ").length,
+        lensMinHeight: Math.min(...lenses.map((lens) => lens.getBoundingClientRect().height)),
+        keyHintsHidden: lenses.every((lens) => getComputedStyle(lens.querySelector("kbd")).display === "none"),
+      };
+    });
+    assert.notEqual(initial.active, "ask-text", `${engineName}: mobile selection must not summon the keyboard before the user asks a custom question`);
+    assert.equal(initial.placement, "top-center", `${engineName}: mobile selection actions should anchor to the visual viewport bottom`);
+    assert.equal(initial.selection, "Long-press selection", `${engineName}: opening the mobile sheet must preserve the selected text`);
+    assert(initial.rect.left >= initial.viewport.left && initial.rect.right <= initial.viewport.right, `${engineName}: mobile selection sheet must fit the visual viewport (${JSON.stringify(initial)})`);
+    assert(initial.rect.top >= initial.viewport.top && initial.rect.bottom <= initial.viewport.bottom, `${engineName}: mobile selection sheet must stay visible (${JSON.stringify(initial)})`);
+    assert(initial.inputFont >= 16, `${engineName}: mobile custom-question input must not trigger iOS focus zoom`);
+    assert.equal(initial.lensColumns, 2, `${engineName}: mobile lenses should use a thumb-friendly two-column grid`);
+    assert(initial.lensMinHeight >= 44, `${engineName}: mobile lens targets must be at least 44px tall (got ${initial.lensMinHeight})`);
+    assert.equal(initial.keyHintsHidden, true, `${engineName}: desktop keyboard shortcut hints should be hidden on touch surfaces`);
+
+    await canvasPage.click("#ask-text");
+    await canvasPage.fill("#ask-text", "Why is this reliable?");
+    await canvasPage.setViewportSize({ width: 390, height: 430 });
+    await canvasPage.waitForFunction(() => {
+      const surface = document.getElementById("ask").getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return document.activeElement?.id === "ask-text" && surface.top >= viewport.offsetTop && surface.bottom <= viewport.offsetTop + viewport.height;
+    });
+    assert.equal(await canvasPage.evaluate(() => window.visualViewport?.scale), 1, `${engineName}: focusing the mobile question field must not zoom the page`);
+    await canvasPage.keyboard.press("Enter");
+    await canvasPage.waitForSelector("#ask:not(.visible)");
+    await canvasPage.locator(".node:not(.root)", { hasText: "Mobile custom question completed." }).waitFor();
+    await canvasPage.close();
+
+    // WebKit's automation layer cannot attach a synthetic Selection inside the
+    // overflowed reader (native long-press handles are not exposed). Its true-
+    // mobile canvas flow above still covers the shared sheet and iOS viewport;
+    // Chromium exercises the reader's touchend path end to end below.
+    if (engineName === "webkit") return;
+
+    const readerPage = await context.newPage();
+    await routeProvider(readerPage, {
+      streams: [["TITLE: Mobile lens branch\n", "Mobile lens action completed."]],
+      providerDelayMs: 220,
+    });
+    await readerPage.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(readerPage, "# Mobile reader selection\n\nTouch selection should open a **reliable action sheet**.");
+    await readerPage.click("#t-reader");
+    await readerPage.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
+    await readerPage.evaluate(() => {
+      const node = document.querySelector("#reader-main strong")?.firstChild;
+      if (!node) throw new Error("Mobile reader selection fixture text not found");
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      node.parentElement.dispatchEvent(new Event("touchend", { bubbles: true }));
+    });
+    await readerPage.waitForSelector("#ask.visible.mobile-sheet");
+    assert.equal(await readerPage.evaluate(() => window.getSelection().toString()), "reliable action sheet", `${engineName}: reader selection should open the sheet without collapsing the range`);
+    const sidebarBranchCount = await readerPage.locator(".side-item").count();
+    await readerPage.click('.lens[data-lens="explain"]');
+    await readerPage.waitForSelector("#ask:not(.visible)");
+    await readerPage.waitForFunction((before) => document.querySelectorAll(".side-item").length > before, sidebarBranchCount);
+    await readerPage.waitForFunction(() => Array.from(document.querySelectorAll(".side-item")).some((item) => !item.classList.contains("pending")));
+    assert.match(await readerPage.locator(".side-item").last().innerText(), /Explain[\s\S]*reliable action sheet/i, `${engineName}: the reader lens action should retain its lens and selected context`);
+    await readerPage.close();
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifyCanvasBranching() {

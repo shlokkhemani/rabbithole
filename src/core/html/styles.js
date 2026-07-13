@@ -389,6 +389,23 @@ body.mode-canvas #toolbar { display: flex; }
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
 .lens:hover kbd { color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 13%, transparent); }
 
+/* Mobile selection is a separate interaction model: keep the desktop palette
+   anchored to the text, but give touch users a stable, thumb-reachable sheet. */
+#ask.mobile-sheet { width: min(420px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));
+  max-height: max(0px, calc(var(--overlay-viewport-height, 100vh) - var(--surface-edge) * 2));
+  overflow: auto; overscroll-behavior: contain; border-radius: 16px;
+  transform: translateY(18px); transform-origin: bottom center; }
+#ask.mobile-sheet.visible { transform: translateY(0); }
+#ask.mobile-sheet .ask-input { align-items: center; gap: 10px; padding: 10px 10px 10px 14px; }
+#ask.mobile-sheet .ask-input textarea { min-height: 24px; max-height: 96px; font-size: 16px; line-height: 1.45; }
+#ask.mobile-sheet .ask-input .send-btn { width: 40px; height: 40px; flex: 0 0 40px; }
+#ask.mobile-sheet .ask-lenses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+#ask.mobile-sheet .lens { min-height: 46px; padding: 10px 8px; font-size: 13px;
+  color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+#ask.mobile-sheet .lens:active { background: var(--hl-strong); }
+#ask.mobile-sheet .lens kbd { display: none; }
+
 /* ---------- ⌘K palette — search the whole hole ---------- */
 #palette { position: fixed; inset: 0; z-index: 120; display: none; background: color-mix(in srgb, var(--bg) 35%, transparent); }
 #palette.visible { display: block; }

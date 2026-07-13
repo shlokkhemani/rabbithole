@@ -72,7 +72,17 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
   var askScope = askLifecycle.beginInit();
-  askScope.listen(document, "mouseup", function(e){ if (inAsk(e)) return; askScope.timeout(maybeShowAsk, 0); });
+  askScope.listen(document, "mouseup", function(e){
+    if (inAsk(e)) return;
+    if (usesMobileAskSurface()) queueMobileAsk(80);
+    else askScope.timeout(maybeShowAsk, 0);
+  });
+  askScope.listen(document, "selectionchange", function(){
+    if (usesMobileAskSurface()) queueMobileAsk(140);
+  });
+  askScope.listen(document, "touchend", function(e){
+    if (!inAsk(e) && usesMobileAskSurface()) queueMobileAsk(80);
+  }, { passive: true });
   askScope.listen(askGo, "click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
   askScope.listen(document.getElementById("ask-lenses"), "click", function(e){
     var b = e.target.closest ? e.target.closest(".lens") : null;
@@ -97,6 +107,16 @@ export function initAskFollowups(){
 function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
 
   var askPosition = null, askTabOwner = null, askOwnerCleanup = null;
+  var mobileSelectionTimer = 0, ignoreMobileSelectionUntil = 0;
+
+  function usesMobileAskSurface(){
+    return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 760px)").matches));
+  }
+  function queueMobileAsk(delay){
+    if (Date.now() < ignoreMobileSelectionUntil || !askLifecycle.scope) return;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = askLifecycle.scope.timeout(function(){ mobileSelectionTimer = 0; maybeShowAsk(); }, delay);
+  }
 
   function selectionOwner(dc){
     return (dc && dc.closest && dc.closest(".node")) || readerMain;
@@ -137,6 +157,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     var startOff = charOffset(dc, range.startContainer, range.startOffset);
     var endOff = charOffset(dc, range.endContainer, range.endOffset);
     if (endOff <= startOff) return;
+    if (ask.classList.contains("visible")) hideAsk();
     pendingAsk = { parentId: parentId, container: dc, selectedText: sel.toString().trim(),
                    startOff: startOff, endOff: endOff, range: range.cloneRange() };
     paintAskHighlight(pendingAsk.range);
@@ -183,8 +204,12 @@ export function showAskFromSelection(options){
     return true;
   }
   function openAskSurface(anchor, owner){
-    askPosition = openAnchoredSurface({ surface: ask, anchor: anchor,
-      placement: "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
+    var mobile = usesMobileAskSurface();
+    ask.classList.toggle("mobile-sheet", mobile);
+    askText.placeholder = mobile ? "Ask about this…" : "Ask about this… ↵ = Explain";
+    var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
+    askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
+      placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
       onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
         var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
@@ -193,10 +218,23 @@ export function showAskFromSelection(options){
         restoreSelectionRange(keepRange);
       } });
     autoGrowEl(askText, 110); // Must run after the surface leaves display:none.
-    askText.focus({ preventScroll: true });
+    if (!mobile) askText.focus({ preventScroll: true });
+  }
+  function mobileViewportAnchor(owner){
+    return { contextElement: owner, getBoundingClientRect: function(){
+      var viewport = window.visualViewport;
+      var left = viewport ? viewport.offsetLeft : 0;
+      var top = viewport ? viewport.offsetTop : 0;
+      var width = viewport ? viewport.width : window.innerWidth;
+      var height = viewport ? viewport.height : window.innerHeight;
+      var bottom = top + height;
+      return { left: left, right: left + width, top: bottom, bottom: bottom,
+        width: width, height: 0, x: left, y: bottom };
+    } };
   }
   function restoreSelectionRange(range){
     if (!range) return;
+    ignoreMobileSelectionUntil = Date.now() + 300;
     try { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); } catch(e){}
   }
 export function hideAsk(){
@@ -217,6 +255,9 @@ export function disposeAskFollowups(){
     pendingAsk = null;
     askTabOwner = null;
     askOwnerCleanup = null;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = 0;
+    ignoreMobileSelectionUntil = 0;
     scrollAnimId = 0;
     scrollAnimIgnoreUntil = 0;
     askText.value = "";

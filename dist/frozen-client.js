@@ -4926,8 +4926,15 @@ var RabbitholeFrozenClient = (() => {
     var askScope = askLifecycle.beginInit();
     askScope.listen(document, "mouseup", function(e) {
       if (inAsk(e)) return;
-      askScope.timeout(maybeShowAsk, 0);
+      if (usesMobileAskSurface()) queueMobileAsk(80);
+      else askScope.timeout(maybeShowAsk, 0);
     });
+    askScope.listen(document, "selectionchange", function() {
+      if (usesMobileAskSurface()) queueMobileAsk(140);
+    });
+    askScope.listen(document, "touchend", function(e) {
+      if (!inAsk(e) && usesMobileAskSurface()) queueMobileAsk(80);
+    }, { passive: true });
     askScope.listen(askGo, "click", function(e) {
       submitAsk(null, motionSourceFromEvent(e));
     });
@@ -4970,6 +4977,19 @@ var RabbitholeFrozenClient = (() => {
   var askPosition = null;
   var askTabOwner = null;
   var askOwnerCleanup = null;
+  var mobileSelectionTimer = 0;
+  var ignoreMobileSelectionUntil = 0;
+  function usesMobileAskSurface() {
+    return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 760px)").matches));
+  }
+  function queueMobileAsk(delay) {
+    if (Date.now() < ignoreMobileSelectionUntil || !askLifecycle.scope) return;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = askLifecycle.scope.timeout(function() {
+      mobileSelectionTimer = 0;
+      maybeShowAsk();
+    }, delay);
+  }
   function selectionOwner(dc) {
     return dc && dc.closest && dc.closest(".node") || readerMain;
   }
@@ -5007,6 +5027,7 @@ var RabbitholeFrozenClient = (() => {
     var startOff = charOffset(dc, range.startContainer, range.startOffset);
     var endOff = charOffset(dc, range.endContainer, range.endOffset);
     if (endOff <= startOff) return;
+    if (ask.classList.contains("visible")) hideAsk();
     pendingAsk = {
       parentId,
       container: dc,
@@ -5031,10 +5052,14 @@ var RabbitholeFrozenClient = (() => {
   }
   var pendingAsk = null;
   function openAskSurface(anchor, owner) {
+    var mobile = usesMobileAskSurface();
+    ask.classList.toggle("mobile-sheet", mobile);
+    askText.placeholder = mobile ? "Ask about this\u2026" : "Ask about this\u2026 \u21B5 = Explain";
+    var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({
       surface: ask,
-      anchor,
-      placement: "bottom-start",
+      anchor: surfaceAnchor,
+      placement: mobile ? "top-center" : "bottom-start",
       restoreFocus: false,
       preventOutsidePointerDefault: false,
       onClose: function(reason) {
@@ -5046,10 +5071,31 @@ var RabbitholeFrozenClient = (() => {
       }
     });
     autoGrowEl(askText, 110);
-    askText.focus({ preventScroll: true });
+    if (!mobile) askText.focus({ preventScroll: true });
+  }
+  function mobileViewportAnchor(owner) {
+    return { contextElement: owner, getBoundingClientRect: function() {
+      var viewport2 = window.visualViewport;
+      var left = viewport2 ? viewport2.offsetLeft : 0;
+      var top = viewport2 ? viewport2.offsetTop : 0;
+      var width = viewport2 ? viewport2.width : window.innerWidth;
+      var height = viewport2 ? viewport2.height : window.innerHeight;
+      var bottom = top + height;
+      return {
+        left,
+        right: left + width,
+        top: bottom,
+        bottom,
+        width,
+        height: 0,
+        x: left,
+        y: bottom
+      };
+    } };
   }
   function restoreSelectionRange(range) {
     if (!range) return;
+    ignoreMobileSelectionUntil = Date.now() + 300;
     try {
       var sel = window.getSelection();
       sel.removeAllRanges();
@@ -5082,6 +5128,9 @@ var RabbitholeFrozenClient = (() => {
     pendingAsk = null;
     askTabOwner = null;
     askOwnerCleanup = null;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = 0;
+    ignoreMobileSelectionUntil = 0;
     scrollAnimId = 0;
     scrollAnimIgnoreUntil = 0;
     askText.value = "";

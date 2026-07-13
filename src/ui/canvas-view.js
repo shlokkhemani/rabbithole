@@ -291,7 +291,7 @@ export function autoGrowEl(ta, max){
     handle.addEventListener("click", function(e){ e.stopPropagation(); openCardDrawer(node); });
     ta.addEventListener("input", function(){ autoGrowEl(ta, 90); updateCardComposer(node); });
     ta.addEventListener("keydown", function(e){
-      if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
       else if (e.key === "Escape"){ e.stopPropagation(); closeCardDrawer(node); handle.focus({ preventScroll: true }); }
     });
     // Click-away with an empty drawer tucks it back in (a draft keeps it out).

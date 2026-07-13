@@ -93,7 +93,7 @@ export function initAskFollowups(){
   askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
   askScope.listen(composerText, "input", function(){ autoGrowComposer(); updateComposerState(); });
   askScope.listen(composerText, "keydown", function(e){
-    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submitFollowup("keyboard"); }
   });
   askScope.listen(composerSend, "click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
   askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });

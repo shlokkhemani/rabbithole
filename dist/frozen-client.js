@@ -30470,7 +30470,7 @@ ${text2}</tr>
       updateCardComposer(node);
     });
     ta.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         submitCardFollowup(node, "keyboard");
       } else if (e.key === "Escape") {
@@ -31366,7 +31366,7 @@ ${text2}</tr>
       updateComposerState();
     });
     askScope.listen(composerText, "keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         submitFollowup("keyboard");
       }

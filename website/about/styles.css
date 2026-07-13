@@ -42,8 +42,9 @@ a { color: inherit; }
 .nav-links { display: flex; align-items: center; gap: 24px; font-size: 14px; }
 .nav-links a { color: var(--dim); text-decoration: none; }
 .nav-links a:hover { color: var(--bright); }
-.nav-links .nav-github { padding: 7px 11px; border: 1px solid var(--edge); border-radius: 8px; color: var(--bright); }
-.nav-github span { color: var(--accent); }
+.nav-links .nav-github { display: inline-flex; align-items: center; gap: 5px; padding: 7px 11px; border: 1px solid var(--edge); border-radius: 8px; color: var(--bright); }
+.github-star-symbol { color: var(--accent); }
+.github-star-count { margin-left: 3px; padding-left: 8px; border-left: 1px solid var(--edge); color: var(--dim); font: 600 11px/1 var(--mono); font-variant-numeric: tabular-nums; }
 
 .hero { padding: 84px 0 36px; text-align: center; }
 .eyebrow { margin: 0 0 18px; color: var(--dim); font: 600 12px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; }
@@ -59,7 +60,7 @@ h1 { margin-bottom: 0; color: var(--bright); font-size: clamp(42px, 6.4vw, 72px)
 .button.secondary:hover { border-color: #625e57; }
 .button.quiet { color: var(--dim); }
 .button.quiet:hover { color: var(--bright); }
-.button.quiet span { color: var(--accent); }
+.button.quiet .github-star-symbol { color: var(--accent); }
 
 .stage { margin: 66px auto 0; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 16px; background: var(--surface); box-shadow: 0 26px 80px rgba(0,0,0,.52); line-height: 0; }
 .stage video { display: block; width: 100%; height: auto; }

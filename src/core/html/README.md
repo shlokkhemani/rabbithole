@@ -55,8 +55,9 @@ Web CSP:
   self-only, and permits one hash-pinned inline script that selects the saved or
   system theme before first paint. Inline styles remain allowed for the early
   theme background and the canvas runtime's dynamic positioning/sizing.
-  `connect-src` is pinned to the OpenRouter BYOK provider plus local
-  OpenAI-compatible endpoints on `localhost` and `127.0.0.1`.
+  `connect-src` is pinned to the OpenRouter BYOK provider, GitHub's public
+  repository metadata API for the project star count, plus local OpenAI-compatible
+  endpoints on `localhost` and `127.0.0.1`.
 - Remote custom providers are deliberately not wildcarded. To use one from the
   static app, edit the generated CSP (or rebuild with that origin added). This
   keeps the default shipped app from allowing arbitrary key-bearing requests.

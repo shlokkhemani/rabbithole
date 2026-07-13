@@ -294,6 +294,7 @@ async function verifyPublishOutput() {
   assert(redirects.includes("/self-host https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally 302"), "the stable self-host route should lead to local browser instructions");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
+  assert(html.includes("connect-src 'self' https://openrouter.ai https://api.github.com"), "web CSP should allow the public GitHub star-count request");
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
   const initialStyleAt = html.indexOf('id="initial-theme-style"');
   const initialScriptAt = html.indexOf('id="initial-theme-script"');
@@ -314,6 +315,8 @@ async function verifyPublishOutput() {
   assert(about.includes("Install the MCP server"), "about page should name the agent installation path explicitly");
   assert(about.includes("Run the browser app locally"), "about page should expose self-hosting instructions");
   assert(about.includes("Star on GitHub"), "about page should carry a clear GitHub star action");
+  assert(about.includes("data-github-stars"), "about page should show live repository stars in its GitHub actions");
+  assert(about.includes("connect-src https://api.github.com"), "about CSP should allow the public GitHub star-count request");
   assert(about.includes("OpenRouter requests go directly to OpenRouter"), "about copy should state the hosted-provider boundary accurately");
   assert(!about.includes("No account, no API keys, nothing leaves your machine"), "about page must not restore the obsolete privacy claim");
   const sitemap = await fs.readFile(path.join(publishDir, "sitemap.xml"), "utf8");

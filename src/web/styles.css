@@ -62,30 +62,18 @@ body.web-blank-canvas #act-canvas {
 }
 
 .toolbar-brand {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--fg-bold);
-  cursor: pointer;
-  transition: var(--transition-color);
+  color: color-mix(in srgb, var(--accent) 82%, var(--fg));
 }
 
 .toolbar-brand:hover,
 .toolbar-brand[aria-expanded="true"] {
+  color: var(--accent);
   background: var(--hl-strong);
 }
 
 .toolbar-brand svg {
-  display: block;
-  width: 19px;
-  height: 19px;
+  width: 16px;
+  height: 16px;
 }
 
 .project-menu {
@@ -110,18 +98,16 @@ body.web-blank-canvas #act-canvas {
 
 .project-menu-mark {
   display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   place-items: center;
-  border-radius: 50%;
-  background: var(--hl-strong);
-  color: var(--fg-bold);
+  color: var(--accent);
 }
 
 .project-menu-mark svg {
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
 }
 
 .project-menu-head > span:last-child {
@@ -152,7 +138,8 @@ body.web-blank-canvas #act-canvas {
   text-decoration: none;
 }
 
-.project-menu-item > span:last-child {
+.project-menu-item > span:last-child:not(.project-menu-meta),
+.project-menu-meta > span:last-child {
   color: var(--fg-faint);
   font-size: var(--text-xs);
 }
@@ -166,19 +153,16 @@ body.web-blank-canvas #act-canvas {
   color: var(--fg-bold);
 }
 
-.project-menu-github > span:first-child > span {
-  margin-right: 3px;
+.project-menu-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.github-star-count {
   color: var(--accent);
-}
-
-.project-menu-muted {
-  color: var(--fg-dim);
-}
-
-.project-menu-sep {
-  height: 1px;
-  margin: var(--space-3) var(--space-5);
-  background: var(--border);
+  font: var(--weight-semibold) var(--text-xs)/var(--leading-ui) var(--font-ui);
+  font-variant-numeric: tabular-nums;
 }
 
 .blank-start {

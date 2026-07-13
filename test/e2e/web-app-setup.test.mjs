@@ -15,6 +15,7 @@ const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
 const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
 const LOCAL_VERSION_URL = "http://localhost:11434/api/version";
 const LOCAL_CHAT_URL = "http://localhost:11434/v1/chat/completions";
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
@@ -117,6 +118,7 @@ async function verifyMobileSetupExperience() {
   try {
     const page = await context.newPage();
     await routeProvider(page);
+    await page.route(GITHUB_REPO_API_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stargazers_count: 230 }) }));
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#t-project");
     await page.waitForSelector("#project-menu:not([hidden])");
@@ -254,6 +256,7 @@ async function verifyLandingAndComposer() {
   });
   const page = await context.newPage();
   await page.route(KEY_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { label: "test key" } }) }));
+  await page.route(GITHUB_REPO_API_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stargazers_count: 230 }) }));
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForSelector("#blank-start:not([hidden])");
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
@@ -354,21 +357,20 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");
   await page.click("#t-project");
   await page.waitForSelector("#project-menu:not([hidden])");
+  await page.waitForFunction(() => document.getElementById("project-github-stars")?.title === "230 GitHub stars");
   assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "true");
   assert.deepEqual(await page.locator("#project-menu [role=menuitem]").allTextContents(), [
-    "About & demos↗",
-    "Install the MCP server↗",
-    "Run this browser app locally↗",
-    "★ Star on GitHub↗",
-    "Report an issue↗",
+    "About Rabbithole↗",
+    "Install & self-host↗",
+    "GitHub★ 230↗",
   ]);
   assert.equal(await page.getAttribute('#project-menu [href="/about/"]', "target"), "_blank");
-  assert.equal(await page.getAttribute('#project-menu [href*="#quick-start"]', "href"), "https://github.com/shlokkhemani/rabbithole#quick-start");
-  assert.equal(await page.getAttribute('#project-menu [href*="#run-the-browser-version-locally"]', "href"), "https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally");
+  assert.equal(await page.getAttribute('#project-menu [href="/about/#install"]', "target"), "_blank");
+  assert.equal(await page.getAttribute("#project-github-stars", "aria-label"), "230 GitHub stars");
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "About & demos↗");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "About Rabbithole↗");
   await page.keyboard.press("ArrowDown");
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "Install the MCP server↗", "project menu arrows should move between links");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "Install & self-host↗", "project menu arrows should move between links");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#project-menu[hidden]", { state: "attached" });
   assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");

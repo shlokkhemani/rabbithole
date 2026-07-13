@@ -14,7 +14,7 @@ import { startRabbithole } from "../ui/entry.js";
 import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
 import { openDialog } from "../ui/primitives/dialog.js";
 import { openPopover } from "../ui/primitives/popover.js";
-import { buttonMarkup } from "../core/html/button-markup.js";
+import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
@@ -26,6 +26,10 @@ import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, 
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
+const GITHUB_STARS_CACHE_KEY = "rh-github-stars-v1";
+const GITHUB_STARS_CACHE_TTL = 6 * 60 * 60 * 1000;
+const TOOLBAR_BUNNY_MARK_SVG = BUNNY_MARK_SVG.replace("<svg ", '<svg width="16" height="16" ');
 
 const store = new IdbStore();
 let currentHost = null;
@@ -39,6 +43,7 @@ let composerDialog = null;
 let settingsController = null;
 let ollamaRecoveryController = null;
 let projectMenuPopover = null;
+let githubStarsPromise = null;
 let composerPath = "";
 let lastHoleCount = 0;
 let railSummaries = null;
@@ -137,17 +142,14 @@ function renderShell() {
         <span class="project-menu-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
         <span><strong>Rabbithole</strong><small>Open source · MIT</small></span>
       </div>
-      <a class="project-menu-item" role="menuitem" href="/about/" target="_blank" rel="noopener noreferrer"><span>About &amp; demos</span><span aria-hidden="true">↗</span></a>
-      <a class="project-menu-item" role="menuitem" href="https://github.com/shlokkhemani/rabbithole#quick-start" target="_blank" rel="noopener noreferrer"><span>Install the MCP server</span><span aria-hidden="true">↗</span></a>
-      <a class="project-menu-item" role="menuitem" href="https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally" target="_blank" rel="noopener noreferrer"><span>Run this browser app locally</span><span aria-hidden="true">↗</span></a>
-      <div class="project-menu-sep" role="separator"></div>
-      <a class="project-menu-item project-menu-github" role="menuitem" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span><span aria-hidden="true">★</span> Star on GitHub</span><span aria-hidden="true">↗</span></a>
-      <a class="project-menu-item project-menu-muted" role="menuitem" href="https://github.com/shlokkhemani/rabbithole/issues" target="_blank" rel="noopener noreferrer"><span>Report an issue</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="/about/" target="_blank" rel="noopener noreferrer"><span>About Rabbithole</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="/about/#install" target="_blank" rel="noopener noreferrer"><span>Install &amp; self-host</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item project-menu-github" role="menuitem" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span>GitHub</span><span class="project-menu-meta"><span id="project-github-stars" class="github-star-count" aria-label="GitHub stars"><span aria-hidden="true">★</span> Stars</span><span aria-hidden="true">↗</span></span></a>
     </nav>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
   document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
-    `${buttonMarkup({ bare: true, className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
+    `${iconButtonMarkup({ className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: TOOLBAR_BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
   syncRailPosition();
@@ -284,6 +286,49 @@ function openProjectMenu() {
     initialFocus: surface.querySelector('[role="menuitem"]'),
     onClose: closeProjectMenu,
   });
+  void loadGithubStars();
+}
+
+async function loadGithubStars() {
+  const cached = readGithubStarsCache();
+  if (cached) {
+    renderGithubStars(cached.count);
+    if (Date.now() - cached.updatedAt < GITHUB_STARS_CACHE_TTL) return;
+  }
+  if (githubStarsPromise) return githubStarsPromise;
+  githubStarsPromise = fetch(GITHUB_REPO_API_URL, {
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+    const count = Number((await response.json())?.stargazers_count);
+    if (!Number.isFinite(count) || count < 0) throw new Error("GitHub returned an invalid star count");
+    const value = { count: Math.floor(count), updatedAt: Date.now() };
+    safeLocalStorageSet(GITHUB_STARS_CACHE_KEY, JSON.stringify(value));
+    renderGithubStars(value.count);
+  }).catch(() => {}).finally(() => {
+    githubStarsPromise = null;
+  });
+  return githubStarsPromise;
+}
+
+function readGithubStarsCache() {
+  try {
+    const value = JSON.parse(safeLocalStorageGet(GITHUB_STARS_CACHE_KEY));
+    if (!Number.isFinite(value?.count) || !Number.isFinite(value?.updatedAt)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function renderGithubStars(count) {
+  const target = document.getElementById("project-github-stars");
+  if (!target) return;
+  const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(count);
+  target.innerHTML = `<span aria-hidden="true">★</span> ${escapeHtml(compact)}`;
+  target.setAttribute("aria-label", `${count.toLocaleString("en-US")} GitHub stars`);
+  target.title = `${count.toLocaleString("en-US")} GitHub stars`;
 }
 
 function closeProjectMenu(settings) {

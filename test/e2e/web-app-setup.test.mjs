@@ -18,6 +18,7 @@ const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
   await verifyThemeBeforeAppRuntime();
+  await verifyMobileSetupExperience();
   await verifyLandingAndComposer();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
@@ -25,6 +26,72 @@ try {
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyMobileSetupExperience() {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    const page = await context.newPage();
+    await routeProvider(page);
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#blank-start-setup");
+    await page.waitForSelector("#web-settings-popover");
+
+    const initial = await page.locator("#web-settings-popover").evaluate((surface) => {
+      const input = document.getElementById("api-key");
+      const rect = surface.getBoundingClientRect();
+      const inputRect = input.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return {
+        surface: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        viewport: { left: viewport?.offsetLeft || 0, top: viewport?.offsetTop || 0, width: viewport?.width || innerWidth, height: viewport?.height || innerHeight },
+        inputFontSize: parseFloat(getComputedStyle(input).fontSize),
+        inputHeight: inputRect.height,
+        attributes: [input.autocapitalize, input.getAttribute("autocorrect"), input.inputMode, input.enterKeyHint],
+      };
+    });
+    assert(initial.inputFontSize >= 16, `mobile API key text must stay at least 16px to prevent iOS focus zoom (got ${initial.inputFontSize}px)`);
+    assert(initial.inputHeight >= 44, `mobile API key field must meet the touch target floor (got ${initial.inputHeight}px)`);
+    assert.deepEqual(initial.attributes, ["none", "off", "text", "done"], "mobile key entry should disable destructive text transformations and expose a Done key");
+    assert(initial.surface.left >= initial.viewport.left && initial.surface.right <= initial.viewport.left + initial.viewport.width, `setup surface must fit the mobile visual viewport (${JSON.stringify(initial)})`);
+
+    await page.focus("#api-key");
+    const pasteAllowed = await page.locator("#api-key").evaluate((input, key) => {
+      const transfer = new DataTransfer();
+      transfer.setData("text/plain", key);
+      const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer });
+      const allowed = input.dispatchEvent(event);
+      if (allowed) {
+        input.setRangeText(transfer.getData("text/plain"), input.selectionStart || 0, input.selectionEnd || 0, "end");
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: key }));
+      }
+      return allowed;
+    }, MOCK_KEY);
+    assert.equal(pasteAllowed, true, "the key field must not cancel native paste");
+    await page.waitForSelector("#api-key-status.valid");
+    assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "a pasted OpenRouter key must remain intact");
+
+    await page.setViewportSize({ width: 390, height: 430 });
+    await page.waitForFunction(() => {
+      const surface = document.getElementById("web-settings-popover");
+      const viewport = window.visualViewport;
+      return surface && viewport && surface.getBoundingClientRect().height <= viewport.height - 15;
+    });
+    const keyboardSized = await page.locator("#web-settings-popover").evaluate((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return { top: rect.top, bottom: rect.bottom, viewportTop: viewport.offsetTop, viewportBottom: viewport.offsetTop + viewport.height, scrollable: surface.scrollHeight > surface.clientHeight };
+    });
+    assert(keyboardSized.top >= keyboardSized.viewportTop && keyboardSized.bottom <= keyboardSized.viewportBottom, `setup surface must remain reachable when the keyboard shrinks the visual viewport (${JSON.stringify(keyboardSized)})`);
+    assert.equal(keyboardSized.scrollable, true, "keyboard-sized setup should scroll internally instead of escaping the viewport");
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifyThemeBeforeAppRuntime() {

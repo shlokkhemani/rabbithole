@@ -12,6 +12,14 @@ function viewportRect() {
     width: viewport ? viewport.width : window.innerWidth, height: viewport ? viewport.height : window.innerHeight };
 }
 
+function clampToViewport(value, min, max) {
+  // An on-screen keyboard or browser zoom can make a surface temporarily
+  // larger than the visual viewport. Keep its leading edge reachable instead
+  // of letting the usual clamp push that edge off-screen.
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
 export function anchorSurface(trigger, surface, options) {
   options = options || {};
   var contextElement = trigger && trigger.contextElement;
@@ -24,7 +32,13 @@ export function anchorSurface(trigger, surface, options) {
     frame = 0;
     if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
     updating = true;
-    var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport = viewportRect();
+    var viewport = viewportRect();
+    // CSS viewport units describe the layout viewport on iOS, which does not
+    // reliably shrink for the software keyboard. Expose the visual viewport so
+    // scrollable overlays can size themselves to the space actually available.
+    surface.style.setProperty("--overlay-viewport-width", viewport.width + "px");
+    surface.style.setProperty("--overlay-viewport-height", viewport.height + "px");
+    var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect();
     // A 0×0 anchor at the origin is a dead anchor (collapsed range, detached
     // node) — hold the last good position rather than glide to the corner.
     if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) { updating = false; return; }
@@ -52,8 +66,8 @@ export function anchorSurface(trigger, surface, options) {
         top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
       }
     }
-    left = Math.min(viewport.left + viewport.width - edge - box.width, Math.max(viewport.left + edge, left));
-    top = Math.min(viewport.top + viewport.height - edge - box.height, Math.max(viewport.top + edge, top));
+    left = clampToViewport(left, viewport.left + edge, viewport.left + viewport.width - edge - box.width);
+    top = clampToViewport(top, viewport.top + edge, viewport.top + viewport.height - edge - box.height);
     if (left !== lastLeft) surface.style.left = left + "px";
     if (top !== lastTop) surface.style.top = top + "px";
     lastLeft = left; lastTop = top;

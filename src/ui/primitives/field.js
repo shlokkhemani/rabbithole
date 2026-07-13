@@ -16,6 +16,10 @@ export function fieldMarkup(options) {
     value: options.value || "",
     placeholder: options.placeholder,
     autocomplete: options.autocomplete,
+    autocapitalize: options.autocapitalize,
+    autocorrect: options.autocorrect,
+    inputmode: options.inputmode,
+    enterkeyhint: options.enterkeyhint,
     spellcheck: options.spellcheck,
     "aria-describedby": describedBy || undefined
   }) + ">";

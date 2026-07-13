@@ -61,6 +61,22 @@ async function verifyLayerAndAnchor(page, engine) {
   assert.equal(geometry[1].placement, "bottom-start", `${engine}: virtual anchor flips`);
   assert.equal(geometry[1].left, 16, `${engine}: virtual anchor clamps with token edge`);
   assert.equal(geometry[1].top, 16, `${engine}: virtual anchor uses token gap before clamping`);
+
+  await reset(page, '<style>#oversized{position:fixed;width:720px;height:560px;--surface-edge:16px}</style><button id="small-anchor">A</button><div id="oversized"></div>');
+  const oversized = await page.evaluate(async (base) => {
+    const { anchorSurface } = await import(base + "/src/ui/overlay/anchor.js");
+    const surface = document.getElementById("oversized");
+    const handle = anchorSurface(document.getElementById("small-anchor"), surface, { placement: "center" });
+    const value = {
+      left: parseFloat(surface.style.left),
+      top: parseFloat(surface.style.top),
+      viewportWidth: surface.style.getPropertyValue("--overlay-viewport-width"),
+      viewportHeight: surface.style.getPropertyValue("--overlay-viewport-height"),
+    };
+    handle.dispose();
+    return value;
+  }, baseUrl);
+  assert.deepEqual(oversized, { left: 16, top: 16, viewportWidth: "640px", viewportHeight: "480px" }, `${engine}: an oversized surface keeps its leading edges reachable and receives visual viewport dimensions`);
 }
 
 async function verifyPopoverAndDialog(page, engine) {

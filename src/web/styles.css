@@ -650,10 +650,14 @@ body.blank-dragging .composer-card {
 .web-settings-dialog {
   position: fixed;
   z-index: var(--layer-settings);
-  width: min(400px, calc(100vw - var(--surface-edge) * 2));
+  width: min(400px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));
   min-width: 0;
-  max-height: calc(100vh - var(--surface-edge) * 2);
+  max-height: max(0px, calc(var(--overlay-viewport-height, 100vh) - var(--surface-edge) * 2));
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 16px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   outline: none;
   border: var(--surface-popover-border);
   border-radius: var(--surface-popover-radius);
@@ -1539,6 +1543,55 @@ body.blank-dragging .composer-card {
 }
 
 @media (max-width: 760px) {
+  .web-settings-dialog {
+    width: calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2);
+    border-radius: 16px;
+  }
+
+  .settings-row {
+    min-height: var(--control-h-lg);
+  }
+
+  .provider-choice button,
+  .settings-select,
+  .settings-complete-section .web-primary {
+    min-height: var(--control-h-lg);
+  }
+
+  .provider-choice button,
+  .settings-select {
+    font-size: var(--text-base);
+  }
+
+  .key-get {
+    display: inline-flex;
+    min-height: var(--control-h-lg);
+    align-items: center;
+  }
+
+  .key-input-wrap input {
+    min-height: 48px;
+    padding: 10px 48px 10px 12px;
+    /* iOS zooms the whole page when a smaller input receives focus. */
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .key-input-wrap button {
+    right: 2px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
+  }
+
+  .remember-row {
+    margin-top: 12px;
+  }
+
+  .settings-info-trigger {
+    width: 32px;
+    height: 32px;
+  }
+
   .composer-modal {
     align-items: start;
     padding-top: 76px;

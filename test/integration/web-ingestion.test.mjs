@@ -94,7 +94,7 @@ await page.route("http://localhost:11434/v1/chat/completions", async (route) => 
 });
 
 try {
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#blank-start-new");
   await page.waitForSelector("#composer-path-file");
 
@@ -279,11 +279,11 @@ try {
   await boxCard.locator(".node-btn.danger").evaluate((el) => el.click());
   await page.click("#cf-remove");
   await page.waitForFunction(async (name) => !(await window.__rabbitholeTest.inspectAssets()).names.includes(name), boxClip.cropAsset);
-  await page.reload({ waitUntil: "networkidle" });
+  await reloadReadyApp(page);
   await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
   await page.waitForSelector(".rh-pdf-mark.mark-ready", { state: "attached" });
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -299,7 +299,7 @@ try {
   assert(urlHole.includes("Proxy fallback article"));
   assert(urlHole.includes("https://arxiv.org/abs/1234.5678") || urlHole.includes("ar5iv.labs.arxiv.org"));
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/dead-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -309,7 +309,7 @@ try {
   const deadError = await page.textContent("#ingest-status");
   assert.match(deadError, /Try another link or open a PDF/i);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/reject-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -320,23 +320,23 @@ try {
   assert.match(rejectError, /isn't supported by the link relay yet/i);
   assert.match(rejectError, /arXiv links work best/);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "broken.HtMl", mimeType: "", buffer: Buffer.from("not a snapshot") });
   await page.waitForSelector("#ingest-status.error");
   assert.match(await page.textContent("#ingest-status"), /Snapshot import failed/i);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "Notes.Md", mimeType: "", buffer: Buffer.from("# Mixed-case markdown\n\nEmpty MIME markdown classified.") });
   await waitForCanvasText(page, "Empty MIME markdown classified.");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "evil.html.txt", mimeType: "text/plain", buffer: Buffer.from("evil suffix remains text") });
   await waitForCanvasText(page, "evil suffix remains text");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.evaluate(() => {
     const file = new File([new Uint8Array(16 * 1024 * 1024 + 1)], "oversized.md", { type: "text/markdown" });
@@ -349,7 +349,7 @@ try {
   await page.waitForSelector("#ingest-status.error");
   assert.equal(await page.textContent("#ingest-status"), "Import failed: file exceeds 16 MB.");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   const futurePortable = JSON.stringify({
     format: "rabbithole",
@@ -366,7 +366,7 @@ try {
   );
 
   // ---- Text version: full journey, figures land as live assets -------------
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Convert journey page one", "Convert journey page two"]), "convert-journey.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -391,7 +391,7 @@ try {
   assert.equal(convertedState.root.extensions.pdf.pages.length, 2, "the page stash must survive conversion");
   assert.match(convertedState.root.markdown, /!\[Attention diagram\]\(asset:fig-p002-1\.jpg\)/);
   assert(convertedState.names.includes("fig-p002-1.jpg"));
-  await page.reload({ waitUntil: "networkidle" });
+  await reloadReadyApp(page);
   await page.waitForFunction(() => {
     const dc = document.querySelector(".node .doc-content:not(.rh-pdf)");
     return !!dc && dc.textContent.includes("Converted Doc");
@@ -399,7 +399,7 @@ try {
 
   // ---- Cancel mid-run restores the native paged view -----------------------
   transcribeMode = "hang";
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Abort page one", "Abort page two"]), "abort-journey.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -432,11 +432,11 @@ try {
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   await page.locator(".node .rh-pdf-mark.mark-ready").first().waitFor();
-  await page.reload({ waitUntil: "networkidle" });
+  await reloadReadyApp(page);
   assert.equal(await page.locator(".node .rh-pdf-convert").count(), 0, "the text-version action must stay absent after reloading a branched PDF");
 
   // ---- Scanned PDFs surface the convert affordance -------------------------
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["", ""]), "scanned.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -448,7 +448,7 @@ try {
 
   // ---- No local vision model keeps import available but gates conversion ----
   localVisionAvailable = false;
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Local text-only model PDF"]), "no-local-vision.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
@@ -456,7 +456,7 @@ try {
   assert.equal(await page.locator(".node .rh-pdf-transcription-note").innerText(), "Install a local model that supports vision to enable PDF transcription.");
 
   // ---- A corrupt PDF fails with an actionable message, no stranded hole ----
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, [...Buffer.from("%PDF-1.4\nthis is not really a pdf")], "corrupt.pdf");
   await page.waitForSelector("#ingest-status.error");
@@ -466,6 +466,26 @@ try {
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
+}
+
+async function gotoReadyApp(page, url) {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await waitForReadyApp(page);
+}
+
+async function reloadReadyApp(page) {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForReadyApp(page);
+}
+
+async function waitForReadyApp(page) {
+  // The app's test seam is installed only after IndexedDB selection, rail
+  // hydration, and the initial canvas/blank state have finished. Waiting for
+  // this product-specific milestone is deterministic even when an intentionally
+  // held model request keeps the browser from ever reaching `networkidle`.
+  await page.waitForFunction(() => !!window.__rabbitholeTest
+    && document.body.classList.contains("web-app")
+    && !!document.getElementById("viewport"));
 }
 
 function pdfLiteral(value) {

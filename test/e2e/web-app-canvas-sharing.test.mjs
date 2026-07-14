@@ -71,12 +71,28 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
         `${engineName}: ${control.id} must be a reliable mobile touch target (${JSON.stringify(control)})`);
     }
 
+    // Start from a known scale: initial framing may still be settling on a
+    // resource-constrained mobile engine, and zoom-in is intentionally a no-op
+    // at the 250% ceiling.
+    await page.click("#zoom-label");
+    await page.waitForFunction(() => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(document.getElementById("world")).transform);
+      return Math.abs(matrix.a - 1) < 0.001;
+    });
     const scaleBeforeButton = await readCanvasView(page);
     await page.click("#t-zin");
+    await page.waitForFunction((previousScale) => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(document.getElementById("world")).transform);
+      return matrix.a > previousScale + 0.01;
+    }, scaleBeforeButton.scale);
     const scaleAfterButton = await readCanvasView(page);
     assert(scaleAfterButton.scale > scaleBeforeButton.scale,
       `${engineName}: mobile zoom-in control must change the canvas scale`);
     await page.click("#zoom-label");
+    await page.waitForFunction(() => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(document.getElementById("world")).transform);
+      return Math.abs(matrix.a - 1) < 0.001;
+    });
     const resetView = await readCanvasView(page);
     assert(Math.abs(resetView.scale - 1) < 0.001,
       `${engineName}: tapping the mobile zoom label must reset to 100%`);

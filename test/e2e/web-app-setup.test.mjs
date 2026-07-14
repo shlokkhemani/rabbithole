@@ -203,7 +203,7 @@ async function verifyThemeBeforeAppRuntime() {
         if (saved) localStorage.setItem("rh-theme", saved);
       }, testCase.saved);
       const page = await context.newPage();
-      await page.route("**/app.js", (route) => route.abort());
+      await page.route("**/app.js*", (route) => route.abort());
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
       const initialTheme = await page.evaluate(() => ({
         attribute: document.documentElement.getAttribute("data-theme"),

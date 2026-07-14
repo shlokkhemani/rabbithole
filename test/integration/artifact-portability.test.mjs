@@ -284,7 +284,7 @@ async function verifyPublishOutput() {
     process.exit(publish.status || 1);
   }
   const publishDir = path.join(ROOT, "publish");
-  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects", "sitemap.xml", "about/index.html", "about/styles.css", "about/about.js", "about/demo-ask.mp4", "about/demo-map.mp4"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects", "_headers", "sitemap.xml", "about/index.html", "about/styles.css", "about/about.js", "about/demo-ask.mp4", "about/demo-map.mp4"]) {
     await fs.access(path.join(publishDir, file));
   }
   const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
@@ -292,10 +292,16 @@ async function verifyPublishOutput() {
   assert(redirects.includes("/about /about/ 301"), "the historical homepage should have a canonical trailing-slash route");
   assert(redirects.includes("/install https://github.com/shlokkhemani/rabbithole#quick-start 302"), "the stable install route should lead to canonical GitHub instructions");
   assert(redirects.includes("/self-host https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally 302"), "the stable self-host route should lead to local browser instructions");
+  const headers = await fs.readFile(path.join(publishDir, "_headers"), "utf8");
+  assert(headers.includes("/app.js\n  Cache-Control: public, max-age=0, must-revalidate"), "the mutable app entry must revalidate after every deployment");
+  assert(headers.includes("/chunks/*\n  Cache-Control: public, max-age=31536000, immutable"), "content-addressed chunks should keep long-lived browser caching");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   assert(html.includes("connect-src 'self' https://openrouter.ai https://api.github.com"), "web CSP should allow the public GitHub star-count request");
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
+  const entryVersions = [...html.matchAll(/(?:favicon\.svg|styles\.css|dompurify\.js|frozen-source\.js|app\.js)\?v=([a-f0-9]{12})/g)].map((match) => match[1]);
+  assert.equal(entryVersions.length, 5, "every mutable browser entry asset should carry a content-derived version");
+  assert.equal(new Set(entryVersions).size, 1, "browser entry assets should share one atomic release version");
   const chunkNames = await fs.readdir(path.join(publishDir, "chunks"));
   assert.equal(chunkNames.filter((name) => /^browser-canvas-stub-[A-Z0-9]+\.js$/.test(name)).length, 1,
     "browser builds should pin PDF.js's Node-only canvas import to the deterministic stub");
@@ -324,6 +330,9 @@ async function verifyPublishOutput() {
   assert(about.includes("connect-src https://api.github.com"), "about CSP should allow the public GitHub star-count request");
   assert(about.includes("OpenRouter requests go directly to OpenRouter"), "about copy should state the hosted-provider boundary accurately");
   assert(!about.includes("No account, no API keys, nothing leaves your machine"), "about page must not restore the obsolete privacy claim");
+  const aboutVersions = [...about.matchAll(/(?:styles\.css|about\.js|demo-(?:ask|map)(?:-poster\.jpg|\.mp4))\?v=([a-f0-9]{12})/g)].map((match) => match[1]);
+  assert.equal(aboutVersions.length, 6, "every mutable about-page asset should carry a content-derived version");
+  assert.equal(new Set(aboutVersions).size, 1, "about-page assets should share one atomic release version");
   const sitemap = await fs.readFile(path.join(publishDir, "sitemap.xml"), "utf8");
   assert(sitemap.includes("https://rabbithole.ing/about/"), "sitemap should expose the about page");
 }

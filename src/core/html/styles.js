@@ -262,10 +262,11 @@ body.mode-canvas #reader { display: none; }
 #composer textarea::placeholder { color: var(--fg-faint); }
 
 /* ---------- CANVAS ---------- */
-#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none;
+#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: none;
   background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 26px 26px; }
 body.mode-canvas #viewport { display: block; }
 #viewport.panning { cursor: grabbing; }
+#viewport.pinching { cursor: zoom-in; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
@@ -301,7 +302,8 @@ body.mode-canvas #viewport { display: block; }
 .tool-icon:focus-visible, .node-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .node-btn.danger:hover { color: var(--warn); background-color: color-mix(in srgb, var(--warn) 12%, transparent); }
 @media (hover: none) { .node-btn.danger, .node-font-btn, .node-act-divider { opacity: 1; } }
-.node-body { padding: 14px 16px; overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+.node-body { padding: 14px 16px; overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain;
+  touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 .node-resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--border-focus) 50%); border-bottom-right-radius: 9px; opacity: 0.5; }
 .node-resize:hover { opacity: 1; }
 .node.collapsed .node-body, .node.collapsed .node-resize, .node.collapsed .node-composer { display: none; }
@@ -365,6 +367,16 @@ body.mode-canvas #toolbar { display: flex; }
 .zoom-controls .tool-icon { width: var(--control-h-xs); height: var(--control-h-xs); }
 #t-new svg { transform: scale(1.08); }
 #zoom-label { height: 24px; min-width: 40px; padding: 0 4px; font-size: 11px; color: var(--fg-faint); text-align: center; font-variant-numeric: tabular-nums; }
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  #toolbar { top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); max-width: none;
+    gap: 2px; padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
+    touch-action: pan-x; scrollbar-width: none; }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar > .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
+  #zoom-label { height: 44px; min-width: 52px; padding-inline: 6px; font-size: 12px; }
+  #toolbar .sep { height: 24px; flex: 0 0 1px; }
+}
 
 /* ---------- ask popup — a small command palette for the selection ----------
    Two rows, nothing else: a borderless input with the shared circular send, and

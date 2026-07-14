@@ -23,6 +23,8 @@ const app = await bootWebApp();
 const { browser, baseUrl } = app;
 const mobileWebKit = await webkit.launch();
 try {
+  await verifyMobileCanvasNavigation(browser, "chromium");
+  await verifyMobileCanvasNavigation(mobileWebKit, "webkit");
   await verifyMobileSelectionSurface(browser, "chromium");
   await verifyMobileSelectionSurface(mobileWebKit, "webkit");
   await verifyCanvasBranching();
@@ -30,6 +32,251 @@ try {
 } finally {
   await mobileWebKit.close();
   await app.close();
+}
+
+async function verifyMobileCanvasNavigation(browserEngine, engineName) {
+  const context = await browserEngine.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    const page = await context.newPage();
+    await routeProvider(page);
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    const paragraphs = Array.from({ length: 42 }, (_, index) =>
+      `Paragraph ${index + 1}. Mobile canvas navigation must keep card reading independent from camera movement.`).join("\n\n");
+    await createDocument(page, `# Mobile canvas navigation\n\n${paragraphs}`);
+    await page.waitForFunction(() => {
+      const body = document.querySelector(".node.root .node-body");
+      return document.body.classList.contains("mode-canvas")
+        && body && body.scrollHeight > body.clientHeight + 100
+        && getComputedStyle(document.getElementById("world")).transform !== "none";
+    });
+
+    const toolbar = await page.locator("#toolbar").evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const controls = ["t-zout", "zoom-label", "t-zin"].map((id) => {
+        const item = document.getElementById(id).getBoundingClientRect();
+        return { id, width: item.width, height: item.height };
+      });
+      return { left: rect.left, right: rect.right, width: rect.width, viewportWidth: innerWidth,
+        scrollable: element.scrollWidth > element.clientWidth, controls };
+    });
+    assert(toolbar.left >= 0 && toolbar.right <= toolbar.viewportWidth,
+      `${engineName}: mobile toolbar must stay inside the viewport (${JSON.stringify(toolbar)})`);
+    for (const control of toolbar.controls) {
+      assert(control.width >= 44 && control.height >= 44,
+        `${engineName}: ${control.id} must be a reliable mobile touch target (${JSON.stringify(control)})`);
+    }
+
+    const scaleBeforeButton = await readCanvasView(page);
+    await page.click("#t-zin");
+    const scaleAfterButton = await readCanvasView(page);
+    assert(scaleAfterButton.scale > scaleBeforeButton.scale,
+      `${engineName}: mobile zoom-in control must change the canvas scale`);
+    await page.click("#zoom-label");
+    const resetView = await readCanvasView(page);
+    assert(Math.abs(resetView.scale - 1) < 0.001,
+      `${engineName}: tapping the mobile zoom label must reset to 100%`);
+
+    if (engineName === "chromium") await verifyRealChromiumTouches(context, page);
+
+    const contentRoute = await page.locator(".node.root .node-body").evaluate((body) => {
+      const world = document.getElementById("world");
+      function view() {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+        return { x: matrix.e, y: matrix.f, scale: matrix.a };
+      }
+      function fire(type, id, x, y, buttons) {
+        const event = new PointerEvent(type, { bubbles: true, cancelable: true,
+          pointerId: id, pointerType: "touch", isPrimary: true, button: 0,
+          buttons, clientX: x, clientY: y });
+        body.dispatchEvent(event);
+        return event.defaultPrevented;
+      }
+      const before = view();
+      const downPrevented = fire("pointerdown", 11, 180, 420, 1);
+      const movePrevented = fire("pointermove", 11, 180, 350, 1);
+      fire("pointerup", 11, 180, 350, 0);
+      return { before, after: view(), downPrevented, movePrevented,
+        touchAction: getComputedStyle(body).touchAction,
+        scrollable: body.scrollHeight > body.clientHeight };
+    });
+    assert.equal(contentRoute.downPrevented, false,
+      `${engineName}: a one-finger card gesture must remain available to the native scroller`);
+    assert.equal(contentRoute.movePrevented, false,
+      `${engineName}: card scrolling must not be stolen by the canvas camera`);
+    assert.equal(contentRoute.scrollable, true, `${engineName}: the mobile card fixture must actually scroll`);
+    assert.match(contentRoute.touchAction, /pan-x|pan-y/,
+      `${engineName}: card bodies must advertise native one-finger panning`);
+    assert.deepEqual(contentRoute.after, contentRoute.before,
+      `${engineName}: a one-finger gesture inside a card must not move the canvas`);
+
+    const backgroundPan = await page.locator("#viewport").evaluate((surface) => {
+      const world = document.getElementById("world");
+      function view() {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+        return { x: matrix.e, y: matrix.f, scale: matrix.a };
+      }
+      function fire(type, x, y, buttons) {
+        surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+          pointerId: 21, pointerType: "touch", isPrimary: true, button: 0,
+          buttons, clientX: x, clientY: y }));
+      }
+      const before = view();
+      fire("pointerdown", 340, 730, 1);
+      fire("pointermove", 292, 668, 1);
+      fire("pointerup", 292, 668, 0);
+      return { before, after: view(), panning: surface.classList.contains("panning") };
+    });
+    assert(Math.abs((backgroundPan.after.x - backgroundPan.before.x) + 48) < 0.01,
+      `${engineName}: one finger on empty canvas must pan horizontally 1:1 (${JSON.stringify(backgroundPan)})`);
+    assert(Math.abs((backgroundPan.after.y - backgroundPan.before.y) + 62) < 0.01,
+      `${engineName}: one finger on empty canvas must pan vertically 1:1 (${JSON.stringify(backgroundPan)})`);
+    assert.equal(backgroundPan.after.scale, backgroundPan.before.scale,
+      `${engineName}: one-finger canvas panning must not alter zoom`);
+    assert.equal(backgroundPan.panning, false, `${engineName}: the pan state must clean up after pointerup`);
+
+    const pinch = await page.locator(".node.root .node-body").evaluate((body) => {
+      const surface = document.getElementById("viewport");
+      const world = document.getElementById("world");
+      function view() {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+        return { x: matrix.e, y: matrix.f, scale: matrix.a };
+      }
+      function fire(type, id, x, y, buttons, primary) {
+        body.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+          pointerId: id, pointerType: "touch", isPrimary: primary, button: 0,
+          buttons, clientX: x, clientY: y }));
+      }
+      const before = view();
+      const startMid = { x: 160, y: 340 };
+      const anchor = { x: (startMid.x - before.x) / before.scale,
+        y: (startMid.y - before.y) / before.scale };
+      fire("pointerdown", 31, 80, 340, 1, true);
+      fire("pointerdown", 32, 240, 340, 1, false);
+      fire("pointermove", 31, 50, 320, 1, true);
+      fire("pointermove", 32, 310, 380, 1, false);
+      const after = view();
+      const finalMid = { x: 180, y: 350 };
+      const anchoredAt = { x: anchor.x * after.scale + after.x,
+        y: anchor.y * after.scale + after.y };
+      fire("pointerup", 31, 50, 320, 0, true);
+      fire("pointerup", 32, 310, 380, 0, false);
+      return { before, after, finalMid, anchoredAt,
+        pinching: surface.classList.contains("pinching"),
+        panning: surface.classList.contains("panning") };
+    });
+    assert(pinch.after.scale > pinch.before.scale * 1.5,
+      `${engineName}: spreading two fingers must zoom the canvas continuously (${JSON.stringify(pinch)})`);
+    assert(Math.abs(pinch.anchoredAt.x - pinch.finalMid.x) < 0.05
+      && Math.abs(pinch.anchoredAt.y - pinch.finalMid.y) < 0.05,
+      `${engineName}: pinch zoom must keep the original midpoint content under the moving fingers (${JSON.stringify(pinch)})`);
+    assert.equal(pinch.pinching, false, `${engineName}: pinch state must clean up after both fingers lift`);
+    assert.equal(pinch.panning, false, `${engineName}: pinch-to-pan continuation must clean up after the last finger lifts`);
+
+    await page.close();
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyRealChromiumTouches(context, page) {
+  const client = await context.newCDPSession(page);
+  const surfacePoint = await page.locator("#viewport").evaluate((surface) => {
+    for (let y = innerHeight - 36; y >= 100; y -= 36) {
+      for (let x = innerWidth - 28; x >= 28; x -= 36) {
+        const target = document.elementFromPoint(x, y);
+        if (target && surface.contains(target)
+          && !target.closest(".node") && !target.closest("#toolbar")) return { x, y };
+      }
+    }
+    return null;
+  });
+  assert(surfacePoint, "chromium: the real-touch fixture needs visible empty canvas");
+  const beforePan = await readCanvasView(page);
+  const panDelta = { x: -42, y: -58 };
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart",
+    touchPoints: [{ id: 41, x: surfacePoint.x, y: surfacePoint.y, radiusX: 4, radiusY: 4, force: 1 }] });
+  for (let step = 1; step <= 6; step += 1) {
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ id: 41,
+      x: surfacePoint.x + panDelta.x * step / 6, y: surfacePoint.y + panDelta.y * step / 6,
+      radiusX: 4, radiusY: 4, force: 1 }] });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const afterPan = await readCanvasView(page);
+  assert(Math.abs(afterPan.x - beforePan.x - panDelta.x) < 1
+    && Math.abs(afterPan.y - beforePan.y - panDelta.y) < 1,
+    `chromium: a physical one-finger drag on empty canvas must pan 1:1 (${JSON.stringify({ beforePan, afterPan })})`);
+
+  const card = await page.locator(".node.root .node-body").evaluate((body) => {
+    const rect = body.getBoundingClientRect();
+    const left = Math.max(24, rect.left + 24);
+    const right = Math.min(innerWidth - 24, rect.right - 24);
+    const top = Math.max(90, rect.top + 24);
+    const bottom = Math.min(innerHeight - 24, rect.bottom - 24);
+    return { left, right, top, bottom, x: (left + right) / 2, y: (top + bottom) / 2 };
+  });
+  assert(card.right - card.left > 120 && card.bottom - card.top > 120,
+    `chromium: the real-touch fixture needs a visible card body (${JSON.stringify(card)})`);
+
+  const beforeScrollView = await readCanvasView(page);
+  const beforeScrollTop = await page.locator(".node.root .node-body").evaluate((body) => body.scrollTop);
+  const scrollStartY = Math.min(card.bottom - 20, card.y + 60);
+  const scrollEndY = Math.max(card.top + 20, scrollStartY - 120);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart",
+    touchPoints: [{ id: 42, x: card.x, y: scrollStartY, radiusX: 4, radiusY: 4, force: 1 }] });
+  for (let step = 1; step <= 6; step += 1) {
+    const y = scrollStartY + (scrollEndY - scrollStartY) * step / 6;
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove",
+      touchPoints: [{ id: 42, x: card.x, y, radiusX: 4, radiusY: 4, force: 1 }] });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(80);
+  const afterScrollTop = await page.locator(".node.root .node-body").evaluate((body) => body.scrollTop);
+  const afterScrollView = await readCanvasView(page);
+  assert(afterScrollTop > beforeScrollTop + 30,
+    `chromium: a physical one-finger swipe inside a card must scroll it (${beforeScrollTop} -> ${afterScrollTop})`);
+  assert(Math.abs(afterScrollView.x - beforeScrollView.x) < 0.01
+    && Math.abs(afterScrollView.y - beforeScrollView.y) < 0.01
+    && Math.abs(afterScrollView.scale - beforeScrollView.scale) < 0.001,
+    `chromium: a physical card swipe must not move the camera`);
+
+  const beforePinch = await readCanvasView(page);
+  const centerX = card.x;
+  const centerY = card.y;
+  const startHalfSpan = Math.min(42, (card.right - card.left) / 4);
+  const endHalfSpan = Math.min(65, (card.right - card.left) / 2 - 8);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [
+    { id: 51, x: centerX - startHalfSpan, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+    { id: 52, x: centerX + startHalfSpan, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+  ] });
+  for (let step = 1; step <= 6; step += 1) {
+    const halfSpan = startHalfSpan + (endHalfSpan - startHalfSpan) * step / 6;
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [
+      { id: 51, x: centerX - halfSpan, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+      { id: 52, x: centerX + halfSpan, y: centerY, radiusX: 4, radiusY: 4, force: 1 },
+    ] });
+  }
+  const afterPinch = await readCanvasView(page);
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  assert(afterPinch.scale > beforePinch.scale * 1.35,
+    `chromium: a physical two-finger spread inside a card must zoom the canvas (${beforePinch.scale} -> ${afterPinch.scale})`);
+  const anchorX = (centerX - beforePinch.x) / beforePinch.scale;
+  const anchorY = (centerY - beforePinch.y) / beforePinch.scale;
+  assert(Math.abs(anchorX * afterPinch.scale + afterPinch.x - centerX) < 1
+    && Math.abs(anchorY * afterPinch.scale + afterPinch.y - centerY) < 1,
+    `chromium: a physical pinch must keep the content under its midpoint stable`);
+  await client.detach();
+}
+
+async function readCanvasView(page) {
+  return page.locator("#world").evaluate((world) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+    return { x: matrix.e, y: matrix.f, scale: matrix.a };
+  });
 }
 
 async function verifyMobileSelectionSurface(browserEngine, engineName) {

@@ -30148,6 +30148,18 @@ ${text2}</tr>
     elements.send.disabled = down || !elements.text.value.trim();
   }
 
+  // src/ui/input-intent.js
+  function isComposingText(event) {
+    return !!(event == null ? void 0 : event.isComposing) || (event == null ? void 0 : event.keyCode) === 229;
+  }
+  function isCommandEnter(event) {
+    return (event == null ? void 0 : event.key) === "Enter" && !isComposingText(event);
+  }
+  function isSubmitEnter(event) {
+    return isCommandEnter(event) && !event.shiftKey;
+  }
+  var ENTER_SEND_HINT = "Send (Enter) \xB7 New line (Shift+Enter)";
+
   // src/ui/canvas-view.js
   function defaultCanvasHooks() {
     return {
@@ -30439,7 +30451,7 @@ ${text2}</tr>
     inner2.className = "nc-inner";
     var ta = document.createElement("textarea");
     ta.rows = 1;
-    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (\u21B5)", svgIconHtml: SEND_ICON }));
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: ENTER_SEND_HINT, svgIconHtml: SEND_ICON }));
     var handle = document.createElement("button");
     handle.type = "button";
     handle.className = "nc-handle";
@@ -30470,7 +30482,7 @@ ${text2}</tr>
       updateCardComposer(node);
     });
     ta.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (isSubmitEnter(e)) {
         e.preventDefault();
         submitCardFollowup(node, "keyboard");
       } else if (e.key === "Escape") {
@@ -31336,6 +31348,8 @@ ${text2}</tr>
   function initAskFollowups() {
     disposeAskFollowupResources(false);
     var askScope = askLifecycle.beginInit();
+    composerSend.title = ENTER_SEND_HINT;
+    askGo.title = ENTER_SEND_HINT;
     askScope.listen(document, "mouseup", function(e) {
       if (inAsk(e)) return;
       if (usesMobileAskSurface()) queueMobileAsk(80);
@@ -31366,7 +31380,7 @@ ${text2}</tr>
       updateComposerState();
     });
     askScope.listen(composerText, "keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (isSubmitEnter(e)) {
         e.preventDefault();
         submitFollowup("keyboard");
       }
@@ -31450,7 +31464,7 @@ ${text2}</tr>
     };
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
-    askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
+    askText.placeholder = "Ask about this\u2026";
     ask.classList.add("visible");
     var owner = selectionOwner(dc);
     var virtualAnchor = { getBoundingClientRect: function() {
@@ -31466,7 +31480,7 @@ ${text2}</tr>
   function openAskSurface(anchor, owner) {
     var mobile = usesMobileAskSurface();
     ask.classList.toggle("mobile-sheet", mobile);
-    askText.placeholder = mobile ? "Ask about this\u2026" : "Ask about this\u2026 \u21B5 = Explain";
+    askText.placeholder = "Ask about this\u2026";
     var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({
       surface: ask,
@@ -31562,10 +31576,10 @@ ${text2}</tr>
   }
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
   function onAskTextKeydown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (isSubmitEnter(e)) {
       e.preventDefault();
       submitAsk(null, "keyboard");
-    } else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]) {
+    } else if (!isComposingText(e) && askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]) {
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }
@@ -32284,7 +32298,7 @@ ${text2}</tr>
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       movePalSel(-1);
-    } else if (e.key === "Enter") {
+    } else if (isCommandEnter(e)) {
       e.preventDefault();
       commitPal("keyboard");
     }

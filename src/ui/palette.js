@@ -15,6 +15,7 @@ import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { ensureNodeHtml } from "./renderer.js";
+import { isCommandEnter } from "./input-intent.js";
 
 function defaultPaletteHooks(){
   return {
@@ -106,7 +107,7 @@ function closePalette(settings){
   function onPaletteKeydown(e){
     if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
     else if (e.key === "ArrowUp"){ e.preventDefault(); movePalSel(-1); }
-    else if (e.key === "Enter"){ e.preventDefault(); commitPal("keyboard"); }
+    else if (isCommandEnter(e)){ e.preventDefault(); commitPal("keyboard"); }
   }
   // Rank: title hits above quote/question hits above body hits; every token
   // must appear somewhere. An empty query lists everything, newest first.

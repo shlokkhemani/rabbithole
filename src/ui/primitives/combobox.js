@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../core/utils.js";
+import { isCommandEnter } from "../input-intent.js";
 import { openPopover } from "./popover.js";
 
 export function comboboxMarkup(options) {
@@ -100,7 +101,7 @@ export function wireCombobox(root, options) {
     input.addEventListener("keydown", function(event) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault(); setActive(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
-      } else if (event.key === "Enter") {
+      } else if (isCommandEnter(event)) {
         var rows = optionRows();
         if (rows.length) { event.preventDefault(); commit(rows[Math.max(0, activeIndex)]); }
       }

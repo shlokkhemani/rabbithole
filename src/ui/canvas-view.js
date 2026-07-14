@@ -54,6 +54,7 @@ import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
+import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
 
 function defaultCanvasHooks(){
   return {
@@ -280,7 +281,7 @@ export function autoGrowEl(ta, max){
     var clip = document.createElement("div"); clip.className = "nc-clip"; clip.id = cardDrawerId(node);
     var inner = document.createElement("div"); inner.className = "nc-inner";
     var ta = document.createElement("textarea"); ta.rows = 1;
-    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (↵)", svgIconHtml: SEND_ICON }));
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: ENTER_SEND_HINT, svgIconHtml: SEND_ICON }));
     var handle = document.createElement("button"); handle.type = "button"; handle.className = "nc-handle"; handle.title = "Ask a follow-up about this document";
     handle.setAttribute("aria-expanded", "false"); handle.setAttribute("aria-controls", clip.id);
     var plus = document.createElement("span"); plus.className = "nc-plus"; plus.textContent = "+";
@@ -291,7 +292,7 @@ export function autoGrowEl(ta, max){
     handle.addEventListener("click", function(e){ e.stopPropagation(); openCardDrawer(node); });
     ta.addEventListener("input", function(){ autoGrowEl(ta, 90); updateCardComposer(node); });
     ta.addEventListener("keydown", function(e){
-      if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
+      if (isSubmitEnter(e)){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
       else if (e.key === "Escape"){ e.stopPropagation(); closeCardDrawer(node); handle.focus({ preventScroll: true }); }
     });
     // Click-away with an empty drawer tucks it back in (a draft keeps it out).

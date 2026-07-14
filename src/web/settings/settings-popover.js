@@ -9,6 +9,7 @@ import { escapeHtml } from "../../core/utils.js";
 import { openPopover } from "../../ui/primitives/popover.js";
 import { fieldMarkup, wireField } from "../../ui/primitives/field.js";
 import { comboboxMarkup, wireCombobox } from "../../ui/primitives/combobox.js";
+import { isCommandEnter } from "../../ui/input-intent.js";
 
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
 const chevron = `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>`;
@@ -108,7 +109,7 @@ export function createSettingsPopover(options) {
       keyInput.addEventListener("paste", () => setTimeout(() => commitSettingsKey(), 0));
       keyInput.addEventListener("blur", () => commitSettingsKey());
       keyInput.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") return;
+        if (!isCommandEnter(event)) return;
         event.preventDefault();
         void commitSettingsKey({ required: true }).then((valid) => { if (valid) keyInput.blur(); });
       });

@@ -24,7 +24,7 @@ export const CANVAS_SHELL = `
       <div id="composer">
         <div class="composer-inner" id="composer-inner">
           <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (↵)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
     </div>
@@ -57,8 +57,8 @@ export const CANVAS_SHELL = `
 
 <div id="ask">
   <div class="ask-input">
-    <textarea id="ask-text" rows="1" placeholder="Ask about this… ↵ = Explain"></textarea>
-    ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Ask (↵)", ariaLabel: "Ask", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' })}
+    <textarea id="ask-text" rows="1" placeholder="Ask about this…"></textarea>
+    ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Send (Enter) · New line (Shift+Enter)", ariaLabel: "Ask", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' })}
   </div>
   <div class="ask-lenses" id="ask-lenses">
     ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "explain" }, label: "Explain ", kbdHint: "1" })}

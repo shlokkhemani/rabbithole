@@ -21,6 +21,7 @@ import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { flushPendingSaves } from "../ui/transport-status.js";
 import { registerRendererAssetName } from "../ui/renderer.js";
+import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
@@ -377,7 +378,7 @@ function initComposer() {
     autoGrowTextarea(input, 240);
   });
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (isSubmitEnter(event)) {
       event.preventDefault();
       runComposer();
     }
@@ -524,6 +525,7 @@ function selectComposerPath(path, { value = "" } = {}) {
   input.spellcheck = isAsk;
   input.value = value;
   document.getElementById("composer-primary").textContent = isAsk ? "Start exploring" : "Open link";
+  document.getElementById("composer-primary").title = "Submit (Enter) · New line (Shift+Enter)";
   autoGrowTextarea(input, 240);
   input.focus({ preventScroll: true });
 }

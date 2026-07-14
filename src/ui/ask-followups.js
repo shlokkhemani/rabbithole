@@ -53,6 +53,7 @@ import { openAnchoredSurface } from "./overlay/anchor.js";
 import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
 import { applyComposerState } from "./composer-state.js";
 import { teardownNode } from "./node-teardown.js";
+import { ENTER_SEND_HINT, isComposingText, isSubmitEnter } from "./input-intent.js";
 
 function defaultAskHooks(){
   return {
@@ -72,6 +73,8 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
   var askScope = askLifecycle.beginInit();
+  composerSend.title = ENTER_SEND_HINT;
+  askGo.title = ENTER_SEND_HINT;
   askScope.listen(document, "mouseup", function(e){
     if (inAsk(e)) return;
     if (usesMobileAskSurface()) queueMobileAsk(80);
@@ -93,7 +96,7 @@ export function initAskFollowups(){
   askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
   askScope.listen(composerText, "input", function(){ autoGrowComposer(); updateComposerState(); });
   askScope.listen(composerText, "keydown", function(e){
-    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
+    if (isSubmitEnter(e)){ e.preventDefault(); submitFollowup("keyboard"); }
   });
   askScope.listen(composerSend, "click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
   askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
@@ -162,7 +165,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
                    startOff: startOff, endOff: endOff, range: range.cloneRange() };
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
-    askText.placeholder = "Ask about this… ↵ = Explain";
+    askText.placeholder = "Ask about this…";
     ask.classList.add("visible");
     var owner = selectionOwner(dc);
     var virtualAnchor = { getBoundingClientRect: function(){ return pendingAsk.range.getBoundingClientRect(); }, contextElement: dc };
@@ -193,7 +196,7 @@ export function showAskFromSelection(options){
       endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: options.range || null };
     if (pendingAsk.range) paintAskHighlight(pendingAsk.range);
     askText.value = "";
-    askText.placeholder = "Ask about this… ↵ = Explain";
+    askText.placeholder = "Ask about this…";
     ask.classList.add("visible");
     var owner = selectionOwner(pendingAsk.container);
     askTabOwner = owner;
@@ -206,7 +209,7 @@ export function showAskFromSelection(options){
   function openAskSurface(anchor, owner){
     var mobile = usesMobileAskSurface();
     ask.classList.toggle("mobile-sheet", mobile);
-    askText.placeholder = mobile ? "Ask about this…" : "Ask about this… ↵ = Explain";
+    askText.placeholder = "Ask about this…";
     var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
       placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
@@ -274,10 +277,10 @@ export function disposeAskFollowups(){
 
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
   function onAskTextKeydown(e){
-    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitAsk(null, "keyboard"); }
+    if (isSubmitEnter(e)){ e.preventDefault(); submitAsk(null, "keyboard"); }
     // Number keys are lens shortcuts only while the box is empty — once the
     // human starts typing a question, digits are just digits.
-    else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){
+    else if (!isComposingText(e) && askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }

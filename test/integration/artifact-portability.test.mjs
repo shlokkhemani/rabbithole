@@ -296,6 +296,11 @@ async function verifyPublishOutput() {
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   assert(html.includes("connect-src 'self' https://openrouter.ai https://api.github.com"), "web CSP should allow the public GitHub star-count request");
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
+  const chunkNames = await fs.readdir(path.join(publishDir, "chunks"));
+  assert.equal(chunkNames.filter((name) => /^browser-canvas-stub-[A-Z0-9]+\.js$/.test(name)).length, 1,
+    "browser builds should pin PDF.js's Node-only canvas import to the deterministic stub");
+  assert.equal(chunkNames.some((name) => /^(?:browser|canvas)-[A-Z0-9]+\.js$/.test(name)), false,
+    "browser builds must not depend on whether the optional native canvas package installed");
   const initialStyleAt = html.indexOf('id="initial-theme-style"');
   const initialScriptAt = html.indexOf('id="initial-theme-script"');
   const stylesheetAt = html.indexOf('rel="stylesheet"');

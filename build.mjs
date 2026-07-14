@@ -104,12 +104,20 @@ async function buildWebApp(assetDir) {
     outdir: webDist,
     bundle: true,
     format: "esm",
+    platform: "browser",
     splitting: true,
     target: "es2022",
     entryNames: "[name]",
     chunkNames: "chunks/[name]-[hash]",
     minify: false,
     sourcemap: false,
+    // PDF.js imports `canvas` only inside its Node path. Native optional
+    // dependencies are installed on some operating systems and omitted on
+    // others, so resolving the package normally changes otherwise-identical
+    // browser chunk names. Pin it to the browser stub for reproducible builds.
+    alias: {
+      canvas: path.join(rootDir, "src/web/browser-canvas-stub.js"),
+    },
     define: {
       __RABBITHOLE_DEFAULT_PROXY_URL__: JSON.stringify(proxyConfig.defaultUrl),
     },

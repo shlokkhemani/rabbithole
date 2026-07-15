@@ -6,6 +6,9 @@ import { escapeHtml } from "../core/utils.js";
 
 var visualSurfaceCaches = {};
 var blockMounts = {};
+var mermaidRuntimePromise = null;
+var mermaidInitialized = false;
+var mermaidRenderId = 0;
 function defaultVisualHooks(){
   return {
     post: function(){ return Promise.resolve({ ok: true }); },
@@ -33,6 +36,11 @@ var VISUAL_SANITIZE_CONFIG = {
     ".rh-viz-content img{max-width:100%;height:auto;}" +
     ".rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}" +
     ".rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
+  var ASYNC_VISUAL_CSS =
+    ".rh-viz-loading{color:var(--fg-dim);font-family:var(--font-ui);font-size:.86em;}" +
+    ".rh-viz-error{display:grid;gap:.55em;color:var(--fg);font-family:var(--font-ui);}" +
+    ".rh-viz-error strong{color:var(--warn);font-size:.82em;}" +
+    ".rh-viz-error pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}";
   var CHECK_CSS =
     ".rh-check{display:grid;gap:.75em;}" +
     ".rh-check-question{font-weight:650;line-height:1.4;}" +
@@ -57,8 +65,11 @@ export function registerBlockMount(type, mountSpec){
     var descriptor = getBlockType(key);
     if (!descriptor) throw new Error('Cannot register mount for unknown block type "' + key + '"');
     if (!mountSpec || typeof mountSpec !== "object") throw new TypeError('Block mount for "' + key + '" must be an object');
-    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function") {
-      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model)');
+    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function" && typeof mountSpec.mount !== "function") {
+      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model) or mount(root, model)');
+    }
+    if (mountSpec.mount !== undefined && typeof mountSpec.mount !== "function") {
+      throw new TypeError('Block mount mount for "' + key + '" must be a function');
     }
     if (mountSpec.wire !== undefined && typeof mountSpec.wire !== "function") {
       throw new TypeError('Block mount wire for "' + key + '" must be a function');
@@ -112,6 +123,64 @@ function visualFallback(source, message){
 function buildShowVisual(model){
     return String(model == null ? "" : model);
   }
+function mermaidAssetUrl(){
+    var url = new URL("mermaid.js", document.baseURI || window.location.href);
+    var version = document.querySelector && document.querySelector('meta[name="rabbithole-asset-version"]');
+    if (version && version.content) url.searchParams.set("v", version.content);
+    return url.href;
+  }
+function loadMermaidRuntime(){
+    if (window.mermaid && typeof window.mermaid.render === "function") return Promise.resolve(window.mermaid);
+    if (mermaidRuntimePromise) return mermaidRuntimePromise;
+    mermaidRuntimePromise = new Promise(function(resolve, reject){
+      var script = document.createElement("script");
+      script.src = mermaidAssetUrl();
+      script.async = true;
+      script.setAttribute("data-rabbithole-mermaid", "1");
+      script.onload = function(){
+        if (window.mermaid && typeof window.mermaid.render === "function") resolve(window.mermaid);
+        else reject(new Error("Mermaid runtime loaded without a render API"));
+      };
+      script.onerror = function(){ reject(new Error("Unable to load the Mermaid runtime")); };
+      document.head.appendChild(script);
+    }).catch(function(error){ mermaidRuntimePromise = null; throw error; });
+    return mermaidRuntimePromise;
+  }
+function renderAsyncVisualError(content, source, error){
+    content.className = "rh-viz-content rh-viz-error";
+    content.textContent = "";
+    var note = document.createElement("strong");
+    note.textContent = error && error.message ? error.message : "Unable to render visual.";
+    var pre = document.createElement("pre");
+    var code = document.createElement("code");
+    code.textContent = String(source || "");
+    pre.appendChild(code);
+    content.appendChild(note);
+    content.appendChild(pre);
+  }
+async function mountMermaidVisual(content, definition){
+    var mermaid = await loadMermaidRuntime();
+    if (!mermaidInitialized){
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "neutral",
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
+      });
+      mermaidInitialized = true;
+    }
+    var renderId = "rh-mermaid-" + Date.now().toString(36) + "-" + (++mermaidRenderId).toString(36);
+    var rendered = await mermaid.render(renderId, definition);
+    content.className = "rh-viz-content";
+    content.innerHTML = sanitizeVisualSource(rendered.svg);
+    var svg = content.querySelector && content.querySelector("svg");
+    if (svg){
+      svg.removeAttribute("height");
+      svg.setAttribute("width", "100%");
+      svg.style.maxWidth = "100%";
+    }
+  }
   function buildMountedVisual(descriptor, mountSpec, model, context){
       var host = document.createElement("div");
       host.className = "viz-mounted viz-" + descriptor.type;
@@ -119,12 +188,15 @@ function buildShowVisual(model){
       host.style.contain = "content";
       var shadow = host.attachShadow({ mode: "open" });
       var style = document.createElement("style");
-      style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
+      style.textContent = VISUAL_BASE_CSS + ASYNC_VISUAL_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
       var frame = document.createElement("div");
       frame.className = "rh-viz-frame";
       var content = document.createElement("div");
       content.className = "rh-viz-content";
-      if (descriptor.security === "sanitize-html") {
+      if (mountSpec.mount) {
+        content.className = "rh-viz-content rh-viz-loading";
+        content.textContent = "Drawing diagram…";
+      } else if (descriptor.security === "sanitize-html") {
         content.innerHTML = sanitizeVisualSource(mountSpec.renderHtml(model));
       } else {
         content.textContent = descriptor.toPlainText(model);
@@ -132,6 +204,10 @@ function buildShowVisual(model){
       frame.appendChild(content);
       shadow.appendChild(style);
       shadow.appendChild(frame);
+      if (mountSpec.mount) {
+        Promise.resolve().then(function(){ return mountSpec.mount(content, model, context); })
+          .catch(function(error){ renderAsyncVisualError(content, descriptor.toPlainText(model), error); });
+      }
       if (mountSpec.wire) mountSpec.wire(content, model, context);
       return host;
   }
@@ -225,6 +301,7 @@ export function mountVisuals(containerEl, surfaceKey){
   }
 
 registerBlockMount("show", { renderHtml: buildShowVisual });
+registerBlockMount("mermaid", { mount: mountMermaidVisual });
 
 export function buildCheckVisual(model){
   var options = model.options.map(function(option, index){

@@ -2029,6 +2029,19 @@ var RabbitholeClient = (() => {
     },
     security: "sanitize-html"
   });
+  registerBlockType({
+    type: "mermaid",
+    version: 1,
+    parse(source2) {
+      const definition = String(source2 != null ? source2 : "").trim();
+      if (!definition) throw new Error("Mermaid body must be a non-empty diagram definition");
+      return definition;
+    },
+    toPlainText(definition) {
+      return String(definition != null ? definition : "");
+    },
+    security: "sanitize-html"
+  });
   function parseCheck(source2) {
     let model;
     try {
@@ -2064,6 +2077,9 @@ var RabbitholeClient = (() => {
   // src/ui/visuals.js
   var visualSurfaceCaches = {};
   var blockMounts = {};
+  var mermaidRuntimePromise = null;
+  var mermaidInitialized = false;
+  var mermaidRenderId = 0;
   function defaultVisualHooks() {
     return {
       post: function() {
@@ -2087,6 +2103,7 @@ var RabbitholeClient = (() => {
     ALLOWED_URI_REGEXP: VISUAL_ALLOWED_URI
   };
   var VISUAL_BASE_CSS = ":host{display:block;width:100%;max-width:100%;margin:0.55em 0 1em;contain:content;color:var(--fg);background:transparent;font:inherit;}.rh-viz-frame{box-sizing:border-box;width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;overscroll-behavior-x:contain;border:1px solid var(--border);border-radius:8px;padding:0.85em 1em;background:var(--node-bg);color:var(--fg);font:inherit;}.rh-viz-content{box-sizing:border-box;min-width:100%;width:auto;color:inherit;font:inherit;}.rh-viz-content *,.rh-viz-content *::before,.rh-viz-content *::after{box-sizing:border-box;}.rh-viz-content svg{max-width:none;height:auto;}.rh-viz-content img{max-width:100%;height:auto;}.rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}.rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
+  var ASYNC_VISUAL_CSS = ".rh-viz-loading{color:var(--fg-dim);font-family:var(--font-ui);font-size:.86em;}.rh-viz-error{display:grid;gap:.55em;color:var(--fg);font-family:var(--font-ui);}.rh-viz-error strong{color:var(--warn);font-size:.82em;}.rh-viz-error pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}";
   var CHECK_CSS = ".rh-check{display:grid;gap:.75em;}.rh-check-question{font-weight:650;line-height:1.4;}.rh-check-options{display:grid;gap:.5em;}.rh-check-option,.rh-check-reset{appearance:none;border:1px solid var(--border);border-radius:7px;background:var(--node-bg);color:var(--fg);font:inherit;text-align:left;padding:.62em .75em;cursor:pointer;}.rh-check-option:hover:not(:disabled),.rh-check-option:focus-visible,.rh-check-reset:hover,.rh-check-reset:focus-visible{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);outline-offset:1px;}.rh-check-option:disabled{cursor:default;opacity:1;}.rh-check-option.is-correct{border-color:color-mix(in srgb,#2f9e44 70%,var(--border));background:color-mix(in srgb,#2f9e44 13%,var(--node-bg));}.rh-check-option.is-incorrect{border-color:color-mix(in srgb,#e03131 70%,var(--border));background:color-mix(in srgb,#e03131 12%,var(--node-bg));}.rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}.rh-check-actions{display:flex;justify-content:flex-end;}.rh-check-reset{padding:.45em .7em;text-align:center;}";
   function registerVisualHooks(hooks) {
     visualHooks = Object.assign({}, visualHooks, hooks || {});
@@ -2100,8 +2117,11 @@ var RabbitholeClient = (() => {
     var descriptor = getBlockType(key);
     if (!descriptor) throw new Error('Cannot register mount for unknown block type "' + key + '"');
     if (!mountSpec || typeof mountSpec !== "object") throw new TypeError('Block mount for "' + key + '" must be an object');
-    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function") {
-      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model)');
+    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function" && typeof mountSpec.mount !== "function") {
+      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model) or mount(root, model)');
+    }
+    if (mountSpec.mount !== void 0 && typeof mountSpec.mount !== "function") {
+      throw new TypeError('Block mount mount for "' + key + '" must be a function');
     }
     if (mountSpec.wire !== void 0 && typeof mountSpec.wire !== "function") {
       throw new TypeError('Block mount wire for "' + key + '" must be a function');
@@ -2155,6 +2175,69 @@ var RabbitholeClient = (() => {
   function buildShowVisual(model) {
     return String(model == null ? "" : model);
   }
+  function mermaidAssetUrl() {
+    var url = new URL("mermaid.js", document.baseURI || window.location.href);
+    var version2 = document.querySelector && document.querySelector('meta[name="rabbithole-asset-version"]');
+    if (version2 && version2.content) url.searchParams.set("v", version2.content);
+    return url.href;
+  }
+  function loadMermaidRuntime() {
+    if (window.mermaid && typeof window.mermaid.render === "function") return Promise.resolve(window.mermaid);
+    if (mermaidRuntimePromise) return mermaidRuntimePromise;
+    mermaidRuntimePromise = new Promise(function(resolve, reject) {
+      var script2 = document.createElement("script");
+      script2.src = mermaidAssetUrl();
+      script2.async = true;
+      script2.setAttribute("data-rabbithole-mermaid", "1");
+      script2.onload = function() {
+        if (window.mermaid && typeof window.mermaid.render === "function") resolve(window.mermaid);
+        else reject(new Error("Mermaid runtime loaded without a render API"));
+      };
+      script2.onerror = function() {
+        reject(new Error("Unable to load the Mermaid runtime"));
+      };
+      document.head.appendChild(script2);
+    }).catch(function(error) {
+      mermaidRuntimePromise = null;
+      throw error;
+    });
+    return mermaidRuntimePromise;
+  }
+  function renderAsyncVisualError(content, source2, error) {
+    content.className = "rh-viz-content rh-viz-error";
+    content.textContent = "";
+    var note = document.createElement("strong");
+    note.textContent = error && error.message ? error.message : "Unable to render visual.";
+    var pre = document.createElement("pre");
+    var code = document.createElement("code");
+    code.textContent = String(source2 || "");
+    pre.appendChild(code);
+    content.appendChild(note);
+    content.appendChild(pre);
+  }
+  async function mountMermaidVisual(content, definition) {
+    var mermaid = await loadMermaidRuntime();
+    if (!mermaidInitialized) {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "neutral",
+        htmlLabels: false,
+        flowchart: { htmlLabels: false }
+      });
+      mermaidInitialized = true;
+    }
+    var renderId = "rh-mermaid-" + Date.now().toString(36) + "-" + (++mermaidRenderId).toString(36);
+    var rendered = await mermaid.render(renderId, definition);
+    content.className = "rh-viz-content";
+    content.innerHTML = sanitizeVisualSource(rendered.svg);
+    var svg = content.querySelector && content.querySelector("svg");
+    if (svg) {
+      svg.removeAttribute("height");
+      svg.setAttribute("width", "100%");
+      svg.style.maxWidth = "100%";
+    }
+  }
   function buildMountedVisual(descriptor, mountSpec, model, context) {
     var host = document.createElement("div");
     host.className = "viz-mounted viz-" + descriptor.type;
@@ -2162,12 +2245,15 @@ var RabbitholeClient = (() => {
     host.style.contain = "content";
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
-    style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
+    style.textContent = VISUAL_BASE_CSS + ASYNC_VISUAL_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
     var frame = document.createElement("div");
     frame.className = "rh-viz-frame";
     var content = document.createElement("div");
     content.className = "rh-viz-content";
-    if (descriptor.security === "sanitize-html") {
+    if (mountSpec.mount) {
+      content.className = "rh-viz-content rh-viz-loading";
+      content.textContent = "Drawing diagram\u2026";
+    } else if (descriptor.security === "sanitize-html") {
       content.innerHTML = sanitizeVisualSource(mountSpec.renderHtml(model));
     } else {
       content.textContent = descriptor.toPlainText(model);
@@ -2175,6 +2261,13 @@ var RabbitholeClient = (() => {
     frame.appendChild(content);
     shadow.appendChild(style);
     shadow.appendChild(frame);
+    if (mountSpec.mount) {
+      Promise.resolve().then(function() {
+        return mountSpec.mount(content, model, context);
+      }).catch(function(error) {
+        renderAsyncVisualError(content, descriptor.toPlainText(model), error);
+      });
+    }
     if (mountSpec.wire) mountSpec.wire(content, model, context);
     return host;
   }
@@ -2266,6 +2359,7 @@ var RabbitholeClient = (() => {
     }
   }
   registerBlockMount("show", { renderHtml: buildShowVisual });
+  registerBlockMount("mermaid", { mount: mountMermaidVisual });
   function buildCheckVisual(model) {
     var _a2;
     var options2 = model.options.map(function(option, index) {
@@ -34067,13 +34161,19 @@ ${text2}</tr>
 `;
 
   // src/core/snapshot-html.js
-  function buildSnapshotHtml({ title, stylesheetText, dompurifySource, frozenClientSource, snapshotProjection }) {
+  function buildSnapshotHtml({ title, stylesheetText, dompurifySource, mermaidSource = "", frozenClientSource, snapshotProjection }) {
     var lt = String.fromCharCode(60);
     var gt = String.fromCharCode(62);
     var scriptOpen = lt + "script" + gt;
     var scriptClose = lt + String.fromCharCode(47) + "script" + gt;
     var payloadOpen = lt + 'script type="application/vnd.rabbithole+json" id="rabbithole-portable"' + gt;
-    return '<!DOCTYPE html>\n<html lang="en" data-theme="light">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>' + escapeHtml(title) + "</title>\n<style>\n" + stylesheetText + "\n</style>\n</head>\n<body>\n" + CANVAS_SHELL + "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose + "\n" + scriptOpen + "\n" + dompurifySource + '\n(function(){\n  "use strict";\n' + frozenClientSource + '\n  var payload = document.getElementById("rabbithole-portable");\n  RabbitholeFrozenClient.startPortableSnapshot(JSON.parse(payload.textContent));\n})();\n' + scriptClose + "\n</body>\n</html>";
+    return '<!DOCTYPE html>\n<html lang="en" data-theme="light">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>' + escapeHtml(title) + "</title>\n<style>\n" + stylesheetText + "\n</style>\n</head>\n<body>\n" + CANVAS_SHELL + "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose + "\n" + scriptOpen + "\n" + dompurifySource + (mermaidSource ? "\n" + mermaidSource : "") + '\n(function(){\n  "use strict";\n' + frozenClientSource + '\n  var payload = document.getElementById("rabbithole-portable");\n  RabbitholeFrozenClient.startPortableSnapshot(JSON.parse(payload.textContent));\n})();\n' + scriptClose + "\n</body>\n</html>";
+  }
+  function snapshotUsesMermaid(snapshotProjection) {
+    var _a2;
+    const nodes2 = (_a2 = snapshotProjection == null ? void 0 : snapshotProjection.hole) == null ? void 0 : _a2.nodes;
+    if (!Array.isArray(nodes2)) return false;
+    return nodes2.some((node) => /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?=$|[ \t\r\n])/i.test(String((node == null ? void 0 : node.markdown) || "")));
   }
 
   // src/ui/snapshot.js
@@ -34082,6 +34182,7 @@ ${text2}</tr>
       fetchAssetBinary: null,
       getSnapshotHole: null,
       getFrozenClientSource: null,
+      getMermaidSource: null,
       getDompurifySource: null,
       getStylesheetText: null
     };
@@ -34157,17 +34258,27 @@ ${text2}</tr>
     var hole = await snapshotHooks.getSnapshotHole();
     return createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
   }
-  function buildSnapshotHtml2(snapshotProjection) {
+  async function buildSnapshotHtml2(snapshotProjection) {
     var title = snapshotProjection && snapshotProjection.hole && snapshotProjection.hole.title || "Rabbithole";
     var styleText = typeof snapshotHooks.getStylesheetText === "function" ? snapshotHooks.getStylesheetText() : "";
     if (!styleText) throw new Error("Frozen stylesheet is unavailable");
     var dompurifySource = extractDompurifySource();
     var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function" ? snapshotHooks.getFrozenClientSource() : window.__RABBITHOLE_FROZEN_CLIENT__;
     if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
+    var mermaidSource = "";
+    if (snapshotUsesMermaid(snapshotProjection)) {
+      if (typeof snapshotHooks.getMermaidSource === "function") {
+        mermaidSource = await snapshotHooks.getMermaidSource() || "";
+      } else {
+        mermaidSource = window.__RABBITHOLE_MERMAID_SOURCE__ || "";
+      }
+      if (!mermaidSource) throw new Error("Mermaid runtime is unavailable for this snapshot");
+    }
     return buildSnapshotHtml({
       title,
       stylesheetText: styleText,
       dompurifySource,
+      mermaidSource,
       frozenClientSource: frozenClient,
       snapshotProjection
     });
@@ -34177,7 +34288,7 @@ ${text2}</tr>
   }
   async function downloadSnapshot() {
     var snapshotProjection = await buildSnapshotProjection();
-    var html2 = buildSnapshotHtml2(snapshotProjection);
+    var html2 = await buildSnapshotHtml2(snapshotProjection);
     var blob = new Blob([html2], { type: "text/html;charset=utf-8" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");

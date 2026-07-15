@@ -746,6 +746,11 @@ async function mountHole(hole, { replace = false } = {}) {
       return store.loadHole(currentHoleId);
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
+    getMermaidSource: async () => {
+      const response = await fetch(new URL("mermaid.js", document.baseURI), { cache: "no-cache" });
+      if (!response.ok) throw new Error("Mermaid runtime is unavailable");
+      return response.text();
+    },
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });

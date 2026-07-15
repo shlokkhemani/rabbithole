@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createSnapshotProjection } from "../../core/snapshot-projection.js";
-import { buildSnapshotHtml } from "../../core/snapshot-html.js";
+import { buildSnapshotHtml, snapshotUsesMermaid } from "../../core/snapshot-html.js";
 import { CANVAS_STYLES } from "../../core/html/styles.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { resolveAsset } from "../fs-store.js";
-import { getDompurifyScript, getFrozenClientBundle, getKatexCss } from "../html/built-assets.js";
+import { getDompurifyScript, getFrozenClientBundle, getKatexCss, getMermaidScript } from "../html/built-assets.js";
 
 /** @param {import("./session.js").RabbitHoleSession} session */
 async function buildSessionSnapshotProjection(session) {
@@ -39,6 +39,7 @@ export async function buildSessionExportHtml(session) {
     title: snapshotProjection.hole.title || "Rabbithole",
     stylesheetText: `${CANVAS_STYLES}\n${getKatexCss()}`,
     dompurifySource: getDompurifyScript(),
+    mermaidSource: snapshotUsesMermaid(snapshotProjection) ? getMermaidScript() : "",
     frozenClientSource: getFrozenClientBundle(),
     snapshotProjection,
   });

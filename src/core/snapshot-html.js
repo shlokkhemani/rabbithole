@@ -6,11 +6,12 @@ import { escapeHtml, serializeForInlineScript } from "./utils.js";
  *   title: string,
  *   stylesheetText: string,
  *   dompurifySource: string,
+ *   mermaidSource?: string,
  *   frozenClientSource: string,
  *   snapshotProjection: import("./contracts/artifact.js").PortableArtifact
  * }} options
  */
-export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, frozenClientSource, snapshotProjection }) {
+export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, mermaidSource = "", frozenClientSource, snapshotProjection }) {
   var lt = String.fromCharCode(60);
   var gt = String.fromCharCode(62);
   var scriptOpen = lt + "script" + gt;
@@ -29,6 +30,7 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, froz
     "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose +
     "\n" + scriptOpen + "\n" +
     dompurifySource +
+    (mermaidSource ? "\n" + mermaidSource : "") +
     "\n(function(){\n" +
     '  "use strict";\n' +
     frozenClientSource +
@@ -38,4 +40,11 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, froz
     scriptClose + "\n" +
     "</body>\n" +
     "</html>";
+}
+
+/** @param {import("./contracts/artifact.js").PortableArtifact | null | undefined} snapshotProjection */
+export function snapshotUsesMermaid(snapshotProjection) {
+  const nodes = snapshotProjection?.hole?.nodes;
+  if (!Array.isArray(nodes)) return false;
+  return nodes.some((node) => /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?=$|[ \t\r\n])/i.test(String(node?.markdown || "")));
 }

@@ -9,6 +9,7 @@ import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
 import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../../src/core/blocks.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
 import { getDompurifyScript } from "../../src/node/html/built-assets.js";
+import { snapshotUsesMermaid } from "../../src/core/snapshot-html.js";
 import { buildCheckVisual, mountVisuals, registerBlockMount } from "../../src/ui/visuals.js";
 
 function count(haystack, needle) {
@@ -31,6 +32,14 @@ async function runMarkdownFixtures() {
   assert(showHtml.includes('data-viz="show"'));
   assert.equal(decodeDataSrc(showHtml), showBody);
   assert(!showHtml.includes("&lt;style&gt;"), "recognized show fence should not render as escaped code");
+
+  const mermaidBody = "sequenceDiagram\n  Alice->>Bob: Hello";
+  const mermaidHtml = await renderMarkdownToHtml(["```mermaid id=m3rma", mermaidBody, "```"].join("\n"));
+  assert(mermaidHtml.includes('class="viz"'));
+  assert(mermaidHtml.includes('data-viz="mermaid"'));
+  assert(mermaidHtml.includes('data-block-id="m3rma"'));
+  assert.equal(decodeDataSrc(mermaidHtml), mermaidBody);
+  assert(!mermaidHtml.includes("sequenceDiagram"), "recognized Mermaid source should stay inert until client mounting");
 
   const identified = await renderMarkdownToHtml(["```show extra=yes id=b7ka2", showBody, "```"].join("\n"));
   assert(identified.includes('data-block-id="b7ka2"'));
@@ -79,6 +88,12 @@ function runBlockIdNormalization() {
 
 function runBlockRegistryContract() {
   assert.equal(getBlockType("SHOW")?.version, 1);
+  assert.deepEqual(
+    { version: getBlockType("MERMAID")?.version, security: getBlockType("MERMAID")?.security },
+    { version: 1, security: "sanitize-html" },
+  );
+  assert.equal(getBlockType("mermaid").parse("\nflowchart TD\n A --> B\n"), "flowchart TD\n A --> B");
+  assert.throws(() => getBlockType("mermaid").parse(" \n"), /non-empty/);
   assert(listBlockTypes().some(({ type }) => type === "show"));
   assert.throws(() => registerBlockType({
     type: "show", version: 1, parse: (source) => source, toPlainText: () => "", security: "sanitize-html",
@@ -88,6 +103,15 @@ function runBlockRegistryContract() {
   assert.throws(() => registerBlockType({ type: "bad-security", version: 1, parse: (source) => source, toPlainText: () => "", security: "trusted" }), /security must be/);
   assert.throws(() => registerBlockMount("not-registered", {}), /unknown block type/);
   console.log("ok blocks: descriptor validation, duplicate rejection, mount binding");
+}
+
+function runMermaidSnapshotDetection() {
+  const projection = (markdown) => ({ hole: { nodes: [{ markdown }] } });
+  assert.equal(snapshotUsesMermaid(projection("```mermaid\nflowchart TD\nA-->B\n```")), true);
+  assert.equal(snapshotUsesMermaid(projection("~~~MERMAID id=m3rma\nsequenceDiagram\n~~~")), true);
+  assert.equal(snapshotUsesMermaid(projection("Inline ` ```mermaid ` and ```show\nmermaid\n```")), false);
+  assert.equal(snapshotUsesMermaid({ hole: { nodes: [] } }), false);
+  console.log("ok mermaid: snapshot runtime detection is fence-aware and case-insensitive");
 }
 
 function runCheckDescriptorGoldens() {
@@ -464,6 +488,7 @@ async function assertPageAssembly() {
 
 runBlockIdNormalization();
 runBlockRegistryContract();
+runMermaidSnapshotDetection();
 runCheckDescriptorGoldens();
 runDerivedFenceRecognition();
 await runMarkdownFixtures();

@@ -41,6 +41,7 @@ const server = new McpServer(
       "Answer authoring:",
       "- Use GFM markdown, $...$/$$...$$ or \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
       "- For local images that are not on the web, pass assets and reference them as ![alt](asset:name.png).",
+      "- Use ```mermaid fences for flowcharts, sequence diagrams, and other Mermaid diagrams.",
       "- For spatial structure, use ```show fences with HTML/CSS/inline-SVG only; scripts are stripped. You may include id=<slug>; Rabbithole mints missing ids on persist.",
       "- For a knowledge check, use a ```check fence with strict JSON, e.g. {\"question\":\"2 + 2?\",\"options\":[\"3\",\"4\"],\"answer\":1}.",
       "- Stream prose in 1-3 sentence chunks, but send each visual fence contiguously so it renders when closed.",

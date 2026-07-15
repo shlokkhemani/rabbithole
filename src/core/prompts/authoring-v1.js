@@ -3,6 +3,7 @@ export const AUTHORING_VOCABULARY_V1 = [
   "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
   "- If the answer is content fetched from a URL or repo, pass its document URL as base_url so relative images and links resolve.",
   "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
+  "- Use ```mermaid for flowcharts, sequence diagrams, and other diagrams expressible in Mermaid syntax.",
   "- Use ```show when a concept is spatial or structural: architecture, memory layout, relationships.",
   "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
   "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",

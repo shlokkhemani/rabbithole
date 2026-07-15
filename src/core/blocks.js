@@ -111,6 +111,18 @@ registerBlockType({
   security: "sanitize-html",
 });
 
+registerBlockType({
+  type: "mermaid",
+  version: 1,
+  parse(source) {
+    const definition = String(source ?? "").trim();
+    if (!definition) throw new Error("Mermaid body must be a non-empty diagram definition");
+    return definition;
+  },
+  toPlainText(definition) { return String(definition ?? ""); },
+  security: "sanitize-html",
+});
+
 /** @param {string} source */
 function parseCheck(source) {
   let model;

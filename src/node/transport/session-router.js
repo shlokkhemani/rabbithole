@@ -6,6 +6,7 @@ import { toPersistedHole } from "../../core/schema.js";
 import { parseRequestBody } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { buildSessionExportHtml } from "./session-export.js";
+import { getMermaidScript } from "../html/built-assets.js";
 
 /**
  * @param {import("./session.js").RabbitHoleSession} session
@@ -28,6 +29,16 @@ export async function handleSessionRequest(session, req, res) {
 
   if (req.method === "GET" && assetRequestName !== undefined) {
     await serveSessionAsset(session, assetRequestName, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/mermaid.js") {
+    res.writeHead(200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.end(getMermaidScript());
     return;
   }
 

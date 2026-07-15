@@ -184,9 +184,24 @@ links, prefer fetching the HTML version and opening that content with
 - **Streamed answers:** words appear live with a breathing caret — in the
   reader, the thread, and the canvas card.
 - **Rich Markdown:** answers can use math, highlighted language code fences,
-  `show` diagrams, URL-based resolution for relative links/images, and local
-  image assets via `asset:name.png`; source stays as Markdown for copy/export,
+  Mermaid and `show` diagrams, URL-based resolution for relative links/images,
+  and local image assets via `asset:name.png`; source stays as Markdown for copy/export,
   while frozen snapshots inline assets into the HTML.
+
+  Use a standard fenced block for diagrams:
+
+  ````markdown
+  ```mermaid
+  sequenceDiagram
+      Alice->>Bob: Hello
+  ```
+  ````
+
+  Mermaid is loaded only when a canvas contains one of these fences. Rabbithole
+  uses the lightweight Mermaid Tiny runtime, which supports common diagrams such
+  as flowcharts and sequence, class, state, and ER diagrams. Mermaid's
+  architecture and mindmap diagrams and Mermaid-side KaTeX rendering are not
+  included; use a `show` block for custom visuals that need those features.
 - **Interactive checks:** answer multiple-choice questions inline; progress
   survives reloads and portable backups, while shared snapshots start clean.
 - **Lenses:** one-tap presets on the ask popup — Explain · ELI5 · Example ·

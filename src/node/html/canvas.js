@@ -43,6 +43,11 @@ ${getDompurifyScript()}
 	  RabbitholeClient.startRabbithole(hydration, {
 	    snapshotHooks: {
 	${liveSnapshotHoleHook}      getFrozenClientSource: function(){ return window.__RABBITHOLE_FROZEN_CLIENT__ || ""; },
+	      getMermaidSource: async function(){
+	        var response = await fetch("/mermaid.js", { cache: "no-store" });
+	        if (!response.ok) throw new Error("Mermaid runtime is unavailable");
+	        return response.text();
+	      },
 	      getStylesheetText: function(){
 	        var style = document.head && document.head.querySelector("style:first-of-type");
 	        return style ? style.textContent : "";

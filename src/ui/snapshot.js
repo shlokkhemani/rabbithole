@@ -1,7 +1,7 @@
 import { extractNodeAssetRefs } from "../core/assets.js";
 import { binaryToBase64 } from "../core/portable-projection.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
-import { buildSnapshotHtml as assembleSnapshotHtml } from "../core/snapshot-html.js";
+import { buildSnapshotHtml as assembleSnapshotHtml, snapshotUsesMermaid } from "../core/snapshot-html.js";
 import { slugifyTitle } from "../core/utils.js";
 import {
   currentNodeId,
@@ -17,6 +17,7 @@ function defaultSnapshotHooks(){
     fetchAssetBinary: null,
     getSnapshotHole: null,
     getFrozenClientSource: null,
+    getMermaidSource: null,
     getDompurifySource: null,
     getStylesheetText: null
   };
@@ -97,7 +98,7 @@ export async function buildSnapshotProjection() {
   return createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
 }
 
-export function buildSnapshotHtml(snapshotProjection) {
+export async function buildSnapshotHtml(snapshotProjection) {
   var title = (snapshotProjection && snapshotProjection.hole && snapshotProjection.hole.title) || "Rabbithole";
   var styleText = typeof snapshotHooks.getStylesheetText === "function"
     ? snapshotHooks.getStylesheetText()
@@ -108,10 +109,20 @@ export function buildSnapshotHtml(snapshotProjection) {
     ? snapshotHooks.getFrozenClientSource()
     : window.__RABBITHOLE_FROZEN_CLIENT__;
   if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
+  var mermaidSource = "";
+  if (snapshotUsesMermaid(snapshotProjection)) {
+    if (typeof snapshotHooks.getMermaidSource === "function") {
+      mermaidSource = await snapshotHooks.getMermaidSource() || "";
+    } else {
+      mermaidSource = window.__RABBITHOLE_MERMAID_SOURCE__ || "";
+    }
+    if (!mermaidSource) throw new Error("Mermaid runtime is unavailable for this snapshot");
+  }
   return assembleSnapshotHtml({
     title,
     stylesheetText: styleText,
     dompurifySource,
+    mermaidSource,
     frozenClientSource: frozenClient,
     snapshotProjection,
   });
@@ -123,7 +134,7 @@ function exportFilename(title) {
 
 export async function downloadSnapshot() {
   var snapshotProjection = await buildSnapshotProjection();
-  var html = buildSnapshotHtml(snapshotProjection);
+  var html = await buildSnapshotHtml(snapshotProjection);
   var blob = new Blob([html], { type: "text/html;charset=utf-8" });
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");

@@ -14,7 +14,7 @@
         "id": "root",
         "parent_id": null,
         "title": "Visuals",
-        "markdown": "```show:mermaid\ngraph TD; A-->B\n```\n\n```show:html\n<div class=\"card\">Hello</div>\n```\n\n```show:unknown\nopaque payload\n```",
+        "markdown": "```mermaid id=m3rma\nflowchart TD\n  A --> B\n```\n\n```show id=s4how\n<div class=\"card\">Hello</div>\n```\n\n```show:unknown\nopaque payload\n```",
         "base_url": null,
         "base_url_source": null,
         "origin": null,

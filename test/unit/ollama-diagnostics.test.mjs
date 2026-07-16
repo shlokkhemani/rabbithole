@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { diagnoseOllama, ollamaUrls } from "../../src/web/brain/ollama-diagnostics.js";
+import { OLLAMA_ORIGIN_COMMANDS } from "../../src/web/settings/ollama-recovery.js";
 
 const originalFetch = globalThis.fetch;
 const originalNavigator = globalThis.navigator;
@@ -20,6 +21,8 @@ try {
     throw new TypeError("Failed to fetch");
   };
   assert.equal((await diagnoseOllama("http://localhost:11434/v1", { requestPermission: true })).status, "origin_blocked", "an opaque-reachable endpoint with unreadable CORS should get the origin guide");
+  assert.match(OLLAMA_ORIGIN_COMMANDS, /killall Ollama[\s\S]*killall ollama[\s\S]*open -na \/Applications\/Ollama\.app/, "origin recovery should reliably stop both Ollama processes and launch a fresh app instance");
+  assert.doesNotMatch(OLLAMA_ORIGIN_COMMANDS, /osascript/, "origin recovery should not use Ollama's cancellable AppleScript quit flow");
 
   globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
   assert.equal((await diagnoseOllama("http://localhost:11434/v1", { requestPermission: true })).status, "unreachable", "a failed opaque probe should get the install/start guide");

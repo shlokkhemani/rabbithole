@@ -164,7 +164,7 @@ async function assertShellPolish(page) {
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "new Rabbithole should wait for model setup");
   assert.equal(await page.locator("#taskbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
   assert.equal(await page.locator("#taskbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
-  assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should present three clear starting paths");
+  assert.equal(await page.locator(".composer-path").count(), 4, "new Rabbithole should present four clear starting paths");
   await page.click("#t-settings");
   const keyLinkCount = await page.locator(`a[href="${"https://openrouter.ai/keys"}"]`).count();
   assert.equal(keyLinkCount, 1, "OpenRouter key link should appear exactly once in settings");

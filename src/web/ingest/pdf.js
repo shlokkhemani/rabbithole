@@ -1,6 +1,8 @@
 import {
   MAX_PDF_BYTES,
   MAX_PDF_PAGE_ASSET_BYTES,
+  PDF_PAGE_IMAGE_MIME,
+  PDF_PAGE_IMAGE_QUALITY,
   PDF_RENDER_SCALE,
   describePdfOpenError,
   buildPdfDocument,
@@ -75,7 +77,7 @@ async function ingestPdf(source, {
         const remaining = processedPages.length - index;
         const remainingBudget = Math.max(0, MAX_PDF_PAGE_ASSET_BYTES - assetBytes);
         const targetBytes = remainingBudget / Math.max(remaining, 1);
-        const rendered = await renderPageToJpegBlob(page, pageNumber, targetBytes);
+        const rendered = await renderPageToImageBlob(page, pageNumber, targetBytes);
         assetBytes += rendered.blob.size;
         result.assets.pages.push(rendered.asset);
         if (onAsset) await onAsset(rendered.asset, rendered.blob);
@@ -181,7 +183,7 @@ async function loadPdfjs() {
   return pdfjsModule;
 }
 
-async function renderPageToJpegBlob(page, pageNumber, targetBytes) {
+async function renderPageToImageBlob(page, pageNumber, targetBytes) {
   let scale = PDF_RENDER_SCALE;
   let blob;
   let viewport;
@@ -198,12 +200,15 @@ async function renderPageToJpegBlob(page, pageNumber, targetBytes) {
     context.fillRect(0, 0, width, height);
     const renderTask = page.render({ canvasContext: context, viewport });
     await renderTask.promise;
-    blob = await canvasToJpegBlob(canvas);
+    blob = await canvasToPageBlob(canvas);
     if (blob.size <= Math.min(20 * 1024 * 1024, Math.max(targetBytes, 256 * 1024)) || scale <= 0.5) break;
     releaseCanvas(canvas);
     scale *= 0.75;
   } while (true);
-  const name = pdfPageAssetName(pageNumber);
+  // Canvas encoders must fall back to PNG for unsupported MIME types. Keep the
+  // durable filename honest so the asset server returns the matching type.
+  const extension = blob.type === "image/webp" ? "webp" : blob.type === "image/png" ? "png" : "jpg";
+  const name = pdfPageAssetName(pageNumber, extension);
   releaseCanvas(canvas);
   return {
     asset: { page: pageNumber, name, width, height },
@@ -219,15 +224,15 @@ function createRenderCanvas(width, height) {
   return canvas;
 }
 
-function canvasToJpegBlob(canvas) {
+function canvasToPageBlob(canvas) {
   if (typeof canvas.convertToBlob === "function") {
-    return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+    return canvas.convertToBlob({ type: PDF_PAGE_IMAGE_MIME, quality: PDF_PAGE_IMAGE_QUALITY });
   }
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
-      else reject(new Error("Canvas could not be encoded as JPEG."));
-    }, "image/jpeg", 0.85);
+      else reject(new Error("Canvas could not encode the PDF page image."));
+    }, PDF_PAGE_IMAGE_MIME, PDF_PAGE_IMAGE_QUALITY);
   });
 }
 

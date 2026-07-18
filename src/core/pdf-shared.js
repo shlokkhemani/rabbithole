@@ -1,6 +1,13 @@
 export const MAX_PDF_BYTES = 100 * 1024 * 1024;
 const DEFAULT_PAGE_CAP = 40;
-export const PDF_RENDER_SCALE = 2;
+// PDF pages are durable raster assets because live pages and frozen snapshots
+// must remain self-contained. 3x is enough for crisp type on a 2x display at
+// the reader's widest layout, while WebP recovers most of the extra pixels'
+// storage cost compared with the old 2x / quality-85 JPEG pipeline.
+export const PDF_RENDER_SCALE = 3;
+export const PDF_PAGE_IMAGE_MIME = "image/webp";
+export const PDF_PAGE_IMAGE_QUALITY = 0.92;
+export const PDF_CROP_IMAGE_QUALITY = 0.92;
 const PDF_CROP_MAX_LONG_EDGE = 1568;
 const PDF_CROP_PADDING = 0.02;
 
@@ -145,9 +152,9 @@ export function normalizePdfTitle(metadata) {
   return title || null;
 }
 
-/** @param {number} pageNumber */
-export function pdfPageAssetName(pageNumber) {
-  return `page-${String(pageNumber).padStart(3, "0")}.jpg`;
+/** @param {number} pageNumber @param {"webp" | "png" | "jpg"} [extension] */
+export function pdfPageAssetName(pageNumber, extension = "webp") {
+  return `page-${String(pageNumber).padStart(3, "0")}.${extension}`;
 }
 
 /** @param {PdfTextItem} item @returns {TextGeometry} */

@@ -43,6 +43,11 @@ const session = getSession(opened.session_id);
 const holeId = session.holeId;
 await session.handleBrowserEvent({ type: "node_extensions_patch", node_id: session.rootId, namespace: "pdf", value: staged.pdfExtension });
 assert(session.outboundEvents.some((entry) => entry.data.type === "node_extensions_patch"), "node host must forward extension patches to SSE");
+for (const page of staged.pdfExtension.pages) {
+  const bytes = await fs.readFile(await resolveAsset(holeId, page.asset));
+  assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
+  assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP", "page assets should use the sharper, more efficient WebP pipeline");
+}
 await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-request", node_id: "pdf-child", parent_id: session.rootId,
   selected_text: "Same host", question: "Explain", lens: null, branch_type: "selection",
   anchor: { offset_start: staged.pdfExtension.lines[0].s, offset_end: staged.pdfExtension.lines[0].s + 9,
@@ -83,11 +88,12 @@ assert.deepEqual(hole.nodes.find((node) => node.id === "pdf-child").origin.ancho
   { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } });
 assert.equal(hole.nodes.find((node) => node.id === "pdf-child").origin.crop_asset, "crop-pdf-child.jpg");
 assert.equal(root.extensions.pdf.pages.length, 2);
-assert.deepEqual(await defaultFsStore.listAssets(holeId), ["crop-pdf-child.jpg", "page-001.jpg", "page-002.jpg"], "branch-owned region crops must outlive the session");
+assert.equal(root.extensions.pdf.scale, 3, "new PDF imports should retain enough pixels for high-DPI readers");
+assert.deepEqual(await defaultFsStore.listAssets(holeId), ["crop-pdf-child.jpg", "page-001.webp", "page-002.webp"], "branch-owned region crops must outlive the session");
 await fs.access(regionPath);
 for (const page of root.extensions.pdf.pages) {
   assert(page.w > 0 && page.h > 0);
-  assert.equal(page.asset.endsWith(".jpg"), true);
+  assert.equal(page.asset.endsWith(".webp"), true);
 }
 
 // A saved PDF ask reuses its durable crop on resume, so a reconnecting agent

@@ -1,4 +1,4 @@
-import { planPdfCrop } from "../core/pdf-shared.js";
+import { PDF_CROP_IMAGE_QUALITY, planPdfCrop } from "../core/pdf-shared.js";
 
 export async function cropPdfAssetToDataUrl(blob, rect) {
   const canvas = await cropToCanvas(blob, rect);
@@ -50,15 +50,15 @@ function releaseCanvas(canvas) {
 }
 
 async function canvasToBlob(canvas) {
-  if (typeof canvas.convertToBlob === "function") return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  if (typeof canvas.convertToBlob === "function") return canvas.convertToBlob({ type: "image/jpeg", quality: PDF_CROP_IMAGE_QUALITY });
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error("Canvas could not be encoded as JPEG.")); }, "image/jpeg", 0.85);
+    canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error("Canvas could not be encoded as JPEG.")); }, "image/jpeg", PDF_CROP_IMAGE_QUALITY);
   });
 }
 
 async function canvasToDataUrl(canvas) {
-  if (typeof canvas.convertToBlob === "function") return blobToDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
-  return canvas.toDataURL("image/jpeg", 0.85);
+  if (typeof canvas.convertToBlob === "function") return blobToDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: PDF_CROP_IMAGE_QUALITY }));
+  return canvas.toDataURL("image/jpeg", PDF_CROP_IMAGE_QUALITY);
 }
 
 function blobToDataUrl(blob) {

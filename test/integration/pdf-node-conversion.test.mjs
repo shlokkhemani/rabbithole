@@ -61,7 +61,8 @@ function abortAfter(ms) {
   for (const page of request.pages) {
     assert.equal(path.isAbsolute(page.image_path), true);
     const bytes = await fs.readFile(page.image_path);
-    assert.equal(bytes[0], 0xff); assert.equal(bytes[1], 0xd8);
+    assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
+    assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
   }
 
   // A keep_listening re-arm must redeliver the unanswered conversion, not drop it.

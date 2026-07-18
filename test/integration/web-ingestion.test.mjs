@@ -120,9 +120,9 @@ try {
     const raw = await window.__rabbitholeTest.readStoredHole(holeId);
     return { assets, sizes, raw: JSON.stringify(raw) };
   });
-  assert.deepEqual(pdfState.assets, ["page-001.jpg", "page-002.jpg"]);
-  assert(pdfState.sizes["page-001.jpg"] > 100, "page-001.jpg should be stored as a non-empty Blob");
-  assert(!pdfState.raw.includes("asset:page-001.jpg"), "model markdown must not contain page-image refs");
+  assert.deepEqual(pdfState.assets, ["page-001.webp", "page-002.webp"]);
+  assert(pdfState.sizes["page-001.webp"] > 100, "page-001.webp should be stored as a non-empty Blob");
+  assert(!pdfState.raw.includes("asset:page-001.webp"), "model markdown must not contain page-image refs");
   assert(pdfState.raw.includes('"version":1'));
   assert(pdfState.raw.includes("Browser PDF page one"));
   assert(pdfState.raw.includes("Integral int_0^1"));

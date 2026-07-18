@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import {
   MAX_PDF_BYTES,
   MAX_PDF_PAGE_ASSET_BYTES,
+  PDF_PAGE_IMAGE_MIME,
+  PDF_PAGE_IMAGE_QUALITY,
   PDF_RENDER_SCALE,
   buildPdfDocument,
   describePdfOpenError,
@@ -87,7 +89,7 @@ export async function ingestPdfDocument({ filePath, store, title = "", pages } =
           context.fillStyle = "white";
           context.fillRect(0, 0, width, height);
           await page.render({ canvasContext: context, viewport }).promise;
-          bytes = surface.toBuffer("image/jpeg", 85);
+          bytes = surface.toBuffer(PDF_PAGE_IMAGE_MIME, PDF_PAGE_IMAGE_QUALITY * 100);
           surface.width = 0; surface.height = 0;
           if (bytes.length <= Math.min(20 * 1024 * 1024, Math.max(targetBytes, 256 * 1024)) || scale <= 0.5) break;
           scale *= 0.75;

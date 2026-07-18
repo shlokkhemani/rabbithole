@@ -10,10 +10,11 @@ import { openPopover } from "../../ui/primitives/popover.js";
 import { fieldMarkup, wireField } from "../../ui/primitives/field.js";
 import { comboboxMarkup, wireCombobox } from "../../ui/primitives/combobox.js";
 import { isCommandEnter } from "../../ui/input-intent.js";
+import { iconSvg } from "../../core/html/icons.js";
 
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
-const chevron = `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>`;
-const infoIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.35"/><path d="M8 7.15v4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="8" cy="4.7" r=".75" fill="currentColor"/></svg>`;
+const chevron = iconSvg("chevron");
+const infoIcon = iconSvg("info");
 
 export function createSettingsPopover(options) {
   const defaultTrigger = options.trigger;
@@ -196,7 +197,7 @@ export function createSettingsPopover(options) {
   }
 
   function wireModelComboboxes(root) {
-    const searchIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    const searchIcon = iconSvg("search", { size: 13 });
     const commit = (id) => { if (!id) return; applyPatch({ model: id }); };
     wireCombobox(root, { id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", placeholder: "Search every model on OpenRouter…", surfaceClassName: "combobox-surface model-combobox-surface popover-surface", listClassName: "combobox-list model-list", searchIconHtml: searchIcon, searchAfterHtml: "<kbd>esc</kbd>", freeText: renderExactModelRow, source: {
       load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)),

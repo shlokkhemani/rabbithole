@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { iconSvg } from "../src/core/html/icons.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const webDist = path.join(rootDir, "web/dist");
@@ -20,6 +21,7 @@ await fs.mkdir(publishDir, { recursive: true });
 await copyContents(webDist, publishDir);
 await fs.mkdir(path.join(publishDir, "about"), { recursive: true });
 await copyContents(aboutSourceDir, path.join(publishDir, "about"));
+await injectAboutIcons(path.join(publishDir, "about", "index.html"));
 for (const asset of ["demo-ask.mp4", "demo-ask-poster.jpg", "demo-map.mp4", "demo-map-poster.jpg"]) {
   await fs.copyFile(path.join(websitePublicDir, asset), path.join(publishDir, "about", asset));
 }
@@ -84,6 +86,15 @@ async function versionAboutAssets(aboutDir) {
     if (!html.includes(reference)) throw new Error(`Expected about/index.html to reference ${reference}`);
     html = html.replaceAll(reference, `${reference}?v=${version}`);
   }
+  await fs.writeFile(htmlPath, html, "utf8");
+}
+
+async function injectAboutIcons(htmlPath) {
+  let html = await fs.readFile(htmlPath, "utf8");
+  const token = "<!-- rabbithole-icon:bunny -->";
+  const occurrences = html.split(token).length - 1;
+  if (occurrences !== 2) throw new Error(`Expected two bunny icon slots in website/about/index.html; found ${occurrences}`);
+  html = html.replaceAll(token, iconSvg("bunny"));
   await fs.writeFile(htmlPath, html, "utf8");
 }
 

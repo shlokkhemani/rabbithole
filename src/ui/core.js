@@ -8,7 +8,7 @@ import {
 } from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
 import { escapeHtml } from "../core/utils.js";
-import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
+import { BUNNY_MARK_SVG } from "../core/html/icons.js";
 import { createCleanupScope } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
 import {

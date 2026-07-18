@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { CANVAS_STYLES } from "./src/core/html/styles.js";
-import { BUNNY_MARK_SHAPES } from "./src/core/html/bunny-markup.js";
+import { faviconSvg } from "./src/core/html/icons.js";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -145,7 +145,7 @@ async function buildWebApp(assetDir) {
   await fs.writeFile(path.join(webDist, "styles.css"), `${frozenStyles}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
   await fs.writeFile(path.join(webDist, "mermaid.js"), mermaid, "utf8");
-  await fs.writeFile(path.join(webDist, "favicon.svg"), buildFaviconSvg(), "utf8");
+  await fs.writeFile(path.join(webDist, "favicon.svg"), faviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
@@ -245,14 +245,6 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
 <script type="module" src="./app.js${assetQuery}"></script>
 </body>
 </html>`;
-}
-
-function buildFaviconSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1a1918"/>
-  <g fill="#efece5">${BUNNY_MARK_SHAPES}
-  </g>
-</svg>`;
 }
 
 function safeJsString(value) {

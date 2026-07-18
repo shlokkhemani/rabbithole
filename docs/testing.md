@@ -46,6 +46,9 @@ These tests should be fast and should avoid host orchestration.
 - `base-url.test.mjs` protects link and image URL resolution, unsafe URL rejection,
   GitHub image rewriting, frontmatter inference and precedence, child inheritance,
   and MCP `base_url` validation.
+- `icons.test.mjs` protects the canonical icon renderer, accessibility defaults,
+  size overrides, favicon generation, and the repository boundary that forbids
+  product-owned inline SVG geometry outside `src/core/html/icons.js`.
 - `reducer.test.mjs` is the shared document-engine conformance suite. Its reviewable
   cases live in `test/fixtures/reducer-goldens/cases.json` and run in Node and a
   browser. They cover branch creation, streaming ordering and retries, completion,

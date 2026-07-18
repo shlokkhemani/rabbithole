@@ -1,16 +1,31 @@
 import { CANVAS_SHELL } from "./html/shell.js";
+import { markdownContainsBlockType } from "./blocks.js";
 import { escapeHtml, serializeForInlineScript } from "./utils.js";
+
+/** @param {import("./contracts/artifact.js").PortableArtifact | null | undefined} projection */
+export function snapshotProjectionUsesMermaid(projection) {
+  return !!projection?.hole?.nodes?.some((node) => markdownContainsBlockType(node?.markdown, "mermaid"));
+}
+
+/** @param {unknown} source */
+function mermaidRuntimeCarrier(source) {
+  const escaped = String(source || "").replace(/<\/script/gi, "<\\/script");
+  return `<script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">${escaped}</script>`;
+}
 
 /**
  * @param {{
  *   title: string,
  *   stylesheetText: string,
  *   dompurifySource: string,
+ *   mermaidSource?: string,
  *   frozenClientSource: string,
  *   snapshotProjection: import("./contracts/artifact.js").PortableArtifact
  * }} options
  */
-export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, frozenClientSource, snapshotProjection }) {
+export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, mermaidSource = "", frozenClientSource, snapshotProjection }) {
+  const usesMermaid = snapshotProjectionUsesMermaid(snapshotProjection);
+  if (usesMermaid && !mermaidSource) throw new Error("Mermaid runtime is unavailable for this snapshot");
   var lt = String.fromCharCode(60);
   var gt = String.fromCharCode(62);
   var scriptOpen = lt + "script" + gt;
@@ -26,6 +41,7 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, froz
     "</head>\n" +
     "<body>\n" +
     CANVAS_SHELL +
+    (usesMermaid ? "\n" + mermaidRuntimeCarrier(mermaidSource) : "") +
     "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose +
     "\n" + scriptOpen + "\n" +
     dompurifySource +

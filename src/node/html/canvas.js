@@ -7,7 +7,7 @@
  */
 
 import { escapeHtml, serializeForInlineScript } from "../../core/utils.js";
-import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss } from "./built-assets.js";
+import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss, getMermaidScript } from "./built-assets.js";
 import { CANVAS_SHELL } from "../../core/html/shell.js";
 import { CANVAS_STYLES } from "../../core/html/styles.js";
 
@@ -34,6 +34,7 @@ ${getKatexCss()}
 </head>
 <body>
 ${CANVAS_SHELL}
+<script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">${getMermaidScript()}</script>
 <script>
 ${getDompurifyScript()}
 (function(){

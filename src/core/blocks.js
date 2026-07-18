@@ -103,11 +103,48 @@ export function normalizeBlockIds(markdown, { idFactory = defaultBlockIdFactory 
   return { markdown: output.join(""), changed };
 }
 
+/**
+ * Detect whether Markdown contains an opener for a registered fenced block.
+ * The scanner observes CommonMark fence nesting, so examples inside a larger
+ * code fence do not accidentally opt a snapshot into an expensive runtime.
+ *
+ * @param {unknown} markdown
+ * @param {unknown} targetType
+ */
+export function markdownContainsBlockType(markdown, targetType) {
+  const target = normalizedType(targetType);
+  if (!target || !getBlockType(target)) return false;
+  const lines = String(markdown ?? "").split(/\r\n|\n|\r/);
+  let active = null;
+  for (const line of lines) {
+    if (active) {
+      const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (close && close[2][0] === active.char && close[2].length >= active.width) active = null;
+      continue;
+    }
+    const open = /^( {0,3})(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
+    if (!open) continue;
+    const marker = open[2];
+    const parsed = parseBlockInfo(open[3]);
+    if (parsed.type === target) return true;
+    active = { char: marker[0], width: marker.length };
+  }
+  return false;
+}
+
 registerBlockType({
   type: "show",
   version: 1,
   parse(source) { return String(source ?? ""); },
   toPlainText() { return ""; },
+  security: "sanitize-html",
+});
+
+registerBlockType({
+  type: "mermaid",
+  version: 1,
+  parse(source) { return String(source ?? ""); },
+  toPlainText(source) { return String(source ?? ""); },
   security: "sanitize-html",
 });
 

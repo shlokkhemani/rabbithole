@@ -2035,6 +2035,17 @@ var RabbitholeFrozenClient = (() => {
     },
     security: "sanitize-html"
   });
+  registerBlockType({
+    type: "mermaid",
+    version: 1,
+    parse(source2) {
+      return String(source2 != null ? source2 : "");
+    },
+    toPlainText(source2) {
+      return String(source2 != null ? source2 : "");
+    },
+    security: "sanitize-html"
+  });
   function parseCheck(source2) {
     let model;
     try {
@@ -2070,6 +2081,24 @@ var RabbitholeFrozenClient = (() => {
   // src/ui/visuals.js
   var visualSurfaceCaches = {};
   var blockMounts = {};
+  var mermaidRuntimePromise = null;
+  var mermaidRenderQueue = Promise.resolve();
+  var mermaidRenderId = 0;
+  var mermaidControllers = [];
+  var mermaidThemeObserver = null;
+  var mermaidGeneration = 0;
+  function loadEmbeddedMermaidRuntime() {
+    if (window.mermaid) return window.mermaid;
+    var carrier = document.getElementById("rabbithole-mermaid-runtime");
+    if (!carrier || !carrier.textContent) throw new Error("Mermaid runtime is unavailable");
+    var script2 = document.createElement("script");
+    script2.setAttribute("data-rabbithole-runtime", "mermaid");
+    script2.textContent = carrier.textContent;
+    (document.head || document.body || document.documentElement).appendChild(script2);
+    script2.remove();
+    if (!window.mermaid) throw new Error("Mermaid runtime failed to initialize");
+    return window.mermaid;
+  }
   function defaultVisualHooks() {
     return {
       post: function() {
@@ -2077,7 +2106,8 @@ var RabbitholeFrozenClient = (() => {
       },
       getNode: function() {
         return null;
-      }
+      },
+      loadMermaid: loadEmbeddedMermaidRuntime
     };
   }
   var visualHooks = defaultVisualHooks();
@@ -2094,12 +2124,19 @@ var RabbitholeFrozenClient = (() => {
   };
   var VISUAL_BASE_CSS = ":host{display:block;width:100%;max-width:100%;margin:0.55em 0 1em;contain:content;color:var(--fg);background:transparent;font:inherit;}.rh-viz-frame{box-sizing:border-box;width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;overscroll-behavior-x:contain;border:1px solid var(--border);border-radius:8px;padding:0.85em 1em;background:var(--node-bg);color:var(--fg);font:inherit;}.rh-viz-content{box-sizing:border-box;min-width:100%;width:auto;color:inherit;font:inherit;}.rh-viz-content *,.rh-viz-content *::before,.rh-viz-content *::after{box-sizing:border-box;}.rh-viz-content svg{max-width:none;height:auto;}.rh-viz-content img{max-width:100%;height:auto;}.rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}.rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
   var CHECK_CSS = ".rh-check{display:grid;gap:.75em;}.rh-check-question{font-weight:650;line-height:1.4;}.rh-check-options{display:grid;gap:.5em;}.rh-check-option,.rh-check-reset{appearance:none;border:1px solid var(--border);border-radius:7px;background:var(--node-bg);color:var(--fg);font:inherit;text-align:left;padding:.62em .75em;cursor:pointer;}.rh-check-option:hover:not(:disabled),.rh-check-option:focus-visible,.rh-check-reset:hover,.rh-check-reset:focus-visible{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);outline-offset:1px;}.rh-check-option:disabled{cursor:default;opacity:1;}.rh-check-option.is-correct{border-color:color-mix(in srgb,#2f9e44 70%,var(--border));background:color-mix(in srgb,#2f9e44 13%,var(--node-bg));}.rh-check-option.is-incorrect{border-color:color-mix(in srgb,#e03131 70%,var(--border));background:color-mix(in srgb,#e03131 12%,var(--node-bg));}.rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}.rh-check-actions{display:flex;justify-content:flex-end;}.rh-check-reset{padding:.45em .7em;text-align:center;}";
+  var MERMAID_CSS = ".rh-mermaid{display:grid;place-items:center;min-height:3.5em;width:100%;}.rh-mermaid svg{display:block;width:100%;max-width:100%!important;height:auto;margin:auto;}.rh-mermaid-loading{color:var(--fg-dim);font:500 .85em var(--font-ui);}.rh-mermaid .viz-fallback{width:100%;}";
   function registerVisualHooks(hooks) {
     visualHooks = Object.assign({}, visualHooks, hooks || {});
   }
   function disposeVisuals() {
     visualSurfaceCaches = {};
     visualHooks = defaultVisualHooks();
+    mermaidRuntimePromise = null;
+    mermaidRenderQueue = Promise.resolve();
+    mermaidControllers = [];
+    mermaidGeneration += 1;
+    if (mermaidThemeObserver) mermaidThemeObserver.disconnect();
+    mermaidThemeObserver = null;
   }
   function registerBlockMount(type, mountSpec) {
     var key = String(type || "").toLowerCase();
@@ -2161,6 +2198,87 @@ var RabbitholeFrozenClient = (() => {
   function buildShowVisual(model) {
     return String(model == null ? "" : model);
   }
+  function buildMermaidVisual() {
+    return '<div class="rh-mermaid" role="img" aria-label="Mermaid diagram"><span class="rh-mermaid-loading">Drawing diagram\u2026</span></div>';
+  }
+  function currentMermaidTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "default";
+  }
+  function loadMermaidRuntime() {
+    if (!mermaidRuntimePromise) {
+      mermaidRuntimePromise = Promise.resolve().then(function() {
+        return visualHooks.loadMermaid();
+      }).then(function(runtime) {
+        if (!runtime || typeof runtime.initialize !== "function" || typeof runtime.render !== "function") {
+          throw new Error("Mermaid runtime does not expose initialize() and render()");
+        }
+        return runtime;
+      }).catch(function(error) {
+        mermaidRuntimePromise = null;
+        throw error;
+      });
+    }
+    return mermaidRuntimePromise;
+  }
+  function showMermaidFallback(target, source2) {
+    target.textContent = "";
+    target.removeAttribute("role");
+    target.removeAttribute("aria-label");
+    target.appendChild(visualFallback(source2, "Mermaid could not render this diagram. Showing source."));
+  }
+  function trackMermaidController(controller) {
+    mermaidControllers.push(controller);
+    if (mermaidThemeObserver || typeof MutationObserver !== "function") return;
+    mermaidThemeObserver = new MutationObserver(function() {
+      var live = [];
+      for (var i2 = 0; i2 < mermaidControllers.length; i2++) {
+        var current = mermaidControllers[i2];
+        if (current.root && current.root.isConnected !== false) {
+          live.push(current);
+          current.render();
+        }
+      }
+      mermaidControllers = live;
+    });
+    mermaidThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+  function wireMermaid(root, source2) {
+    var target = root.querySelector(".rh-mermaid");
+    var renderVersion = 0;
+    var generation = mermaidGeneration;
+    var controller = {
+      root,
+      render: function() {
+        var version2 = ++renderVersion;
+        mermaidRenderQueue = mermaidRenderQueue.then(async function() {
+          try {
+            var runtime = await loadMermaidRuntime();
+            if (generation !== mermaidGeneration || version2 !== renderVersion || !target) return;
+            runtime.initialize({
+              startOnLoad: false,
+              securityLevel: "strict",
+              htmlLabels: false,
+              suppressErrorRendering: true,
+              theme: currentMermaidTheme(),
+              flowchart: { htmlLabels: false, useMaxWidth: true },
+              sequence: { useMaxWidth: true }
+            });
+            var result = await runtime.render("rh-mermaid-" + ++mermaidRenderId, String(source2 || ""));
+            if (generation !== mermaidGeneration || version2 !== renderVersion || !target) return;
+            target.innerHTML = sanitizeVisualSource(result && result.svg || "");
+            var svg = target.querySelector("svg");
+            if (!svg) throw new Error("Mermaid produced no SVG");
+            svg.setAttribute("role", "img");
+            if (!svg.getAttribute("aria-label")) svg.setAttribute("aria-label", "Mermaid diagram");
+          } catch (e) {
+            if (generation === mermaidGeneration && version2 === renderVersion && target) showMermaidFallback(target, source2);
+          }
+        });
+      }
+    };
+    trackMermaidController(controller);
+    controller.render();
+  }
   function buildMountedVisual(descriptor, mountSpec, model, context) {
     var host = document.createElement("div");
     host.className = "viz-mounted viz-" + descriptor.type;
@@ -2168,7 +2286,7 @@ var RabbitholeFrozenClient = (() => {
     host.style.contain = "content";
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
-    style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
+    style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : descriptor.type === "mermaid" ? MERMAID_CSS : "");
     var frame = document.createElement("div");
     frame.className = "rh-viz-frame";
     var content = document.createElement("div");
@@ -2229,6 +2347,8 @@ var RabbitholeFrozenClient = (() => {
       used[item.key] = idx + 1;
       if (!cache[item.key]) cache[item.key] = [];
       var mounted = cache[item.key][idx];
+      var signature = visualCacheKey(item.type, item.encoded);
+      if (mounted && mounted.__rhVisualSignature !== signature) mounted = null;
       if (!mounted) {
         var descriptor = getBlockType(item.type);
         var mountSpec = blockMounts[item.type];
@@ -2261,6 +2381,7 @@ var RabbitholeFrozenClient = (() => {
         } catch (e) {
           mounted = visualFallback(source2, "Unable to render visual. Showing source.");
         }
+        mounted.__rhVisualSignature = signature;
         cache[item.key][idx] = mounted;
       }
       if (item.el.parentNode) item.el.parentNode.replaceChild(mounted, item.el);
@@ -2272,6 +2393,7 @@ var RabbitholeFrozenClient = (() => {
     }
   }
   registerBlockMount("show", { renderHtml: buildShowVisual });
+  registerBlockMount("mermaid", { renderHtml: buildMermaidVisual, wire: wireMermaid });
   function buildCheckVisual(model) {
     var _a2;
     var options2 = model.options.map(function(option, index) {
@@ -33269,9 +33391,11 @@ ${text2}</tr>
       cleanups.push(cleanup);
     }
     try {
-      registerVisualHooks({ post, getNode: function(id) {
+      var visualRuntimeHooks = { post, getNode: function(id) {
         return nodes[id] || null;
-      } });
+      } };
+      if (typeof capabilities.loadMermaid === "function") visualRuntimeHooks.loadMermaid = capabilities.loadMermaid;
+      registerVisualHooks(visualRuntimeHooks);
       initCore(hydration2);
       own(disposeCore);
       own(function() {

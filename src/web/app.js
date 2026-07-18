@@ -25,6 +25,7 @@ import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
+import { getMermaidSource, loadMermaidRuntime } from "./mermaid-runtime.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
 const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
@@ -747,6 +748,7 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getMermaidSource,
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
@@ -783,6 +785,7 @@ async function mountHole(hole, { replace = false } = {}) {
     currentUi = startRabbithole(hydration, {
       transport: host.adapter(),
       exportPortable: exportCurrentRabbithole,
+      loadMermaid: loadMermaidRuntime,
       getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
     });
     document.getElementById("r-canvas")?.click();

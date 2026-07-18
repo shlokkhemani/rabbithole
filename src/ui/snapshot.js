@@ -1,7 +1,7 @@
 import { extractNodeAssetRefs } from "../core/assets.js";
 import { binaryToBase64 } from "../core/portable-projection.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
-import { buildSnapshotHtml as assembleSnapshotHtml } from "../core/snapshot-html.js";
+import { buildSnapshotHtml as assembleSnapshotHtml, snapshotProjectionUsesMermaid } from "../core/snapshot-html.js";
 import { slugifyTitle } from "../core/utils.js";
 import {
   currentNodeId,
@@ -18,17 +18,26 @@ function defaultSnapshotHooks(){
     getSnapshotHole: null,
     getFrozenClientSource: null,
     getDompurifySource: null,
+    getMermaidSource: function(){
+      var carrier = document.getElementById("rabbithole-mermaid-runtime");
+      return carrier ? carrier.textContent || "" : "";
+    },
     getStylesheetText: null
   };
 }
 
 var snapshotHooks = defaultSnapshotHooks();
+var preparedMermaidSource = "";
 
 export function setSnapshotHooks(hooks) {
   snapshotHooks = Object.assign(defaultSnapshotHooks(), hooks || {});
+  preparedMermaidSource = "";
 }
 
-export function resetSnapshotHooks() { snapshotHooks = defaultSnapshotHooks(); }
+export function resetSnapshotHooks() {
+  snapshotHooks = defaultSnapshotHooks();
+  preparedMermaidSource = "";
+}
 
 function snapshotViewState() {
   var cur = nodes[currentNodeId];
@@ -94,7 +103,14 @@ export async function buildSnapshotProjection() {
   if (typeof snapshotHooks.getSnapshotHole !== "function") throw new Error("Snapshot document is unavailable");
   await flushPendingSaves();
   var hole = await snapshotHooks.getSnapshotHole();
-  return createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
+  var projection = createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
+  preparedMermaidSource = "";
+  if (snapshotProjectionUsesMermaid(projection)) {
+    if (typeof snapshotHooks.getMermaidSource !== "function") throw new Error("Mermaid runtime is unavailable for this snapshot");
+    preparedMermaidSource = await snapshotHooks.getMermaidSource() || "";
+    if (!preparedMermaidSource) throw new Error("Mermaid runtime is unavailable for this snapshot");
+  }
+  return projection;
 }
 
 export function buildSnapshotHtml(snapshotProjection) {
@@ -112,6 +128,7 @@ export function buildSnapshotHtml(snapshotProjection) {
     title,
     stylesheetText: styleText,
     dompurifySource,
+    mermaidSource: snapshotProjectionUsesMermaid(snapshotProjection) ? preparedMermaidSource : "",
     frozenClientSource: frozenClient,
     snapshotProjection,
   });

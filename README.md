@@ -184,8 +184,9 @@ links, prefer fetching the HTML version and opening that content with
 - **Streamed answers:** words appear live with a breathing caret — in the
   reader, the thread, and the canvas card.
 - **Rich Markdown:** answers can use math, highlighted language code fences,
-  `show` diagrams, URL-based resolution for relative links/images, and local
-  image assets via `asset:name.png`; source stays as Markdown for copy/export,
+  standard `mermaid` diagrams, bespoke `show` visuals, URL-based resolution
+  for relative links/images, and local image assets via `asset:name.png`;
+  source stays as Markdown for copy/export,
   while frozen snapshots inline assets into the HTML.
 - **Interactive checks:** answer multiple-choice questions inline; progress
   survives reloads and portable backups, while shared snapshots start clean.
@@ -213,6 +214,22 @@ The MCP host stores each hole as a JSON file directly under `~/.rabbithole/`
 asset directory. The web `.rabbithole` file is the same persisted hole JSON
 wrapped as `{ format: "rabbithole", format_version: 1, hole, assets }`, with
 assets base64-encoded into the single JSON file for portability.
+
+### Mermaid diagrams
+
+Use an ordinary Mermaid code fence; Rabbithole renders it in live canvases, the
+hosted web app, and self-contained offline snapshots:
+
+```mermaid
+flowchart LR
+  Question --> Explore --> Understand
+```
+
+The bundled runtime supports flowchart, sequence, class, state, and
+entity-relationship diagrams. Mindmaps, architecture diagrams, and
+Mermaid-side KaTeX are not included; use a `show` visual or regular Rabbithole
+math for those cases. Mermaid runs in strict mode, its SVG is sanitized again
+before mounting, and invalid diagrams fall back to their original source.
 
 ## Configuration
 

@@ -46,6 +46,8 @@ inert `application/vnd.rabbithole+json` script element. Snapshot projection:
 - clears every node's personal `extensions` bag to `{}`;
 - includes the shareable canvas view;
 - contains no credentials, settings, live transport, or external assets.
+- embeds the pinned Mermaid runtime only when a node contains a Mermaid fence,
+  preserving offline diagram rendering without changing the portable payload.
 
 The frozen client derives hydration exclusively from that portable payload.
 

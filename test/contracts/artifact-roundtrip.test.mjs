@@ -5,13 +5,13 @@ import path from "node:path";
 import { FsStore } from "../../src/node/fs-store.js";
 import { extractNodeAssetRefs } from "../../src/core/assets.js";
 import { createSnapshotProjection } from "../../src/core/snapshot-projection.js";
-import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
+import { buildSnapshotHtml, snapshotProjectionUsesMermaid } from "../../src/core/snapshot-html.js";
 import { binaryToBase64 } from "../../src/core/portable-projection.js";
 import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile } from "../../src/web/portable.js";
 
 const corpusDir = new URL("../fixtures/corpus/", import.meta.url);
 const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWith(".rabbithole")).sort();
-assert.equal(fixtureNames.length, 18, "the curated corpus must contain exactly 18 portable fixtures");
+assert.equal(fixtureNames.length, 19, "the curated corpus must contain exactly 19 portable fixtures");
 
 async function storeAt(label) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), `rabbithole-artifact-roundtrip-${label}-`));
@@ -42,7 +42,14 @@ async function exporterSnapshot(store, hole) {
   for (const name of referenced) assets[name] = await binaryToBase64(await store.getAsset(hole.hole_id, name));
   const projection = createSnapshotProjection(hole, hole.view_state, assets);
   return {
-    html: buildSnapshotHtml({ title: hole.title, stylesheetText: "", dompurifySource: "", frozenClientSource: "", snapshotProjection: projection }),
+    html: buildSnapshotHtml({
+      title: hole.title,
+      stylesheetText: "",
+      dompurifySource: "",
+      mermaidSource: snapshotProjectionUsesMermaid(projection) ? "window.mermaid = {};" : "",
+      frozenClientSource: "",
+      snapshotProjection: projection,
+    }),
     referenced,
   };
 }

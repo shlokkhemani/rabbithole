@@ -33,6 +33,7 @@ export function startRabbithole(hydration, options) {
     },
     capabilities: {
       mountPdfView: function(container, node){ return mountPdfView(container, node, { getTranscriptionCapability: options.getPdfTranscriptionCapability }); },
+      loadMermaid: options.loadMermaid || null,
       exportSnapshot: downloadSnapshot,
       exportPortable: options.exportPortable || null
     }

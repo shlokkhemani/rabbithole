@@ -99,6 +99,9 @@ host adapters without owning the broad product journey.
 - `image-experience.test.mjs` covers Markdown image behavior, shared image controls
   and styles, and the real MCP Share action producing a canonical, portable,
   referenced-assets-only snapshot.
+- `mermaid-rendering.test.mjs` covers lazy hosted-app loading, self-contained MCP
+  rendering, strict sanitization, invalid-source fallback, theme-aware rerendering,
+  conditional runtime embedding, and zero-network offline snapshots.
 - `mcp-rearm.test.mjs` protects the keep-listening response, grace period, live
   reattachment, waiter cleanup, and exactly-once requeue of a saved pending ask.
 - `web-ingestion.test.mjs` protects local browser PDF ingestion, arXiv proxy
@@ -184,7 +187,7 @@ Keep the unsupported-input failure mode as carefully tested as the happy path.
 ## Fixtures and test support
 
 - `test/fixtures/corpus/` contains curated portable files for empty, math-heavy,
-  visual-block, asset-bearing, deep and wide, pending, Unicode, RTL,
+  visual-block, Mermaid, asset-bearing, deep and wide, pending, Unicode, RTL,
   code-fence, base-URL, view-state, origin, and mixed-status documents. Its README
   records the purpose of each fixture.
 - `test/fixtures/reducer-goldens/cases.json` is the reviewable state/effect corpus

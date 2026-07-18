@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildAnswerMessages } from "../../src/core/prompts/answering-v1.js";
+import { AUTHORING_VOCABULARY_V1 } from "../../src/core/prompts/authoring-v1.js";
 import { buildTranscribeMessages, TRANSCRIBE_V1_RULES } from "../../src/core/prompts/transcribe-v1.js";
 
 const context = { root_title: "Root", parent_title: "Parent", parent_markdown: "Body", ancestors: [], selected_text: "x", question: "Why?", lens: null };
@@ -24,5 +25,8 @@ assert.equal(transcription[0].content.at(-1).image_url.url, dataUrl);
 assert.match(TRANSCRIBE_V1_RULES, /GitHub-flavored Markdown/); assert.match(TRANSCRIBE_V1_RULES, /LaTeX/); assert.match(TRANSCRIBE_V1_RULES, /GFM tables/);
 assert.match(TRANSCRIBE_V1_RULES, /figure:page-NNN:x,y,w,h/); assert.match(TRANSCRIBE_V1_RULES, /running headers/); assert.match(TRANSCRIBE_V1_RULES, /no TITLE sentinel/i);
 assert.equal(transcription[0].content[0].text.includes("x".repeat(500)), true); assert.equal(transcription[0].content[0].text.includes("x".repeat(501)), false);
+assert.match(AUTHORING_VOCABULARY_V1, /```mermaid/);
+assert.match(AUTHORING_VOCABULARY_V1, /flowcharts, sequence, class, state, and entity-relationship/);
+assert.match(AUTHORING_VOCABULARY_V1, /mindmap, architecture, and Mermaid-side KaTeX syntax are not supported/);
 
-console.log("ok prompts: PDF attachment parts and byte-identical text-only messages");
+console.log("ok prompts: PDF attachment parts, byte-identical text-only messages, and supported Mermaid authoring guidance");

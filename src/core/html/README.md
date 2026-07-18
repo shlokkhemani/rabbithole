@@ -9,10 +9,11 @@ and CSS live as pure template strings here, while Node-only assembly lives under
 - `src/node/html/canvas.js` assembles the document and owns the public
   `buildCanvasHtml(...)` API for the MCP host.
 - `src/node/html/built-assets.js` reads committed files from `dist/`:
-  `client.js`, `frozen-client.js`, `katex.css`, and `dompurify.js`.
+  `client.js`, `frozen-client.js`, `katex.css`, `dompurify.js`, and the pinned
+  `mermaid.js` runtime.
 - `src/web/` is the standalone static web host. `npm run build` writes
-  `web/dist/` (ignored) with `index.html`, `app.js`, CSS, DOMPurify, and frozen
-  snapshot source. `scripts/check-dist.mjs` intentionally compares only the
+  `web/dist/` (ignored) with `index.html`, `app.js`, CSS, DOMPurify, Mermaid,
+  and frozen snapshot source. `scripts/check-dist.mjs` intentionally compares only the
   committed MCP `dist/` artifacts.
 - `src/ui/*.js` are the browser runtime source modules. Edit those, then run
   `npm run build` and commit the resulting `dist/` changes.
@@ -41,11 +42,15 @@ Behavior-preserving rules:
 
 - The served page and `/export` must stay single-file HTML with no external
   asset requests.
+- MCP pages carry Mermaid as inert script text and activate it only when a
+  Mermaid fence mounts. Frozen snapshots include that carrier only when their
+  Markdown contains a Mermaid fence; the hosted web app loads the same pinned
+  file lazily from its own origin.
 - Frozen exports must not include live transport wiring (`EventSource` or
   `/sse`) or live asset route strings.
 - Do not read browser vendor assets from `node_modules` at runtime; vendor
   sources are inlined into `dist/` by `build.mjs`.
-- Verify final HTML by extracting the single inline `<script>` and running
+- Verify final HTML by extracting the executable inline `<script>` and running
   `node --check` on that extracted script.
 - `npm run check:dist` must pass before changes land so `dist/` stays fresh.
 

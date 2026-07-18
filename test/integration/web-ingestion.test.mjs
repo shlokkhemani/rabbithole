@@ -190,8 +190,8 @@ try {
   assert.equal(firstClip.markdown.includes("asset:"), false, "clip provenance must not enter the answer body");
 
   const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
-  assert.equal(await boxToggle.textContent(), "Select area");
-  assert.equal(await boxToggle.getAttribute("aria-label"), "Select an exact PDF region");
+  assert.equal(await boxToggle.textContent(), "Ask about an area");
+  assert.equal(await boxToggle.getAttribute("aria-label"), "Ask about an area of the PDF");
   await boxToggle.click();
   await page.waitForSelector(".node .rh-pdf.rh-pdf-box-mode");
   assert.equal(await boxToggle.getAttribute("aria-pressed"), "true");
@@ -442,8 +442,8 @@ try {
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["", ""]), "scanned.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
-  await page.waitForSelector(".node .rh-pdf-scanned-note");
-  assert.match(await page.textContent(".node .rh-pdf-scanned-note"), /No selectable text/);
+  assert.equal(await page.locator(".node .rh-pdf-scanned-note").count(), 0, "a scanned PDF must not add explanatory copy to the control bar");
+  assert.equal(await page.locator(".node .rh-pdf-box-toggle").isEnabled(), true, "area selection must remain available for a scanned PDF");
   await page.waitForSelector(".node .rh-pdf-convert.primary:not(:disabled)");
   const scannedBody = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).nodes[0].markdown);
   assert.match(scannedBody, /\*\(page 1: no extractable text\)\*/, "scanned pages must carry the body marker");
@@ -455,7 +455,8 @@ try {
   await dropPdf(page, attentionTwoPages, "attention-no-local-vision.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await page.waitForSelector(".node .rh-pdf-convert:disabled");
-  assert.equal(await page.locator(".node .rh-pdf-transcription-note").innerText(), "Install a local model that supports vision to enable PDF transcription.");
+  assert.equal(await page.locator(".node .rh-pdf-transcription-note").count(), 0, "model setup guidance must not displace PDF controls");
+  assert.equal(await page.locator(".node .rh-pdf-convert").getAttribute("title"), "Install a local model that supports vision to enable PDF transcription.");
 
   // ---- A corrupt PDF fails with an actionable message, no stranded hole ----
   await gotoReadyApp(page, baseUrl);

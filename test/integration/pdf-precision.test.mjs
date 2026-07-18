@@ -68,6 +68,11 @@ try {
   const scrollContract = await page.evaluate(() => {
     const body = document.querySelector(".node .node-body");
     const pdfScroll = document.querySelector(".node .rh-pdf-scroll");
+    const toolbar = document.querySelector(".node .rh-pdf-toolbar");
+    const region = toolbar.querySelector(".rh-pdf-region-actions .node-btn");
+    const zoom = toolbar.querySelector(".rh-pdf-zoom-controls");
+    const convert = toolbar.querySelector(".rh-pdf-document-actions .node-btn");
+    const rect = (element) => element.getBoundingClientRect().toJSON();
     return {
       bodyClass: body.className,
       bodyOverflow: getComputedStyle(body).overflow,
@@ -75,7 +80,13 @@ try {
       bodyScrollHeight: body.scrollHeight,
       pdfClientHeight: pdfScroll.clientHeight,
       pdfScrollHeight: pdfScroll.scrollHeight,
-      pdfRect: pdfScroll.getBoundingClientRect().toJSON(),
+      pdfRect: rect(pdfScroll),
+      bodyRect: rect(body),
+      toolbarRect: rect(toolbar),
+      toolbarText: toolbar.textContent,
+      regionRect: rect(region),
+      zoomRect: rect(zoom),
+      convertRect: rect(convert),
       world: document.querySelector("#world").style.transform,
     };
   });
@@ -83,16 +94,26 @@ try {
   assert.equal(scrollContract.bodyOverflow, "hidden", "the card body must not compete with the PDF for the same trackpad gesture");
   assert.equal(scrollContract.bodyScrollHeight, scrollContract.bodyClientHeight, "the card body must not retain a second vertical scroll range");
   assert(scrollContract.pdfScrollHeight > scrollContract.pdfClientHeight * 5, "the PDF itself must own the document scroll range");
+  assert(Math.abs(scrollContract.toolbarRect.top - scrollContract.bodyRect.top) <= 0.5, "the PDF toolbar must start directly beneath the card titlebar");
+  assert(Math.abs(scrollContract.toolbarRect.left - scrollContract.bodyRect.left) <= 0.5 && Math.abs(scrollContract.toolbarRect.right - scrollContract.bodyRect.right) <= 0.5,
+    "the pinned PDF toolbar must run pixel-perfect edge to edge across the card body");
+  assert.equal(/\b(?:pages?|source|loading)\b/i.test(scrollContract.toolbarText), false, `the PDF toolbar must contain controls, not implementation status: ${scrollContract.toolbarText}`);
+  assert(scrollContract.regionRect.right < scrollContract.zoomRect.left && scrollContract.zoomRect.right < scrollContract.convertRect.left,
+    "the toolbar must keep area, zoom, and conversion actions in distinct left/center/right zones");
+  assert(Math.abs((scrollContract.zoomRect.left + scrollContract.zoomRect.right) / 2 - (scrollContract.toolbarRect.left + scrollContract.toolbarRect.right) / 2) <= 0.75,
+    "the PDF zoom cluster must be geometrically centered in the toolbar");
   await page.mouse.move(scrollContract.pdfRect.x + scrollContract.pdfRect.width / 2, scrollContract.pdfRect.y + scrollContract.pdfRect.height / 2);
   await page.mouse.wheel(0, 420);
   await page.waitForFunction(() => document.querySelector(".node .rh-pdf-scroll").scrollTop > 300);
   const trackpadResult = await page.evaluate(() => ({
     bodyTop: document.querySelector(".node .node-body").scrollTop,
     pdfTop: document.querySelector(".node .rh-pdf-scroll").scrollTop,
+    toolbarTop: document.querySelector(".node .rh-pdf-toolbar").getBoundingClientRect().top,
     world: document.querySelector("#world").style.transform,
   }));
   assert.equal(trackpadResult.bodyTop, 0, "trackpad scrolling over a PDF must never move the outer card body");
   assert(trackpadResult.pdfTop > 300, "trackpad scrolling over a PDF must move its pages");
+  assert(Math.abs(trackpadResult.toolbarTop - scrollContract.toolbarRect.top) <= 0.5, "the PDF toolbar must remain pinned while its pages scroll");
   assert.equal(trackpadResult.world, scrollContract.world, "reading the PDF must never pan or zoom the canvas");
   await page.evaluate(() => { document.querySelector(".node .rh-pdf-scroll").scrollTop = 0; });
 

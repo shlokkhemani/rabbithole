@@ -49,7 +49,8 @@ try {
   assert.equal(await page.locator('.rh-pdf-page[data-page="1"] .rh-pdf-canvas-generation canvas').count(), 1, "offline viewer must keep one active render generation");
   const before = await page.evaluate(() => ({ world: document.querySelector("#world")?.style.transform || "", width: document.querySelector(".rh-pdf-page").getBoundingClientRect().width }));
   await page.click('.rh-pdf-toolbar button[aria-label="Zoom PDF in"]');
-  await page.waitForFunction(() => document.querySelector(".rh-pdf-zoom-value")?.textContent === "125%");
+  await page.waitForFunction((width) => document.querySelector(".rh-pdf-zoom-value")?.textContent === "125%"
+    && document.querySelector(".rh-pdf-page")?.getBoundingClientRect().width > width, before.width);
   const after = await page.evaluate(() => ({ world: document.querySelector("#world")?.style.transform || "", width: document.querySelector(".rh-pdf-page").getBoundingClientRect().width }));
   assert.equal(after.world, before.world, "offline PDF zoom must stay local to the PDF");
   assert(after.width > before.width);

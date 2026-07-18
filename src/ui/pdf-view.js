@@ -611,34 +611,42 @@ function selectWordAtPoint(span, textNode, clientX, clientY) {
   return true;
 }
 
-function createToolbar(pdf, node, options) {
+function createToolbar(pdf, node) {
   const element = document.createElement("div"); element.className = "rh-pdf-toolbar";
-  const status = document.createElement("div"); status.className = "rh-pdf-toolbar-status";
-  const info = document.createElement("span"); info.className = "rh-pdf-toolbar-info"; info.textContent = `${pdf.pages.length} page${pdf.pages.length === 1 ? "" : "s"} · loading source…`;
-  status.appendChild(info);
   const scanned = pdf.lines.length === 0;
-  if (scanned) {
-    const note = document.createElement("span"); note.className = "rh-pdf-scanned-note"; note.textContent = "No selectable text found — select an area or create a text version.";
-    status.appendChild(note);
-  }
-  const actions = document.createElement("div"); actions.className = "rh-pdf-toolbar-actions";
-  const minus = button("−", "Zoom PDF out");
+  const regionActions = document.createElement("div"); regionActions.className = "rh-pdf-toolbar-actions rh-pdf-region-actions";
+  const region = button("Ask about an area", "Ask about an area of the PDF");
+  region.className += " rh-pdf-box-toggle";
+  region.setAttribute("aria-pressed", "false");
+  region.innerHTML = `${iconSvg("area-select")}<span>Ask about an area</span>`;
+  regionActions.appendChild(region);
+
+  const center = document.createElement("div"); center.className = "rh-pdf-toolbar-center";
+  const zoomControls = document.createElement("div"); zoomControls.className = "rh-pdf-zoom-controls";
+  const minus = button("", "Zoom PDF out");
   minus.className += " rh-pdf-zoom-control";
+  minus.innerHTML = iconSvg("zoom-out");
   const zoom = button("100%", "Reset PDF zoom"); zoom.className += " rh-pdf-zoom-value rh-pdf-zoom-control";
-  const plus = button("+", "Zoom PDF in");
+  const plus = button("", "Zoom PDF in");
   plus.className += " rh-pdf-zoom-control";
-  const region = button("Select area", "Select an exact PDF region"); region.className += " rh-pdf-box-toggle"; region.setAttribute("aria-pressed", "false");
-  region.innerHTML = `${iconSvg("area-select")}<span>Select area</span>`;
-  actions.append(minus, zoom, plus, region);
+  plus.innerHTML = iconSvg("zoom-in");
+  zoomControls.append(minus, zoom, plus);
+  const message = document.createElement("span");
+  message.className = "rh-pdf-toolbar-message";
+  message.setAttribute("role", "status");
+  message.hidden = true;
+  center.append(zoomControls, message);
+
+  const documentActions = document.createElement("div"); documentActions.className = "rh-pdf-toolbar-actions rh-pdf-document-actions";
   if (!pdf.converted && !childrenOf(node.id).length) {
     const convert = button("Create text version", "Turn every page into clean, searchable text while preserving figures");
     convert.className += " rh-pdf-convert";
     convert.innerHTML = `${iconSvg("file-text")}<span>Create text version</span>`;
     if (scanned) convert.className += " primary";
     convert.addEventListener("click", (event) => { event.stopPropagation(); convert.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then((result) => { if (!result?.ok) convert.disabled = false; }); });
-    actions.appendChild(convert);
+    documentActions.appendChild(convert);
   }
-  element.append(status, actions);
+  element.append(regionActions, center, documentActions);
   let zoomHandler = () => {}, boxHandler = () => {}, boxMode = false;
   minus.addEventListener("click", () => zoomHandler(-1));
   plus.addEventListener("click", () => zoomHandler(1));
@@ -650,8 +658,14 @@ function createToolbar(pdf, node, options) {
     onBoxMode(handler) { boxHandler = handler; },
     setBoxMode(value) { boxMode = !!value; region.classList.toggle("active", boxMode); region.setAttribute("aria-pressed", String(boxMode)); },
     setZoom(value) { zoom.dataset.value = String(value); zoom.textContent = `${Math.round(value * 100)}%`; },
-    setReady() { info.textContent = `${pdf.pages.length} page${pdf.pages.length === 1 ? "" : "s"} · source quality`; },
-    setError(message) { info.textContent = `PDF unavailable · ${message}`; element.classList.add("error"); },
+    setReady() {},
+    setError(error) {
+      zoomControls.hidden = true;
+      message.hidden = false;
+      message.textContent = "PDF unavailable";
+      message.title = String(error || "The source PDF could not be opened.");
+      element.classList.add("error");
+    },
     dispose() {},
   };
 }
@@ -905,13 +919,5 @@ export function syncPdfTranscriptionControls(root, capability) {
     if (!button) return;
     button.disabled = !available;
     button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;
-    let note = container.querySelector(".rh-pdf-transcription-note");
-    if (!available) {
-      if (!note) {
-        note = document.createElement("span"); note.className = "rh-pdf-transcription-note";
-        container.querySelector(".rh-pdf-toolbar-status")?.appendChild(note);
-      }
-      note.textContent = reason;
-    } else note?.remove();
   });
 }

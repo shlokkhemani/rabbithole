@@ -50,7 +50,7 @@ import { applyChildHighlights } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { buildOriginCrop } from "./origin-provenance.js";
-import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
+import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
@@ -173,9 +173,9 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     setViewAdjusted(true);
     var w = screenToWorld(sx, sy); view.scale = next; view.x = sx - w.x * view.scale; view.y = sy - w.y * view.scale; applyTransform();
   }
-  var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
-  var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
-  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
+  var NODE_EXPAND_ICON = iconSvg("expand");
+  var NODE_COLLAPSE_ICON = iconSvg("collapse");
+  var NODE_RESTORE_ICON = iconSvg("restore");
 
   function syncCollapseButton(node, btn){
     var action = node.collapsed ? "Expand document" : "Collapse document";
@@ -268,7 +268,7 @@ function diveToNode(node, source){
   }
 
   // ---------- per-card follow-up composer ----------
-  var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SEND_ICON = iconSvg("send");
   // The scrollbar only appears once the textarea is actually at its cap —
   // otherwise sub-pixel rounding paints a stray thumb next to the send button.
 export function autoGrowEl(ta, max){

@@ -18,6 +18,7 @@ Plain ES modules, a small esbuild-based browser build, and script-driven tests.
   sessions, local HTTP/SSE transport, and Node PDF ingestion
 - `src/web/` — static BYOK browser host, provider adapters, and IndexedDB store
 - `src/core/html/` — shared self-contained shell, tokens, and stylesheet source
+- `src/core/html/icons.js` — canonical repository for all product-owned SVG icons and brand marks
 - `dist/` — committed live and frozen UI bundles; regenerate after UI changes
 - `test/` — capability-oriented suites documented in `docs/testing.md`
 - `website/public/` — live public assets copied by `build:publish`
@@ -44,3 +45,8 @@ stdout.
 - stdout is reserved for MCP protocol messages; application logs go to stderr.
 - Preserve old `.rabbithole` files and snapshots according to
   `docs/compatibility.md`; future formats must fail clearly rather than truncate.
+- Put every product-owned SVG icon or brand mark in `src/core/html/icons.js` and
+  render it with `iconSvg()`. Do not add inline icon geometry to shell, UI, web,
+  settings, or website files. Structural/document SVG (for example the canvas
+  edge layer or user-authored content) is not an icon and remains at its owning
+  trust boundary.

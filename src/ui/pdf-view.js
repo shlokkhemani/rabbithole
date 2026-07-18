@@ -4,6 +4,7 @@ import { resolveAssetUrl } from "./renderer.js";
 import { childrenOf, postBrowserEvent } from "./core.js";
 import { mountPdfRectMark } from "./text-marks.js";
 import { showAskFromSelection } from "./ask-followups.js";
+import { iconSvg } from "../core/html/icons.js";
 
 export function pdfSelectionOffsets(range, spans) {
   var startSpan = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer.closest("span[data-line]");
@@ -161,14 +162,14 @@ export function mountPdfView(container, node, options) {
   toolbarInfo.appendChild(boxHint);
   var documentActions = document.createElement("div"); documentActions.className = "rh-pdf-toolbar-actions rh-pdf-document-actions"; toolbar.appendChild(documentActions);
   boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
-  boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Ask about an area</span>';
+  boxButton.innerHTML = iconSvg("area-select") + '<span>Ask about an area</span>';
   boxButton.title = "Draw over a figure, table, or area to ask about it";
   boxButton.setAttribute("aria-label", "Ask about an area of the PDF"); boxButton.setAttribute("aria-pressed", "false");
   boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); regionActions.appendChild(boxButton);
   container.prepend(toolbar);
   if (!childrenOf(node.id).length) {
     var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
-    convertButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Create text version</span>';
+    convertButton.innerHTML = iconSvg("file-text") + '<span>Create text version</span>';
     convertButton.setAttribute("aria-label", "Create a searchable text version of this PDF");
     convertButton.title = "Turn every page into clean, searchable text while preserving figures";
     convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });

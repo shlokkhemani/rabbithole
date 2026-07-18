@@ -215,6 +215,12 @@ export function renderReaderBody(){
     col.appendChild(dc);
     applyChildHighlights(dc, node);
     var fups = followupsOf(node.id);
+    var isPdfReader = dc.classList.contains("rh-pdf");
+    var isPdfViewport = isPdfReader && !node.parent_id && !node.origin && !crop && !fups.length;
+    readerMain.classList.toggle("pdf-reader", isPdfReader);
+    readerMain.classList.toggle("pdf-reader-viewport", isPdfViewport);
+    col.classList.toggle("pdf-reader-col", isPdfReader);
+    col.classList.toggle("pdf-reader-viewport", isPdfViewport);
     if (fups.length){
       var thread = document.createElement("div");
       thread.id = "thread";

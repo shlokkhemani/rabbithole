@@ -22,14 +22,27 @@ export function mountPdfView(container, node, options = {}) {
   }
 
   container.className = "doc-content rh-pdf";
-  const toolbar = createToolbar(pdf, node, options);
+  const isReaderSurface = container.dataset.surface === "reader";
+  const toolbar = createToolbar(pdf, node, { reader: isReaderSurface });
+  // Document content is mounted while detached, so its explicit surface tag
+  // is the reliable boundary between Reader chrome and a canvas card.
+  const readerToolbarHost = isReaderSurface && document.getElementById("tb-document");
   const scroll = document.createElement("div");
   scroll.className = "rh-pdf-scroll";
   scroll.dataset.zoom = "1";
   const stack = document.createElement("div");
   stack.className = "rh-pdf-stack";
   scroll.appendChild(stack);
-  container.replaceChildren(toolbar.element, scroll);
+  if (readerToolbarHost) {
+    toolbar.element.classList.add("rh-pdf-reader-toolbar", "tb-pill");
+    toolbar.element.dataset.pdfNodeId = node.id;
+    toolbar.element.setAttribute("aria-label", "PDF reader controls");
+    readerToolbarHost.replaceChildren(toolbar.element);
+    container._rhPdfToolbarElement = toolbar.element;
+    container.replaceChildren(scroll);
+  } else {
+    container.replaceChildren(toolbar.element, scroll);
+  }
   syncPdfTranscriptionControls(container, options.getTranscriptionCapability?.());
 
   let disposed = false;
@@ -47,6 +60,13 @@ export function mountPdfView(container, node, options = {}) {
   let touchCleanup = () => {};
   const pageStates = [];
   const visiblePages = new Set();
+
+  function alignReaderToolbar() {
+    if (!readerToolbarHost || !scroll.isConnected) return;
+    const rect = scroll.getBoundingClientRect();
+    const center = rect.left + scroll.clientWidth / 2;
+    if (Number.isFinite(center)) readerToolbarHost.style.setProperty("--rh-pdf-reader-center", `${center}px`);
+  }
 
   toolbar.onZoom((factor, anchor) => setZoom(factor, anchor));
   toolbar.onBoxMode((active) => {
@@ -95,6 +115,7 @@ export function mountPdfView(container, node, options = {}) {
       void renderText(state);
     }
     refreshAllMarks();
+    alignReaderToolbar();
   }
 
   function scheduleRender() {
@@ -561,7 +582,11 @@ export function mountPdfView(container, node, options = {}) {
       state.textTask?.cancel?.(); cancelRenderTasks(state); state.page?.cleanup?.();
       for (const generation of [...state.canvasLayer.children]) releaseGeneration(generation);
     }
-    documentLease?.release(); toolbar.dispose();
+    documentLease?.release();
+    readerToolbarHost?.style.removeProperty("--rh-pdf-reader-center");
+    toolbar.element.remove();
+    delete container._rhPdfToolbarElement;
+    toolbar.dispose();
   };
 }
 
@@ -611,14 +636,14 @@ function selectWordAtPoint(span, textNode, clientX, clientY) {
   return true;
 }
 
-function createToolbar(pdf, node) {
+function createToolbar(pdf, node, { reader = false } = {}) {
   const element = document.createElement("div"); element.className = "rh-pdf-toolbar";
   const scanned = pdf.lines.length === 0;
   const regionActions = document.createElement("div"); regionActions.className = "rh-pdf-toolbar-actions rh-pdf-region-actions";
   const region = button("Ask about an area", "Ask about an area of the PDF");
   region.className += " rh-pdf-box-toggle";
   region.setAttribute("aria-pressed", "false");
-  region.innerHTML = `${iconSvg("area-select")}<span>Ask about an area</span>`;
+  region.innerHTML = `${iconSvg("area-select")}<span>${reader ? "Area" : "Ask about an area"}</span>`;
   regionActions.appendChild(region);
 
   const center = document.createElement("div"); center.className = "rh-pdf-toolbar-center";
@@ -641,7 +666,7 @@ function createToolbar(pdf, node) {
   if (!pdf.converted && !childrenOf(node.id).length) {
     const convert = button("Create text version", "Turn every page into clean, searchable text while preserving figures");
     convert.className += " rh-pdf-convert";
-    convert.innerHTML = `${iconSvg("file-text")}<span>Create text version</span>`;
+    convert.innerHTML = `${iconSvg("file-text")}<span>${reader ? "Text version" : "Create text version"}</span>`;
     if (scanned) convert.className += " primary";
     convert.addEventListener("click", (event) => { event.stopPropagation(); convert.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then((result) => { if (!result?.ok) convert.disabled = false; }); });
     documentActions.appendChild(convert);
@@ -915,7 +940,8 @@ export function syncPdfTranscriptionControls(root, capability) {
   const reason = String(capability?.reason || "Set up a vision-capable PDF transcription model in Model settings.");
   const containers = root.matches?.(".doc-content.rh-pdf") ? [root] : Array.from(root.querySelectorAll(".doc-content.rh-pdf"));
   containers.forEach((container) => {
-    const button = container.querySelector(".rh-pdf-convert");
+    const toolbarRoot = container._rhPdfToolbarElement || container;
+    const button = toolbarRoot.querySelector(".rh-pdf-convert");
     if (!button) return;
     button.disabled = !available;
     button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;

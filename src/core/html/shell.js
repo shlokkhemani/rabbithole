@@ -30,6 +30,7 @@ export const CANVAS_SHELL = `
       ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout · T", ariaLabel: "Tidy up layout · T", svgIconHtml: iconSvg("tidy") })}
     </span>
   </div>
+  <div id="tb-document" aria-label="Document controls"></div>
   <div id="tb-session">
     <div class="tb-pill">
     ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}

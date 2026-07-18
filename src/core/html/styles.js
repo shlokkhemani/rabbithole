@@ -200,6 +200,16 @@ body.mode-canvas #reader { display: none; }
 #since-x:hover { color: var(--fg-bold); }
 #reader-main { flex: 1; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
+/* A PDF is already a complete reading surface. In Reader, give it the whole
+   flex slot between the shared top chrome and composer instead of stacking a
+   second toolbar and a second scrollbar around it. Threaded PDFs retain the
+   normal outer reader flow so their conversation remains reachable. */
+#reader-main.pdf-reader { padding-top: 0; }
+#reader-main.pdf-reader-viewport { overflow: hidden; padding-bottom: 0; scrollbar-gutter: auto; }
+#reader-main.pdf-reader-viewport .reader-col.pdf-reader-viewport { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+#reader-main.pdf-reader-viewport .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; min-height: 0; }
+#reader-main.pdf-reader-viewport .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
+#reader-main.pdf-reader-viewport #margin-notes { display: none; }
 .reader-context { font-family: var(--font-ui); font-size: 12.5px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding: 2px 0 2px 12px; margin-bottom: 26px; line-height: 1.55; }
 .reader-context .rc-label { color: var(--fg-faint); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; margin-right: 6px; }
 /* The FROM strip is a live link back to the exact spot this branch grew from. */
@@ -388,6 +398,9 @@ body.mode-canvas #viewport { display: block; }
    action ("Canvas" / "Reader"), never as state. */
 :root { --taskbar-clear: 62px; }
 #taskbar { position: fixed; top: 14px; left: 14px; right: 14px; z-index: 50; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
+#taskbar > #tb-tools, #taskbar > #tb-session { flex: 0 0 auto; }
+#tb-document { position: fixed; top: 14px; left: var(--rh-pdf-reader-center, 50%); display: flex; width: max-content; max-width: calc(100vw - 28px); min-width: 0; justify-content: center; transform: translateX(-50%); pointer-events: none; }
+#tb-document:empty, body.mode-canvas #tb-document { display: none; }
 #tb-session { display: flex; align-items: flex-start; gap: 10px; }
 .tb-pill { display: flex; align-items: center; gap: var(--space-3); pointer-events: auto; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
 /* One control height for everything in the bar — icon or text, every button
@@ -418,6 +431,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
     box-shadow: var(--shadow); padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
     touch-action: pan-x; scrollbar-width: none; }
   #taskbar::-webkit-scrollbar { display: none; }
+  #tb-document { position: static; top: auto; left: auto; flex: 0 0 auto; transform: none; }
   .tb-pill { background: none; border: none; box-shadow: none; padding: 0; border-radius: 0; gap: 2px; flex: 0 0 auto; }
   #tb-session { position: sticky; right: 0; margin-left: auto; align-items: center; gap: 2px; background: var(--bar-bg); padding-left: 4px; }
   .tb-pill .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
@@ -600,6 +614,22 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-zoom-controls .rh-pdf-zoom-value { width: auto; min-width: 44px; padding-inline: 4px; font-size: calc(var(--text-ui) - 1px); font-variant-numeric: tabular-nums; }
 .rh-pdf-toolbar-message { max-width: 160px; overflow: hidden; color: var(--warn); font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); text-overflow: ellipsis; white-space: nowrap; }
 .rh-pdf-toolbar-message[hidden], .rh-pdf-zoom-controls[hidden] { display: none; }
+/* Reader contributes its PDF controls to the one existing top-chrome row.
+   Canvas PDFs deliberately keep the edge-to-edge toolbar in their card. */
+#tb-document > .rh-pdf-reader-toolbar { position: static; z-index: auto; grid-template-columns: auto auto auto; width: max-content; min-width: 0; min-height: 40px; padding: 7px 10px; pointer-events: auto; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+@media (min-width: 761px) and (max-width: 959px) {
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn { width: 26px; padding-inline: 0; justify-content: center; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn span { display: none; }
+}
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  #reader-main.pdf-reader { padding-top: 0; }
+  #reader-main.pdf-reader-viewport { padding-inline: 0; }
+  #tb-document > .rh-pdf-reader-toolbar { width: max-content; min-height: 44px; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn { width: 44px; height: 44px; padding-inline: 0; justify-content: center; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn span { display: none; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .node-btn { width: 44px; height: 44px; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .rh-pdf-zoom-value { min-width: 52px; }
+}
 .rh-pdf-legacy { margin: 0 0 14px; padding: 10px 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border)); border-radius: var(--radius-control); font-family: var(--font-ui); font-size: var(--text-ui); }
 .rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-convert:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 9%, transparent); }

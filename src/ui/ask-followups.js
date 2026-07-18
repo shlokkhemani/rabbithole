@@ -289,6 +289,9 @@ export function disposeAskFollowups(){
   function retirePdfConversionAction(parent){
     parent?.bodyEl?.querySelector(".rh-pdf-convert")?.remove();
     if (mode === "reader") readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')?.remove();
+    // Reader stays mounted while Canvas is visible, so retire its docked action
+    // too; otherwise switching modes would resurrect an invalid conversion.
+    document.querySelector('#tb-document .rh-pdf-reader-toolbar[data-pdf-node-id="' + parent.id + '"] .rh-pdf-convert')?.remove();
   }
 
   function submitAsk(lensKey, source){

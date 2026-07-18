@@ -523,6 +523,7 @@ export function buildDocContent(node, base){
     var dc = document.createElement("div");
     dc.className = "doc-content md";
     dc.dataset.nodeId = node.id;
+    dc.dataset.surface = base === CANVAS_BASE ? "canvas" : "reader";
     dc.style.fontSize = fontPx(node, base) + "px";
     if (node.status === "pending"){
       if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));

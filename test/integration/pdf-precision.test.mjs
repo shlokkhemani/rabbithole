@@ -117,6 +117,82 @@ try {
   assert.equal(trackpadResult.world, scrollContract.world, "reading the PDF must never pan or zoom the canvas");
   await page.evaluate(() => { document.querySelector(".node .rh-pdf-scroll").scrollTop = 0; });
 
+  await page.click("#t-reader");
+  await page.waitForSelector("body:not(.mode-canvas) #tb-document .rh-pdf-reader-toolbar");
+  await page.waitForFunction(() => document.querySelector("#reader-main .rh-pdf-canvas-generation[data-ready='true'] canvas"));
+  const readerContract = await page.evaluate(() => {
+    const rect = (element) => element.getBoundingClientRect().toJSON();
+    const main = document.querySelector("#reader-main");
+    const col = main.querySelector(".reader-col");
+    const pdf = main.querySelector(".doc-content.rh-pdf");
+    const scroll = pdf.querySelector(".rh-pdf-scroll");
+    const toolbar = document.querySelector("#tb-document .rh-pdf-reader-toolbar");
+    return {
+      mainClass: main.className,
+      colClass: col.className,
+      mainOverflow: getComputedStyle(main).overflow,
+      mainClientHeight: main.clientHeight,
+      mainScrollHeight: main.scrollHeight,
+      mainRect: rect(main),
+      scrollRect: rect(scroll),
+      scrollContentCenter: scroll.getBoundingClientRect().left + scroll.clientWidth / 2,
+      scrollClientHeight: scroll.clientHeight,
+      scrollHeight: scroll.scrollHeight,
+      pageRect: rect(scroll.querySelector(".rh-pdf-page")),
+      toolbarRect: rect(toolbar),
+      toolbarParent: toolbar.parentElement.id,
+      toolsRect: rect(document.querySelector("#tb-tools")),
+      sessionRect: rect(document.querySelector("#tb-session")),
+      composerRect: rect(document.querySelector("#composer")),
+      inlineToolbar: !!pdf.querySelector(".rh-pdf-toolbar"),
+      canvasZoom: document.querySelector(".node .rh-pdf-scroll").dataset.zoom,
+    };
+  });
+  assert.match(readerContract.mainClass, /\bpdf-reader-viewport\b/, "a standalone Reader PDF must opt into the full reader viewport");
+  assert.match(readerContract.colClass, /\bpdf-reader-viewport\b/);
+  assert.equal(readerContract.mainOverflow, "hidden", "Reader must not wrap the PDF in a competing outer scroll surface");
+  assert.equal(readerContract.mainScrollHeight, readerContract.mainClientHeight, "Reader must expose exactly one vertical PDF scroll range");
+  assert.equal(readerContract.toolbarParent, "tb-document", "Reader PDF controls belong to the shared top chrome");
+  assert.equal(readerContract.inlineToolbar, false, "Reader must not duplicate the PDF toolbar above the paper");
+  assert(Math.abs(readerContract.toolbarRect.top - readerContract.toolsRect.top) <= 0.5, "PDF controls must align with the existing top chrome row");
+  assert(Math.abs((readerContract.toolbarRect.left + readerContract.toolbarRect.right) / 2 - readerContract.scrollContentCenter) <= 0.5,
+    "the compact PDF controls must center on the PDF's usable viewport, including its scrollbar gutter");
+  assert(readerContract.toolbarRect.width < 310, `Reader controls must shrink-wrap their actions instead of recreating a card toolbar: ${readerContract.toolbarRect.width}px`);
+  assert(readerContract.toolbarRect.left >= readerContract.toolsRect.right + 8 && readerContract.toolbarRect.right <= readerContract.sessionRect.left - 8,
+    "docked PDF controls must never overlap application or session controls");
+  assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
+  assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport down to the composer");
+  assert(Math.abs(readerContract.composerRect.top - readerContract.mainRect.bottom) <= 0.5, "the composer must follow the PDF viewport without a dead band");
+  assert(readerContract.pageRect.top - readerContract.scrollRect.top <= 11, "paper must begin immediately below the shared chrome clearance");
+  assert(readerContract.scrollHeight > readerContract.scrollClientHeight * 5, "the docked Reader PDF must retain its complete document scroll range");
+
+  await page.mouse.move(readerContract.scrollRect.x + readerContract.scrollRect.width / 2, readerContract.scrollRect.y + readerContract.scrollRect.height / 2);
+  await page.mouse.wheel(0, 420);
+  await page.waitForFunction(() => document.querySelector("#reader-main .rh-pdf-scroll").scrollTop > 300);
+  const readerTrackpad = await page.evaluate(() => ({
+    readerTop: document.querySelector("#reader-main").scrollTop,
+    pdfTop: document.querySelector("#reader-main .rh-pdf-scroll").scrollTop,
+    canvasTop: document.querySelector(".node .rh-pdf-scroll").scrollTop,
+    world: document.querySelector("#world").style.transform,
+  }));
+  assert.equal(readerTrackpad.readerTop, 0, "trackpad reading must not move a hidden outer Reader scroll");
+  assert(readerTrackpad.pdfTop > 300, "trackpad reading must scroll the Reader PDF itself");
+  assert.equal(readerTrackpad.canvasTop, 0, "Reader scrolling must not mutate the canvas PDF instance");
+  assert.equal(readerTrackpad.world, scrollContract.world, "Reader scrolling must not mutate the canvas camera");
+
+  await page.click('#tb-document .rh-pdf-zoom-control[aria-label="Zoom PDF in"]');
+  await page.waitForFunction(() => document.querySelector("#tb-document .rh-pdf-zoom-value")?.textContent === "125%");
+  assert.equal(await page.locator(".node .rh-pdf-zoom-value").textContent(), "100%", "Reader zoom must remain local to the Reader PDF instance");
+  await page.click("#tb-document .rh-pdf-zoom-value");
+  await page.click("#t-canvas");
+  await page.waitForSelector("body.mode-canvas");
+  const restoredCanvas = await page.evaluate(() => ({
+    documentChrome: getComputedStyle(document.querySelector("#tb-document")).display,
+    canvasToolbarParent: document.querySelector(".node .rh-pdf-toolbar").parentElement.className,
+  }));
+  assert.equal(restoredCanvas.documentChrome, "none", "Reader PDF controls must disappear completely in Canvas mode");
+  assert.match(restoredCanvas.canvasToolbarParent, /\bdoc-content\b/, "Canvas must retain its own in-card PDF toolbar");
+
   const zoomContinuity = await page.evaluate(async () => {
     const pdfScroll = document.querySelector(".node .rh-pdf-scroll");
     const firstPage = document.querySelector('.node .rh-pdf-page[data-page="1"]');
@@ -224,6 +300,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".node .rh-pdf-mark.mark-ready").length >= 1);
   const pointerState = await portableState(page);
   const pointerChild = pointerState.hole.nodes.find((node) => node.origin?.question === "Real pointer target");
+  assert.equal(await page.locator("#tb-document .rh-pdf-convert").count(), 0, "creating a branch in Canvas must retire the hidden Reader conversion action too");
   assert.equal(pointerChild.origin.selected_text, "Attention", "a real mouse drag must select the exact intended word in the paper title");
   const pointerBounds = quadBounds(pointerChild.origin.anchor.pdf.fragments[0].quads[0]);
   assert(Math.abs(pointerBounds[0] - 211.488) <= 0.5 && Math.abs(pointerBounds[2] - 281.296447) <= 0.5, `real pointer selection must map to Poppler's independent title-word bounds: ${pointerBounds}`);

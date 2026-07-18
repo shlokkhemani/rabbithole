@@ -28,7 +28,7 @@
       "description": "Statically loaded web application JavaScript",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact transitive size of app.js and its static chunks; lazy PDF code and the worker are excluded.",
+      "rationale": "Exact transitive size of app.js and its static chunks; the large PDF.js runtime and worker are excluded.",
       "baseline": 754138,
       "ceiling": 791844.9,
       "measured_at_commit": "codex/pdf-v2"

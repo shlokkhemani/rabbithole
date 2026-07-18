@@ -143,10 +143,6 @@ function headersText() {
     "/about/*",
     "  Cache-Control: public, max-age=0, must-revalidate",
     "",
-    "# Generated chunks carry a content hash in every filename.",
-    "/chunks/*",
-    "  Cache-Control: public, max-age=31536000, immutable",
-    "",
   ].join("\n");
 }
 

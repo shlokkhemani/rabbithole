@@ -6,11 +6,17 @@ import { budgetDefinitions, measureBudgets } from "../support/budget-measurement
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const recorded = JSON.parse(await fs.readFile(path.join(ROOT, "test/budgets.json"), "utf8"));
+const chunkNames = await fs.readdir(path.join(WEB_DIST, "chunks")).catch((error) => {
+  if (error?.code === "ENOENT") return [];
+  throw error;
+});
 const browserRuntimeFiles = [
   path.join(WEB_DIST, "app.js"),
   path.join(WEB_DIST, "pdf.mjs"),
-  ...(await fs.readdir(path.join(WEB_DIST, "chunks"))).filter((name) => name.endsWith(".js")).map((name) => path.join(WEB_DIST, "chunks", name)),
+  ...chunkNames.filter((name) => name.endsWith(".js")).map((name) => path.join(WEB_DIST, "chunks", name)),
 ];
+assert.equal(chunkNames.some((name) => /^pdf-/.test(name)), false,
+  "the tiny PDF importer must stay in the initial app instead of creating a fragile lazy network boundary");
 const pdfImplementations = [];
 for (const file of browserRuntimeFiles) {
   if ((await fs.readFile(file, "utf8")).includes("PDFDocumentLoadingTask")) pdfImplementations.push(path.relative(WEB_DIST, file));

@@ -12,6 +12,16 @@ import {
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
 import { loadPdfJsModule, primePdfDocument } from "../../ui/pdf-runtime.js";
 
+const PDF_RUNTIME_LOAD_FAILURE = /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|load failed/i;
+
+export function describePdfImportFailure(error) {
+  const detail = error instanceof Error ? error.message : String(error || "Unknown PDF import error.");
+  if (PDF_RUNTIME_LOAD_FAILURE.test(detail)) {
+    return "PDF import couldn't start because part of Rabbithole failed to load. Reload Rabbithole and try again — your PDF is not the problem.";
+  }
+  return `PDF import failed. ${detail} Try a different PDF.`;
+}
+
 async function ingestPdf(source, {
   pages,
   includeText = true,

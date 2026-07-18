@@ -251,7 +251,7 @@ async function verifyPublishOutput() {
   assert(redirects.includes("/self-host https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally 302"), "the stable self-host route should lead to local browser instructions");
   const headers = await fs.readFile(path.join(publishDir, "_headers"), "utf8");
   assert(headers.includes("/app.js\n  Cache-Control: public, max-age=0, must-revalidate"), "the mutable app entry must revalidate after every deployment");
-  assert(headers.includes("/chunks/*\n  Cache-Control: public, max-age=31536000, immutable"), "content-addressed chunks should keep long-lived browser caching");
+  assert.equal(headers.includes("/chunks/*"), false, "a chunk-free application must not publish dead chunk caching policy");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   assert(html.includes("connect-src 'self' blob: https://openrouter.ai https://api.github.com"), "web CSP should allow source-PDF blobs and the public GitHub star-count request");
@@ -259,16 +259,11 @@ async function verifyPublishOutput() {
   const entryVersions = [...html.matchAll(/(?:favicon\.svg|styles\.css|dompurify\.js|frozen-source\.js|app\.js)\?v=([a-f0-9]{12})/g)].map((match) => match[1]);
   assert.equal(entryVersions.length, 5, "every mutable browser entry asset should carry a content-derived version");
   assert.equal(new Set(entryVersions).size, 1, "browser entry assets should share one atomic release version");
-  const chunkNames = await fs.readdir(path.join(publishDir, "chunks"));
-  assert.equal(chunkNames.filter((name) => /^browser-canvas-stub-[A-Z0-9]+\.js$/.test(name)).length, 0,
-    "the lazy standalone PDF runtime must not pull PDF.js's Node-only canvas path into an application chunk");
-  assert.equal(chunkNames.some((name) => /^(?:browser|canvas)-[A-Z0-9]+\.js$/.test(name)), false,
-    "browser builds must not depend on whether the optional native canvas package installed");
-  const bundledPdfCopies = [];
-  for (const name of chunkNames.filter((name) => name.endsWith(".js"))) {
-    if ((await fs.readFile(path.join(publishDir, "chunks", name), "utf8")).includes("PDFDocumentLoadingTask")) bundledPdfCopies.push(name);
-  }
-  assert.deepEqual(bundledPdfCopies, [], "published application chunks must never contain a duplicate PDF.js implementation");
+  const chunkNames = await fs.readdir(path.join(publishDir, "chunks")).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  assert.deepEqual(chunkNames, [], "the published app must not reintroduce fragile application lazy chunks");
   const initialStyleAt = html.indexOf('id="initial-theme-style"');
   const initialScriptAt = html.indexOf('id="initial-theme-script"');
   const stylesheetAt = html.indexOf('rel="stylesheet"');

@@ -16,7 +16,7 @@ const STREAM_CHUNKS = Array.from({ length: 40 }, (_, i) => `${i ? " " : "# Budge
 export const budgetDefinitions = [
   ["bundle_client_bytes", "Built live client bundle size", "bytes", 0.05, "Exact file size after a deterministic build."],
   ["bundle_frozen_client_bytes", "Built frozen client bundle size", "bytes", 0.05, "Exact file size after a deterministic build."],
-  ["web_initial_js_bytes", "Statically loaded web application JavaScript", "bytes", 0.05, "Exact transitive size of app.js and its static chunks; lazy PDF code and the worker are excluded."],
+  ["web_initial_js_bytes", "Statically loaded web application JavaScript", "bytes", 0.05, "Exact transitive size of app.js and its static chunks; the large PDF.js runtime and worker are excluded."],
   ["pdf_runtime_distribution_bytes", "Production PDF.js runtime plus worker", "bytes", 0.05, "Exact size of the lazily loaded production PDF.js module and worker."],
   ["snapshot_math_bytes", "Frozen HTML size for the math-heavy reference corpus", "bytes", 0.05, "Exact UTF-8 snapshot size."],
   ["snapshot_assets_bytes", "Frozen HTML size for the PNG/SVG reference corpus", "bytes", 0.05, "Exact UTF-8 snapshot size including assets."],

@@ -1,5 +1,6 @@
 import { MAX_PDF_BYTES } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
+import { ingestPdfToStoredHole } from "./pdf.js";
 
 const URL_FETCH_CAP_BYTES = 25 * 1024 * 1024;
 const PASTE_FALLBACK = "Try another link or open a PDF file instead.";
@@ -19,7 +20,6 @@ export async function openUrlToStoredHole({ rawUrl, store, title = "", proxyBase
   const contentType = fetched.contentType;
   const isPdf = isPdfResponse(fetched.url, contentType, fetched.bytes);
   if (isPdf) {
-    const { ingestPdfToStoredHole } = await import("./pdf.js");
     return ingestPdfToStoredHole({
       source: fetched.bytes,
       store,

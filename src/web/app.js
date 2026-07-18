@@ -23,6 +23,7 @@ import { flushPendingSaves } from "../ui/transport-status.js";
 import { registerRendererAssetName } from "../ui/renderer.js";
 import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
+import { describePdfImportFailure, ingestPdfToStoredHole } from "./ingest/pdf.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
 import { getMermaidSource, loadMermaidRuntime } from "./mermaid-runtime.js";
@@ -679,8 +680,7 @@ async function createFromRabbitholeFile(file) {
 
 async function createFromPdfFile(file) {
   try {
-    const { ingestPdfToStoredHole } = await import("./ingest/pdf.js");
-    setIngestStatus("Loading PDF importer...", "busy");
+    setIngestStatus("Preparing PDF...", "busy");
     const { hole } = await ingestPdfToStoredHole({
       source: file,
       store,
@@ -692,7 +692,7 @@ async function createFromPdfFile(file) {
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Try a different PDF.`, "error");
+    setIngestStatus(describePdfImportFailure(err), "error");
   }
 }
 

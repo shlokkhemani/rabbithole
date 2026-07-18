@@ -465,6 +465,40 @@ try {
   await page.waitForSelector("#ingest-status.error");
   assert.match(await page.textContent("#ingest-status"), /could not be opened by pdf\.js/i);
 
+  // ---- A temporarily unavailable PDF runtime never blames the file and can retry ----
+  const retryContext = await browser.newContext();
+  try {
+    await retryContext.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+      preset: "custom",
+      base_url: "http://localhost:11434/v1",
+      model: "llama3.2",
+      session_only: true,
+      generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+    })));
+    const retryPage = await retryContext.newPage();
+    let runtimeRequests = 0;
+    await retryPage.route(/\/pdf\.mjs(?:\?.*)?$/, async (route) => {
+      runtimeRequests += 1;
+      if (runtimeRequests === 1) await route.abort("failed");
+      else await route.continue();
+    });
+    await gotoReadyApp(retryPage, baseUrl);
+    await retryPage.click("#blank-start-new");
+    await retryPage.waitForSelector("#composer-path-file");
+    const retryPdf = buildTinyPdf(["Runtime retry"]);
+    await dropPdf(retryPage, retryPdf, "runtime-first-attempt.pdf");
+    await retryPage.waitForSelector("#ingest-status.error");
+    assert.equal(
+      await retryPage.textContent("#ingest-status"),
+      "PDF import couldn't start because part of Rabbithole failed to load. Reload Rabbithole and try again — your PDF is not the problem.",
+    );
+    await dropPdf(retryPage, retryPdf, "runtime-second-attempt.pdf");
+    await retryPage.waitForSelector(".node .rh-pdf-page[data-page='1']");
+    assert(runtimeRequests >= 2, "retry must use a fresh PDF.js module request after a transient load failure");
+  } finally {
+    await retryContext.close();
+  }
+
   console.log("web ingestion verification passed");
 } finally {
   await browser.close();

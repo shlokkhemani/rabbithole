@@ -3,6 +3,7 @@ let workerObjectUrl = null;
 let configured = false;
 let pdfjs = null;
 let pdfjsPromise = null;
+let pdfjsNetworkAttempts = 0;
 
 export async function loadPdfJsModule() {
   if (pdfjs) return pdfjs;
@@ -11,12 +12,19 @@ export async function loadPdfJsModule() {
     const source = globalThis.__RABBITHOLE_PDFJS_SOURCE__ || carrier?.textContent || "";
     if (source && typeof Blob === "function" && globalThis.URL?.createObjectURL) {
       const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-      pdfjsPromise = import(url).finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
+      pdfjsPromise = import(url)
+        .finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000))
+        .catch((error) => { pdfjsPromise = null; throw error; });
     } else {
-      const runtimeUrl = typeof process !== "undefined" && process.versions?.node
-        ? ["pdfjs-dist", "build/pdf.mjs"].join("/")
-        : new URL("pdf.mjs", document.baseURI).href;
-      pdfjsPromise = import(runtimeUrl);
+      const nodeRuntime = typeof process !== "undefined" && process.versions?.node;
+      let runtimeUrl = nodeRuntime ? ["pdfjs-dist", "build/pdf.mjs"].join("/") : new URL("pdf.mjs", document.baseURI).href;
+      if (!nodeRuntime && pdfjsNetworkAttempts) {
+        const retryUrl = new URL(runtimeUrl);
+        retryUrl.searchParams.set("retry", String(pdfjsNetworkAttempts));
+        runtimeUrl = retryUrl.href;
+      }
+      pdfjsNetworkAttempts++;
+      pdfjsPromise = import(runtimeUrl).catch((error) => { pdfjsPromise = null; throw error; });
     }
   }
   pdfjs = await pdfjsPromise;

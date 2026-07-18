@@ -13,8 +13,6 @@ import {
   hydration,
   incrementSseFails,
   isFollowup,
-  isUnread,
-  markRead,
   mode,
   nextOrder,
   nodes,
@@ -26,7 +24,6 @@ import {
   setClosedState,
   setConnLost,
   sessionPhase,
-  updateSince,
   view,
   viewAdjusted
 } from "./core.js";
@@ -321,13 +318,13 @@ function handleServer(msg){
       updateCardComposer(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); markRead(node); }
+        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); }
         else {
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
           upgradeMarks(readerMain, node.id);
           if (currentNodeId === node.parent_id){
-            if (isFollowup(node)){ updateThreadItem(node); markRead(node); } // you watched it land
+            if (isFollowup(node)) updateThreadItem(node);
             else renderMarginNotes();
           }
         }
@@ -335,8 +332,6 @@ function handleServer(msg){
       // Upgrade the inline mark inside the parent's canvas card too.
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      updateSince();
     } else if (msg.type === "node_deleted"){
       // Another surface (or a replayed event) removed a branch — mirror it.
       removeNodesLocal(msg.node_ids || [], null);

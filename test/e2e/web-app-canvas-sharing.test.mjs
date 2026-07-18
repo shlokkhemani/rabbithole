@@ -997,7 +997,7 @@ async function verifyCanvasBranching() {
 
   const sidebarTile = streamedSidebarTile;
   assert.deepEqual(await sidebarTile.evaluate((tile) => ({ role: tile.getAttribute("role"), tabIndex: tile.tabIndex, name: tile.getAttribute("aria-label") })),
-    { role: "link", tabIndex: 0, name: "Open branch: Why does this matter?, new" }, "settled sidebar tiles should expose named link semantics and new state");
+    { role: "link", tabIndex: 0, name: "Open branch: Why does this matter?" }, "settled sidebar tiles should expose named link semantics without activity state");
   await sidebarTile.focus();
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector('.crumb[aria-current="page"]')?.textContent === "Euler branch");

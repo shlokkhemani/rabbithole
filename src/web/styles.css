@@ -31,7 +31,6 @@ body.web-blank-canvas #palette,
 body.web-blank-canvas #sharemenu,
 body.web-blank-canvas #confirm,
 body.web-blank-canvas #banner,
-body.web-blank-canvas #since,
 body.web-blank-canvas #t-reader,
 body.web-blank-canvas #t-canvas,
 body.web-blank-canvas .tb-group > .sep,
@@ -647,6 +646,11 @@ body.blank-dragging #viewport::after {
   min-height: 44px;
   resize: none;
   font: var(--text-base)/var(--leading-ui) var(--font-ui);
+}
+
+.composer-card[data-path="paste"] #composer-input {
+  min-height: 220px;
+  max-height: min(45vh, 360px);
 }
 
 .composer-entry-actions {

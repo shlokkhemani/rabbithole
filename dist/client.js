@@ -1875,6 +1875,7 @@ var RabbitholeClient = (() => {
     "file-text": { size: 16, attrs: 'viewBox="0 0 16 16"', body: '<path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' },
     question: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M5.25 6.6A3.75 3.75 0 0 1 9 3a3.5 3.5 0 0 1 3.75 3.35c0 2.25-2.35 2.65-3.2 4.05-.25.4-.3.75-.3 1.1"/><path d="M9.25 14.5h.01"/>' },
     file: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M5 2.75h5l3 3v9.5H5z"/><path d="M10 2.75v3h3"/><path d="M7.25 9h3.5M7.25 11.75h3.5"/>' },
+    paste: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M6.25 4.25H5A1.75 1.75 0 0 0 3.25 6v8.25C3.25 15.2 4.05 16 5 16h8c.95 0 1.75-.8 1.75-1.75V6c0-.95-.8-1.75-1.75-1.75h-1.25"/><rect x="6.25" y="2.25" width="5.5" height="3.5" rx="1.25"/><path d="M9 8.25v4.25m-1.75-1.75L9 12.5l1.75-1.75"/>' },
     link: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="m7.15 10.85 3.7-3.7"/><path d="M6.05 12.95 4.9 14.1a2.85 2.85 0 0 1-4-4L3.8 7.2a2.85 2.85 0 0 1 4 0" transform="translate(2 0)"/><path d="m9.95 5.05 1.15-1.15a2.85 2.85 0 0 1 4 4l-2.9 2.9a2.85 2.85 0 0 1-4 0"/>' },
     plus: { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"', body: '<path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/>' },
     delete: { size: 16, attrs: STROKE_16, body: '<path d="M3.25 4.5h9.5"/><path d="M6.25 2.75h3.5"/><path d="M4.75 4.5l.6 8h5.3l.6-8"/>' },
@@ -2628,8 +2629,6 @@ var RabbitholeClient = (() => {
   var composerInner = null;
   var composerText = null;
   var composerSend = null;
-  var sinceEl = null;
-  var sinceMsg = null;
   var paletteEl = null;
   var palText = null;
   var palResults = null;
@@ -2685,8 +2684,6 @@ var RabbitholeClient = (() => {
     viewAdjusted = false;
     orderCounter = 0;
     loadingTimers.clear();
-    sinceDismissed = false;
-    sinceArmed = false;
     readerMain = document.getElementById("reader-main");
     breadcrumbEl = document.createElement("nav");
     breadcrumbEl.id = "breadcrumb";
@@ -2705,8 +2702,6 @@ var RabbitholeClient = (() => {
     composerInner = document.getElementById("composer-inner");
     composerText = document.getElementById("composer-text");
     composerSend = document.getElementById("composer-send");
-    sinceEl = document.getElementById("since");
-    sinceMsg = document.getElementById("since-msg");
     paletteEl = document.getElementById("palette");
     palText = document.getElementById("pal-text");
     palResults = document.getElementById("pal-results");
@@ -2717,14 +2712,6 @@ var RabbitholeClient = (() => {
       if (!closed) coreHooks.post({ type: "done" });
     });
     coreScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
-    coreScope.listen(document.getElementById("since-show"), "click", function(e) {
-      var un = unreadNodes();
-      if (un.length) goToNode(un[0], motionSourceFromEvent(e));
-    });
-    coreScope.listen(document.getElementById("since-x"), "click", function() {
-      sinceDismissed = true;
-      sinceEl.classList.remove("visible");
-    });
     coreScope.interval(updateLoadingTimers, 1e3);
     coreScope.addCleanup(function() {
       hintNotice == null ? void 0 : hintNotice.hide();
@@ -2768,10 +2755,8 @@ var RabbitholeClient = (() => {
     ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
     hintNotice = bannerNotice = null;
     composerInner = composerText = composerSend = null;
-    sinceEl = sinceMsg = paletteEl = palText = palResults = null;
+    paletteEl = palText = palResults = null;
     shareMenu = confirmEl = null;
-    sinceDismissed = false;
-    sinceArmed = false;
     reduceMotion = false;
     reduceMotionMql = null;
     coreHooks = defaultCoreHooks();
@@ -2813,9 +2798,6 @@ var RabbitholeClient = (() => {
   }
   function nextOrder() {
     return orderCounter++;
-  }
-  function armSince() {
-    sinceArmed = true;
   }
   function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -2975,50 +2957,15 @@ var RabbitholeClient = (() => {
     else oy = Math.max(0, Math.min(er.height, ay - er.top));
     el.style.transformOrigin = Math.round(ox) + "px " + Math.round(oy) + "px";
   }
-  function isUnread(n) {
-    return n.status === "answered" && !n.read && n.id !== rootId;
-  }
-  function markRead(node) {
-    if (!node || node.read) return;
-    node.read = true;
-    if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
-    if (node.el) node.el.classList.remove("unread");
-    updateSince();
-  }
-  function unreadNodes() {
-    var out = [];
-    for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
-    out.sort(function(a, b) {
-      return (a._order || 0) - (b._order || 0);
-    });
-    return out;
-  }
   function goToNode(node, source2) {
     if (!node) return;
     if (mode === "canvas") {
       coreHooks.ensureCanvasBuilt();
       coreHooks.diveToNode(node, source2);
       if (node.el) playLandingCue(node.el, "flash");
-      if (node.status === "answered") markRead(node);
     } else {
       coreHooks.openNode(node.id);
     }
-  }
-  var sinceDismissed = false;
-  var sinceArmed = false;
-  function updateSince() {
-    if (!sinceArmed || sinceDismissed || frozen) {
-      sinceEl.classList.remove("visible");
-      return;
-    }
-    var n = unreadNodes().length;
-    if (!n) {
-      sinceArmed = false;
-      sinceEl.classList.remove("visible");
-      return;
-    }
-    sinceMsg.textContent = n === 1 ? "An answer arrived while you were away" : n + " answers arrived while you were away";
-    sinceEl.classList.add("visible");
   }
   function lensLabel2(key) {
     return lensLabel(key);
@@ -29842,7 +29789,6 @@ ${text2}</tr>
     }
     renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
-    if (nodes[id].status === "answered") markRead(nodes[id]);
     readerLifecycle.hooks.scheduleViewSave();
   }
   function renderBreadcrumb() {
@@ -29984,9 +29930,6 @@ ${text2}</tr>
         thread.appendChild(buildThreadItem(k));
       });
       col.appendChild(thread);
-      fups.forEach(function(k) {
-        if (k.status === "answered") markRead(k);
-      });
     }
     var notes = document.createElement("div");
     notes.id = "margin-notes";
@@ -30119,7 +30062,7 @@ ${text2}</tr>
       var pending = k.status !== "answered";
       var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
       var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
-      var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
+      var status = pending ? pendingStatusHtml(k) : "open \u2192";
       var tile = noteNodes[k.id];
       if (!tile) {
         tile = document.createElement("div");
@@ -30142,7 +30085,7 @@ ${text2}</tr>
       tile._quote.hidden = !quote;
       tile._status.innerHTML = status;
       var name = k.origin && k.origin.synthesis ? "Synthesis" : k.origin && k.origin.question || k.title || "Untitled";
-      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
+      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : ""));
       if (pending && k.html) {
         if (!tile._live) {
           tile._live = document.createElement("div");
@@ -30588,7 +30531,6 @@ ${text2}</tr>
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
-    if (isUnread(node)) el.classList.add("unread");
     enableDrag(node, head);
     enableResize(node, resize);
     head.addEventListener("dblclick", function() {
@@ -30611,9 +30553,6 @@ ${text2}</tr>
       setNodeFontScale(node, 0.1);
     });
     body.addEventListener("scroll", scheduleEdges, { passive: true });
-    body.addEventListener("pointerdown", function() {
-      if (node.status === "answered") markRead(node);
-    });
     el.addEventListener("mouseenter", function() {
       focusOrigin(node, true);
     });
@@ -32806,7 +32745,7 @@ ${text2}</tr>
       if (n2.status === "pending") {
         row._flag.className = "pal-writing";
         row._flag.textContent = "writing\u2026";
-      } else if (isUnread(n2)) row._flag.className = "pal-dot";
+      }
       if (n2.origin && (n2.origin.synthesis || n2.origin.lens)) {
         row._badge.textContent = n2.origin.synthesis ? "\u2726 Synthesis" : lensLabel2(n2.origin.lens);
         row._badge.hidden = false;
@@ -33362,7 +33301,6 @@ ${text2}</tr>
       renderBreadcrumb();
       renderMarginNotes();
     }
-    updateSince();
   }
 
   // src/ui/hydrate.js
@@ -33411,10 +33349,6 @@ ${text2}</tr>
     }
     openNode(currentNodeId);
     if (vs && vs.mode === "canvas") setMode("canvas");
-    if (unreadNodes().length) {
-      armSince();
-      updateSince();
-    }
     if (typeof refreshStatus2 === "function") refreshStatus2();
     if (!frozen && typeof connectSse2 === "function") connectSse2();
   }
@@ -33935,21 +33869,16 @@ ${text2}</tr>
           renderReaderBody();
           renderMarginNotes();
           updateComposerState();
-          markRead(node);
         } else {
           upgradeMarks(readerMain, node.id);
           if (currentNodeId === node.parent_id) {
-            if (isFollowup(node)) {
-              updateThreadItem(node);
-              markRead(node);
-            } else renderMarginNotes();
+            if (isFollowup(node)) updateThreadItem(node);
+            else renderMarginNotes();
           }
         }
       }
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      updateSince();
     } else if (msg.type === "node_deleted") {
       removeNodesLocal(msg.node_ids || [], null);
     } else if (msg.type === "node_progress") {
@@ -34188,7 +34117,6 @@ ${text2}</tr>
 </div>
 
 <div id="reader">
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "\xD7" })}</div>
   <div id="reader-main"></div>
   <div id="composer">
     <div class="composer-inner" id="composer-inner">

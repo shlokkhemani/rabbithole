@@ -20,10 +20,56 @@ const { browser, baseUrl } = app;
 try {
   await verifyNoticePrimitive();
   await verifyStatefulCheckCycle();
+  await verifyBranchContentSizing();
   await verifySharedCanvasDialogs();
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyBranchContentSizing() {
+  const context = await browser.newContext();
+  await seedConfiguredOpenRouter(context);
+  const page = await context.newPage();
+  const longAnswer = `# Long answer\n\n${Array.from({ length: 80 }, (_, i) => `Paragraph ${i + 1} fills the branch with enough rendered content to require scrolling.`).join("\n\n")}`;
+  await routeProvider(page, { streams: [["# Brief answer\n\nJust enough."], [longAnswer]] });
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => !!window.__rabbitholeTest);
+  await createDocument(page, "# Sizing root\n\nAsk two follow-ups from here.");
+  await page.click("#t-reader");
+  await page.waitForSelector("#composer-text:visible");
+
+  await page.fill("#composer-text", "Give me a brief answer");
+  await page.click("#composer-send");
+  const shortCard = page.locator(".node:not(.root)", { hasText: "Brief answer" });
+  await shortCard.waitFor({ state: "attached" });
+  await page.click("#r-canvas");
+  await shortCard.waitFor();
+  const shortSize = await shortCard.evaluate((el) => ({ height: el.offsetHeight, cap: parseFloat(el.style.maxHeight), bodyClient: el.querySelector(".node-body").clientHeight, bodyScroll: el.querySelector(".node-body").scrollHeight }));
+  assert.equal(shortSize.cap, 460, "a branch should retain the saved/default height as its cap");
+  assert(shortSize.height < shortSize.cap, `short branch should hug its content (${shortSize.height}px < ${shortSize.cap}px)`);
+  assert(shortSize.bodyScroll <= shortSize.bodyClient + 1, "a short branch should not create an empty scrolling viewport");
+
+  await page.click("#t-reader");
+  await page.waitForSelector("#composer-text:visible");
+  await page.fill("#composer-text", "Give me a long answer");
+  await page.click("#composer-send");
+  const longCard = page.locator(".node:not(.root)", { hasText: "Long answer" });
+  await longCard.waitFor({ state: "attached" });
+  await page.click("#r-canvas");
+  await longCard.waitFor();
+  await page.waitForFunction(() => {
+    const cards = Array.from(document.querySelectorAll(".node:not(.root)"));
+    const card = cards.find((el) => el.textContent.includes("Long answer"));
+    const body = card?.querySelector(".node-body");
+    return !!body && body.scrollHeight > body.clientHeight + 1;
+  });
+  const longSize = await longCard.evaluate((el) => ({ height: el.offsetHeight, cap: parseFloat(el.style.maxHeight), bodyClient: el.querySelector(".node-body").clientHeight, bodyScroll: el.querySelector(".node-body").scrollHeight }));
+  assert.equal(longSize.height, longSize.cap, "a long branch should stop growing at its saved/default height");
+  assert(longSize.bodyScroll > longSize.bodyClient + 1, "content beyond the branch cap should remain scrollable");
+
+  await context.close();
+  console.log("ok web app: branch cards hug short content and cap long content at the saved height");
 }
 
 async function verifyStatefulCheckCycle() {

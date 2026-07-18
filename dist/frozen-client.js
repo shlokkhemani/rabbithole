@@ -30302,6 +30302,7 @@ ${text2}</tr>
   }
   var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
   var filmCameraHandle = null;
+  var cardResizeObserver = null;
   var activePointerGestures = /* @__PURE__ */ new Set();
   function registerCanvasHooks(hooks) {
     canvasLifecycle.register(hooks);
@@ -30309,6 +30310,7 @@ ${text2}</tr>
   function initCanvasView() {
     cleanupCanvasView(false);
     var canvasScope = canvasLifecycle.beginInit();
+    if (typeof ResizeObserver === "function") cardResizeObserver = new ResizeObserver(scheduleEdges);
     registerCoreHooks({
       ensureCanvasBuilt,
       diveToNode,
@@ -30346,6 +30348,8 @@ ${text2}</tr>
   function cleanupCanvasView(resetHooks) {
     var _a2;
     canvasLifecycle.dispose(resetHooks);
+    if (cardResizeObserver) cardResizeObserver.disconnect();
+    cardResizeObserver = null;
     activePointerGestures.forEach(function(cancel) {
       cancel();
     });
@@ -30497,6 +30501,7 @@ ${text2}</tr>
     node.el = el;
     node.bodyEl = body;
     node.titleEl = titleEl;
+    if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
@@ -30672,7 +30677,7 @@ ${text2}</tr>
     if (mode !== "canvas" || !n) return;
     var pad2 = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
     var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
-    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + n.h) * view.scale + view.y;
+    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + effH(n)) * view.scale + view.y;
     var dx = 0, dy = 0;
     if (x2 > vw - pad2) dx = vw - pad2 - x2;
     if (x1 + dx < pad2) dx = pad2 - x1;
@@ -30762,7 +30767,15 @@ ${text2}</tr>
     el.style.left = node.x + "px";
     el.style.top = node.y + "px";
     el.style.width = node.w + "px";
-    if (!node.collapsed) el.style.height = node.h + "px";
+    if (!node.collapsed) {
+      if (node.id === rootId) {
+        el.style.height = node.h + "px";
+        el.style.maxHeight = "";
+      } else {
+        el.style.height = "auto";
+        el.style.maxHeight = node.h + "px";
+      }
+    }
   }
   function onPointerGesture(handle, onDown, onMove, onUp, scope) {
     function pointerDown(e) {
@@ -30884,7 +30897,7 @@ ${text2}</tr>
     });
   }
   function effH(n) {
-    return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
+    return n.el ? n.el.offsetHeight || (n.collapsed ? 36 : n.h) : n.h;
   }
   function clamp2(lo, hi, v) {
     return Math.max(lo, Math.min(hi, v));
@@ -31299,7 +31312,7 @@ ${text2}</tr>
       minX = Math.min(minX, n.x);
       minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + n.w);
-      maxY = Math.max(maxY, n.y + (n.collapsed ? 40 : n.h));
+      maxY = Math.max(maxY, n.y + effH(n));
     });
     var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
     var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");

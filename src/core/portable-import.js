@@ -1,11 +1,13 @@
 import { validatePortableProjection } from "./portable-projection.js";
+import { maxAssetBytes } from "./assets.js";
 
-export const MAX_IMPORT_FILE_BYTES = 64 * 1024 * 1024;
-export const MAX_IMPORT_PAYLOAD_BYTES = 32 * 1024 * 1024;
+// A 100 MB source PDF expands to roughly 134 MB as base64. These caps protect
+// import memory without forcing source PDFs back through a lossy page pipeline.
+export const MAX_IMPORT_FILE_BYTES = 160 * 1024 * 1024;
+export const MAX_IMPORT_PAYLOAD_BYTES = 150 * 1024 * 1024;
 const MAX_IMPORT_NODES = 5000;
 export const MAX_IMPORT_ASSETS = 200;
-const MAX_IMPORT_ASSET_BYTES = 20 * 1024 * 1024;
-const MAX_IMPORT_AGGREGATE_ASSET_BYTES = 100 * 1024 * 1024;
+const MAX_IMPORT_AGGREGATE_ASSET_BYTES = 140 * 1024 * 1024;
 
 export const SNAPSHOT_PAYLOAD_OPEN = '<script type="application/vnd.rabbithole+json" id="rabbithole-portable">';
 export const SNAPSHOT_PAYLOAD_CLOSE = "</script>";
@@ -48,7 +50,7 @@ export function parsePortableImportPayload(text, kind = "rabbithole") {
 /** @param {string} text */
 function assertPayloadTextSize(text) {
   if (text.length > MAX_IMPORT_PAYLOAD_BYTES || new TextEncoder().encode(text).byteLength > MAX_IMPORT_PAYLOAD_BYTES) {
-    throw new Error("Import failed: portable payload exceeds 32 MB.");
+    throw new Error("Import failed: portable payload exceeds 150 MB.");
   }
 }
 
@@ -73,10 +75,12 @@ function preflightPortableImportCaps(raw) {
   for (const [name, encoded] of assets) {
     if (typeof encoded !== "string") continue;
     const decodedBytes = decodedBase64Size(encoded);
-    if (decodedBytes > MAX_IMPORT_ASSET_BYTES) throw new Error(`Import failed: asset ${name} exceeds 20 MB.`);
+    let limit = 20 * 1024 * 1024;
+    try { limit = maxAssetBytes(name); } catch {}
+    if (decodedBytes > limit) throw new Error(`Import failed: asset ${name} exceeds ${Math.round(limit / 1024 / 1024)} MB.`);
     aggregate += decodedBytes;
     if (aggregate > MAX_IMPORT_AGGREGATE_ASSET_BYTES) {
-      throw new Error("Import failed: decoded assets exceed 100 MB aggregate.");
+      throw new Error("Import failed: decoded assets exceed 140 MB aggregate.");
     }
   }
   return projection;

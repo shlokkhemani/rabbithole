@@ -1,77 +1,64 @@
 import assert from "node:assert/strict";
+import { MAX_PDF_SOURCE_BYTES } from "../../src/core/assets.js";
 import { createPortableProjection } from "../../src/core/portable-projection.js";
 import { parsePortableImportPayload, MAX_IMPORT_PAYLOAD_BYTES, MAX_IMPORT_ASSETS } from "../../src/core/portable-import.js";
-import { MAX_PDF_PAGE_ASSET_BYTES, MAX_PDF_FIGURE_ASSET_BYTES, buildPdfDocument } from "../../src/core/pdf-shared.js";
+import { MAX_PDF_FIGURE_ASSET_BYTES, buildPdfDocument } from "../../src/core/pdf-shared.js";
 
-// ---- cap coherence: the ingest budgets must fit through the export door -----
-// base64 inflates 4/3; leave >= 1.5 MB of headroom for JSON structure and a
-// large markdown body. If a budget bump ever breaks this, exports silently
-// stop being importable — fail here instead.
-const CROP_BYTES = 64 * 1024; // representative persisted 1568px JPEG clip
-const inflated = Math.ceil(((MAX_PDF_PAGE_ASSET_BYTES + MAX_PDF_FIGURE_ASSET_BYTES + CROP_BYTES) * 4) / 3);
+// A maximum source PDF plus the complete durable figure budget must still fit
+// through the base64 portable format with room for document JSON.
+const inflatedAssetBudget = Math.ceil(((MAX_PDF_SOURCE_BYTES + MAX_PDF_FIGURE_ASSET_BYTES) * 4) / 3);
 assert(
-  inflated + 1.5 * 1024 * 1024 <= MAX_IMPORT_PAYLOAD_BYTES,
-  `PDF asset budgets (${inflated} base64 bytes) leave no headroom under the ${MAX_IMPORT_PAYLOAD_BYTES} payload cap`,
+  inflatedAssetBudget + 8 * 1024 * 1024 <= MAX_IMPORT_PAYLOAD_BYTES,
+  `PDF source and figure budgets leave insufficient JSON headroom under the ${MAX_IMPORT_PAYLOAD_BYTES} payload cap`,
 );
 
-// ---- a maxed-out converted PDF hole round-trips through the portable format --
 const PAGE_COUNT = 40;
 const FIGURE_COUNT = 30;
-const pageBytes = Math.floor((MAX_PDF_PAGE_ASSET_BYTES * 0.98) / PAGE_COUNT);
-const figureBytes = Math.floor((MAX_PDF_FIGURE_ASSET_BYTES * 0.98) / FIGURE_COUNT);
-
+const sha256 = "ab".repeat(32);
+const sourceAsset = `pdf-${sha256}.pdf`;
 const pageLines = Array.from({ length: PAGE_COUNT }, (_, i) => ({
   page: i + 1,
-  lines: Array.from({ length: 45 }, (_, j) => ({ text: `Page ${i + 1} line ${j} of representative dense body text for sizing.`, x: 0.08, y: 0.02 * j, w: 0.84, h: 0.018 })),
+  lines: Array.from({ length: 45 }, (_, j) => ({ text: `Page ${i + 1} line ${j} of representative dense body text for sizing.` })),
 }));
 const built = buildPdfDocument({
-  title: "Near-cap fixture",
+  title: "Source-backed fixture",
   pageCount: PAGE_COUNT,
   processedPages: pageLines.map((entry) => entry.page),
-  pageAssets: pageLines.map((entry) => ({ page: entry.page, name: `page-${String(entry.page).padStart(3, "0")}.jpg`, width: 1224, height: 1584 })),
+  pageMetadata: pageLines.map((entry) => ({ n: entry.page, view: [0, 0, 612, 792], rotate: 0, user_unit: 1 })),
   pageLines,
   notes: [],
+  source: { asset: sourceAsset, sha256, byte_length: 1024 * 1024 },
 });
 
 const hole = {
   schema_version: 2,
-  hole_id: "near-cap",
-  title: "Near-cap fixture",
+  hole_id: "source-backed-portable",
+  title: "Source-backed fixture",
   root_id: "root",
   created_at: "2026-07-11T00:00:00.000Z",
   updated_at: "2026-07-11T00:00:00.000Z",
   view_state: null,
   nodes: [{
-    id: "root", parent_id: null, title: "Near-cap fixture", markdown: built.markdown,
+    id: "root", parent_id: null, title: "Source-backed fixture", markdown: built.markdown,
     base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null,
     font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-07-11T00:00:00.000Z",
-    extensions: { pdf: { ...built.pdfExtension, converted: false, original_markdown: null } },
-  }, {
-    id: "clip", parent_id: "root", title: "Clip", markdown: "Clean answer",
-    base_url: null, base_url_source: null, origin: { crop_asset: "crop-clip.jpg" },
-    position: { x: 400, y: 0 }, size: null, font_scale: 1, collapsed: false,
-    status: "answered", read: false, created_at: "2026-07-13T00:00:00.000Z", extensions: {},
+    extensions: { pdf: built.pdfExtension },
   }],
 };
 
-const assets = {};
-const filler = (bytes, seed) => Buffer.alloc(bytes, seed % 251).toString("base64");
-for (const page of built.pdfExtension.pages) assets[page.asset] = filler(pageBytes, page.n);
-for (let i = 1; i <= FIGURE_COUNT; i++) assets[`fig-p${String(i).padStart(3, "0")}-1.jpg`] = filler(figureBytes, 100 + i);
-assets["crop-clip.jpg"] = filler(CROP_BYTES, 200);
+const assets = { [sourceAsset]: Buffer.alloc(1024 * 1024, 37).toString("base64") };
+for (let i = 1; i <= FIGURE_COUNT; i++) {
+  assets[`fig-p${String(i).padStart(3, "0")}-1.png`] = Buffer.alloc(16 * 1024, i).toString("base64");
+}
 assert(Object.keys(assets).length <= MAX_IMPORT_ASSETS);
 
 const payload = JSON.stringify(createPortableProjection(hole, assets));
-assert(
-  payload.length <= MAX_IMPORT_PAYLOAD_BYTES,
-  `near-cap export serialized to ${payload.length} bytes — over the ${MAX_IMPORT_PAYLOAD_BYTES} import cap`,
-);
-assert(payload.length > MAX_IMPORT_PAYLOAD_BYTES * 0.85, "fixture should genuinely crowd the cap, not sit far below it");
-
+assert(payload.length < MAX_IMPORT_PAYLOAD_BYTES);
 const parsed = parsePortableImportPayload(payload, "rabbithole");
-assert.equal(parsed.hole.hole_id, "near-cap");
-assert.equal(Object.keys(parsed.assets).length, PAGE_COUNT + FIGURE_COUNT + 1);
+assert.equal(parsed.hole.hole_id, "source-backed-portable");
+assert.equal(Object.keys(parsed.assets).length, FIGURE_COUNT + 1);
+assert.deepEqual(parsed.hole.nodes[0].extensions.pdf.source, built.pdfExtension.source);
 assert.equal(parsed.hole.nodes[0].extensions.pdf.pages.length, PAGE_COUNT);
-assert.equal(parsed.hole.nodes[1].origin.crop_asset, "crop-clip.jpg");
+assert.equal(parsed.hole.nodes[0].extensions.pdf.pages.some((page) => "asset" in page), false, "pages must carry geometry, never persistent rasters");
 
-console.log(`ok PDF portability caps: budgets cohere with the export door; near-cap hole (${(payload.length / 1024 / 1024).toFixed(1)} MB payload) re-imports`);
+console.log(`ok PDF portability caps: a 100 MB source budget fits the export door and source-backed v2 round-trips (${(payload.length / 1024 / 1024).toFixed(1)} MB fixture)`);

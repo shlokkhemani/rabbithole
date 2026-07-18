@@ -396,6 +396,7 @@ function animateView(tx, ty, ts, opts){
 export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
     var previous = body.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
+    body.classList.remove("pdf-body");
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
       var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";
@@ -412,6 +413,7 @@ export function fillBody(node){
     if (crop) body.appendChild(crop);
     var dc = buildDocContent(node, CANVAS_BASE);
     body.appendChild(dc);
+    body.classList.toggle("pdf-body", dc.classList.contains("rh-pdf"));
     applyChildHighlights(dc, node);
   }
   function setNodeFontScale(node, delta){
@@ -643,17 +645,17 @@ function focusOrigin(node, on){
     setEdgeHighlight(node.id, on);
     var p = node.parent_id ? nodes[node.parent_id] : null;
     if (p && p.bodyEl){
-      var marks = p.bodyEl.querySelectorAll('mark[data-child="' + node.id + '"]');
+      var marks = p.bodyEl.querySelectorAll('[data-child="' + node.id + '"]');
       for (var i = 0; i < marks.length; i++) marks[i].classList.toggle("mark-focus", on);
     }
   }
   // Hovering the highlighted text lights up the edge to the branch it spawned.
   function onWorldMouseOver(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
+    var m = e.target.closest && e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
     if (m) setEdgeHighlight(m.dataset.child, true);
   }
   function onWorldMouseOut(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
+    var m = e.target.closest && e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
     if (m) setEdgeHighlight(m.dataset.child, false);
   }
 
@@ -719,6 +721,9 @@ function focusOrigin(node, on){
     }
     function onTouchDown(event){
       if (event.pointerType !== "touch") return;
+      // A gesture that begins in a native PDF belongs to that PDF's local
+      // zoom/scroll state. The canvas must never join it when finger two lands.
+      if (event.target.closest && event.target.closest(".rh-pdf-scroll")) return;
       if (touches.size >= 2){ event.preventDefault(); event.stopPropagation(); return; }
       var point = touchPoint(event);
       touches.set(event.pointerId, point);

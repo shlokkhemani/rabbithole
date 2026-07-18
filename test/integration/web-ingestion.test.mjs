@@ -6,6 +6,7 @@ import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 import { ensureWebDist } from "../support/build.mjs";
 import { serveStatic } from "../support/static-server.mjs";
 import { corsHeaders, sse } from "../support/provider-mock.mjs";
+import { ATTENTION_PDF_PAGE_COUNT, ATTENTION_PDF_SHA256, readAttentionPdf, readAttentionPdfTwoPage } from "../support/attention-pdf.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -34,6 +35,7 @@ await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.s
   generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
 })));
 const page = await context.newPage();
+page.on("pageerror", (error) => process.stderr.write(`browser page error: ${error.stack || error.message}\n`));
 const requests = [];
 let directArticleCalls = 0;
 const answerBodies = [];
@@ -99,15 +101,12 @@ try {
   await page.waitForSelector("#composer-path-file");
 
   requests.length = 0;
-  const pdfBytes = buildTinyPdf([
-    "Browser PDF page one: Euler math e^(i*pi)+1=0",
-    "Browser PDF page two: Integral int_0^1 x dx = 1/2",
-  ]);
-  await dropPdf(page, pdfBytes, "MaTh-FiXtUrE.PdF", "");
+  const pdfBytes = await readAttentionPdf();
+  await dropPdf(page, pdfBytes, "AtTeNtIoN-Is-AlL-YoU-NeEd.PdF", "");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.waitForFunction(() => {
-    const img = document.querySelector(".node .doc-content[data-node-id] img");
-    return !!img && img.complete && img.naturalWidth > 0;
+    const canvas = document.querySelector(".node .rh-pdf-canvas-generation canvas");
+    return !!canvas && canvas.width > 0 && canvas.height > 0;
   });
 
   const externalDuringPdf = requests.filter((url) => !url.startsWith(baseUrl) && !url.startsWith("blob:") && !url.startsWith("http://localhost:11434/"));
@@ -118,33 +117,61 @@ try {
     const holeId = window.__rabbitholeTest.currentHoleId();
     const { names: assets, sizes } = await window.__rabbitholeTest.inspectAssets(holeId);
     const raw = await window.__rabbitholeTest.readStoredHole(holeId);
-    return { assets, sizes, raw: JSON.stringify(raw) };
+    const root = raw.nodes.find((node) => !node.parent_id);
+    const canvas = document.querySelector(".node .rh-pdf-canvas-generation canvas");
+    const rect = canvas.getBoundingClientRect();
+    return { assets, sizes, root, backingRatio: canvas.width / rect.width, raw: JSON.stringify(raw) };
   });
-  assert.deepEqual(pdfState.assets, ["page-001.webp", "page-002.webp"]);
-  assert(pdfState.sizes["page-001.webp"] > 100, "page-001.webp should be stored as a non-empty Blob");
-  assert(!pdfState.raw.includes("asset:page-001.webp"), "model markdown must not contain page-image refs");
-  assert(pdfState.raw.includes('"version":1'));
-  assert(pdfState.raw.includes("Browser PDF page one"));
-  assert(pdfState.raw.includes("Integral int_0^1"));
+  assert.equal(pdfState.assets.length, 1, "PDF import must persist exactly one source asset");
+  assert.match(pdfState.assets[0], /^pdf-[a-f0-9]{64}\.pdf$/);
+  assert.equal(pdfState.sizes[pdfState.assets[0]], pdfBytes.length, "stored source must be byte-identical in size");
+  assert.equal(pdfState.root.extensions.pdf.version, 2);
+  assert.equal(pdfState.root.extensions.pdf.page_count, ATTENTION_PDF_PAGE_COUNT);
+  assert.equal(pdfState.root.extensions.pdf.source.sha256, ATTENTION_PDF_SHA256);
+  assert.equal(pdfState.root.extensions.pdf.source.asset, pdfState.assets[0]);
+  assert.equal(pdfState.root.extensions.pdf.pages.some((entry) => "asset" in entry), false, "page metadata must not point at raster assets");
+  assert(pdfState.backingRatio >= 0.95, `page backing store must match effective on-screen pixels: ${pdfState.backingRatio}`);
+  assert(pdfState.raw.includes("Attention Is All You Need"));
+  assert(pdfState.raw.includes("The dominant sequence transduction models"));
+
+  const localZoomBefore = await page.evaluate(() => ({
+    world: document.querySelector("#world").style.transform,
+    width: document.querySelector(".node .rh-pdf-page").getBoundingClientRect().width,
+    label: document.querySelector(".node .rh-pdf-zoom-value").textContent,
+  }));
+  await page.locator(".node .rh-pdf-scroll").hover();
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Control");
+  await page.waitForFunction((label) => document.querySelector(".node .rh-pdf-zoom-value")?.textContent !== label, localZoomBefore.label);
+  const localZoom = { before: localZoomBefore, after: await page.evaluate(() => ({
+    world: document.querySelector("#world").style.transform,
+    width: document.querySelector(".node .rh-pdf-page").getBoundingClientRect().width,
+    label: document.querySelector(".node .rh-pdf-zoom-value").textContent,
+  })) };
+  assert.equal(localZoom.after.world, localZoom.before.world, "Ctrl+wheel over a PDF must never zoom the canvas camera");
+  assert.notEqual(localZoom.after.label, localZoom.before.label, "Ctrl+wheel must update local PDF zoom");
+  assert(localZoom.after.width > localZoom.before.width, "local PDF zoom must enlarge the source-rendered page");
+  await page.click(".node .rh-pdf-zoom-value");
   const selected = await page.evaluate(() => {
-    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("e^(i*pi)+1=0"));
-    const text = span.firstChild, start = text.data.indexOf("e^(i*pi)+1=0"), range = document.createRange();
-    range.setStart(text, start); range.setEnd(text, start + "e^(i*pi)+1=0".length);
+    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent === "Attention Is All You Need");
+    const text = span.firstChild, range = document.createRange();
+    range.setStart(text, 0); range.setEnd(text, "Attention".length);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     const picked = selection.toString(); // the ask box focuses on open, collapsing the native selection
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     return picked;
   });
-  assert.equal(selected, "e^(i*pi)+1=0");
+  assert.equal(selected, "Attention");
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   const mark = page.locator(".node .rh-pdf-mark.mark-ready").first();
   await mark.waitFor();
   assert.equal(await page.locator(".node .rh-pdf-convert").count(), 0, "creating the first branch should immediately remove the text-version action");
   assert.equal(answerBodies.length, 2, "vision rejection should trigger exactly one text-only retry");
-  assert(Array.isArray(answerBodies[0].messages.at(-1).content), "equation selection should ship multimodal content parts");
+  assert(Array.isArray(answerBodies[0].messages.at(-1).content), "paper text selection should ship multimodal content parts");
   assert.equal(answerBodies[0].messages.at(-1).content[1].type, "image_url");
-  assert.match(answerBodies[0].messages.at(-1).content[1].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.match(answerBodies[0].messages.at(-1).content[1].image_url.url, /^data:image\/png;base64,/);
   assert.equal(typeof answerBodies[1].messages.at(-1).content, "string", "fallback attempt must be text-only");
   assert.equal(await mark.getAttribute("role"), "link");
   assert.equal(await mark.getAttribute("tabindex"), "0");
@@ -154,41 +181,26 @@ try {
     const node = hole.nodes.find((entry) => entry.parent_id);
     return { id: node.id, anchor: node.origin?.anchor, cropAsset: node.origin?.crop_asset, markdown: node.markdown };
   });
-  assert.equal(firstClip.anchor.pdf.page, 1);
-  assert(firstClip.anchor.offset_end > firstClip.anchor.offset_start);
-  assert(firstClip.anchor.pdf.rect.w > 0 && firstClip.anchor.pdf.rect.h > 0);
-  assert.match(firstClip.cropAsset, /^crop-[a-z0-9-]+\.jpg$/);
+  assert.equal(firstClip.anchor.pdf.version, 2);
+  assert.equal(firstClip.anchor.pdf.kind, "text");
+  assert.equal(firstClip.anchor.pdf.fragments[0].page, 1);
+  assert.equal(firstClip.anchor.pdf.source_sha256, pdfState.root.extensions.pdf.source.sha256);
+  assert(firstClip.anchor.pdf.fragments[0].quads[0].every((point) => point.every(Number.isFinite)));
+  assert.equal(firstClip.cropAsset, undefined, "v2 provenance stores coordinates, never a crop image");
   assert.equal(firstClip.markdown.includes("asset:"), false, "clip provenance must not enter the answer body");
 
   const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
-  assert.equal(await boxToggle.textContent(), "Ask about an area");
-  assert.equal(await boxToggle.getAttribute("aria-label"), "Ask about an area of the PDF");
-  const pdfToolbar = page.locator(".node .rh-pdf-toolbar").first();
-  await pdfToolbar.evaluate((el) => { const body = el.closest(".node-body"); body.scrollTop = 0; body.dispatchEvent(new Event("scroll")); });
-  assert.equal(await pdfToolbar.evaluate((el) => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)", "the resting PDF toolbar should have no dark container");
-  const toolbarScroll = await pdfToolbar.evaluate((el) => { const body = el.closest(".node-body"); body.scrollTop = 40; body.dispatchEvent(new Event("scroll")); return { top: body.scrollTop, height: body.clientHeight, content: body.scrollHeight }; });
-  assert(toolbarScroll.top > 8, `PDF body should be scrollable for sticky-toolbar coverage: ${JSON.stringify(toolbarScroll)}`);
-  await page.waitForFunction(() => document.querySelector(".node .rh-pdf-toolbar")?.classList.contains("is-stuck"));
-  assert.equal(await pdfToolbar.evaluate((el) => el.getAnimations().some((animation) => animation.id === "pdf-toolbar-dock" && animation.effect.getTiming().duration === 140)), true, "docking should use the restrained position transition");
-  await page.waitForFunction(() => !Array.from(document.querySelector(".node .rh-pdf-toolbar").getAnimations()).some((animation) => animation.id === "pdf-toolbar-dock" && animation.playState === "running"));
-  const dockedGeometry = await pdfToolbar.evaluate((el) => {
-    const node = el.closest(".node"), body = node.querySelector(".node-body"), head = node.querySelector(".node-head");
-    const barRect = el.getBoundingClientRect(), headRect = head.getBoundingClientRect();
-    return { directChild: el.parentElement === node, topGap: barRect.top - headRect.bottom, leftGap: barRect.left - headRect.left, rightGap: headRect.right - barRect.right };
-  });
-  assert.equal(dockedGeometry.directChild, true, "the compact toolbar should dock outside the scrollbar-bearing body");
-  assert(Math.abs(dockedGeometry.topGap) < 1 && Math.abs(dockedGeometry.leftGap) < 1 && Math.abs(dockedGeometry.rightGap) < 1, `docked toolbar should be flush and symmetric: ${JSON.stringify(dockedGeometry)}`);
-  await pdfToolbar.evaluate((el) => { const body = el.closest(".node").querySelector(".node-body"); body.scrollTop = 0; body.dispatchEvent(new Event("scroll")); });
-  await page.waitForFunction(() => !document.querySelector(".node .rh-pdf-toolbar.is-stuck"));
-  assert.equal(await pdfToolbar.evaluate((el) => el.parentElement.classList.contains("rh-pdf")), true, "the toolbar should return to the PDF at the top");
+  assert.equal(await boxToggle.textContent(), "Select area");
+  assert.equal(await boxToggle.getAttribute("aria-label"), "Select an exact PDF region");
   await boxToggle.click();
-  await page.waitForSelector(".node .rh-pdf-box-hint.visible");
+  await page.waitForSelector(".node .rh-pdf.rh-pdf-box-mode");
   assert.equal(await boxToggle.getAttribute("aria-pressed"), "true");
   await page.keyboard.press("Escape");
-  await page.waitForFunction(() => !document.querySelector(".node .rh-pdf-box-hint.visible"));
+  await page.waitForFunction(() => !document.querySelector(".node .rh-pdf.rh-pdf-box-mode"));
   assert.equal(await boxToggle.getAttribute("aria-pressed"), "false", "Escape must exit region-select mode");
   await boxToggle.click();
   const secondPage = page.locator(".node .rh-pdf-page[data-page='2']").first();
+  await secondPage.scrollIntoViewIfNeeded();
   const pageBox = await secondPage.boundingBox();
   await page.mouse.move(pageBox.x + pageBox.width * .05, pageBox.y + pageBox.height * .65);
   await page.mouse.down();
@@ -197,7 +209,7 @@ try {
   await page.waitForSelector("#ask.visible");
   holdNextAnswer = true;
   await page.click('#ask-lenses .lens[data-lens="explain"]');
-  await page.waitForFunction(() => document.querySelectorAll(".node .rh-origin-crop img").length >= 2);
+  await page.waitForFunction(() => document.querySelectorAll(".node").length >= 3);
   const pendingBoxClip = await page.evaluate(async () => {
     const hole = await window.__rabbitholeTest.readStoredHole();
     const node = hole.nodes.filter((entry) => entry.parent_id).at(-1);
@@ -205,11 +217,10 @@ try {
     return {
       id: node.id,
       cropAsset: node.origin?.crop_asset,
-      hasCrop: !!card?.querySelector(".rh-origin-crop img"),
       pending: !!card?.querySelector(".loading, .stream-status"),
     };
   });
-  assert.equal(pendingBoxClip.hasCrop, true, "the clip must be present on the card's first visible pending frame");
+  assert.equal(pendingBoxClip.cropAsset, undefined, "pending v2 branches must remain coordinate-only");
   assert.equal(pendingBoxClip.pending, true, "provider response should still be held while the clip is visible");
   for (let i = 0; i < 100 && !releaseHeldAnswer; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   assert(releaseHeldAnswer, "box answer route should be held for the pending-origin assertion");
@@ -218,16 +229,23 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".rh-pdf-box-draft").length === 0, undefined, { timeout: 5000 });
   assert.equal(answerBodies.length, 3);
   assert(Array.isArray(answerBodies[2].messages.at(-1).content), "box ask should ship its crop as an image part");
+  const boxImageUrl = answerBodies[2].messages.at(-1).content[1].image_url.url;
+  assert.match(boxImageUrl, /^data:image\/png;base64,/);
   const boxClip = await page.evaluate(async () => {
     const hole = await window.__rabbitholeTest.readStoredHole();
-    const node = hole.nodes.find((entry) => entry.id === document.querySelectorAll(".node .rh-origin-crop")[1]?.closest(".node")?.dataset.id);
+    const node = hole.nodes.filter((entry) => entry.parent_id).at(-1);
     const portable = await window.__rabbitholeTest.exportPortable();
-    return { id: node.id, anchor: node.origin.anchor, cropAsset: node.origin.crop_asset, cropBase64: portable.assets[node.origin.crop_asset], markdown: node.markdown };
+    return { id: node.id, anchor: node.origin.anchor, cropAsset: node.origin.crop_asset, assetNames: Object.keys(portable.assets), markdown: node.markdown };
   });
   assert.equal(boxClip.id, pendingBoxClip.id);
-  assert.equal(boxClip.anchor.pdf.page, 2); assert(boxClip.anchor.pdf.rect.w > .8, "drawn box should persist normalized geometry");
-  assert.equal(answerBodies[2].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64, "model payload must use the stored crop bytes");
-  assert.equal(boxClip.markdown.includes(boxClip.cropAsset), false, "answer markdown must stay clean of crop provenance");
+  assert.equal(boxClip.anchor.pdf.version, 2);
+  assert.equal(boxClip.anchor.pdf.kind, "region");
+  assert.equal(boxClip.anchor.pdf.fragments[0].page, 2);
+  const boxQuad = boxClip.anchor.pdf.fragments[0].quads[0];
+  assert(Math.max(...boxQuad.map((point) => point[0])) - Math.min(...boxQuad.map((point) => point[0])) > 300, "drawn box should persist a wide exact PDF-space quad");
+  assert.equal(boxClip.cropAsset, undefined);
+  assert.deepEqual(boxClip.assetNames, [pdfState.root.extensions.pdf.source.asset], "portable state must contain the source PDF, never interaction crops");
+  assert.equal(boxClip.markdown.includes("asset:"), false, "answer markdown must stay clean of crop provenance");
 
   const boxCard = page.locator(`.node[data-id="${boxClip.id}"]`);
   rejectNextInheritedImage = true;
@@ -237,8 +255,8 @@ try {
   await page.waitForFunction(() => window.__rabbitholeTest && document.querySelectorAll(".node").length >= 4);
   for (let i = 0; i < 100 && answerBodies.length < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   assert(Array.isArray(answerBodies[3].messages.at(-1).content), "follow-up from a clip card must inherit its image");
-  assert.equal(answerBodies[3].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64);
-  assert.match(answerBodies[3].messages.at(-1).content[0].text, /^Parent clip image: attached/);
+  assert.equal(answerBodies[3].messages.at(-1).content[1].image_url.url, boxImageUrl, "follow-ups must re-render the same source region deterministically");
+  assert.match(answerBodies[3].messages.at(-1).content[0].text, /^Selection region image: attached/);
   assert.equal(typeof answerBodies[4].messages.at(-1).content, "string", "inherited images must use the same text-only retry path");
 
   await page.evaluate((clipId) => {
@@ -255,30 +273,12 @@ try {
   await page.click("#ask-go");
   for (let i = 0; i < 100 && answerBodies.length < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   assert(Array.isArray(answerBodies[5].messages.at(-1).content), "text selection from a clip card must inherit its image");
-  assert.equal(answerBodies[5].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64);
-
-  await boxCard.locator(".node-head").evaluate((el) => el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-  await page.waitForSelector(`.reader-col .rh-origin-crop-reader img[src]`);
-  assert.equal(await page.locator(".reader-col .rh-origin-crop-reader").count(), 1, "reader must render clip provenance in its origin slot");
-  await page.click("#t-canvas");
-
-  await page.evaluate(async ({ name }) => {
-    const holeId = window.__rabbitholeTest.currentHoleId();
-    const db = await new Promise((resolve, reject) => { const req = indexedDB.open("rabbithole-browser"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
-    const tx = db.transaction("assets", "readwrite"); tx.objectStore("assets").delete([holeId, name]);
-    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); });
-    db.close();
-  }, { name: firstClip.cropAsset });
-  const firstCard = page.locator(`.node[data-id="${firstClip.id}"]`);
-  await firstCard.locator(".nc-handle").evaluate((el) => el.click());
-  await firstCard.locator(".nc-inner textarea").fill("Can you continue without the file?");
-  await firstCard.locator(".send-btn").evaluate((el) => el.click());
-  for (let i = 0; i < 100 && answerBodies.length < 7; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(typeof answerBodies[6].messages.at(-1).content, "string", "a missing inherited crop must degrade to text-only");
+  assert.equal(answerBodies[5].messages.at(-1).content[1].image_url.url, boxImageUrl);
 
   await boxCard.locator(".node-btn.danger").evaluate((el) => el.click());
   await page.click("#cf-remove");
-  await page.waitForFunction(async (name) => !(await window.__rabbitholeTest.inspectAssets()).names.includes(name), boxClip.cropAsset);
+  await page.waitForFunction((id) => !document.querySelector(`.node[data-id="${id}"]`), boxClip.id);
+  assert.deepEqual((await page.evaluate(async () => (await window.__rabbitholeTest.inspectAssets()).names)), [pdfState.root.extensions.pdf.source.asset], "deleting a branch must not delete the source still owned by the PDF root");
   await reloadReadyApp(page);
   await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
   await page.waitForSelector(".rh-pdf-mark.mark-ready", { state: "attached" });
@@ -368,7 +368,8 @@ try {
   // ---- Text version: full journey, figures land as live assets -------------
   await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
-  await dropPdf(page, buildTinyPdf(["Convert journey page one", "Convert journey page two"]), "convert-journey.pdf");
+  const attentionTwoPages = await readAttentionPdfTwoPage();
+  await dropPdf(page, attentionTwoPages, "attention-convert.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.click(".node .rh-pdf-convert");
   await page.waitForFunction(() => {
@@ -387,10 +388,10 @@ try {
     return { root: hole.nodes.find((node) => !node.parent_id), names };
   });
   assert.equal(convertedState.root.extensions.pdf.converted, true);
-  assert.match(convertedState.root.extensions.pdf.original_markdown, /Convert journey page one/, "the native body must stay stashed");
+  assert.match(convertedState.root.extensions.pdf.original_markdown, /Attention Is All You Need/, "the native paper body must stay stashed");
   assert.equal(convertedState.root.extensions.pdf.pages.length, 2, "the page stash must survive conversion");
-  assert.match(convertedState.root.markdown, /!\[Attention diagram\]\(asset:fig-p002-1\.jpg\)/);
-  assert(convertedState.names.includes("fig-p002-1.jpg"));
+  assert.match(convertedState.root.markdown, /!\[Attention diagram\]\(asset:fig-p002-1\.png\)/);
+  assert(convertedState.names.includes("fig-p002-1.png"));
   await reloadReadyApp(page);
   await page.waitForFunction(() => {
     const dc = document.querySelector(".node .doc-content:not(.rh-pdf)");
@@ -401,13 +402,13 @@ try {
   transcribeMode = "hang";
   await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
-  await dropPdf(page, buildTinyPdf(["Abort page one", "Abort page two"]), "abort-journey.pdf");
+  await dropPdf(page, attentionTwoPages, "attention-cancel.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
   await page.click(".node .rh-pdf-convert");
   await page.waitForSelector(".node .rh-pdf-convert-progress");
   assert.match(await page.textContent(".node .rh-pdf-convert-progress"), /Creating text version/);
   assert((await page.locator(".node .rh-pdf-convert-progress .sk-line").count()) > 0, "converting must show the loading skeleton");
-  assert(!(await page.textContent(".node .doc-content")).includes("Abort page one"), "the raw extraction must not render while converting");
+  assert(!(await page.textContent(".node .doc-content")).includes("Attention Is All You Need"), "the raw paper extraction must not render while converting");
   await page.click(".node .rh-pdf-convert-cancel");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   const abortedState = await page.evaluate(async () => {
@@ -415,20 +416,21 @@ try {
     return hole.nodes.find((node) => !node.parent_id);
   });
   assert.equal(abortedState.extensions.pdf.converting, false);
-  assert.match(abortedState.markdown, /Abort page one/, "cancel must keep the native body");
+  assert.match(abortedState.markdown, /Attention Is All You Need/, "cancel must keep the native paper body");
   transcribeMode = "stream";
 
   // ---- Convert is disabled once the document has branches ------------------
+  await page.waitForFunction(() => [...document.querySelectorAll(".node .rh-pdf-textlayer span")].some((el) => el.textContent === "Attention Is All You Need"));
   const askSelected = await page.evaluate(() => {
-    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("Abort page one"));
+    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent === "Attention Is All You Need");
     const text = span.firstChild, range = document.createRange();
-    range.setStart(text, 0); range.setEnd(text, 5);
+    range.setStart(text, 0); range.setEnd(text, 9);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     const picked = selection.toString(); // the ask box focuses on open, collapsing the native selection
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     return picked;
   });
-  assert.equal(askSelected, "Abort");
+  assert.equal(askSelected, "Attention");
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   await page.locator(".node .rh-pdf-mark.mark-ready").first().waitFor();
@@ -450,7 +452,7 @@ try {
   localVisionAvailable = false;
   await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
-  await dropPdf(page, buildTinyPdf(["Local text-only model PDF"]), "no-local-vision.pdf");
+  await dropPdf(page, attentionTwoPages, "attention-no-local-vision.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await page.waitForSelector(".node .rh-pdf-convert:disabled");
   assert.equal(await page.locator(".node .rh-pdf-transcription-note").innerText(), "Install a local model that supports vision to enable PDF transcription.");

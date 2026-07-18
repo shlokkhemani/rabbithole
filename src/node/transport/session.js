@@ -5,7 +5,7 @@ import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
 import { addAssetsToHole, defaultFsStore, resolveAsset } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
-import { cropAssetNameForNode, extractNodeAssetRefs } from "../../core/assets.js";
+import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
@@ -16,7 +16,7 @@ import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
 import { TRANSCRIBE_V1_RULES } from "../../core/prompts/transcribe-v1.js";
-import { cropPdfFigureToAsset, cropPdfRegionToAsset, cropPdfRegionToFile, sweepPdfRegionFiles } from "../pdf-crop.js";
+import { cropPdfFigureToAsset, cropPdfRegionToFile, renderPdfPageToFile, sweepPdfRegionFiles } from "../pdf-crop.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -591,8 +591,8 @@ export class RabbitHoleSession {
       // Figures share the export headroom — past the byte budget or asset cap
       // they degrade to caption text, never fail the conversion.
       if (page && ref.rect && this.assetNames.size < 200 && figureBudget.bytes < MAX_PDF_FIGURE_ASSET_BYTES) try {
-        const name = `fig-p${String(ref.page).padStart(3, "0")}-${++ordinal}.jpg`;
-        const { bytes } = await cropPdfFigureToAsset({ holeId: this.holeId, asset: page.asset, rect: ref.rect, name });
+        const name = `fig-p${String(ref.page).padStart(3, "0")}-${++ordinal}.png`;
+        const { bytes } = await cropPdfFigureToAsset({ holeId: this.holeId, asset: pdf.source.asset, pageNumber: page.n, rect: ref.rect, name });
         if (figureBudget.bytes + bytes > MAX_PDF_FIGURE_ASSET_BYTES) { await defaultFsStore.deleteAsset(this.holeId, name).catch(() => {}); throw new Error("figure budget"); }
         figureBudget.bytes += bytes; this.assetNames.add(name); replacement = `![${ref.caption}](asset:${name})`;
       } catch {}
@@ -608,7 +608,7 @@ export class RabbitHoleSession {
   // body) would reject exactly the state this method exists to repair.
   restoreNodeConversion(nodeId) {
     const raw = this.nodes.get(nodeId)?.extensions?.pdf;
-    if (!raw || raw.version !== 1) return;
+    if (!raw || raw.version !== 2) return;
     this.dispatchHoleEvent({ type: "node_progress", node_id: nodeId, markdown: String(raw.original_markdown ?? this.nodes.get(nodeId).markdown ?? "") });
     this.patchNodePdf(nodeId, { ...raw, converting: false, converted: false, convert_request: false });
     for (const [id, request] of this.convertRequests) if (request.node_id === nodeId) this.convertRequests.delete(id);
@@ -623,15 +623,21 @@ export class RabbitHoleSession {
     if (!pdf.converting) this.patchNodePdf(nodeId, { ...pdf, converting: true, converted: false, original_markdown: node.markdown, convert_request: true });
     const activePdf = normalizePdfExtension({ markdown: node.markdown, extensions: { pdf: this.nodes.get(nodeId).extensions?.pdf } });
     this.convertRequests.set(requestId, { node_id: nodeId, markdown: "", pdf: activePdf });
+    const pages = await Promise.all(activePdf.pages.map(async (page) => {
+      const key = `convert-${requestId}-${page.n}`;
+      const imagePath = await renderPdfPageToFile({ holeId: this.holeId, asset: activePdf.source.asset, pageNumber: page.n, requestId: key });
+      this.regionFiles.set(key, imagePath);
+      return { n: page.n, image_path: imagePath };
+    }));
     const event = { status: "convert_request", session_id: this.id, request_id: requestId, node_id: nodeId, page_count: activePdf.pages.length,
-      pages: await Promise.all(activePdf.pages.map(async (page) => ({ n: page.n, image_path: await resolveAsset(this.holeId, page.asset) }))), rules: TRANSCRIBE_V1_RULES, ...(saved ? { saved: true } : {}) };
+      pages, rules: TRANSCRIBE_V1_RULES, ...(saved ? { saved: true } : {}) };
     this.pushEvent(event); await this.flushSave(); return { ok: true, node_id: nodeId, request_id: requestId };
   }
 
   requeueSavedConversions() {
     for (const node of this.nodes.values()) {
       const raw = node?.extensions?.pdf;
-      if (!raw || raw.version !== 1 || !raw.converting) continue;
+      if (!raw || raw.version !== 2 || !raw.converting) continue;
       // Mid-run saves persist the streamed body — put the original back before
       // deciding anything else, then re-issue the request as a saved convert.
       this.restoreNodeConversion(node.id);
@@ -705,8 +711,7 @@ export class RabbitHoleSession {
     const requestId = String(payload.request_id || randomUUID());
     const nodeId = String(payload.node_id || randomUUID());
     const effects = this.dispatchHoleEvent(
-      { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId,
-        ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) },
+      { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId },
       { now: new Date().toISOString() }
     );
     const node = effects.createdNode;
@@ -739,21 +744,19 @@ export class RabbitHoleSession {
       logError(`PDF region attachment failed: ${error.message}`);
       this.pushEvent(event);
     });
-    return { ok: true, node_id: nodeId, request_id: requestId, ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) };
+    return { ok: true, node_id: nodeId, request_id: requestId };
   }
 
   async preparePdfCrop(payload) {
     const parent = this.nodes.get(String(payload.parent_id || ""));
     const anchor = normalizePdfAnchor(payload.anchor?.pdf);
     const pdf = normalizePdfExtension(parent);
-    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
-    const nodeId = String(payload.node_id || "");
-    if (!nodeId || !page) return null;
-    const name = cropAssetNameForNode(nodeId);
-    if (!this.assetNames.has(name) && this.assetNames.size >= 200) throw new Error("asset limit");
-    const crop = await cropPdfRegionToAsset({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, name });
-    this.assetNames.add(name);
-    return { name, imagePath: crop.filePath, page: anchor.page };
+    const pageNumber = anchor?.fragments?.[0]?.page;
+    if (!pdf || !pageNumber || !pdf.pages.some((entry) => entry.n === pageNumber)) return null;
+    await this.regionSweep;
+    const imagePath = await cropPdfRegionToFile({ holeId: this.holeId, asset: pdf.source.asset, anchor, pageNumber, requestId: payload.request_id });
+    this.regionFiles.set(String(payload.request_id), imagePath);
+    return { imagePath, page: pageNumber };
   }
 
   async queueBranchEvent(event, node, parent, preparedCrop = null) {
@@ -763,29 +766,15 @@ export class RabbitHoleSession {
       return;
     }
 
-    const ownAsset = node?.origin?.crop_asset;
-    const inheritedAsset = ownAsset ? null : parent?.origin?.crop_asset;
-    const durableAsset = ownAsset || inheritedAsset;
-    if (durableAsset) {
-      const imagePath = await resolveAsset(this.holeId, durableAsset).catch(() => null);
-      if (imagePath) {
-        const owner = ownAsset ? node : parent;
-        event.region = { page: owner?.origin?.anchor?.pdf?.page || 1, image_path: imagePath };
-        this.pushEvent(event);
-        return;
-      }
-      // A missing inherited asset degrades to the ordinary text-only request.
-      if (!ownAsset) { this.pushEvent(event); return; }
-    }
-
-    // Compatibility/failure fallback for old PDF asks without crop provenance.
-    const anchor = node?.origin?.anchor?.pdf;
-    const pdf = anchor ? normalizePdfExtension(parent) : null;
-    const page = pdf ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
-    if (page) try {
+    const anchor = node?.origin?.anchor?.pdf || parent?.origin?.anchor?.pdf;
+    let sourceNode = parent;
+    while (sourceNode && !normalizePdfExtension(sourceNode)) sourceNode = this.nodes.get(sourceNode.parent_id);
+    const pdf = anchor ? normalizePdfExtension(sourceNode) : null;
+    const pageNumber = anchor?.fragments?.[0]?.page;
+    if (pdf && pageNumber && pdf.pages.some((entry) => entry.n === pageNumber)) try {
       await this.regionSweep;
-      const imagePath = await cropPdfRegionToFile({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, requestId: event.request_id });
-      event.region = { page: anchor.page, image_path: imagePath };
+      const imagePath = await cropPdfRegionToFile({ holeId: this.holeId, asset: pdf.source.asset, anchor, pageNumber, requestId: event.request_id });
+      event.region = { page: pageNumber, image_path: imagePath };
       this.regionFiles.set(event.request_id, imagePath);
     } catch (error) {
       logError(`PDF region crop failed: ${error.message}`);

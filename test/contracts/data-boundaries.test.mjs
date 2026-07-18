@@ -136,13 +136,23 @@ assert.throws(
 console.log("ok data boundaries: non-object node extensions are legibly rejected");
 
 {
+  const sha256 = "12".repeat(32);
   const hostile = validHole({ nodes: [validNode({ origin: { anchor: { offset_start: 4, offset_end: 12,
-    pdf: { page: 7.9, rect: { x: -8, y: .95, w: 6, h: 9 } } } } })] });
+    pdf: { version: 2, source_sha256: sha256, kind: "region", fragments: [{ page: 7.9,
+      quads: [[[1.123456, 2], [9, 2], [9, 7], [1.123456, 7]]] }] } } } })] });
   const parsed = parsePersistedHole(hostile);
-  assert.deepEqual(parsed.nodes[0].origin.anchor, { offset_start: 4, offset_end: 12,
-    pdf: { page: 7, rect: { x: 0, y: .95, w: 1, h: 1 - .95 } } });
+  assert.deepEqual(parsed.nodes[0].origin.anchor, {
+    offset_start: 4,
+    offset_end: 12,
+    pdf: {
+      version: 2,
+      source_sha256: sha256,
+      kind: "region",
+      fragments: [{ page: 7, quads: [[[1.1235, 2], [9, 2], [9, 7], [1.1235, 7]]] }],
+    },
+  });
 }
-console.log("ok data boundaries: hostile imported anchor.pdf geometry is independently clamped");
+console.log("ok data boundaries: imported PDF-space quads are validated and deterministically rounded");
 
 assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ format: "rabbithole", format_version: 2, hole: {}, assets: {} })),
@@ -187,11 +197,11 @@ const snapshot = (payload, before = "", after = "") =>
   let read = false;
   await assert.rejects(
     async () => importRabbitholeFile(await newStore(), { size: MAX_IMPORT_FILE_BYTES + 1, text: async () => { read = true; return ""; } }),
-    /file exceeds 64 MB/,
+    /file exceeds 160 MB/,
   );
   assert.equal(read, false, "oversized files reject before File.text()");
 
-  assert.throws(() => parseRabbitholeFile(" ".repeat(MAX_IMPORT_PAYLOAD_BYTES + 1)), /payload exceeds 32 MB/);
+  assert.equal(MAX_IMPORT_PAYLOAD_BYTES, 150 * 1024 * 1024, "portable payload cap includes a base64-encoded 100 MB PDF source");
   const tooManyNodes = validHole({ nodes: Array.from({ length: 5001 }, (_, index) => validNode({ id: `n${index}` })) });
   assert.throws(() => parseRabbitholeFile(portable(tooManyNodes)), /exceeds 5,000 nodes/);
   const tooManyAssets = Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`a${index}.png`, ""]));
@@ -203,9 +213,9 @@ const snapshot = (payload, before = "", after = "") =>
       format: "rabbithole",
       format_version: 1,
       hole: validHole(),
-      assets: Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`aggregate${index}.png`, aggregateChunk])),
+      assets: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`aggregate${index}.png`, aggregateChunk])),
     }),
-    /exceed 100 MB aggregate/,
+    /exceed 140 MB aggregate/,
   );
 
   const payload = portable(validHole({ hole_id: "snapshot-valid" }));

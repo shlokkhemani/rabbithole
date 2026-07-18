@@ -5,34 +5,15 @@ import path from "node:path";
 import { openRabbithole, answerBranch } from "../../src/node/index.js";
 import { closeAllSessions, getSession } from "../../src/node/sessions.js";
 import { defaultFsStore } from "../../src/node/fs-store.js";
+import { readAttentionPdfTwoPage } from "../support/attention-pdf.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "5000";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-node-convert-"));
 
-function tinyPdf(texts) {
-  const objects = [];
-  objects[1] = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-  objects[2] = `2 0 obj\n<< /Type /Pages /Kids [${texts.map((_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${texts.length} >>\nendobj\n`;
-  objects[3] = "3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
-  texts.forEach((raw, i) => {
-    const page = 4 + i * 2, stream = page + 1;
-    const text = String(raw).replace(/[\\()]/g, "\\$&");
-    const content = `BT /F1 18 Tf 40 160 Td (${text}) Tj ET\n`;
-    objects[page] = `${page} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 220] /Resources << /Font << /F1 3 0 R >> >> /Contents ${stream} 0 R >>\nendobj\n`;
-    objects[stream] = `${stream} 0 obj\n<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}endstream\nendobj\n`;
-  });
-  let pdf = "%PDF-1.4\n"; const offsets = [0];
-  for (let i = 1; i < objects.length; i++) { offsets[i] = Buffer.byteLength(pdf, "latin1"); pdf += objects[i]; }
-  const xref = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
-  for (let i = 1; i < objects.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  return Buffer.from(pdf + `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`, "latin1");
-}
-
 async function openPdfSession(name) {
   const filePath = path.join(process.env.RABBITHOLE_DIR, name);
-  await fs.writeFile(filePath, tinyPdf(["Alpha line of prose", "Beta line of prose"]));
+  await fs.writeFile(filePath, await readAttentionPdfTwoPage());
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 100);
   const opened = await openRabbithole({ filePath, signal: controller.signal });
@@ -61,8 +42,7 @@ function abortAfter(ms) {
   for (const page of request.pages) {
     assert.equal(path.isAbsolute(page.image_path), true);
     const bytes = await fs.readFile(page.image_path);
-    assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
-    assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
+    assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "conversion pages must be lossless source renders");
   }
 
   // A keep_listening re-arm must redeliver the unanswered conversion, not drop it.
@@ -80,7 +60,7 @@ function abortAfter(ms) {
 
   // Asks stay locked while the conversion runs — host-side, race-proof.
   await assert.rejects(
-    () => session.handleBrowserEvent({ type: "branch_request", request_id: "locked", node_id: "locked-child", parent_id: session.rootId, selected_text: "Alpha", question: "?", position: { x: 0, y: 0 } }),
+    () => session.handleBrowserEvent({ type: "branch_request", request_id: "locked", node_id: "locked-child", parent_id: session.rootId, selected_text: "Attention", question: "?", position: { x: 0, y: 0 } }),
     /being converted/,
   );
 
@@ -89,14 +69,14 @@ function abortAfter(ms) {
 
   const node = session.nodes.get(session.rootId);
   assert.match(node.markdown, /# Clean Document\n\nFirst half and second half\./);
-  assert.match(node.markdown, /!\[Euler\]\(asset:fig-p001-1\.jpg\)/, "figure refs must materialize into cropped assets");
+  assert.match(node.markdown, /!\[Euler\]\(asset:fig-p001-1\.png\)/, "figure refs must materialize into lossless source crops");
   const pdf = node.extensions.pdf;
   assert.equal(pdf.converted, true);
   assert.equal(pdf.converting, false);
   assert.equal(pdf.pages.length, 2, "conversion must preserve the page stash");
   assert(pdf.lines.length > 0, "conversion must preserve the provenance stash");
   assert.equal(pdf.original_markdown, original, "conversion must stash the original body");
-  assert((await defaultFsStore.listAssets(session.holeId)).includes("fig-p001-1.jpg"));
+  assert((await defaultFsStore.listAssets(session.holeId)).includes("fig-p001-1.png"));
   session.close("test_done");
   await session.savingChain;
 }
@@ -115,7 +95,7 @@ function abortAfter(ms) {
   assert.equal(node.extensions.pdf.convert_request, false);
   assert.equal(session.convertRequests.size, 0);
   // Asks are usable again after the restore.
-  const branch = await session.handleBrowserEvent({ type: "branch_request", request_id: "after-restore", node_id: "after-restore-child", parent_id: session.rootId, selected_text: "Alpha", question: "?", position: { x: 0, y: 0 } });
+  const branch = await session.handleBrowserEvent({ type: "branch_request", request_id: "after-restore", node_id: "after-restore-child", parent_id: session.rootId, selected_text: "Attention", question: "?", position: { x: 0, y: 0 } });
   assert.equal(branch.ok, true);
   session.close("test_done");
   await session.savingChain;

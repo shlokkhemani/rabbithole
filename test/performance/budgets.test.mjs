@@ -4,7 +4,18 @@ import path from "node:path";
 import { budgetDefinitions, measureBudgets } from "../support/budget-measurements.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
+const WEB_DIST = path.join(ROOT, "web/dist");
 const recorded = JSON.parse(await fs.readFile(path.join(ROOT, "test/budgets.json"), "utf8"));
+const browserRuntimeFiles = [
+  path.join(WEB_DIST, "app.js"),
+  path.join(WEB_DIST, "pdf.mjs"),
+  ...(await fs.readdir(path.join(WEB_DIST, "chunks"))).filter((name) => name.endsWith(".js")).map((name) => path.join(WEB_DIST, "chunks", name)),
+];
+const pdfImplementations = [];
+for (const file of browserRuntimeFiles) {
+  if ((await fs.readFile(file, "utf8")).includes("PDFDocumentLoadingTask")) pdfImplementations.push(path.relative(WEB_DIST, file));
+}
+assert.deepEqual(pdfImplementations, ["pdf.mjs"], "the web application must ship one lazy PDF.js implementation, never a second bundled copy");
 assert.equal(recorded.budgets.length, budgetDefinitions.length, "every defined gauge must have a recorded budget");
 const measured = await measureBudgets({ samples: 3 });
 const failures = [];

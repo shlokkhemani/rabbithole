@@ -9,9 +9,9 @@
       "unit": "bytes",
       "tolerance": 0.05,
       "rationale": "Exact file size after a deterministic build.",
-      "baseline": 1140164,
-      "ceiling": 1197172.2,
-      "measured_at_commit": "ca405ac"
+      "baseline": 605613,
+      "ceiling": 635893.65,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "bundle_frozen_client_bytes",
@@ -19,9 +19,29 @@
       "unit": "bytes",
       "tolerance": 0.05,
       "rationale": "Exact file size after a deterministic build.",
-      "baseline": 1084514,
-      "ceiling": 1138739.7,
-      "measured_at_commit": "ca405ac"
+      "baseline": 578542,
+      "ceiling": 607469.1,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "web_initial_js_bytes",
+      "description": "Statically loaded web application JavaScript",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact transitive size of app.js and its static chunks; lazy PDF code and the worker are excluded.",
+      "baseline": 754138,
+      "ceiling": 791844.9,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "pdf_runtime_distribution_bytes",
+      "description": "Production PDF.js runtime plus worker",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact size of the lazily loaded production PDF.js module and worker.",
+      "baseline": 1334801,
+      "ceiling": 1401541.05,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "snapshot_math_bytes",
@@ -29,9 +49,9 @@
       "unit": "bytes",
       "tolerance": 0.05,
       "rationale": "Exact UTF-8 snapshot size.",
-      "baseline": 1555323,
-      "ceiling": 1633089.15,
-      "measured_at_commit": "ca405ac"
+      "baseline": 1056473,
+      "ceiling": 1109296.65,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "snapshot_assets_bytes",
@@ -39,9 +59,9 @@
       "unit": "bytes",
       "tolerance": 0.05,
       "rationale": "Exact UTF-8 snapshot size including assets.",
-      "baseline": 1555354,
-      "ceiling": 1633121.7,
-      "measured_at_commit": "ca405ac"
+      "baseline": 1056501,
+      "ceiling": 1109326.05,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "snapshot_math_build_ms",
@@ -50,9 +70,9 @@
       "tolerance": 2,
       "rationale": "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.",
       "floor": 25,
-      "baseline": 0.17,
+      "baseline": 0.24,
       "ceiling": 25,
-      "measured_at_commit": "ca405ac"
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "snapshot_assets_build_ms",
@@ -61,9 +81,9 @@
       "tolerance": 2,
       "rationale": "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.",
       "floor": 25,
-      "baseline": 0.46,
+      "baseline": 0.34,
       "ceiling": 25,
-      "measured_at_commit": "ca405ac"
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "cold_open_ms",
@@ -92,9 +112,9 @@
       "unit": "ms",
       "tolerance": 2,
       "rationale": "Minimum of repeated samples; 3x ceiling absorbs browser scheduling noise.",
-      "baseline": 97.6,
-      "ceiling": 292.8,
-      "measured_at_commit": "ca405ac"
+      "baseline": 97.2,
+      "ceiling": 291.6,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "save_window_ms",
@@ -103,9 +123,9 @@
       "tolerance": 1,
       "rationale": "Minimum of repeated samples; 2x ceiling with a 100ms floor (poll quantization) still catches a lost flush-on-complete, which costs 400ms+.",
       "floor": 100,
-      "baseline": 52.9,
-      "ceiling": 105.8,
-      "measured_at_commit": "ca405ac"
+      "baseline": 48.7,
+      "ceiling": 100,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "pdf_hole_serialized_bytes",
@@ -113,9 +133,9 @@
       "unit": "bytes",
       "tolerance": 0.2,
       "rationale": "Exact JSON byte size catches provenance growth.",
-      "baseline": 144139,
-      "ceiling": 172966.8,
-      "measured_at_commit": "ca405ac"
+      "baseline": 78522,
+      "ceiling": 94226.4,
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "pdf_save_latency_ms",
@@ -124,9 +144,9 @@
       "tolerance": 4,
       "rationale": "Minimum of repeated 20-save loops with a 20ms floor absorbs timer noise.",
       "floor": 20,
-      "baseline": 0.9,
+      "baseline": 0.3,
       "ceiling": 20,
-      "measured_at_commit": "ca405ac"
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "owned_stream_reducer_ms",
@@ -135,9 +155,9 @@
       "tolerance": 4,
       "rationale": "Minimum of repeated runs; a 10ms floor catches accidental whole-Map cloning while absorbing timer noise.",
       "floor": 10,
-      "baseline": 0.06,
+      "baseline": 0.07,
       "ceiling": 10,
-      "measured_at_commit": "8413b39"
+      "measured_at_commit": "codex/pdf-v2"
     },
     {
       "id": "subtree_collect_ms",
@@ -146,9 +166,9 @@
       "tolerance": 4,
       "rationale": "Minimum of repeated runs; a 25ms floor catches repeated whole-graph scans while absorbing timer noise.",
       "floor": 25,
-      "baseline": 1.94,
+      "baseline": 2.19,
       "ceiling": 25,
-      "measured_at_commit": "8413b39"
+      "measured_at_commit": "codex/pdf-v2"
     }
   ]
 }

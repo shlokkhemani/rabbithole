@@ -9,6 +9,7 @@ import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } fro
 import {
   MAX_ASSET_BYTES,
   MAX_ASSETS_PER_CALL,
+  maxAssetBytes,
   validateAssetName,
 } from "../core/assets.js";
 
@@ -86,10 +87,11 @@ function normalizeAssetEntries(assets) {
   });
 }
 
-function assertAssetFileStat(stat, filePath, label) {
+function assertAssetFileStat(stat, filePath, label, name) {
   if (!stat.isFile()) throw new Error(`${label}.file_path must be a file: ${filePath}`);
-  if (stat.size > MAX_ASSET_BYTES) {
-    throw new Error(`${label}.file_path exceeds 20 MB: ${filePath}`);
+  const limit = maxAssetBytes(name);
+  if (stat.size > limit) {
+    throw new Error(`${label}.file_path exceeds ${Math.round(limit / 1024 / 1024)} MB: ${filePath}`);
   }
 }
 
@@ -102,7 +104,7 @@ export function validateAssetEntriesSync(assets) {
     } catch {
       throw new Error(`${label}.file_path does not exist: ${entry.file_path}`);
     }
-    assertAssetFileStat(stat, entry.file_path, label);
+    assertAssetFileStat(stat, entry.file_path, label, entry.name);
     return entry;
   });
 }
@@ -118,13 +120,13 @@ async function validateAssetEntries(assets) {
       } catch {
         throw new Error(`${label}.file_path does not exist: ${entry.file_path}`);
       }
-      assertAssetFileStat(stat, entry.file_path, label);
+      assertAssetFileStat(stat, entry.file_path, label, entry.name);
       return entry;
     })
   );
 }
 
-async function bytesToBuffer(bytes, label = "asset bytes") {
+async function bytesToBuffer(bytes, label = "asset bytes", name = "asset.png") {
   let buffer;
   if (bytes instanceof Uint8Array) {
     buffer = Buffer.from(bytes);
@@ -135,7 +137,8 @@ async function bytesToBuffer(bytes, label = "asset bytes") {
   } else {
     throw new Error(`${label} must be a Blob, ArrayBuffer, or Uint8Array`);
   }
-  if (buffer.byteLength > MAX_ASSET_BYTES) throw new Error(`${label} exceeds 20 MB`);
+  const limit = maxAssetBytes(name);
+  if (buffer.byteLength > limit) throw new Error(`${label} exceeds ${Math.round(limit / 1024 / 1024)} MB`);
   return buffer;
 }
 
@@ -178,7 +181,7 @@ export class FsStore {
 
   async putAsset(holeId, name, bytes) {
     const safeName = validateAssetName(name);
-    const buffer = await bytesToBuffer(bytes);
+    const buffer = await bytesToBuffer(bytes, "asset bytes", safeName);
     const dir = await ensureAssetDir(holeId);
     await fs.writeFile(path.join(dir, safeName), buffer);
   }
@@ -194,7 +197,7 @@ export class FsStore {
 
   async putStagedAsset(ingestId, name, bytes) {
     const safeName = validateAssetName(name);
-    const buffer = await bytesToBuffer(bytes, "staged asset bytes");
+    const buffer = await bytesToBuffer(bytes, "staged asset bytes", safeName);
     const dir = stagedAssetDir(ingestId);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, safeName), buffer);

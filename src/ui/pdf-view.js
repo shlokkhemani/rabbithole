@@ -1,363 +1,917 @@
-import { enclosedPdfLines, normalizePdfExtension } from "../core/pdf-shared.js";
-import { openImageLightbox } from "./image-ux.js";
-import { resolveAssetUrl } from "./renderer.js";
-import { childrenOf, postBrowserEvent } from "./core.js";
-import { mountPdfRectMark } from "./text-marks.js";
-import { showAskFromSelection } from "./ask-followups.js";
+import { normalizePdfExtension } from "../core/pdf-shared.js";
 import { iconSvg } from "../core/html/icons.js";
+import { childrenOf, postBrowserEvent } from "./core.js";
+import { showAskFromSelection } from "./ask-followups.js";
+import { mountPdfRectMark } from "./text-marks.js";
+import { acquirePdfDocument, pdfAnnotationModeDisabled, pdfShowTextOpcode, renderPdfTextLayer, updatePdfTextLayer } from "./pdf-runtime.js";
+import { resolveAssetUrl } from "./renderer.js";
 
-export function pdfSelectionOffsets(range, spans) {
-  var startSpan = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer.closest("span[data-line]");
-  var endSpan = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer.closest("span[data-line]");
-  if (!startSpan || !endSpan) return null;
-  var startLine = spans[Number(startSpan.dataset.line)], endLine = spans[Number(endSpan.dataset.line)];
-  if (!startLine || !endLine) return null;
-  var start = startLine.s + Math.max(0, Math.min(startLine.e - startLine.s, range.startOffset));
-  var end = endLine.s + Math.max(0, Math.min(endLine.e - endLine.s, range.endOffset));
-  return start <= end ? { start: start, end: end } : { start: end, end: start };
-}
+const TILE_PIXELS = 1536;
+const FULL_PAGE_PIXELS = 12 * 1024 * 1024;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 8;
+const textMeasureCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+const textMeasureContext = textMeasureCanvas?.getContext("2d") || null;
 
-export function normalizeRectUnion(rects, pageRect) {
-  var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, found = false;
-  for (var i = 0; i < rects.length; i++){
-    var r = rects[i];
-    if (r.width <= 0 || r.height <= 0) continue;
-    found = true;
-    left = Math.min(left, r.left); top = Math.min(top, r.top);
-    right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
+export function mountPdfView(container, node, options = {}) {
+  const pdf = normalizePdfExtension(node);
+  const rawPdf = node?.extensions?.pdf;
+  if (!pdf || pdf.converted || pdf.converting) {
+    if (rawPdf?.version === 1 && !rawPdf.converted) mountLegacyNotice(container);
+    return null;
   }
-  if (!found || !pageRect.width || !pageRect.height) return null;
-  var clamp = function(v){ return Math.min(1, Math.max(0, v)); };
-  var x = clamp((left - pageRect.left) / pageRect.width), y = clamp((top - pageRect.top) / pageRect.height);
-  return { x: x, y: y, w: Math.min(clamp((right-left)/pageRect.width), 1-x), h: Math.min(clamp((bottom-top)/pageRect.height), 1-y) };
-}
 
-export function mountPdfView(container, node, options) {
-  var pdf = normalizePdfExtension(node);
-  if (!pdf || pdf.converted || pdf.converting) return null;
-  var markdown = String(node.markdown ?? node.md ?? "");
   container.className = "doc-content rh-pdf";
-  var disposed = false;
-  var pageEls = [];
-  var observer = null;
-  var resizeObserver = null;
-  var toolbarScrollRoot = null, toolbarScrollHandler = null, toolbarBindTimer = 0, toolbarPlaceholder = null, toolbarNode = null;
-  var boxButton = null, boxHint = null, boxMode = false, draft = null, askWatcher = null;
-  var scanned = pdf.pages.length > 0 && pdf.lines.length === 0;
-  var spansByPage = [];
-  function setBoxMode(active) {
-    boxMode = !!active;
-    container.classList.toggle("rh-pdf-box-mode", boxMode);
-    if (boxButton) { boxButton.classList.toggle("active", boxMode); boxButton.setAttribute("aria-pressed", boxMode ? "true" : "false"); }
-    if (boxHint) boxHint.classList.toggle("visible", boxMode);
-    if (!boxMode && draft) { draft.remove(); draft = null; }
-  }
-  // The settled box stays on the page as the visual anchor of the open ask,
-  // then retires the moment the ask closes — submit or cancel alike (a submit
-  // replaces it with the pending rect mark).
-  function retireBoxWhenAskCloses(boxEl) {
-    var askEl = document.getElementById("ask");
-    if (askWatcher) askWatcher();
-    if (!askEl || typeof MutationObserver !== "function") { boxEl.remove(); return; }
-    var watcher = new MutationObserver(function(){ if (!askEl.classList.contains("visible")) askWatcher && askWatcher(); });
-    askWatcher = function(){ watcher.disconnect(); boxEl.remove(); askWatcher = null; };
-    watcher.observe(askEl, { attributes: true, attributeFilter: ["class"] });
-  }
-  function fitText(pageEl) {
-    var spans = pageEl.querySelectorAll(".rh-pdf-textlayer span");
-    for (var i = 0; i < spans.length; i++) {
-      var span = spans[i], line = pdf.lines[Number(span.dataset.line)];
-      span.style.fontSize = (line.h * pageEl.clientHeight) + "px";
-      span.style.width = "auto"; span.style.transform = "none";
-      var natural = span.scrollWidth || 1, target = line.w * pageEl.clientWidth;
-      span.style.transform = "scaleX(" + (target / natural) + ")";
-    }
-  }
-  function mountWindow(index) {
-    for (var i = 0; i < pageEls.length; i++) {
-      var img = pageEls[i].querySelector("img");
-      if (Math.abs(i - index) <= 2) {
-        if (!img) {
-          img = document.createElement("img");
-          img.className = "rh-pdf-img";
-          img.alt = "Page " + pdf.pages[i].n;
-          img.src = resolveAssetUrl(pdf.pages[i].asset);
-          img.addEventListener("click", function(e){ openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget); });
-          pageEls[i].appendChild(img);
-        }
-      } else if (img) img.remove();
-    }
-  }
-  pdf.pages.forEach(function(page, index) {
-    var pageEl = document.createElement("div");
-    pageEl.className = "rh-pdf-page";
-    pageEl.dataset.page = page.n;
-    pageEl.style.aspectRatio = page.w + " / " + page.h;
-    var textLayer = document.createElement("div"); textLayer.className = "rh-pdf-textlayer";
-    var pageSpans = []; spansByPage.push(pageSpans);
-    pdf.lines.forEach(function(line, lineIndex){
-      if (line.p !== page.n) return;
-      var span = document.createElement("span"); span.dataset.line = lineIndex; span.textContent = markdown.slice(line.s, line.e);
-      span.style.left = (line.x*100) + "%"; span.style.top = (line.y*100) + "%"; span.style.height = (line.h*100) + "%";
-      textLayer.appendChild(span);
-      if (span.firstChild) pageSpans.push({ index: lineIndex, span: span });
-    });
-    pageEl.appendChild(textLayer);
-    var marks = document.createElement("div"); marks.className = "rh-pdf-marks"; pageEl.appendChild(marks);
-    pageEls.push(pageEl);
-    container.appendChild(pageEl);
-    if (typeof ResizeObserver === "function") {
-      if (!resizeObserver) resizeObserver = new ResizeObserver(function(entries){ entries.forEach(function(entry){ fitText(entry.target); }); });
-      resizeObserver.observe(pageEl);
-    } else setTimeout(function(){ fitText(pageEl); }, 0);
-    pageEl.addEventListener("pointerdown", function(event) {
-      if (!boxMode || event.button !== 0) return;
-      event.preventDefault(); event.stopPropagation();
-      var pageRect = pageEl.getBoundingClientRect();
-      var startX = Math.min(1, Math.max(0, (event.clientX-pageRect.left)/pageRect.width));
-      var startY = Math.min(1, Math.max(0, (event.clientY-pageRect.top)/pageRect.height));
-      draft = document.createElement("div"); draft.className = "rh-pdf-box-draft"; pageEl.appendChild(draft);
-      pageEl.setPointerCapture?.(event.pointerId);
-      function move(moveEvent) {
-        var x = Math.min(1, Math.max(0, (moveEvent.clientX-pageRect.left)/pageRect.width));
-        var y = Math.min(1, Math.max(0, (moveEvent.clientY-pageRect.top)/pageRect.height));
-        var rect = { x: Math.min(startX,x), y: Math.min(startY,y), w: Math.abs(x-startX), h: Math.abs(y-startY) };
-        draft.style.left=(rect.x*100)+"%"; draft.style.top=(rect.y*100)+"%"; draft.style.width=(rect.w*100)+"%"; draft.style.height=(rect.h*100)+"%";
-        draft._rect = rect;
-      }
-      function up(upEvent) {
-        pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel);
-        var rect = draft && draft._rect, boxEl = draft;
-        draft = null; setBoxMode(false);
-        // A sub-8px drop is a stray click, not a region — vanish quietly.
-        var bounds = pageEl.getBoundingClientRect();
-        if (!rect || rect.w * bounds.width < 8 || rect.h * bounds.height < 8) { if (boxEl) boxEl.remove(); return; }
-        var enclosed = enclosedPdfLines(pdf.lines, page.n, rect, markdown);
-        boxEl.classList.add("settled");
-        var shown = showAskFromSelection({ parentId: node.id, selectedText: enclosed.text, mdStart: enclosed.start, mdEnd: enclosed.end,
-          pdfAnchor: { page: page.n, rect: rect }, anchorRectEl: boxEl });
-        if (shown) retireBoxWhenAskCloses(boxEl); else boxEl.remove();
-        upEvent.preventDefault(); upEvent.stopPropagation();
-      }
-      function cancel() { pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel); setBoxMode(false); }
-      pageEl.addEventListener("pointermove", move); pageEl.addEventListener("pointerup", up); pageEl.addEventListener("pointercancel", cancel);
-    });
-    if (typeof IntersectionObserver === "function") {
-      if (!observer) observer = new IntersectionObserver(function(entries){
-        entries.forEach(function(entry){ if (entry.isIntersecting) mountWindow(pageEls.indexOf(entry.target)); });
-      }, { root: null, rootMargin: "100% 0px" });
-      observer.observe(pageEl);
-    }
+  const toolbar = createToolbar(pdf, node, options);
+  const scroll = document.createElement("div");
+  scroll.className = "rh-pdf-scroll";
+  scroll.dataset.zoom = "1";
+  const stack = document.createElement("div");
+  stack.className = "rh-pdf-stack";
+  scroll.appendChild(stack);
+  container.replaceChildren(toolbar.element, scroll);
+  syncPdfTranscriptionControls(container, options.getTranscriptionCapability?.());
+
+  let disposed = false;
+  let documentLease = null;
+  let documentProxy = null;
+  let documentReady = null;
+  let localZoom = 1;
+  let boxMode = false;
+  let frame = 0;
+  let zoomFrame = 0;
+  let pendingZoomAnchor = null;
+  let textGesture = null;
+  let intersectionObserver = null;
+  let resizeObserver = null;
+  let touchCleanup = () => {};
+  const pageStates = [];
+  const visiblePages = new Set();
+
+  toolbar.onZoom((factor, anchor) => setZoom(factor, anchor));
+  toolbar.onBoxMode((active) => {
+    boxMode = active;
+    container.classList.toggle("rh-pdf-box-mode", active);
   });
-  var toolbar = document.createElement("div"); toolbar.className = "rh-pdf-toolbar";
-  var regionActions = document.createElement("div"); regionActions.className = "rh-pdf-toolbar-actions rh-pdf-region-actions"; toolbar.appendChild(regionActions);
-  var toolbarInfo = document.createElement("div"); toolbarInfo.className = "rh-pdf-toolbar-info"; toolbar.appendChild(toolbarInfo);
-  if (scanned) {
-    var scannedNote = document.createElement("span"); scannedNote.className = "rh-pdf-scanned-note";
-    scannedNote.textContent = "No selectable text · Ask about an area or create a text version";
-    toolbarInfo.appendChild(scannedNote);
+
+  function setZoom(next, anchor = null) {
+    const value = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(next) || 1));
+    if (Math.abs(value - localZoom) < 0.0001) return;
+    const pinned = anchor && pdfPointAtClient(anchor.x, anchor.y);
+    localZoom = value;
+    toolbar.setZoom(localZoom);
+    pendingZoomAnchor = pinned ? { pinned, x: anchor.x, y: anchor.y } : null;
+    if (zoomFrame) return;
+    zoomFrame = requestAnimationFrame(() => {
+      zoomFrame = 0;
+      const restore = pendingZoomAnchor;
+      pendingZoomAnchor = null;
+      updatePageLayouts();
+      scroll.dataset.zoom = String(localZoom);
+      if (restore) restoreClientAnchor(restore.pinned, restore.x, restore.y);
+      scheduleRender();
+    });
   }
-  boxHint = document.createElement("span"); boxHint.className = "rh-pdf-box-hint";
-  boxHint.textContent = "Drag over anything you want to ask about · Esc cancels";
-  toolbarInfo.appendChild(boxHint);
-  var documentActions = document.createElement("div"); documentActions.className = "rh-pdf-toolbar-actions rh-pdf-document-actions"; toolbar.appendChild(documentActions);
-  boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
-  boxButton.innerHTML = iconSvg("area-select") + '<span>Ask about an area</span>';
-  boxButton.title = "Draw over a figure, table, or area to ask about it";
-  boxButton.setAttribute("aria-label", "Ask about an area of the PDF"); boxButton.setAttribute("aria-pressed", "false");
-  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); regionActions.appendChild(boxButton);
-  container.prepend(toolbar);
-  if (!childrenOf(node.id).length) {
-    var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
-    convertButton.innerHTML = iconSvg("file-text") + '<span>Create text version</span>';
-    convertButton.setAttribute("aria-label", "Create a searchable text version of this PDF");
-    convertButton.title = "Turn every page into clean, searchable text while preserving figures";
-    convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
-    documentActions.appendChild(convertButton);
+
+  function fitScaleFor(page) {
+    const base = page.getViewport({ scale: 1, rotation: page.rotate });
+    const available = Math.max(240, scroll.clientWidth - 28);
+    return Math.min(1.5, available / base.width);
   }
-  syncPdfTranscriptionControls(container, options?.getTranscriptionCapability?.() || options?.transcriptionCapability);
-  function moveToolbar(mutate, animate){
-    var previous = toolbar.getAnimations ? toolbar.getAnimations().filter(function(item){ return item.id === "pdf-toolbar-dock"; }) : [];
-    previous.forEach(function(item){ item.cancel(); });
-    var from = toolbar.getBoundingClientRect();
-    mutate();
-    if (!animate || !toolbar.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    var to = toolbar.getBoundingClientRect();
-    if (!from.width || !to.width) return;
-    var movement = toolbar.animate([
-      { transform: "translateY(" + (from.top - to.top) + "px)" },
-      { transform: "translateY(0)" }
-    ], { duration: 140, easing: "cubic-bezier(.2,0,0,1)" });
-    movement.id = "pdf-toolbar-dock";
+
+  function updatePageLayouts() {
+    for (const state of pageStates) {
+      if (!state.page) continue;
+      state.displayScale = fitScaleFor(state.page) * localZoom;
+      state.viewport = state.page.getViewport({ scale: state.displayScale, rotation: state.page.rotate });
+      state.element._pdfViewport = state.viewport;
+      state.element.style.width = `${state.viewport.width}px`;
+      state.element.style.height = `${state.viewport.height}px`;
+      scaleCanvasGenerations(state);
+      positionRegionDraft(state);
+      state.marks.setAttribute("viewBox", `0 0 ${state.viewport.width} ${state.viewport.height}`);
+      state.marks.setAttribute("width", String(state.viewport.width));
+      state.marks.setAttribute("height", String(state.viewport.height));
+      void renderText(state);
+    }
+    refreshAllMarks();
   }
-  toolbarBindTimer = setTimeout(function(){
-    if (disposed) return;
-    toolbarScrollRoot = container.closest(".node-body") || container.closest("#reader-main");
-    if (!toolbarScrollRoot) return;
-    toolbarNode = toolbarScrollRoot.classList.contains("node-body") ? toolbarScrollRoot.closest(".node") : null;
-    toolbarScrollHandler = function(initial){
-      var shouldDock = !!toolbarNode && (toolbarPlaceholder ? toolbarScrollRoot.scrollTop > 4 : toolbarScrollRoot.scrollTop > 20);
-      if (shouldDock && !toolbarPlaceholder) {
-        moveToolbar(function(){
-          toolbarPlaceholder = document.createElement("div"); toolbarPlaceholder.className = "rh-pdf-toolbar-placeholder";
-          toolbarPlaceholder.style.height = toolbar.offsetHeight + "px";
-          toolbar.before(toolbarPlaceholder);
-          toolbarNode.insertBefore(toolbar, toolbarScrollRoot);
-          toolbarNode.classList.add("pdf-toolbar-docked"); toolbar.classList.add("is-stuck");
-        }, initial !== true);
-      } else if (!shouldDock && toolbarPlaceholder) {
-        moveToolbar(function(){
-          toolbarPlaceholder.replaceWith(toolbar); toolbarPlaceholder = null;
-          toolbarNode.classList.remove("pdf-toolbar-docked"); toolbar.classList.remove("is-stuck");
-        }, initial !== true);
+
+  function scheduleRender() {
+    if (disposed || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      for (const state of pageStates) {
+        if (visiblePages.has(state) || state === pageStates[0]) void renderPageTiles(state);
       }
+    });
+  }
+
+  async function ensurePage(state) {
+    if (state.page) return state.page;
+    if (!documentProxy) await documentReady;
+    if (disposed || !documentProxy) return null;
+    state.page = await documentProxy.getPage(state.meta.n);
+    state.displayScale = fitScaleFor(state.page) * localZoom;
+    state.viewport = state.page.getViewport({ scale: state.displayScale, rotation: state.page.rotate });
+    state.element._pdfViewport = state.viewport;
+    state.element.style.width = `${state.viewport.width}px`;
+    state.element.style.height = `${state.viewport.height}px`;
+    scaleCanvasGenerations(state);
+    positionRegionDraft(state);
+    state.marks.setAttribute("viewBox", `0 0 ${state.viewport.width} ${state.viewport.height}`);
+    state.marks.setAttribute("width", String(state.viewport.width));
+    state.marks.setAttribute("height", String(state.viewport.height));
+    await renderText(state);
+    refreshAllMarks();
+    return state.page;
+  }
+
+  async function renderText(state) {
+    if (!state.page || !state.viewport || disposed) return;
+    const key = `${state.viewport.scale}:${state.viewport.rotation}`;
+    if (state.textKey === key) return;
+    state.textLayer.style.setProperty("--scale-factor", String(state.viewport.scale));
+    if (state.textKey && state.textDivs.length && state.textProperties) {
+      // PDF.js can reproject the existing spans. Keeping the same DOM nodes
+      // avoids a full text-layer rebuild on every zoom and preserves an active
+      // native selection while its geometry changes.
+      updatePdfTextLayer({
+        container: state.textLayer,
+        viewport: state.viewport,
+        textDivs: state.textDivs,
+        textDivProperties: state.textProperties,
+      });
+      tuneTextLayerSpacing(state.textDivs, state.textItems, state.textStyles, state.textProperties, state.viewport);
+      state.textKey = key;
+      return;
+    }
+    const generation = ++state.textGeneration;
+    state.textTask?.cancel?.();
+    state.textTask = null;
+    state.textLayer.replaceChildren();
+    const [content, operatorList] = await Promise.all([
+      state.textContent || (state.textContentPromise ||= state.page.getTextContent({ includeMarkedContent: true })),
+      state.operatorListPromise ||= state.page.getOperatorList(),
+    ]);
+    if (disposed || state.textGeneration !== generation) return;
+    state.textContent = content;
+    state.textItems = content.items.filter((item) => typeof item?.str === "string");
+    state.textStyles = content.styles || {};
+    state.textMetrics = exactTextItemMetrics(state.textItems, operatorList, pdfShowTextOpcode());
+    await useEmbeddedTextLayerFonts(state.page, state.textItems, state.textStyles);
+    if (disposed || state.textGeneration !== generation) return;
+    state.textDivs = [];
+    state.textProperties = new WeakMap();
+    const task = renderPdfTextLayer({
+      textContentSource: content,
+      container: state.textLayer,
+      viewport: state.viewport,
+      textDivs: state.textDivs,
+      textDivProperties: state.textProperties,
+      textContentItemsStr: [],
+    });
+    state.textTask = task;
+    try { await task.promise; } catch (error) { if (error?.name !== "AbortException") throw error; }
+    if (disposed || state.textGeneration !== generation || state.textTask !== task) return;
+    tuneTextLayerSpacing(state.textDivs, state.textItems, state.textStyles, state.textProperties, state.viewport);
+    let itemIndex = 0;
+    for (const span of state.textDivs) {
+      span.dataset.pdfItem = String(itemIndex++);
+    }
+    state.textKey = key;
+    state.textTask = null;
+  }
+
+  async function renderPageTiles(state) {
+    const page = await ensurePage(state);
+    if (!page || disposed || !state.viewport || !state.element.isConnected) return;
+    const pageRect = state.element.getBoundingClientRect();
+    if (!(pageRect.width > 0 && pageRect.height > 0)) return;
+    const screenScale = pageRect.width / state.viewport.width;
+    const outputScale = Math.max(1, screenScale * (devicePixelRatio || 1));
+    const renderScale = state.displayScale * outputScale;
+    const renderViewport = page.getViewport({ scale: renderScale, rotation: page.rotate });
+    const desired = desiredTiles(state, renderViewport, outputScale, pageRect);
+    const scaleKey = renderScale.toFixed(5);
+    const desiredKeys = desired.map(tileKey);
+    const key = `${scaleKey}:${desiredKeys.join(";")}`;
+    if (state.renderKey === key) return;
+    state.renderKey = key;
+    cancelRenderTasks(state);
+    const current = state.canvasLayer.querySelector(".rh-pdf-canvas-generation[data-ready='true']");
+    if (current?.dataset.renderScale === scaleKey) {
+      const existing = new Set([...current.querySelectorAll("canvas[data-tile]")].map((canvas) => canvas.dataset.tile));
+      const missing = desired.filter((tile, index) => !existing.has(desiredKeys[index]));
+      if (missing.length) {
+        const canvases = await renderTiles(state, page, renderViewport, outputScale, missing, key);
+        if (!canvases) return;
+        if (disposed || state.renderKey !== key || !current.isConnected) { releaseCanvases(canvases); return; }
+        current.append(...canvases);
+      }
+      // The desired set already includes a one-tile reading buffer. Reusing
+      // overlapping tiles makes high-zoom scrolling incremental while this
+      // trim keeps GPU memory bounded.
+      const retained = new Set(desiredKeys);
+      for (const canvas of current.querySelectorAll("canvas[data-tile]")) {
+        if (!retained.has(canvas.dataset.tile)) releaseCanvas(canvas);
+      }
+      return;
+    }
+    const generation = document.createElement("div");
+    generation.className = "rh-pdf-canvas-generation";
+    generation.dataset.renderScale = scaleKey;
+    generation.dataset.viewportWidth = String(state.viewport.width);
+    generation.dataset.viewportHeight = String(state.viewport.height);
+    generation.style.width = `${state.viewport.width}px`;
+    generation.style.height = `${state.viewport.height}px`;
+    generation.style.right = "auto";
+    generation.style.bottom = "auto";
+    const canvases = await renderTiles(state, page, renderViewport, outputScale, desired, key);
+    if (!canvases) { releaseGeneration(generation); return; }
+    generation.append(...canvases);
+    if (disposed || state.renderKey !== key) { releaseGeneration(generation); return; }
+    // Keep the readable pixels mounted until their complete replacement is
+    // ready. DOM updates paint atomically, so zoom never exposes a white frame.
+    generation.dataset.ready = "true";
+    state.canvasLayer.appendChild(generation);
+    for (const child of [...state.canvasLayer.children]) if (child !== generation) releaseGeneration(child);
+  }
+
+  async function renderTiles(state, page, renderViewport, outputScale, tiles, key) {
+    const canvases = [];
+    const tasks = tiles.map(async (tile) => {
+      const canvas = document.createElement("canvas");
+      canvas.dataset.tile = tileKey(tile);
+      canvas.width = tile.w; canvas.height = tile.h;
+      canvas.style.left = `${tile.x / outputScale}px`;
+      canvas.style.top = `${tile.y / outputScale}px`;
+      canvas.style.width = `${tile.w / outputScale}px`;
+      canvas.style.height = `${tile.h / outputScale}px`;
+      canvases.push(canvas);
+      const context = canvas.getContext("2d", { alpha: false });
+      context.fillStyle = "white"; context.fillRect(0, 0, tile.w, tile.h);
+      const task = page.render({
+        canvasContext: context,
+        viewport: renderViewport,
+        transform: [1, 0, 0, 1, -tile.x, -tile.y],
+        annotationMode: pdfAnnotationModeDisabled(),
+      });
+      state.renderTasks.add(task);
+      try { await task.promise; }
+      catch (error) { if (error?.name !== "RenderingCancelledException") throw error; }
+      finally { state.renderTasks.delete(task); }
+    });
+    try { await Promise.all(tasks); }
+    catch (error) {
+      releaseCanvases(canvases);
+      if (!disposed && state.renderKey === key) state.renderKey = "";
+      if (!disposed && error?.name !== "RenderingCancelledException") console.warn("PDF page render failed", error);
+      return null;
+    }
+    return canvases;
+  }
+
+  function scaleCanvasGenerations(state) {
+    if (!state.viewport) return;
+    for (const generation of state.canvasLayer.children) {
+      const width = Number(generation.dataset.viewportWidth);
+      const height = Number(generation.dataset.viewportHeight);
+      if (!(width > 0) || !(height > 0)) continue;
+      generation.style.transform = `scale(${state.viewport.width / width}, ${state.viewport.height / height})`;
+    }
+  }
+
+  function desiredTiles(state, viewport, outputScale, pageRect) {
+    const width = Math.ceil(viewport.width), height = Math.ceil(viewport.height);
+    if (width <= 4096 && height <= 4096 && width * height <= FULL_PAGE_PIXELS) return [{ x: 0, y: 0, w: width, h: height }];
+    const rootRect = scroll.getBoundingClientRect();
+    const left = Math.max(0, (rootRect.left - pageRect.left) / (pageRect.width / state.viewport.width) * outputScale);
+    const top = Math.max(0, (rootRect.top - pageRect.top) / (pageRect.height / state.viewport.height) * outputScale);
+    const right = Math.min(width, (rootRect.right - pageRect.left) / (pageRect.width / state.viewport.width) * outputScale);
+    const bottom = Math.min(height, (rootRect.bottom - pageRect.top) / (pageRect.height / state.viewport.height) * outputScale);
+    const firstX = Math.max(0, Math.floor(left / TILE_PIXELS) - 1);
+    const lastX = Math.min(Math.ceil(width / TILE_PIXELS) - 1, Math.floor(Math.max(left, right - 1) / TILE_PIXELS) + 1);
+    const firstY = Math.max(0, Math.floor(top / TILE_PIXELS) - 1);
+    const lastY = Math.min(Math.ceil(height / TILE_PIXELS) - 1, Math.floor(Math.max(top, bottom - 1) / TILE_PIXELS) + 1);
+    const tiles = [];
+    for (let y = firstY; y <= lastY; y++) for (let x = firstX; x <= lastX; x++) {
+      const nominalX = x * TILE_PIXELS, nominalY = y * TILE_PIXELS;
+      const px = Math.max(0, nominalX - 1), py = Math.max(0, nominalY - 1);
+      const rightEdge = Math.min(width, nominalX + TILE_PIXELS + 1);
+      const bottomEdge = Math.min(height, nominalY + TILE_PIXELS + 1);
+      tiles.push({ x: px, y: py, w: rightEdge - px, h: bottomEdge - py });
+    }
+    return tiles;
+  }
+
+  function cancelRenderTasks(state) {
+    for (const task of state.renderTasks) task.cancel?.();
+    state.renderTasks.clear();
+  }
+
+  function refreshAllMarks() {
+    for (const state of pageStates) state.marks.replaceChildren();
+    for (const child of childrenOf(node.id)) {
+      if (child.origin?.anchor?.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, `rh-pdf-mark ${child.status === "answered" ? "mark-ready" : "mark-pending"}`);
+    }
+  }
+
+  function pdfPointAtClient(clientX, clientY) {
+    const state = pageStateAt(clientX, clientY);
+    if (!state?.viewport) return null;
+    const rect = state.element.getBoundingClientRect();
+    const x = (clientX - rect.left) * state.viewport.width / rect.width;
+    const y = (clientY - rect.top) * state.viewport.height / rect.height;
+    return { state, point: state.viewport.convertToPdfPoint(x, y) };
+  }
+
+  function restoreClientAnchor(pinned, clientX, clientY) {
+    const state = pinned.state;
+    if (!state.viewport) return;
+    const rect = state.element.getBoundingClientRect();
+    const point = state.viewport.convertToViewportPoint(pinned.point[0], pinned.point[1]);
+    const scale = rect.width / state.viewport.width;
+    scroll.scrollLeft += (rect.left + point[0] * scale - clientX) / Math.max(scale, 0.001);
+    scroll.scrollTop += (rect.top + point[1] * scale - clientY) / Math.max(scale, 0.001);
+  }
+
+  function pageStateAt(clientX, clientY) {
+    return pageStates.find((state) => {
+      const rect = state.element.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    }) || null;
+  }
+
+  function selectionToAsk() {
+    if (boxMode || disposed) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return;
+    const fragments = [];
+    for (const state of pageStates) {
+      if (!state.textItems?.length || !state.viewport) continue;
+      const quads = [];
+      for (const span of state.textDivs || []) {
+        if (!range.intersectsNode(span) || !span.firstChild) continue;
+        const offsets = selectedOffsets(range, span.firstChild);
+        if (offsets.end <= offsets.start) continue;
+        const item = state.textItems[Number(span.dataset.pdfItem)];
+        if (!item) continue;
+        quads.push(...textSelectionQuads(span.firstChild, offsets.start, offsets.end, state.element, state.viewport, item, state.textStyles[item.fontName] || {}, state.textMetrics[Number(span.dataset.pdfItem)]));
+      }
+      if (quads.length) fragments.push({ page: state.meta.n, quads });
+    }
+    const selectedText = selection.toString().trim();
+    if (!selectedText || !fragments.length) return;
+    const anchor = { version: 2, source_sha256: pdf.source.sha256, kind: "text", fragments };
+    showAskFromSelection({
+      parentId: node.id,
+      selectedText,
+      mdStart: 0,
+      mdEnd: 0,
+      pdfAnchor: anchor,
+      range: range.cloneRange(),
+      anchorRectEl: { contextElement: container, getBoundingClientRect: () => range.getBoundingClientRect() },
+    });
+  }
+
+  function beginRegion(state, event) {
+    if (!boxMode || event.button !== 0 || !state.viewport) return;
+    event.preventDefault(); event.stopPropagation();
+    const rect = state.element.getBoundingClientRect();
+    const start = clientToViewport(event.clientX, event.clientY, rect, state.viewport);
+    const draft = document.createElement("div");
+    draft.className = "rh-pdf-box-draft";
+    state.element.appendChild(draft);
+    state.element.setPointerCapture?.(event.pointerId);
+    let current = start;
+    const move = (moveEvent) => {
+      current = clientToViewport(moveEvent.clientX, moveEvent.clientY, rect, state.viewport);
+      const x = Math.min(start[0], current[0]), y = Math.min(start[1], current[1]);
+      const w = Math.abs(current[0] - start[0]), h = Math.abs(current[1] - start[1]);
+      draft.style.left = `${x}px`; draft.style.top = `${y}px`; draft.style.width = `${w}px`; draft.style.height = `${h}px`;
     };
-    toolbarScrollRoot.addEventListener("scroll", toolbarScrollHandler, { passive: true });
-    toolbarScrollHandler(true);
-  }, 0);
-  // Capture phase: while region-select is active, Escape means "exit region
-  // select" and nothing else — the app-level Escape (open reader) must not fire.
-  function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); event.stopPropagation(); setBoxMode(false); } }
-  document.addEventListener("keydown", onKeydown, true);
-  childrenOf(node.id).forEach(function(child){ if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending")); });
-  // --- text selection engine --------------------------------------------------
-  // Native DOM selection hit-tests the empty gaps between absolutely-positioned
-  // line spans and resolves them in document order, so a drag inside one column
-  // sweeps the neighboring column too. We own the selection instead: geometric,
-  // column-aware hit-testing against the ingest line map, then a programmatic
-  // Selection — the same model Chrome's built-in PDF viewer uses.
-  function caretAtPoint(pageEl, pageSpans, clientX, clientY) {
-    var rect = pageEl.getBoundingClientRect();
-    if (!rect.width || !rect.height || !pageSpans.length) return null;
-    var nx = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    var ny = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
-    var best = null, bestScore = Infinity;
-    for (var i = 0; i < pageSpans.length; i++) {
-      var candidate = pdf.lines[pageSpans[i].index];
-      var dx = nx < candidate.x ? candidate.x - nx : nx > candidate.x + candidate.w ? nx - (candidate.x + candidate.w) : 0;
-      var dy = ny < candidate.y ? candidate.y - ny : ny > candidate.y + candidate.h ? ny - (candidate.y + candidate.h) : 0;
-      // Horizontal misses cost 3x vertical ones: a pointer in the gap between
-      // lines of one column must snap within that column, never across the gutter.
-      var hx = dx * rect.width * 3, vy = dy * rect.height, score = hx * hx + vy * vy;
-      if (score < bestScore) { bestScore = score; best = pageSpans[i]; }
-    }
-    var text = best && best.span.firstChild;
-    if (!text) return null;
-    var line = pdf.lines[best.index], len = text.nodeValue.length, offset;
-    if (nx <= line.x) offset = 0;
-    else if (nx >= line.x + line.w) offset = len;
+    const cleanup = () => {
+      state.element.removeEventListener("pointermove", move);
+      state.element.removeEventListener("pointerup", finish);
+      state.element.removeEventListener("pointercancel", cancel);
+    };
+    const finish = () => {
+      cleanup();
+      const x0 = Math.min(start[0], current[0]), y0 = Math.min(start[1], current[1]);
+      const x1 = Math.max(start[0], current[0]), y1 = Math.max(start[1], current[1]);
+      if ((x1 - x0) < 8 || (y1 - y0) < 8) { draft.remove(); return; }
+      const quad = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => state.viewport.convertToPdfPoint(x, y));
+      const anchor = { version: 2, source_sha256: pdf.source.sha256, kind: "region", fragments: [{ page: state.meta.n, quads: [quad] }] };
+      draft.classList.add("settled");
+      state.regionDraft = { element: draft, quad };
+      positionRegionDraft(state);
+      toolbar.setBoxMode(false);
+      boxMode = false; container.classList.remove("rh-pdf-box-mode");
+      showAskFromSelection({ parentId: node.id, selectedText: textInsideQuad(state, quad), mdStart: 0, mdEnd: 0, pdfAnchor: anchor, anchorRectEl: draft });
+      retireWhenAskCloses(draft, () => { if (state.regionDraft?.element === draft) state.regionDraft = null; });
+    };
+    const cancel = () => { cleanup(); draft.remove(); };
+    state.element.addEventListener("pointermove", move);
+    state.element.addEventListener("pointerup", finish);
+    state.element.addEventListener("pointercancel", cancel);
+  }
+
+  function positionRegionDraft(state) {
+    const pending = state.regionDraft;
+    if (!pending || !state.viewport) return;
+    if (!pending.element.isConnected) { state.regionDraft = null; return; }
+    const points = pending.quad.map((point) => state.viewport.convertToViewportPoint(point[0], point[1]));
+    const xs = points.map((point) => point[0]), ys = points.map((point) => point[1]);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
+    pending.element.style.left = `${x0}px`;
+    pending.element.style.top = `${y0}px`;
+    pending.element.style.width = `${x1 - x0}px`;
+    pending.element.style.height = `${y1 - y0}px`;
+  }
+
+  function beginTextSelection(event) {
+    if (boxMode || event.button !== 0 || event.pointerType === "touch") return;
+    const span = event.target?.closest?.(".rh-pdf-textlayer span[data-pdf-item]");
+    if (!span || !container.contains(span)) return;
+    const start = textPositionAtPoint(container, event.clientX, event.clientY, span);
+    if (!start) return;
+    textGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false };
+  }
+
+  function moveTextSelection(event) {
+    const gesture = textGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId || !(event.buttons & 1)) return;
+    if (!gesture.moved && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) <= 3) return;
+    const end = textPositionAtPoint(container, event.clientX, event.clientY);
+    if (!end) return;
+    gesture.moved = true;
+    const selection = window.getSelection();
+    if (!selection) return;
+    if (typeof selection.setBaseAndExtent === "function") selection.setBaseAndExtent(gesture.start.node, gesture.start.offset, end.node, end.offset);
     else {
-      offset = nativeCaretOffset(text, clientX, rect.top + (line.y + line.h / 2) * rect.height);
-      if (offset == null) offset = Math.max(0, Math.min(len, Math.round(((nx - line.x) / line.w) * len)));
+      const range = document.createRange(); range.setStart(gesture.start.node, gesture.start.offset); range.collapse(true);
+      selection.removeAllRanges(); selection.addRange(range); selection.extend?.(end.node, end.offset);
     }
-    return { node: text, offset: offset };
-  }
-  // Exact glyph-boundary offsets come from the browser's own caret probe, aimed
-  // at the line's vertical center so the gap above/below the glyphs can't miss.
-  function nativeCaretOffset(textNode, clientX, clientY) {
-    var pos = null;
-    if (document.caretPositionFromPoint) { var p = document.caretPositionFromPoint(clientX, clientY); if (p) pos = { node: p.offsetNode, offset: p.offset }; }
-    else if (document.caretRangeFromPoint) { var r = document.caretRangeFromPoint(clientX, clientY); if (r) pos = { node: r.startContainer, offset: r.startOffset }; }
-    return pos && pos.node === textNode ? pos.offset : null;
-  }
-  function wordBoundsIn(text, index) {
-    var isWord = function(ch){ return !!ch && !/[\s.,;:!?()\[\]{}"'`]/.test(ch); };
-    var i = Math.max(0, Math.min(index, text.length - 1));
-    if (!isWord(text[i]) && isWord(text[i - 1])) i--;
-    if (!isWord(text[i])) return { start: i, end: Math.min(text.length, i + 1) };
-    var start = i, end = i + 1;
-    while (start > 0 && isWord(text[start - 1])) start--;
-    while (end < text.length && isWord(text[end])) end++;
-    return { start: start, end: end };
-  }
-  function maybeAskFromSelection() {
-    var sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-    var live = sel.getRangeAt(0);
-    var startEl = live.startContainer.nodeType === 3 ? live.startContainer.parentElement : live.startContainer;
-    var pageEl = startEl && startEl.closest ? startEl.closest(".rh-pdf-page") : null;
-    if (!pageEl || !container.contains(pageEl) || !pageEl.contains(live.endContainer)) return;
-    // Clone the range: the live one collapses the moment focus moves into the
-    // ask box, and the popup keeps re-anchoring against this rect while open.
-    var range = live.cloneRange();
-    var offsets = pdfSelectionOffsets(range, pdf.lines), rect = normalizeRectUnion(range.getClientRects(), pageEl.getBoundingClientRect());
-    if (!offsets || offsets.end <= offsets.start || !rect) return;
-    showAskFromSelection({ parentId: node.id, selectedText: markdown.slice(offsets.start, offsets.end).trim(), mdStart: offsets.start, mdEnd: offsets.end,
-      pdfAnchor: { page: Number(pageEl.dataset.page), rect: rect }, range: range,
-      anchorRectEl: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); }, contextElement: pageEl } });
-  }
-  container.addEventListener("mousedown", function(event) {
-    if (boxMode || event.button !== 0 || disposed) return;
-    if (event.target.closest && event.target.closest(".rh-pdf-toolbar, .rh-pdf-mark")) return;
-    var pageEl = event.target.closest ? event.target.closest(".rh-pdf-page") : null;
     event.preventDefault();
-    var pageIndex = pageEl ? pageEls.indexOf(pageEl) : -1;
-    var sel = window.getSelection();
-    if (!sel || pageIndex < 0 || !spansByPage[pageIndex].length) { if (sel && !sel.isCollapsed) sel.removeAllRanges(); return; }
-    var anchor = caretAtPoint(pageEl, spansByPage[pageIndex], event.clientX, event.clientY);
-    if (!anchor) return;
-    if (event.detail >= 2) {
-      var bounds = event.detail === 2 ? wordBoundsIn(anchor.node.nodeValue, anchor.offset) : { start: 0, end: anchor.node.nodeValue.length };
-      sel.setBaseAndExtent(anchor.node, bounds.start, anchor.node, bounds.end);
+  }
+
+  function finishTextSelection(event) {
+    if (!textGesture || textGesture.pointerId !== event.pointerId) return;
+    textGesture = null;
+  }
+
+  function selectTextWord(event) {
+    if (boxMode || event.button !== 0) return;
+    const span = event.target?.closest?.(".rh-pdf-textlayer span[data-pdf-item]");
+    const textNode = span?.firstChild;
+    if (!span || !container.contains(span) || textNode?.nodeType !== 3) return;
+    if (selectWordAtPoint(span, textNode, event.clientX, event.clientY)) selectionToAsk();
+  }
+
+  function initializePages() {
+    for (const meta of pdf.pages) {
+      const element = document.createElement("section");
+      element.className = "rh-pdf-page";
+      element.dataset.page = String(meta.n);
+      element.setAttribute("aria-label", `PDF page ${meta.n}`);
+      const rawWidth = meta.view[2] - meta.view[0], rawHeight = meta.view[3] - meta.view[1];
+      const displayWidth = meta.rotate % 180 ? rawHeight : rawWidth;
+      const displayHeight = meta.rotate % 180 ? rawWidth : rawHeight;
+      element.style.width = "min(100%, 760px)";
+      element.style.aspectRatio = `${displayWidth} / ${displayHeight}`;
+      const canvasLayer = document.createElement("div"); canvasLayer.className = "rh-pdf-canvas-layer";
+      const textLayer = document.createElement("div"); textLayer.className = "rh-pdf-textlayer";
+      const marks = document.createElementNS("http://www.w3.org/2000/svg", "svg"); marks.classList.add("rh-pdf-marks");
+      element.append(canvasLayer, textLayer, marks);
+      const state = { meta, element, canvasLayer, textLayer, marks, page: null, viewport: null, displayScale: 1, textContent: null, textContentPromise: null, operatorListPromise: null, textItems: [], textStyles: {}, textMetrics: [], textDivs: [], textTask: null, textGeneration: 0, textKey: "", renderTasks: new Set(), renderKey: "", regionDraft: null };
+      element.addEventListener("pointerdown", (event) => { beginRegion(state, event); beginTextSelection(event); });
+      element.addEventListener("dblclick", selectTextWord);
+      pageStates.push(state); stack.appendChild(element);
     }
-    var dragged = false, downX = event.clientX, downY = event.clientY, detail = event.detail;
-    function move(moveEvent) {
-      if (!dragged && Math.abs(moveEvent.clientX - downX) < 4 && Math.abs(moveEvent.clientY - downY) < 4) return;
-      dragged = true;
-      var focus = caretAtPoint(pageEl, spansByPage[pageIndex], moveEvent.clientX, moveEvent.clientY);
-      if (focus) sel.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
-      moveEvent.preventDefault();
-    }
-    function up(upEvent) {
-      document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
-      if (!dragged && detail === 1) { if (!sel.isCollapsed) sel.removeAllRanges(); return; }
-      // A release outside the container never reaches the container's own mouseup.
-      if (upEvent && !container.contains(upEvent.target)) maybeAskFromSelection();
-    }
-    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+    intersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const state = pageStates.find((candidate) => candidate.element === entry.target);
+        if (!state) continue;
+        if (entry.isIntersecting) { visiblePages.add(state); void ensurePage(state).then(scheduleRender); }
+        else visiblePages.delete(state);
+      }
+    }, { root: scroll, rootMargin: "100% 0px" });
+    pageStates.forEach((state) => intersectionObserver.observe(state.element));
+  }
+
+  const onWheel = (event) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault(); event.stopPropagation();
+    setZoom(localZoom * Math.exp(-event.deltaY * 0.01), { x: event.clientX, y: event.clientY });
+  };
+  const onKeyDown = (event) => {
+    if (event.key !== "Escape" || !boxMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    boxMode = false;
+    toolbar.setBoxMode(false);
+    container.classList.remove("rh-pdf-box-mode");
+    for (const draft of container.querySelectorAll(".rh-pdf-box-draft")) draft.remove();
+  };
+  const onSelectionMouseUp = (event) => {
+    // A selection ask belongs to a completed text-layer gesture. Toolbar and
+    // scrollbar mouseups must never resurrect a stale browser selection.
+    if (!event.target?.closest?.(".rh-pdf-textlayer")) return;
+    selectionToAsk();
+  };
+  scroll.addEventListener("wheel", onWheel, { passive: false });
+  scroll.addEventListener("scroll", scheduleRender, { passive: true });
+  container.addEventListener("mouseup", onSelectionMouseUp);
+  document.addEventListener("pointermove", moveTextSelection, { passive: false });
+  document.addEventListener("pointerup", finishTextSelection);
+  document.addEventListener("pointercancel", finishTextSelection);
+  document.addEventListener("keydown", onKeyDown, true);
+  touchCleanup = installTouchZoom(scroll, () => localZoom, setZoom);
+
+  initializePages();
+  documentReady = acquirePdfDocument({ key: pdf.source.sha256, url: resolveAssetUrl(pdf.source.asset) }).then((lease) => {
+    if (disposed) { lease.release(); return; }
+    documentLease = lease; documentProxy = lease.document;
+    toolbar.setReady(true);
   });
-  container.addEventListener("mouseup", function(){ maybeAskFromSelection(); });
-  mountWindow(0);
+  documentReady.then(() => ensurePage(pageStates[0])).then(() => { updatePageLayouts(); scheduleRender(); }).catch((error) => toolbar.setError(error?.message || String(error)));
+
+  if (typeof ResizeObserver === "function") {
+    resizeObserver = new ResizeObserver(() => { updatePageLayouts(); scheduleRender(); });
+    resizeObserver.observe(scroll);
+  }
+
   return function dispose() {
     if (disposed) return;
     disposed = true;
-    if (observer) observer.disconnect();
-    if (resizeObserver) resizeObserver.disconnect();
-    clearTimeout(toolbarBindTimer);
-    if (toolbarScrollRoot && toolbarScrollHandler) toolbarScrollRoot.removeEventListener("scroll", toolbarScrollHandler);
-    if (toolbarPlaceholder) toolbarPlaceholder.remove();
-    toolbarNode?.classList.remove("pdf-toolbar-docked");
-    document.removeEventListener("keydown", onKeydown, true);
-    toolbar.remove(); setBoxMode(false);
-    if (askWatcher) askWatcher();
-    pageEls.forEach(function(pageEl){
-      var img = pageEl.querySelector("img");
-      if (img) { img.removeAttribute("src"); img.remove(); }
+    if (frame) cancelAnimationFrame(frame);
+    if (zoomFrame) cancelAnimationFrame(zoomFrame);
+    intersectionObserver?.disconnect(); resizeObserver?.disconnect();
+    scroll.removeEventListener("wheel", onWheel);
+    container.removeEventListener("mouseup", onSelectionMouseUp);
+    document.removeEventListener("pointermove", moveTextSelection);
+    document.removeEventListener("pointerup", finishTextSelection);
+    document.removeEventListener("pointercancel", finishTextSelection);
+    document.removeEventListener("keydown", onKeyDown, true);
+    touchCleanup();
+    for (const state of pageStates) {
+      state.textTask?.cancel?.(); cancelRenderTasks(state); state.page?.cleanup?.();
+      for (const generation of [...state.canvasLayer.children]) releaseGeneration(generation);
+    }
+    documentLease?.release(); toolbar.dispose();
+  };
+}
+
+function textPositionAtPoint(container, clientX, clientY, fallbackSpan = null) {
+  const position = document.caretPositionFromPoint?.(clientX, clientY);
+  if (position?.offsetNode?.nodeType === 3 && container.contains(position.offsetNode)) {
+    return { node: position.offsetNode, offset: position.offset };
+  }
+  const caret = document.caretRangeFromPoint?.(clientX, clientY);
+  if (caret?.startContainer?.nodeType === 3 && container.contains(caret.startContainer)) {
+    return { node: caret.startContainer, offset: caret.startOffset };
+  }
+  const span = fallbackSpan || document.elementFromPoint(clientX, clientY)?.closest?.(".rh-pdf-textlayer span[data-pdf-item]");
+  const textNode = span?.firstChild;
+  if (!span || !container.contains(span) || textNode?.nodeType !== 3) return null;
+  const rect = span.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+  return { node: textNode, offset: Math.round(ratio * (textNode.nodeValue?.length || 0)) };
+}
+
+function selectWordAtPoint(span, textNode, clientX, clientY) {
+  const text = textNode.nodeValue || "";
+  if (!text) return false;
+  let offset = null;
+  const position = document.caretPositionFromPoint?.(clientX, clientY);
+  if (position?.offsetNode === textNode) offset = position.offset;
+  if (offset == null) {
+    const caret = document.caretRangeFromPoint?.(clientX, clientY);
+    if (caret?.startContainer === textNode) offset = caret.startOffset;
+  }
+  if (offset == null) {
+    const rect = span.getBoundingClientRect();
+    offset = Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))) * text.length);
+  }
+  offset = Math.max(0, Math.min(text.length, Number(offset) || 0));
+  const words = [...text.matchAll(/[\p{L}\p{N}\p{M}_]+(?:[\u2019'\u2010\u2011\u2013-][\p{L}\p{N}\p{M}_]+)*/gu)];
+  const word = words.find((match) => offset >= match.index && offset < match.index + match[0].length)
+    || words.find((match) => offset > match.index && offset <= match.index + match[0].length);
+  if (!word) return false;
+  const range = document.createRange();
+  range.setStart(textNode, word.index);
+  range.setEnd(textNode, word.index + word[0].length);
+  const selection = window.getSelection();
+  if (!selection) return false;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+function createToolbar(pdf, node, options) {
+  const element = document.createElement("div"); element.className = "rh-pdf-toolbar";
+  const status = document.createElement("div"); status.className = "rh-pdf-toolbar-status";
+  const info = document.createElement("span"); info.className = "rh-pdf-toolbar-info"; info.textContent = `${pdf.pages.length} page${pdf.pages.length === 1 ? "" : "s"} · loading source…`;
+  status.appendChild(info);
+  const scanned = pdf.lines.length === 0;
+  if (scanned) {
+    const note = document.createElement("span"); note.className = "rh-pdf-scanned-note"; note.textContent = "No selectable text found — select an area or create a text version.";
+    status.appendChild(note);
+  }
+  const actions = document.createElement("div"); actions.className = "rh-pdf-toolbar-actions";
+  const minus = button("−", "Zoom PDF out");
+  minus.className += " rh-pdf-zoom-control";
+  const zoom = button("100%", "Reset PDF zoom"); zoom.className += " rh-pdf-zoom-value rh-pdf-zoom-control";
+  const plus = button("+", "Zoom PDF in");
+  plus.className += " rh-pdf-zoom-control";
+  const region = button("Select area", "Select an exact PDF region"); region.className += " rh-pdf-box-toggle"; region.setAttribute("aria-pressed", "false");
+  region.innerHTML = `${iconSvg("area-select")}<span>Select area</span>`;
+  actions.append(minus, zoom, plus, region);
+  if (!pdf.converted && !childrenOf(node.id).length) {
+    const convert = button("Create text version", "Turn every page into clean, searchable text while preserving figures");
+    convert.className += " rh-pdf-convert";
+    convert.innerHTML = `${iconSvg("file-text")}<span>Create text version</span>`;
+    if (scanned) convert.className += " primary";
+    convert.addEventListener("click", (event) => { event.stopPropagation(); convert.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then((result) => { if (!result?.ok) convert.disabled = false; }); });
+    actions.appendChild(convert);
+  }
+  element.append(status, actions);
+  let zoomHandler = () => {}, boxHandler = () => {}, boxMode = false;
+  minus.addEventListener("click", () => zoomHandler(-1));
+  plus.addEventListener("click", () => zoomHandler(1));
+  zoom.addEventListener("click", () => zoomHandler(0));
+  region.addEventListener("click", () => { boxMode = !boxMode; region.classList.toggle("active", boxMode); region.setAttribute("aria-pressed", String(boxMode)); boxHandler(boxMode); });
+  return {
+    element,
+    onZoom(handler) { zoomHandler = (direction) => handler(direction === 0 ? 1 : Number(zoom.dataset.value || 1) * (direction < 0 ? 0.8 : 1.25), null); },
+    onBoxMode(handler) { boxHandler = handler; },
+    setBoxMode(value) { boxMode = !!value; region.classList.toggle("active", boxMode); region.setAttribute("aria-pressed", String(boxMode)); },
+    setZoom(value) { zoom.dataset.value = String(value); zoom.textContent = `${Math.round(value * 100)}%`; },
+    setReady() { info.textContent = `${pdf.pages.length} page${pdf.pages.length === 1 ? "" : "s"} · source quality`; },
+    setError(message) { info.textContent = `PDF unavailable · ${message}`; element.classList.add("error"); },
+    dispose() {},
+  };
+}
+
+function button(text, label) {
+  const out = document.createElement("button"); out.type = "button"; out.className = "node-btn"; out.textContent = text; out.setAttribute("aria-label", label); return out;
+}
+
+function mountLegacyNotice(container) {
+  const notice = document.createElement("div"); notice.className = "rh-pdf-legacy"; notice.textContent = "This PDF uses the retired image-based format. Re-import the original PDF for source-quality rendering and accurate selections."; container.prepend(notice);
+}
+
+function clientToViewport(clientX, clientY, rect, viewport) {
+  return [
+    Math.min(viewport.width, Math.max(0, (clientX - rect.left) * viewport.width / rect.width)),
+    Math.min(viewport.height, Math.max(0, (clientY - rect.top) * viewport.height / rect.height)),
+  ];
+}
+
+function selectedOffsets(range, textNode) {
+  let start = 0, end = textNode.nodeValue?.length || 0;
+  if (range.startContainer === textNode) start = range.startOffset;
+  if (range.endContainer === textNode) end = range.endOffset;
+  return { start: Math.max(0, Math.min(end, start)), end: Math.max(start, end) };
+}
+
+function textSelectionQuads(textNode, start, end, page, viewport, item, style, metrics) {
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+  const pageRect = page.getBoundingClientRect();
+  if (!(pageRect.width > 0) || !(pageRect.height > 0)) return [];
+  const scaleX = viewport.width / pageRect.width;
+  const scaleY = viewport.height / pageRect.height;
+  const native = [...range.getClientRects()]
+    .filter((rect) => rect.width > 0 && rect.height > 0)
+    .map((rect) => [
+      [rect.left, rect.top],
+      [rect.right, rect.top],
+      [rect.right, rect.bottom],
+      [rect.left, rect.bottom],
+    ].map(([clientX, clientY]) => viewport.convertToPdfPoint(
+      (clientX - pageRect.left) * scaleX,
+      (clientY - pageRect.top) * scaleY,
+    )));
+  if (style.vertical || !Array.isArray(item?.transform) || item.transform.length < 6) return native;
+  const [a, b, c, d, e, f] = item.transform.map(Number);
+  const baselineLength = Math.hypot(a, b);
+  if (!(baselineLength > 0) || ![c, d, e, f].every(Number.isFinite)) return native;
+  const baseline = [a / baselineLength, b / baselineLength];
+  const ascent = Number.isFinite(Number(style.ascent)) ? Number(style.ascent) : 1;
+  const descent = Number.isFinite(Number(style.descent)) ? Number(style.descent) : 0;
+  const origin = [e, f];
+  const along = (point) => (point[0] - e) * baseline[0] + (point[1] - f) * baseline[1];
+  const at = (advance, ratio) => [
+    origin[0] + baseline[0] * advance + c * ratio,
+    origin[1] + baseline[1] * advance + d * ratio,
+  ];
+  return native.map((quad) => {
+    const advances = quad.map(along);
+    const begin = Number.isFinite(metrics?.[start]) ? metrics[start] : Math.min(...advances);
+    const finish = Number.isFinite(metrics?.[end]) ? metrics[end] : Math.max(...advances);
+    return [at(begin, ascent), at(finish, ascent), at(finish, descent), at(begin, descent)];
+  });
+}
+
+function exactTextItemMetrics(items, operatorList, showTextOpcode) {
+  const output = Array(items.length).fill(null);
+  if (!Number.isFinite(showTextOpcode) || !Array.isArray(operatorList?.fnArray)) return output;
+  const runs = [];
+  for (let index = 0; index < operatorList.fnArray.length; index++) {
+    if (operatorList.fnArray[index] !== showTextOpcode) continue;
+    const glyphs = operatorList.argsArray?.[index]?.[0];
+    if (!Array.isArray(glyphs)) continue;
+    const text = glyphs.filter((value) => value && typeof value === "object").map((glyph) => String(glyph.unicode || "")).join("");
+    if (compactText(text)) runs.push({ glyphs, text: compactText(text) });
+  }
+  let cursor = 0;
+  for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+    const item = items[itemIndex], target = compactText(item?.str);
+    if (!target || item?.dir === "rtl") continue;
+    let match = -1;
+    for (let runIndex = cursor; runIndex < Math.min(runs.length, cursor + 5); runIndex++) {
+      if (runs[runIndex].text === target) { match = runIndex; break; }
+    }
+    if (match < 0) continue;
+    output[itemIndex] = glyphBoundaryMetrics(String(item.str), runs[match].glyphs, Number(item.width));
+    cursor = match + 1;
+  }
+  return output;
+}
+
+function glyphBoundaryMetrics(text, glyphs, itemWidth) {
+  if (!(itemWidth >= 0)) return null;
+  let advance = 0;
+  const records = [];
+  for (const value of glyphs) {
+    if (typeof value === "number") { advance -= value; continue; }
+    const unicode = String(value?.unicode || ""), width = Number(value?.width);
+    if (!unicode || !Number.isFinite(width)) continue;
+    const characters = [...unicode];
+    for (let index = 0; index < characters.length; index++) records.push({
+      character: characters[index],
+      start: advance + width * index / characters.length,
+      end: advance + width * (index + 1) / characters.length,
     });
+    advance += width;
+  }
+  if (!(advance > 0)) return null;
+  const textCharacters = [], glyphCharacters = records.filter((record) => !/\s/u.test(record.character));
+  for (let offset = 0; offset < text.length;) {
+    const point = text.codePointAt(offset), character = String.fromCodePoint(point);
+    const next = offset + character.length;
+    if (!/\s/u.test(character)) textCharacters.push({ character, start: offset, end: next });
+    offset = next;
+  }
+  if (textCharacters.length !== glyphCharacters.length) return null;
+  for (let index = 0; index < textCharacters.length; index++) {
+    if (compactText(textCharacters[index].character) !== compactText(glyphCharacters[index].character)) return null;
+  }
+  const boundaries = Array(text.length + 1).fill(null);
+  boundaries[0] = 0; boundaries[text.length] = itemWidth;
+  for (let index = 0; index < textCharacters.length; index++) {
+    const textCharacter = textCharacters[index], glyph = glyphCharacters[index];
+    boundaries[textCharacter.start] = glyph.start / advance * itemWidth;
+    boundaries[textCharacter.end] = glyph.end / advance * itemWidth;
+  }
+  for (let index = 0; index < boundaries.length;) {
+    if (boundaries[index] != null) { index++; continue; }
+    const first = index - 1;
+    while (index < boundaries.length && boundaries[index] == null) index++;
+    const last = index, span = last - first;
+    for (let fill = first + 1; fill < last; fill++) boundaries[fill] = boundaries[first] + (boundaries[last] - boundaries[first]) * (fill - first) / span;
+  }
+  return boundaries;
+}
+
+function compactText(value) {
+  return String(value || "").normalize("NFKC").replace(/\s+/gu, "");
+}
+
+async function useEmbeddedTextLayerFonts(page, items, styles) {
+  const names = [...new Set(items.map((item) => item?.fontName).filter((name) => typeof name === "string" && styles[name]))];
+  await Promise.all(names.map((name) => new Promise((resolve) => {
+    if (page.commonObjs.has(name)) { resolve(); return; }
+    page.commonObjs.get(name, resolve);
+  })));
+  for (const name of names) {
+    let font;
+    try { font = page.commonObjs.get(name); } catch { continue; }
+    if (!font?.loadedName) continue;
+    const fallback = String(font.fallbackName || styles[name].fontFamily || "sans-serif");
+    styles[name] = { ...styles[name], fontFamily: `"${font.loadedName}", ${fallback}` };
+  }
+}
+
+function tuneTextLayerSpacing(divs, items, styles, properties, viewport) {
+  if (!textMeasureContext) return;
+  for (let index = 0; index < divs.length; index++) {
+    const div = divs[index], item = items[index], props = properties.get(div), text = String(item?.str || "");
+    const spaces = [...text].filter((character) => /\s/u.test(character)).length;
+    if (!spaces || !props?.canvasWidth || styles[item.fontName]?.vertical) continue;
+    const fontSize = Number(props.fontSize) * viewport.scale;
+    if (!(fontSize > 0)) continue;
+    textMeasureContext.font = `${fontSize}px ${div.style.fontFamily || styles[item.fontName]?.fontFamily || "sans-serif"}`;
+    const measured = textMeasureContext.measureText(text).width;
+    const desired = Number(props.canvasWidth) * viewport.scale;
+    if (!(measured > 0) || !(desired > 0)) continue;
+    div.style.wordSpacing = `${(desired - measured) / spaces}px`;
+    div.style.transform = Number(props.angle) ? `rotate(${Number(props.angle)}deg)` : "";
+  }
+}
+
+function textInsideQuad(state, quad) {
+  const xs = quad.map((point) => point[0]), ys = quad.map((point) => point[1]);
+  const bounds = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  const values = [];
+  for (const item of state.textItems || []) {
+    const x = Number(item.transform?.[4]), y = Number(item.transform?.[5]);
+    if (x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3] && String(item.str || "").trim()) values.push(item.str);
+  }
+  return values.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function retireWhenAskCloses(element, onRemove = () => {}) {
+  const ask = document.getElementById("ask");
+  if (!ask || typeof MutationObserver !== "function") { onRemove(); element.remove(); return; }
+  const observer = new MutationObserver(() => { if (!ask.classList.contains("visible")) { observer.disconnect(); onRemove(); element.remove(); } });
+  observer.observe(ask, { attributes: true, attributeFilter: ["class"] });
+}
+
+function tileKey(tile) {
+  return `${tile.x},${tile.y},${tile.w},${tile.h}`;
+}
+
+function releaseCanvas(canvas) {
+  canvas.width = 0;
+  canvas.height = 0;
+  canvas.remove();
+}
+
+function releaseCanvases(canvases) {
+  for (const canvas of canvases) releaseCanvas(canvas);
+}
+
+function releaseGeneration(generation) {
+  for (const canvas of generation.querySelectorAll?.("canvas") || []) releaseCanvas(canvas);
+  generation.remove();
+}
+
+function installTouchZoom(element, getZoom, setZoom) {
+  const touches = new Map();
+  let gesture = null;
+  const down = (event) => {
+    if (event.pointerType !== "touch") return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (touches.size !== 2) return;
+    const pair = [...touches.values()];
+    gesture = { distance: Math.max(1, Math.hypot(pair[1].x - pair[0].x, pair[1].y - pair[0].y)), zoom: getZoom() };
+    event.preventDefault(); event.stopPropagation();
+  };
+  const move = (event) => {
+    if (!touches.has(event.pointerId)) return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!gesture || touches.size < 2) return;
+    const pair = [...touches.values()].slice(0, 2);
+    const midpoint = { x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 };
+    setZoom(gesture.zoom * Math.hypot(pair[1].x - pair[0].x, pair[1].y - pair[0].y) / gesture.distance, midpoint);
+    event.preventDefault(); event.stopPropagation();
+  };
+  const end = (event) => { touches.delete(event.pointerId); if (touches.size < 2) gesture = null; };
+  element.addEventListener("pointerdown", down, { passive: false });
+  element.addEventListener("pointermove", move, { passive: false });
+  element.addEventListener("pointerup", end); element.addEventListener("pointercancel", end);
+  return () => {
+    element.removeEventListener("pointerdown", down);
+    element.removeEventListener("pointermove", move);
+    element.removeEventListener("pointerup", end);
+    element.removeEventListener("pointercancel", end);
+    touches.clear(); gesture = null;
   };
 }
 
 export function syncPdfTranscriptionControls(root, capability) {
   if (!root?.querySelectorAll) return;
-  var available = capability?.available !== false;
-  var reason = String(capability?.reason || "Set up a vision-capable PDF transcription model in Model settings.");
-  var containers = root.matches?.(".doc-content.rh-pdf") ? [root] : Array.from(root.querySelectorAll(".doc-content.rh-pdf"));
-  containers.forEach(function(container) {
-    var button = container.querySelector(".rh-pdf-convert");
-    var info = container.querySelector(".rh-pdf-toolbar-info");
-    var scannedNote = container.querySelector(".rh-pdf-scanned-note");
-    var note = container.querySelector(".rh-pdf-transcription-note");
-    if (button) {
-      button.disabled = !available;
-      button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;
-      button.setAttribute("aria-label", available ? "Create a searchable text version of this PDF" : `Create text version unavailable. ${reason}`);
-    }
-    if (!available && info) {
-      if (!note) { note = document.createElement("span"); note.className = "rh-pdf-transcription-note"; info.appendChild(note); }
+  const available = capability?.available !== false;
+  const reason = String(capability?.reason || "Set up a vision-capable PDF transcription model in Model settings.");
+  const containers = root.matches?.(".doc-content.rh-pdf") ? [root] : Array.from(root.querySelectorAll(".doc-content.rh-pdf"));
+  containers.forEach((container) => {
+    const button = container.querySelector(".rh-pdf-convert");
+    if (!button) return;
+    button.disabled = !available;
+    button.title = available ? "Turn every page into clean, searchable text while preserving figures" : reason;
+    let note = container.querySelector(".rh-pdf-transcription-note");
+    if (!available) {
+      if (!note) {
+        note = document.createElement("span"); note.className = "rh-pdf-transcription-note";
+        container.querySelector(".rh-pdf-toolbar-status")?.appendChild(note);
+      }
       note.textContent = reason;
-      note.title = reason;
     } else note?.remove();
-    if (scannedNote) scannedNote.textContent = available
-      ? "No selectable text · Ask about an area or create a text version"
-      : "No selectable text · Ask about an area";
   });
 }

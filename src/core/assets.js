@@ -1,8 +1,11 @@
-const ALLOWED_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const IMAGE_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const ALLOWED_ASSET_EXTENSIONS = [...IMAGE_ASSET_EXTENSIONS, "pdf"];
 export const MAX_ASSETS_PER_CALL = 50;
 export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
+export const MAX_PDF_SOURCE_BYTES = 100 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = new Set(ALLOWED_ASSET_EXTENSIONS);
+const IMAGE_EXTENSIONS = new Set(IMAGE_ASSET_EXTENSIONS);
 const ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
 const ASSET_URL_RE = /^asset:(.*)$/i;
 const ASSET_REF_RE = /\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi;
@@ -18,6 +21,12 @@ function getAssetExtension(name) {
 /** @param {unknown} name */
 function isValidAssetName(name) {
   return getAssetExtension(name) !== null;
+}
+
+/** @param {unknown} name */
+function isValidImageAssetName(name) {
+  const ext = getAssetExtension(name);
+  return ext !== null && IMAGE_EXTENSIONS.has(ext);
 }
 
 /**
@@ -52,6 +61,8 @@ export function getAssetContentType(name) {
       return "image/webp";
     case "svg":
       return "image/svg+xml";
+    case "pdf":
+      return "application/pdf";
     default:
       throw new Error(`Unsupported asset extension: ${ext}`);
   }
@@ -72,7 +83,10 @@ export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAs
   if (!match) return undefined;
 
   const name = match[1];
-  if (!isValidAssetName(name)) return null;
+  // PDF sources share the binary blob store, but they are documents rather
+  // than Markdown images. Keeping that distinction here prevents a source PDF
+  // from accidentally becoming a broken <img> if its asset name is mentioned.
+  if (!isValidImageAssetName(name)) return null;
   if (assetNames && !assetNames.has(name)) return null;
   return resolveAssetUrl(name);
 }
@@ -82,7 +96,7 @@ export function extractAssetRefsFromMarkdown(markdown) {
   const refs = new Set();
   for (const match of String(markdown ?? "").matchAll(ASSET_REF_RE)) {
     const name = match[1].toLowerCase();
-    if (isValidAssetName(name)) refs.add(name);
+    if (isValidImageAssetName(name)) refs.add(name);
   }
   return refs;
 }
@@ -98,7 +112,14 @@ export function extractNodeAssetRefs(node) {
       try { refs.add(validateAssetName(page?.asset)); } catch {}
     }
   }
+  try { refs.add(validateAssetName(node?.extensions?.pdf?.source?.asset)); } catch {}
   return refs;
+}
+
+/** The source PDF is allowed to be larger than a visual Markdown asset. */
+/** @param {unknown} name */
+export function maxAssetBytes(name) {
+  return getAssetExtension(name) === "pdf" ? MAX_PDF_SOURCE_BYTES : MAX_ASSET_BYTES;
 }
 
 /** Deterministic durable name for a region crop owned by a branch node. */

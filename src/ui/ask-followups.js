@@ -212,6 +212,7 @@ export function showAskFromSelection(options){
     var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
       placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
+      ignoreOutsidePointer: function(event){ return !!(event.target?.closest?.(".rh-pdf-zoom-control")); },
       onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
         var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;

@@ -753,11 +753,13 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getPdfWorkerSource: () => window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__ || "",
+    getPdfJsSource: () => window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__ || "",
     getMermaidSource,
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
-  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted)) {
+  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted)) {
     await refreshPdfTranscriptionCapability();
   }
   const settings = loadSettings();
@@ -1003,7 +1005,7 @@ function refreshCurrentBrain(settings = loadSettings()) {
 }
 
 function currentHoleNeedsPdfTranscription() {
-  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted);
+  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted);
 }
 
 async function refreshPdfTranscriptionCapability(settings = loadSettings()) {

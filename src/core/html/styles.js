@@ -282,11 +282,12 @@ body.mode-canvas #reader { display: none; }
 }
 
 /* ---------- CANVAS ---------- */
-#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: none;
+#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: pan-x pan-y;
   background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 26px 26px; }
 body.mode-canvas #viewport { display: block; }
 #viewport.panning { cursor: grabbing; }
 #viewport.pinching { cursor: zoom-in; }
+#canvas-gesture-plane { position: absolute; inset: 0; touch-action: none; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
@@ -547,39 +548,46 @@ body.frozen.session-over .ll-frozen { display: inline; }
 body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 
 /* ---------- native PDF pages ---------- */
-.doc-content.rh-pdf { display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
-.rh-pdf-page { position: relative; width: 100%; overflow: hidden; background: white; border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
-.rh-pdf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; user-select: none; }
-.rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
-.rh-pdf-textlayer { z-index: 2; cursor: text; }
-.rh-pdf-textlayer span { position: absolute; display: block; color: transparent; white-space: pre; line-height: 1; overflow: visible; transform-origin: left top; user-select: text; }
-.rh-pdf-marks { z-index: 3; pointer-events: none; }
+.doc-content.rh-pdf { display: flex; min-height: 0; flex-direction: column; gap: 8px; background: var(--bg); }
+.rh-pdf-scroll { position: relative; min-width: 0; max-width: 100%; max-height: min(76vh, 980px); overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y; scrollbar-gutter: stable; }
+.node-body.pdf-body { display: flex; flex-direction: column; overflow: hidden; }
+.node-body.pdf-body > .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; }
+.node .node-body.pdf-body .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
+.rh-pdf-stack { display: flex; width: max-content; min-width: 100%; flex-direction: column; align-items: center; gap: 18px; padding: 10px 12px 18px; }
+.rh-pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: white; outline: 1px solid var(--border); outline-offset: -1px; box-shadow: 0 2px 10px rgba(0,0,0,.12); contain: layout paint style; }
+.rh-pdf-canvas-layer, .rh-pdf-canvas-generation, .rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
+.rh-pdf-canvas-layer { z-index: 1; overflow: hidden; pointer-events: none; }
+.rh-pdf-canvas-generation { transform-origin: 0 0; }
+.rh-pdf-canvas-generation canvas { position: absolute; display: block; }
+.rh-pdf-textlayer { z-index: 2; overflow: hidden; cursor: text; line-height: 1; text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; }
+.rh-pdf-textlayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; user-select: text; }
+.rh-pdf-textlayer span.markedContent { top: 0; height: 0; }
+.rh-pdf-textlayer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.rh-pdf-textlayer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.rh-pdf-textlayer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
+.rh-pdf-marks { z-index: 3; overflow: visible; pointer-events: none; }
 /* Rect marks sit over the white page render in both themes, so they take the
    accent wash directly: a lighter cousin of the live-selection tint by default,
    selection-strength on hover / when the answer card is hovered (mark-focus). */
-.doc-content mark.rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; border-bottom: none;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
-  pointer-events: auto; cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
-.doc-content mark.rh-pdf-mark.mark-pending { background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: none; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
-.doc-content mark.rh-pdf-mark:hover, .doc-content mark.rh-pdf-mark.mark-focus {
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.doc-content .rh-pdf-mark { pointer-events: auto; cursor: pointer; }
+.doc-content .rh-pdf-mark polygon { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill 0.15s, stroke 0.15s; }
+.doc-content .rh-pdf-mark.mark-pending polygon { fill: color-mix(in srgb, var(--accent) 9%, transparent); stroke-dasharray: 3 2; }
+.doc-content .rh-pdf-mark:hover polygon, .doc-content .rh-pdf-mark.mark-focus polygon { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); }
 .rh-pdf-textlayer span::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
-.rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-img, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
+.rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
 .rh-pdf-box-draft { position: absolute; z-index: 4; border: 1.5px solid var(--accent); border-radius: 2px; pointer-events: none;
   box-shadow: 0 0 0 100vmax color-mix(in srgb, black 26%, transparent), inset 0 0 0 1px color-mix(in srgb, white 35%, transparent); }
 .rh-pdf-box-draft::before, .rh-pdf-box-draft::after { content: ""; position: absolute; width: 8px; height: 8px; border: 2px solid var(--accent); }
 .rh-pdf-box-draft::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 3px; }
 .rh-pdf-box-draft::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 3px; }
 .rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow 180ms ease; }
-.rh-pdf-toolbar { position: relative; z-index: 6; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 28px; padding: 0; background: transparent; border: 0; border-radius: 0;
+.rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px; background: color-mix(in srgb, var(--bg) 94%, transparent); border-bottom: 1px solid var(--border); backdrop-filter: blur(10px); border-radius: 0;
   transition: min-height 140ms ease, padding 140ms ease, background-color 140ms ease, box-shadow 140ms ease; }
 .node.pdf-toolbar-docked .node-head { border-bottom-color: transparent; }
 .node > .rh-pdf-toolbar.is-stuck { width: 100%; min-height: 34px; margin: 0; padding: 4px 8px; flex-shrink: 0; background: var(--node-head); border-bottom: 1px solid var(--border); box-shadow: 0 4px 10px color-mix(in srgb, black 10%, transparent); }
 .rh-pdf-toolbar-placeholder { flex: 0 0 auto; }
-.rh-pdf-toolbar-info { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.rh-pdf-toolbar-status { display: flex; min-width: 0; align-items: center; overflow: hidden; }
+.rh-pdf-toolbar-info { min-width: 0; overflow: hidden; padding: 0 6px; color: var(--fg-faint); font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); text-overflow: ellipsis; white-space: nowrap; }
 .rh-pdf-scanned-note, .rh-pdf-box-hint, .rh-pdf-transcription-note { min-width: 0; font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); color: var(--fg-faint); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rh-pdf-transcription-note { color: var(--warn); }
 .rh-pdf-box-hint { display: none; color: var(--accent); }
@@ -593,6 +601,9 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-toolbar-actions .node-btn:active:not(:disabled) { background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .rh-pdf-toolbar-actions .node-btn:disabled { opacity: .55; cursor: default; }
 .rh-pdf-toolbar-actions .node-btn svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.rh-pdf-toolbar-actions .rh-pdf-zoom-value { min-width: 52px; padding-inline: 6px; font-variant-numeric: tabular-nums; }
+.rh-pdf-toolbar-actions .node-btn.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+.rh-pdf-legacy { margin: 0 0 14px; padding: 10px 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border)); border-radius: var(--radius-control); font-family: var(--font-ui); font-size: var(--text-ui); }
 .rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-convert:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 9%, transparent); }
 .rh-pdf-convert.primary:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }

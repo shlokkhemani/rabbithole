@@ -16,6 +16,7 @@ function onPointerdown(event) {
   if (!layer || !layer.closeOnOutsidePointer) return;
   var path = typeof event.composedPath === "function" ? event.composedPath() : [];
   if (path.includes(layer.element) || path.includes(layer.trigger) || layer.element.contains(event.target) || layer.trigger?.contains(event.target)) return;
+  if (layer.ignoreOutsidePointer?.(event)) return;
   if (layer.preventOutsidePointerDefault) event.preventDefault();
   layer.onClose("outside-pointer");
   if (layer.restoreFocus) layer.focusTimer = setTimeout(function(){
@@ -30,6 +31,7 @@ function syncListeners() {
 
 export function registerLayer(options) {
   var layer = { element: options.element, trigger: options.trigger || null, onClose: options.onClose,
+    ignoreOutsidePointer: options.ignoreOutsidePointer || null,
     closeOnEscape: options.closeOnEscape !== false, closeOnOutsidePointer: options.closeOnOutsidePointer !== false,
     preventOutsidePointerDefault: options.preventOutsidePointerDefault !== false,
     restoreFocus: options.restoreFocus !== false, previousFocus: document.activeElement, focusTimer: 0 };

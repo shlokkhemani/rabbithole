@@ -53,7 +53,7 @@ export const CANVAS_SHELL = `
   </div>
 </div>
 
-<div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
+<div id="viewport"><div id="canvas-gesture-plane" aria-hidden="true"></div><div id="world"><svg id="edges"></svg></div></div>
 
 <div id="ask">
   <div class="ask-input">

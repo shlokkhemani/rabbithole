@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import path from "node:path";
+import { createRequire } from "node:module";
 import { getAssetContentType } from "../../core/assets.js";
 import { resolveAsset } from "../fs-store.js";
 import { slugifyTitle } from "../../core/utils.js";
@@ -6,6 +8,9 @@ import { toPersistedHole } from "../../core/schema.js";
 import { parseRequestBody } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { buildSessionExportHtml } from "./session-export.js";
+
+const require = createRequire(import.meta.url);
+const pdfPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
 
 /**
  * @param {import("./session.js").RabbitHoleSession} session
@@ -28,6 +33,11 @@ export async function handleSessionRequest(session, req, res) {
 
   if (req.method === "GET" && assetRequestName !== undefined) {
     await serveSessionAsset(session, assetRequestName, res);
+    return;
+  }
+
+  if (req.method === "GET" && (url.pathname.startsWith("/standard_fonts/") || url.pathname.startsWith("/cmaps/"))) {
+    await servePdfRuntimeAsset(url.pathname, res);
     return;
   }
 
@@ -104,6 +114,20 @@ export async function handleSessionRequest(session, req, res) {
 
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("Not Found");
+}
+
+async function servePdfRuntimeAsset(pathname, res) {
+  const match = /^\/(standard_fonts|cmaps)\/([A-Za-z0-9_.-]+)$/.exec(pathname);
+  const headers = { "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" };
+  if (!match || (match[1] === "cmaps" && !match[2].endsWith(".bcmap"))) {
+    res.writeHead(404, { ...headers, "Content-Type": "text/plain" }); res.end("Not Found"); return;
+  }
+  try {
+    const bytes = await fs.readFile(path.join(pdfPackageRoot, match[1], match[2]));
+    res.writeHead(200, { ...headers, "Content-Type": "application/octet-stream" }); res.end(bytes);
+  } catch {
+    res.writeHead(404, { ...headers, "Content-Type": "text/plain" }); res.end("Not Found");
+  }
 }
 
 /**

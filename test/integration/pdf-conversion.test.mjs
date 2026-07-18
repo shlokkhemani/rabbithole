@@ -1,23 +1,34 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import * as napiCanvas from "@napi-rs/canvas";
 import { DirectRabbitholeHost, createHoleFromMarkdown } from "../../src/web/transport/direct-host.js";
+import { readAttentionPdf } from "../support/attention-pdf.mjs";
 globalThis.FileReader ||= class { readAsDataURL(blob) { blob.arrayBuffer().then((bytes) => { this.result = `data:${blob.type};base64,${Buffer.from(bytes).toString("base64")}`; this.onload?.(); }); } };
+for (const name of ["DOMMatrix", "DOMPoint", "DOMRect", "Path2D", "ImageData"]) if (!globalThis[name] && napiCanvas[name]) globalThis[name] = napiCanvas[name];
+globalThis.document ||= { baseURI: "file:///", getElementById: () => null, createElement(tag) { if (tag !== "canvas") throw new Error(`Unexpected element ${tag}`); const canvas = napiCanvas.createCanvas(1, 1); canvas.toBlob = (callback) => callback(new Blob([canvas.toBuffer("image/png")], { type: "image/png" })); return canvas; } };
+globalThis.location ||= { protocol: "file:" };
 
 const ORIGINAL = "# PDF\n\nOriginal body line";
+const assets = new Map();
+const attentionSource = await readAttentionPdf();
 // Real provenance lines, offsets valid against ORIGINAL only — conversion
 // replaces the body, so any code that re-normalizes mid-run fails against them.
 const fixture = ({ converting = false, markdown = ORIGINAL, pages = 2 } = {}) => {
+  const sourceBytes = attentionSource;
+  const sourceSha256 = createHash("sha256").update(sourceBytes).digest("hex");
+  const sourceAsset = `pdf-${sourceSha256}.pdf`;
+  assets.set(sourceAsset, new Blob([sourceBytes], { type: "application/pdf" }));
   const hole = createHoleFromMarkdown({ title: "PDF", markdown });
   hole.nodes[0].extensions.pdf = {
-    version: 1, scale: 2, page_count: pages,
-    pages: Array.from({ length: pages }, (_, i) => ({ n: i + 1, asset: `page-${String(i + 1).padStart(3, "0")}.jpg`, w: 10, h: 10 })),
-    lines: [{ p: 1, x: 0.1, y: 0.1, w: 0.5, h: 0.05, s: 7, e: ORIGINAL.length }],
+    version: 2, source: { asset: sourceAsset, sha256: sourceSha256, byte_length: sourceBytes.length }, page_count: pages,
+    pages: Array.from({ length: pages }, (_, i) => ({ n: i + 1, view: [0, 0, 612, 792], rotate: 0, user_unit: 1 })),
+    lines: [{ p: 1, s: 7, e: ORIGINAL.length }],
     notes: [], converting, converted: false, original_markdown: converting ? ORIGINAL : null,
   };
   return hole;
 };
-const assets = new Map(Array.from({ length: 6 }, (_, i) => [`page-${String(i + 1).padStart(3, "0")}.jpg`, new Blob([`p${i + 1}`], { type: "image/jpeg" })]));
 const store = { saveHole: async () => {}, getAsset: async (_id, name) => assets.get(name), listAssets: async () => [...assets.keys()], putAsset: async (_id, name, blob) => assets.set(name, blob) };
-const settle = async (predicate) => { for (let i = 0; i < 100 && !predicate(); i++) await new Promise((resolve) => setTimeout(resolve, 5)); };
+const settle = async (predicate) => { for (let i = 0; i < 1000 && !predicate(); i++) await new Promise((resolve) => setTimeout(resolve, 5)); };
 
 // ---- capability gate rejects conversion before starting --------------------
 {
@@ -72,7 +83,7 @@ const settle = async (predicate) => { for (let i = 0; i < 100 && !predicate(); i
   const rootId = host.state.root_id;
   await host.handleBrowserEvent({ type: "convert_pdf", node_id: rootId });
   await settle(() => host.state.nodes.get(rootId).markdown.includes("Batch one"));
-  assert.equal(host.state.nodes.get(rootId).extensions.pdf.converting, true);
+  assert.equal(host.state.nodes.get(rootId).extensions.pdf.converting, true, `conversion ended before cancellation: ${toasts.map((toast) => toast.message).join("; ")}`);
   await host.handleBrowserEvent({ type: "convert_cancel", node_id: rootId });
   await settle(() => !host.state.nodes.get(rootId).extensions.pdf.converting);
   const node = host.state.nodes.get(rootId);

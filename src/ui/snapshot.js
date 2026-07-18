@@ -1,7 +1,7 @@
 import { extractNodeAssetRefs } from "../core/assets.js";
 import { binaryToBase64 } from "../core/portable-projection.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
-import { buildSnapshotHtml as assembleSnapshotHtml, snapshotProjectionUsesMermaid } from "../core/snapshot-html.js";
+import { buildSnapshotHtml as assembleSnapshotHtml, snapshotProjectionUsesMermaid, snapshotProjectionUsesPdf } from "../core/snapshot-html.js";
 import { slugifyTitle } from "../core/utils.js";
 import {
   currentNodeId,
@@ -21,6 +21,14 @@ function defaultSnapshotHooks(){
     getMermaidSource: function(){
       var carrier = document.getElementById("rabbithole-mermaid-runtime");
       return carrier ? carrier.textContent || "" : "";
+    },
+    getPdfWorkerSource: function(){
+      var carrier = document.getElementById("rabbithole-pdf-worker-runtime");
+      return globalThis.__RABBITHOLE_PDF_WORKER_SOURCE__ || (carrier ? carrier.textContent || "" : "");
+    },
+    getPdfJsSource: function(){
+      var carrier = document.getElementById("rabbithole-pdfjs-runtime");
+      return globalThis.__RABBITHOLE_PDFJS_SOURCE__ || (carrier ? carrier.textContent || "" : "");
     },
     getStylesheetText: null
   };
@@ -129,6 +137,8 @@ export function buildSnapshotHtml(snapshotProjection) {
     stylesheetText: styleText,
     dompurifySource,
     mermaidSource: snapshotProjectionUsesMermaid(snapshotProjection) ? preparedMermaidSource : "",
+    pdfWorkerSource: snapshotProjectionUsesPdf(snapshotProjection) && typeof snapshotHooks.getPdfWorkerSource === "function" ? snapshotHooks.getPdfWorkerSource() : "",
+    pdfJsSource: snapshotProjectionUsesPdf(snapshotProjection) && typeof snapshotHooks.getPdfJsSource === "function" ? snapshotHooks.getPdfJsSource() : "",
     frozenClientSource: frozenClient,
     snapshotProjection,
   });

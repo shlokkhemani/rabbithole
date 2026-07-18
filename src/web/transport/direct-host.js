@@ -1,14 +1,14 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
 import { lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
-import { cropAssetNameForNode, extractNodeAssetRefs } from "../../core/assets.js";
+import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
 import { createWhimsicalHoleId } from "../hole-id.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
-import { cropPdfAssetToBlob, cropPdfAssetToDataUrl } from "../pdf-crop.js";
+import { cropPdfSourceToBlob, cropPdfSourceToDataUrl } from "../pdf-crop.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
@@ -49,7 +49,7 @@ export class DirectRabbitholeHost {
       // normalizePdfExtension would reject against the original line offsets —
       // and that is exactly the state hydration must repair.
       const raw = node?.extensions?.pdf;
-      if (raw?.version === 1 && raw.converting) this.restorePdfConversion(node.id, raw);
+      if (raw?.version === 2 && raw.converting) this.restorePdfConversion(node.id, raw);
     }
   }
 
@@ -129,36 +129,11 @@ export class DirectRabbitholeHost {
     // Raw flag on purpose — normalization fails against the mid-run streamed
     // body, and the lock must hold precisely then.
     if (parent?.extensions?.pdf?.converting) throw new Error("This PDF is being converted. Wait for conversion to finish before branching.");
-    let preparedCrop = null;
-    try { preparedCrop = await this.preparePdfCrop(payload, parent); } catch {}
-    let result;
-    try {
-      result = this.dispatch({ ...payload, type: "branch_request", ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) }, { now: new Date().toISOString() });
-    } catch (error) {
-      if (preparedCrop) {
-        try { await this.store.deleteAsset(this.holeId, preparedCrop.name); } catch {}
-      }
-      throw error;
-    }
+    const result = this.dispatch({ ...payload, type: "branch_request" }, { now: new Date().toISOString() });
     const node = result.createdNode;
     await this.flushSave();
     this.startAnswer(node.id, { reset: false });
-    return { ok: true, node_id: node.id, request_id: payload.request_id, ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) };
-  }
-
-  async preparePdfCrop(payload, parent) {
-    const nodeId = String(payload.node_id || "");
-    const anchor = normalizePdfAnchor(payload.anchor?.pdf);
-    const pdf = normalizePdfExtension(parent);
-    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
-    if (!nodeId || !page) return null;
-    const names = await this.store.listAssets(this.holeId);
-    if (names.length >= 200) throw new Error("asset limit");
-    const blob = await cropPdfAssetToBlob(await this.store.getAsset(this.holeId, page.asset), anchor.rect);
-    const name = cropAssetNameForNode(nodeId);
-    await this.store.putAsset(this.holeId, name, blob);
-    this.registerAssetUrl?.(name, blob);
-    return { name, blob };
+    return { ok: true, node_id: node.id, request_id: payload.request_id };
   }
 
   handleConvertCancel(payload) {
@@ -208,7 +183,12 @@ export class DirectRabbitholeHost {
   }
 
   async transcribePdfBatch(batch, tail, signal) {
-    const pages = await Promise.all(batch.map(async (page) => ({ n: page.n, data_url: await blobDataUrl(await this.store.getAsset(this.holeId, page.asset)) })));
+    const node = this.state.nodes.get(this.state.root_id);
+    const pdf = normalizePdfExtension(node);
+    const source = await this.store.getAsset(this.holeId, pdf.source.asset);
+    const pages = await Promise.all(batch.map(async (page) => ({ n: page.n, data_url: await cropPdfSourceToDataUrl(source, {
+      sourceKey: pdf.source.sha256, pageNumber: page.n, normalizedRect: { x: 0, y: 0, w: 1, h: 1 }, padding: 0, maxLongEdge: 2400,
+    }) })));
     let output = ""; for await (const event of this.brain.transcribePages({ pages, tail }, signal)) if (event.type === "text") output += event.delta;
     return output.trim();
   }
@@ -221,9 +201,11 @@ export class DirectRabbitholeHost {
       // budget or the asset cap they degrade to caption text, never fail the run.
       if (page && ref.rect && figureBudget.bytes < MAX_PDF_FIGURE_ASSET_BYTES) try {
         const names = await this.store.listAssets(this.holeId); if (names.length >= 200) throw new Error("asset limit");
-        const blob = await cropPdfAssetToBlob(await this.store.getAsset(this.holeId, page.asset), ref.rect);
+        const blob = await cropPdfSourceToBlob(await this.store.getAsset(this.holeId, pdf.source.asset), {
+          sourceKey: pdf.source.sha256, pageNumber: page.n, normalizedRect: ref.rect, padding: 0, maxLongEdge: 2048,
+        });
         if (figureBudget.bytes + blob.size > MAX_PDF_FIGURE_ASSET_BYTES) throw new Error("figure budget");
-        const name = `fig-p${String(ref.page).padStart(3, "0")}-${batchIndex * 20 + (++ordinal)}.jpg`;
+        const name = `fig-p${String(ref.page).padStart(3, "0")}-${batchIndex * 20 + (++ordinal)}.png`;
         await this.store.putAsset(this.holeId, name, blob); this.registerAssetUrl?.(name, blob);
         figureBudget.bytes += blob.size; replacement = `![${ref.caption}](asset:${name})`;
       } catch {}
@@ -234,7 +216,7 @@ export class DirectRabbitholeHost {
 
   patchPdf(nodeId, value) { this.dispatch({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.emit({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.scheduleSave(); }
   restorePdfConversion(nodeId, pdf) { this.dispatch({ type: "node_progress", node_id: nodeId, markdown: String(pdf.original_markdown ?? this.state.nodes.get(nodeId)?.markdown ?? "") }); this.patchPdf(nodeId, { ...pdf, converting: false, converted: false }); }
-  failPdfConversion(nodeId, error) { const raw = this.state.nodes.get(nodeId)?.extensions?.pdf; if (raw?.version === 1) this.restorePdfConversion(nodeId, raw); this.abortByNode.delete(nodeId); if (error?.name !== "AbortError") this.onToast?.({ message: `PDF conversion failed: ${error?.message || error}` }); }
+  failPdfConversion(nodeId, error) { const raw = this.state.nodes.get(nodeId)?.extensions?.pdf; if (raw?.version === 2) this.restorePdfConversion(nodeId, raw); this.abortByNode.delete(nodeId); if (error?.name !== "AbortError") this.onToast?.({ message: `PDF conversion failed: ${error?.message || error}` }); }
 
   handleExtensionsPatch(payload) {
     const result = this.applyPersistedBrowserEvent(payload);
@@ -491,28 +473,16 @@ export class DirectRabbitholeHost {
   async attachBranchImage(node, context) {
     const parent = this.state.nodes.get(node.parent_id);
     const anchor = node.origin?.anchor?.pdf;
-    const ownCrop = node.origin?.crop_asset;
-    if (ownCrop) try {
-      const dataUrl = await blobDataUrl(await this.store.getAsset(this.holeId, ownCrop));
-      context.attachment = { kind: "image", data_url: dataUrl, page: anchor?.page || 1, source: "selection_crop" };
+    const inheritedAnchor = anchor || parent?.origin?.anchor?.pdf;
+    let sourceNode = parent;
+    while (sourceNode && !normalizePdfExtension(sourceNode)) sourceNode = this.state.nodes.get(sourceNode.parent_id);
+    const pdf = normalizePdfExtension(sourceNode);
+    const pageNumber = inheritedAnchor?.fragments?.[0]?.page;
+    if (pdf && pageNumber) try {
+      const blob = await this.store.getAsset(this.holeId, pdf.source.asset);
+      const dataUrl = await cropPdfSourceToDataUrl(blob, { sourceKey: pdf.source.sha256, pageNumber, anchor: inheritedAnchor });
+      context.attachment = { kind: "image", data_url: dataUrl, page: pageNumber, source: "selection_crop" };
       return;
-    } catch {}
-
-    // Compatibility/failure fallback for an ask created before durable crop
-    // provenance existed, or when crop persistence failed at creation time.
-    const pdf = normalizePdfExtension(parent);
-    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
-    if (page) try {
-      const blob = await this.store.getAsset(this.holeId, page.asset);
-      const dataUrl = await cropPdfAssetToDataUrl(blob, anchor.rect);
-      context.attachment = { kind: "image", data_url: dataUrl, page: anchor.page, source: "selection_crop" };
-      return;
-    } catch {}
-
-    const inheritedCrop = parent?.origin?.crop_asset;
-    if (inheritedCrop) try {
-      const dataUrl = await blobDataUrl(await this.store.getAsset(this.holeId, inheritedCrop));
-      context.attachment = { kind: "image", data_url: dataUrl, page: parent.origin?.anchor?.pdf?.page || 1, source: "parent_crop" };
     } catch {}
   }
 

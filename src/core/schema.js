@@ -66,12 +66,12 @@ export function parsePersistedHole(raw) {
   return /** @type {PersistedHole} */ (hole);
 }
 
-/** Imported origins are otherwise opaque; only the documented PDF rectangle is consumer-normalized. @param {Record<string, any>} hole */
+/** Imported origins are otherwise opaque; PDF-space anchors are consumer-normalized. @param {Record<string, any>} hole */
 function normalizeImportedPdfAnchors(hole) {
   if (!Array.isArray(hole.nodes)) return;
   for (const node of hole.nodes) {
     const pdf = node?.origin?.anchor?.pdf;
-    if (!pdf || typeof pdf !== "object" || !pdf.rect || typeof pdf.rect !== "object") continue;
+    if (!pdf || typeof pdf !== "object") continue;
     const normalized = normalizePdfAnchor(pdf);
     if (normalized) node.origin.anchor.pdf = normalized;
     else delete node.origin.anchor.pdf;

@@ -10,9 +10,10 @@ import {
 } from "../brain/ollama-diagnostics.js";
 
 const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download/mac";
-const ORIGIN_COMMANDS = `launchctl setenv OLLAMA_ORIGINS "https://rabbithole.ing"
-osascript -e 'quit app "Ollama"'
-open -a Ollama`;
+export const OLLAMA_ORIGIN_COMMANDS = `launchctl setenv OLLAMA_ORIGINS "https://rabbithole.ing"
+killall Ollama 2>/dev/null || true
+killall ollama 2>/dev/null || true
+open -na /Applications/Ollama.app`;
 const STEPS = ["browser", "ollama", "access", "model"];
 const STEP_LABELS = { browser: "Browser", ollama: "Ollama", access: "Site access", model: "Model" };
 const SUCCESS_DWELL_MS = 1100;
@@ -138,10 +139,10 @@ export function createOllamaRecoveryDialog({ onResolved } = {}) {
 
   function renderOriginStep(result) {
     renderState({
-      step: "access", completeThrough: "ollama", title: "Allow rabbithole.ing", copy: "Run this once in Terminal. It tells Ollama to accept requests from Rabbithole.",
-      code: ORIGIN_COMMANDS,
+      step: "access", completeThrough: "ollama", title: "Allow rabbithole.ing", copy: "Run this once in Terminal. It tells Ollama to accept requests from Rabbithole, then restarts it.",
+      code: OLLAMA_ORIGIN_COMMANDS,
       primary: { label: "Copy commands", action: async (button) => {
-        await copyText(ORIGIN_COMMANDS);
+        await copyText(OLLAMA_ORIGIN_COMMANDS);
         swapButtonLabel(button, "Copied");
         setTimeout(() => { if (button.isConnected) swapButtonLabel(button, "Copy commands"); }, 1600);
       } },

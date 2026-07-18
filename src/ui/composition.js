@@ -50,7 +50,9 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
   }
 
   try {
-    registerVisualHooks({ post: post, getNode: function(id){ return nodes[id] || null; } });
+    var visualRuntimeHooks = { post: post, getNode: function(id){ return nodes[id] || null; } };
+    if (typeof capabilities.loadMermaid === "function") visualRuntimeHooks.loadMermaid = capabilities.loadMermaid;
+    registerVisualHooks(visualRuntimeHooks);
     initCore(hydration);
     own(disposeCore);
     own(function(){ setRendererAssetData(null); });

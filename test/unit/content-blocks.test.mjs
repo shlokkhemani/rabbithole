@@ -6,9 +6,9 @@ import path from "node:path";
 import { TextDecoder } from "node:util";
 import { encodeBase64Utf8, renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
-import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../../src/core/blocks.js";
+import { getBlockType, listBlockTypes, markdownContainsBlockType, normalizeBlockIds, registerBlockType } from "../../src/core/blocks.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { getDompurifyScript } from "../../src/node/html/built-assets.js";
+import { getDompurifyScript, getMermaidScript } from "../../src/node/html/built-assets.js";
 import { buildCheckVisual, mountVisuals, registerBlockMount } from "../../src/ui/visuals.js";
 
 function count(haystack, needle) {
@@ -51,6 +51,16 @@ async function runMarkdownFixtures() {
   assert(pendingCheck.includes("Drawing…"));
   assert(!pendingCheck.includes("question"));
 
+  const mermaidSource = "flowchart LR\n  A --> B";
+  const mermaidHtml = await renderMarkdownToHtml(["```mermaid", mermaidSource, "```"].join("\n"));
+  assert(mermaidHtml.includes('data-viz="mermaid"'));
+  assert.equal(decodeDataSrc(mermaidHtml), mermaidSource);
+  assert(!mermaidHtml.includes('class="language-mermaid"'), "Mermaid should mount as a visual rather than highlighted code");
+
+  const pendingMermaid = await renderMarkdownToHtml(["```mermaid", "flowchart LR"].join("\n"));
+  assert(pendingMermaid.includes('class="viz viz-pending"'));
+  assert(pendingMermaid.includes('data-viz="mermaid"'));
+
   const pendingMath = await renderMarkdownToHtml(["Math", "$$", "x + y"].join("\n"));
   assert(pendingMath.includes('class="math-pending"'));
   assert(!pendingMath.includes("x + y"));
@@ -65,15 +75,19 @@ async function runMarkdownFixtures() {
 function runBlockIdNormalization() {
   const source = [
     "Before  ", "", "` ```show `", "", "```javascript", "```show", "inside", "```", "", "```show", "one", "```",
-    "", "~~~show note=yes id=d9mc4", "two", "~~~", "", "After",
+    "", "~~~show note=yes id=d9mc4", "two", "~~~", "", "```mermaid", "flowchart LR", "```", "", "After",
   ].join("\n");
   const result = normalizeBlockIds(source, { idFactory: () => "b7ka2" });
   assert.equal(result.changed, true);
   assert(result.markdown.includes("```show id=b7ka2\none\n```"));
   assert(result.markdown.includes("~~~show id=d9mc4\ntwo\n~~~"));
+  assert(result.markdown.includes("```mermaid id=b7ka2\nflowchart LR\n```"));
   assert(result.markdown.includes("```javascript\n```show\ninside\n```"));
   assert(result.markdown.includes("` ```show `"));
   assert.deepEqual(normalizeBlockIds(result.markdown, { idFactory: () => "c8lb3" }), { markdown: result.markdown, changed: false });
+  assert.equal(markdownContainsBlockType(result.markdown, "mermaid"), true);
+  assert.equal(markdownContainsBlockType("````markdown\n```mermaid\nflowchart LR\n```\n````", "mermaid"), false);
+  assert.equal(markdownContainsBlockType("~~~mermaid\nflowchart LR\n~~~", "mermaid"), true);
   console.log("ok blocks: persist normalization is registered-only, byte-preserving, deterministic, and idempotent");
 }
 
@@ -91,8 +105,9 @@ function runBlockRegistryContract() {
 }
 
 function runCheckDescriptorGoldens() {
-  assert.deepEqual(listBlockTypes().filter(({ type }) => type === "show" || type === "check").map(({ type, version, security }) => ({ type, version, security })), [
+  assert.deepEqual(listBlockTypes().filter(({ type }) => type === "show" || type === "mermaid" || type === "check").map(({ type, version, security }) => ({ type, version, security })), [
     { type: "show", version: 1, security: "sanitize-html" },
+    { type: "mermaid", version: 1, security: "sanitize-html" },
     { type: "check", version: 1, security: "sanitize-html" },
   ]);
   const descriptor = getBlockType("check");
@@ -347,6 +362,13 @@ async function runClientMountSimulation() {
   assert.strictEqual(second, first, "same content key on same surface should reuse the mounted element");
   assert.equal(second.__marker.preserved, true);
 
+  const changedHtml = await renderMarkdownToHtml(["```show id=b7ka2", "<div>Updated source</div>", "```"].join("\n"));
+  container.innerHTML = changedHtml;
+  harness.mountVisuals(container, "reader:n1");
+  const changed = findMounted(container);
+  assert.notStrictEqual(changed, first, "a durable block id must not hide source edits");
+  assert.equal(findShadowContent(changed).textContent, "Updated source");
+
   const duplicateSource = "<div>same</div>";
   const pairHtml = await renderMarkdownToHtml(["```show id=c8lb3", duplicateSource, "```", "", "```show id=d9mc4", duplicateSource, "```"].join("\n"));
   container.innerHTML = pairHtml;
@@ -447,9 +469,12 @@ function runFrameworkSanitization() {
 async function assertPageAssembly() {
   const html = buildCanvasHtml({ title: "Content Blocks", root_id: "root", nodes: [] });
   const purify = getDompurifyScript();
+  const mermaid = getMermaidScript();
   assert.equal(count(html, purify), 1, "DOMPurify should be inlined exactly once");
+  assert.equal(count(html, mermaid), 1, "the inert Mermaid runtime should be embedded exactly once");
+  assert(html.includes('<script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">'));
   assert.equal(count(html, "<script>"), 1, "page should keep one inline script for the node --check gate");
-  assert(html.indexOf(purify) < html.indexOf("(function(){"), "DOMPurify should load before the client runtime");
+  assert(html.indexOf(purify) < html.indexOf('\n(function(){\n\t  "use strict";'), "DOMPurify should load before the client runtime");
 
   const scriptMatch = html.match(/<script>\n([\s\S]*)\n<\/script>/);
   assert(scriptMatch, "assembled HTML should contain an inline script");

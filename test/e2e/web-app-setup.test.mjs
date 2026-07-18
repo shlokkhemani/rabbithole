@@ -25,12 +25,41 @@ try {
   await verifySetupDefaultsToOpenRouterAndGatesLocalGuide();
   await verifyLocalFailureRequiresTroubleshootChoice();
   await verifyLandingAndComposer();
+  await verifyReducedMotionOverlays();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
   await verifyAskKeyUxAndRail();
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyReducedMotionOverlays() {
+  const context = await browser.newContext({ reducedMotion: "reduce" });
+  await seedConfiguredOpenRouter(context);
+  try {
+    const page = await context.newPage();
+    await routeProvider(page, { streams: [["# Reduced motion root\n\nUsable without animation."]] });
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#blank-start-new");
+    await page.waitForSelector("#composer-modal:not([hidden])");
+    assert.deepEqual(await page.locator("#composer-card").evaluate((card) => {
+      const styles = getComputedStyle(card);
+      return { opacity: styles.opacity, transform: styles.transform, animationName: styles.animationName };
+    }), { opacity: "1", transform: "none", animationName: "none" }, "reduced motion should reveal the composer without relying on its entrance animation");
+
+    await page.click("#composer-path-ask");
+    await page.fill("#composer-input", "Check reduced motion");
+    await page.click("#composer-primary");
+    await waitForCanvasText(page, "Usable without animation.");
+    assert.equal(await page.locator(".node.root").evaluate((node) => getComputedStyle(node).opacity), "1", "reduced motion should render the generated root without an entrance transition");
+
+    await page.click("#t-settings");
+    await page.waitForSelector("#web-settings-popover");
+    assert.equal(await page.locator("#web-settings-popover").evaluate((popover) => getComputedStyle(popover).opacity), "1", "reduced motion should leave settings usable when its entrance animation is disabled");
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifySetupDefaultsToOpenRouterAndGatesLocalGuide() {

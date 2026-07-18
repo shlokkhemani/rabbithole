@@ -4,6 +4,7 @@ const CLIENT_PATH = new URL("../../../dist/client.js", import.meta.url);
 const FROZEN_CLIENT_PATH = new URL("../../../dist/frozen-client.js", import.meta.url);
 const KATEX_CSS_PATH = new URL("../../../dist/katex.css", import.meta.url);
 const DOMPURIFY_SCRIPT_PATH = new URL("../../../dist/dompurify.js", import.meta.url);
+const MERMAID_SCRIPT_PATH = new URL("../../../dist/mermaid.js", import.meta.url);
 
 function memoizeFile(path) {
   let cached = null;
@@ -18,3 +19,4 @@ export const getClientBundle = memoizeFile(CLIENT_PATH);
 export const getFrozenClientBundle = memoizeFile(FROZEN_CLIENT_PATH);
 export const getKatexCss = memoizeFile(KATEX_CSS_PATH);
 export const getDompurifyScript = memoizeFile(DOMPURIFY_SCRIPT_PATH);
+export const getMermaidScript = memoizeFile(MERMAID_SCRIPT_PATH);

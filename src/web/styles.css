@@ -1904,6 +1904,11 @@ body.blank-dragging .composer-card {
     transition: none;
   }
 
+  .composer-card {
+    opacity: 1;
+    transform: none;
+  }
+
   .ollama-recovery-modal,
   .ollama-recovery-card,
   .ollama-recovery-stage,

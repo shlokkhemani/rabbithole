@@ -58,6 +58,7 @@ await esbuild.build({
 
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
+await fs.writeFile(path.join(absOutdir, "mermaid.js"), await buildMermaidScript(), "utf8");
 
 if (!parsed.explicit) {
   await buildWebApp(absOutdir);
@@ -80,6 +81,13 @@ async function buildKatexCss() {
 async function buildDompurifyScript() {
   const scriptPath = require.resolve("dompurify/dist/purify.min.js");
   return (await fs.readFile(scriptPath, "utf8")).replace(/<\/script/gi, "<\\/script");
+}
+
+async function buildMermaidScript() {
+  const scriptPath = require.resolve("@mermaid-js/tiny/dist/mermaid.tiny.js");
+  return (await fs.readFile(scriptPath, "utf8"))
+    .replace(/[ \t]+$/gm, "")
+    .replace(/<\/script/gi, "<\\/script");
 }
 
 async function replaceAsync(source, regex, replacer) {
@@ -125,9 +133,10 @@ async function buildWebApp(assetDir) {
     logLevel: "silent"
   });
 
-  const [katexCss, dompurify, frozenClient, webCss] = await Promise.all([
+  const [katexCss, dompurify, mermaid, frozenClient, webCss] = await Promise.all([
     fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
     fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
+    fs.readFile(path.join(assetDir, "mermaid.js"), "utf8"),
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
   ]);
@@ -135,6 +144,7 @@ async function buildWebApp(assetDir) {
 
   await fs.writeFile(path.join(webDist, "styles.css"), `${frozenStyles}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
+  await fs.writeFile(path.join(webDist, "mermaid.js"), mermaid, "utf8");
   await fs.writeFile(path.join(webDist, "favicon.svg"), faviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(

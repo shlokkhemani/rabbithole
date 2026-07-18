@@ -6,10 +6,31 @@ import { escapeHtml } from "../core/utils.js";
 
 var visualSurfaceCaches = {};
 var blockMounts = {};
+var mermaidRuntimePromise = null;
+var mermaidRenderQueue = Promise.resolve();
+var mermaidRenderId = 0;
+var mermaidControllers = [];
+var mermaidThemeObserver = null;
+var mermaidGeneration = 0;
+
+function loadEmbeddedMermaidRuntime(){
+  if (window.mermaid) return window.mermaid;
+  var carrier = document.getElementById("rabbithole-mermaid-runtime");
+  if (!carrier || !carrier.textContent) throw new Error("Mermaid runtime is unavailable");
+  var script = document.createElement("script");
+  script.setAttribute("data-rabbithole-runtime", "mermaid");
+  script.textContent = carrier.textContent;
+  (document.head || document.body || document.documentElement).appendChild(script);
+  script.remove();
+  if (!window.mermaid) throw new Error("Mermaid runtime failed to initialize");
+  return window.mermaid;
+}
+
 function defaultVisualHooks(){
   return {
     post: function(){ return Promise.resolve({ ok: true }); },
-    getNode: function(){ return null; }
+    getNode: function(){ return null; },
+    loadMermaid: loadEmbeddedMermaidRuntime
   };
 }
 var visualHooks = defaultVisualHooks();
@@ -45,12 +66,23 @@ var VISUAL_SANITIZE_CONFIG = {
     ".rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}" +
     ".rh-check-actions{display:flex;justify-content:flex-end;}" +
     ".rh-check-reset{padding:.45em .7em;text-align:center;}";
+  var MERMAID_CSS =
+    ".rh-mermaid{display:grid;place-items:center;min-height:3.5em;width:100%;}" +
+    ".rh-mermaid svg{display:block;width:100%;max-width:100%!important;height:auto;margin:auto;}" +
+    ".rh-mermaid-loading{color:var(--fg-dim);font:500 .85em var(--font-ui);}" +
+    ".rh-mermaid .viz-fallback{width:100%;}";
 export function registerVisualHooks(hooks){
     visualHooks = Object.assign({}, visualHooks, hooks || {});
   }
 export function disposeVisuals(){
     visualSurfaceCaches = {};
     visualHooks = defaultVisualHooks();
+    mermaidRuntimePromise = null;
+    mermaidRenderQueue = Promise.resolve();
+    mermaidControllers = [];
+    mermaidGeneration += 1;
+    if (mermaidThemeObserver) mermaidThemeObserver.disconnect();
+    mermaidThemeObserver = null;
   }
 export function registerBlockMount(type, mountSpec){
     var key = String(type || "").toLowerCase();
@@ -112,6 +144,94 @@ function visualFallback(source, message){
 function buildShowVisual(model){
     return String(model == null ? "" : model);
   }
+
+function buildMermaidVisual(){
+  return '<div class="rh-mermaid" role="img" aria-label="Mermaid diagram"><span class="rh-mermaid-loading">Drawing diagram…</span></div>';
+}
+
+function currentMermaidTheme(){
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "default";
+}
+
+function loadMermaidRuntime(){
+  if (!mermaidRuntimePromise) {
+    mermaidRuntimePromise = Promise.resolve().then(function(){
+      return visualHooks.loadMermaid();
+    }).then(function(runtime){
+      if (!runtime || typeof runtime.initialize !== "function" || typeof runtime.render !== "function") {
+        throw new Error("Mermaid runtime does not expose initialize() and render()");
+      }
+      return runtime;
+    }).catch(function(error){
+      mermaidRuntimePromise = null;
+      throw error;
+    });
+  }
+  return mermaidRuntimePromise;
+}
+
+function showMermaidFallback(target, source){
+  target.textContent = "";
+  target.removeAttribute("role");
+  target.removeAttribute("aria-label");
+  target.appendChild(visualFallback(source, "Mermaid could not render this diagram. Showing source."));
+}
+
+function trackMermaidController(controller){
+  mermaidControllers.push(controller);
+  if (mermaidThemeObserver || typeof MutationObserver !== "function") return;
+  mermaidThemeObserver = new MutationObserver(function(){
+    var live = [];
+    for (var i = 0; i < mermaidControllers.length; i++) {
+      var current = mermaidControllers[i];
+      if (current.root && current.root.isConnected !== false) {
+        live.push(current);
+        current.render();
+      }
+    }
+    mermaidControllers = live;
+  });
+  mermaidThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+}
+
+function wireMermaid(root, source){
+  var target = root.querySelector(".rh-mermaid");
+  var renderVersion = 0;
+  var generation = mermaidGeneration;
+  var controller = {
+    root: root,
+    render: function(){
+      var version = ++renderVersion;
+      mermaidRenderQueue = mermaidRenderQueue.then(async function(){
+        try {
+          var runtime = await loadMermaidRuntime();
+          if (generation !== mermaidGeneration || version !== renderVersion || !target) return;
+          runtime.initialize({
+            startOnLoad: false,
+            securityLevel: "strict",
+            htmlLabels: false,
+            suppressErrorRendering: true,
+            theme: currentMermaidTheme(),
+            flowchart: { htmlLabels: false, useMaxWidth: true },
+            sequence: { useMaxWidth: true }
+          });
+          var result = await runtime.render("rh-mermaid-" + (++mermaidRenderId), String(source || ""));
+          if (generation !== mermaidGeneration || version !== renderVersion || !target) return;
+          target.innerHTML = sanitizeVisualSource(result && result.svg || "");
+          var svg = target.querySelector("svg");
+          if (!svg) throw new Error("Mermaid produced no SVG");
+          svg.setAttribute("role", "img");
+          if (!svg.getAttribute("aria-label")) svg.setAttribute("aria-label", "Mermaid diagram");
+        } catch(e) {
+          if (generation === mermaidGeneration && version === renderVersion && target) showMermaidFallback(target, source);
+        }
+      });
+    }
+  };
+  trackMermaidController(controller);
+  controller.render();
+}
+
   function buildMountedVisual(descriptor, mountSpec, model, context){
       var host = document.createElement("div");
       host.className = "viz-mounted viz-" + descriptor.type;
@@ -119,7 +239,7 @@ function buildShowVisual(model){
       host.style.contain = "content";
       var shadow = host.attachShadow({ mode: "open" });
       var style = document.createElement("style");
-      style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : "");
+      style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : descriptor.type === "mermaid" ? MERMAID_CSS : "");
       var frame = document.createElement("div");
       frame.className = "rh-viz-frame";
       var content = document.createElement("div");
@@ -179,6 +299,8 @@ export function mountVisuals(containerEl, surfaceKey){
       used[item.key] = idx + 1;
       if (!cache[item.key]) cache[item.key] = [];
       var mounted = cache[item.key][idx];
+      var signature = visualCacheKey(item.type, item.encoded);
+      if (mounted && mounted.__rhVisualSignature !== signature) mounted = null;
       if (!mounted){
         var descriptor = getBlockType(item.type);
         var mountSpec = blockMounts[item.type];
@@ -213,6 +335,7 @@ export function mountVisuals(containerEl, surfaceKey){
         } catch(e) {
           mounted = visualFallback(source, "Unable to render visual. Showing source.");
         }
+        mounted.__rhVisualSignature = signature;
         cache[item.key][idx] = mounted;
       }
       if (item.el.parentNode) item.el.parentNode.replaceChild(mounted, item.el);
@@ -225,6 +348,7 @@ export function mountVisuals(containerEl, surfaceKey){
   }
 
 registerBlockMount("show", { renderHtml: buildShowVisual });
+registerBlockMount("mermaid", { renderHtml: buildMermaidVisual, wire: wireMermaid });
 
 export function buildCheckVisual(model){
   var options = model.options.map(function(option, index){

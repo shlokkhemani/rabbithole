@@ -242,7 +242,7 @@ async function runSessionFixtures(source, source2) {
     assert.deepEqual(Object.keys(projection.assets), ["diagram-1.png"], "export should include referenced assets only");
     assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));
     assert(!exportHtml.includes(PNG_BYTES_2.toString("base64")), "export should omit unreferenced session assets");
-    assert(!exportHtml.includes("/assets/"), "export should not keep live asset URLs");
+    assert(!/\b(?:src|href)=["']\/assets\//.test(exportHtml), "export should not keep live asset URLs in rendered attributes");
 
     const ask = session.handleBranchRequest({
       parent_id: "root",

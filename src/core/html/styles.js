@@ -180,6 +180,8 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
 /* The taskbar floats above; the reader clears it with top padding. */
 #reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; padding-top: var(--taskbar-clear); }
 body.mode-canvas #reader { display: none; }
+#reader-workspace { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+#reader-document { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 /* The lineage trail lives at the top of the document column and scrolls with it. */
 #breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 12.5px; margin-bottom: 22px; }
 #breadcrumb:has(.crumb:only-child) { display: none; }
@@ -187,8 +189,17 @@ body.mode-canvas #reader { display: none; }
 .crumb:hover { color: var(--fg-bold); }
 .crumb.current { color: var(--fg-bold); font-weight: 600; cursor: default; }
 .crumb-sep { color: var(--fg-faint); flex-shrink: 0; }
-#reader-main { flex: 1; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+#reader-main { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
+/* A PDF is already a complete reading surface. In Reader, give it the whole
+   flex slot between the shared top chrome and composer instead of stacking a
+   second toolbar and a second scrollbar around it. Threaded PDFs retain the
+   normal outer reader flow so their conversation remains reachable. */
+#reader-main.pdf-reader { padding-top: 0; }
+#reader-main.pdf-reader-viewport { overflow: hidden; padding: 0; scrollbar-gutter: auto; }
+#reader-main.pdf-reader-viewport .reader-col.pdf-reader-viewport { display: flex; width: 100%; max-width: none; height: 100%; min-height: 0; flex-direction: column; }
+#reader-main.pdf-reader-viewport .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; min-height: 0; }
+#reader-main.pdf-reader-viewport .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
 .reader-context { font-family: var(--font-ui); font-size: 12.5px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding: 2px 0 2px 12px; margin-bottom: 26px; line-height: 1.55; }
 .reader-context .rc-label { color: var(--fg-faint); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; margin-right: 6px; }
 /* The FROM strip is a live link back to the exact spot this branch grew from. */
@@ -196,25 +207,27 @@ body.mode-canvas #reader { display: none; }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
 .reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color 0.15s; }
-/* ---------- margin notes ----------
-   Branches sit beside the text like document comments: each card hangs in the
-   right margin, top-aligned with the highlight it grew from (stacked apart when
-   they'd collide). No sidebar, no toggling — the margin appears whenever the
-   window is wide enough, and the inline marks carry narrow screens. */
-#margin-notes { display: none; position: absolute; top: 0; left: calc(100% + 36px);
-  width: min(250px, calc((100vw - var(--reader-column)) / 2 - 72px)); }
-@media (min-width: 1180px) { #margin-notes { display: block; } }
-.side-item { position: absolute; left: 0; width: 100%; border: 1px solid var(--border); border-radius: 10px;
-  padding: 9px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
+/* ---------- branch rail ----------
+   Reader content and its branches are sibling surfaces. The document gets all
+   remaining width; the rail stays at the physical right edge and scrolls on
+   its own, so PDF scrolling, prose scrolling, and branch browsing never fight
+   over the same gesture. */
+#reader-rail { display: flex; width: var(--reader-branch-rail); min-width: 0; min-height: 0; flex: 0 0 var(--reader-branch-rail); flex-direction: column;
+  border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bar-bg) 58%, var(--bg)); }
+.reader-rail-head { display: flex; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px;
+  border-bottom: 1px solid var(--border); color: var(--fg-bold); font-family: var(--font-ui); font-size: 12px; font-weight: 600; }
+#reader-rail-count { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--fg-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 500; }
+#margin-notes { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px; overflow: auto; padding: 12px 12px 24px;
+  overscroll-behavior: contain; scrollbar-gutter: stable; }
+.reader-rail-empty { margin: auto 8px; color: var(--fg-faint); font-family: var(--font-ui); font-size: 11.5px; line-height: 1.5; text-align: center; }
+.side-item { position: relative; width: 100%; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
-#margin-notes.settled .side-item { transition: border-color var(--duration-fast) var(--ease-standard),
-  box-shadow var(--duration-fast) var(--ease-standard), top var(--duration-enter) var(--ease-standard); }
 .side-item:hover { border-color: var(--border-focus); box-shadow: var(--shadow); }
 .side-item .si-q { font-size: 12px; color: var(--fg-bold); line-height: 1.45; }
-/* The highlight sits right beside the card, so the quote only appears on cards
-   that have no inline mark to point at (region branches, unmatched anchors). */
-.si-quote { display: none; font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-item.unanchored .si-quote { display: block; }
+.si-quote { display: block; font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-quote[hidden] { display: none; }
 .si-status { font-size: 10.5px; color: var(--fg-dim); margin-top: 6px; }
 .si-muted { color: var(--fg-faint); }
 /* A pending branch streams its last lines live inside its sidebar tile — the
@@ -230,14 +243,6 @@ body.mode-canvas #reader { display: none; }
   color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 999px; padding: 1.5px 8px; vertical-align: 0.08em; }
 
-/* ---------- follow-up conversation thread ---------- */
-#thread { margin-top: 8px; }
-.thread-rule { display: flex; align-items: center; gap: 10px; margin: 34px 0 24px; font-family: var(--font-ui); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-faint); }
-.thread-rule::before, .thread-rule::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
-.turn { margin-bottom: 28px; }
-.turn-q { display: flex; justify-content: flex-end; margin-bottom: 16px; }
-.turn-q > span { max-width: 82%; background: var(--hl); border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg-bold); font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; padding: 8px 14px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: break-word; }
-
 /* ---------- composer (follow-up input) ---------- */
 /* overflow:hidden + the same stable gutter as #reader-main keeps the pill's
    column pixel-aligned with the document text even when a classic scrollbar
@@ -249,17 +254,17 @@ body.mode-canvas #reader { display: none; }
 #composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg); font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; max-height: 140px; padding: 4px 0; }
 #composer textarea::placeholder { color: var(--fg-faint); }
 
-/* Phones get a reader designed around one vertical reading surface: the inline
-   marks are the branch affordance, and the thread carries follow-ups. */
+/* Compact screens keep one uninterrupted reading surface. Inline marks remain
+   the branch affordance there; the full branch rail starts when both surfaces
+   have enough room to stay useful. */
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   #reader { height: 100dvh; min-height: -webkit-fill-available; overflow: hidden; }
   .crumb { max-width: min(72vw, 280px); }
   #reader-main { min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 24px max(18px, env(safe-area-inset-right)) 28px max(18px, env(safe-area-inset-left));
     overscroll-behavior-y: contain; scrollbar-gutter: auto; touch-action: pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
   .reader-col { width: 100%; max-width: none; }
-  #margin-notes { display: none; }
+  #reader-rail, #margin-notes { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
-  .turn-q > span { max-width: 92%; }
   .rh-origin-crop { max-width: 100%; }
   #composer { padding: 8px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     overflow: hidden; scrollbar-gutter: auto; }
@@ -267,13 +272,21 @@ body.mode-canvas #reader { display: none; }
   #composer textarea { min-height: 32px; font-size: 16px; line-height: 1.4; }
   #composer .send-btn { width: 44px; height: 44px; }
 }
+@media (min-width: 761px) and (max-width: 879px) {
+  #reader-rail, #margin-notes { display: none; }
+}
+@media (min-width: 880px) and (max-width: 1100px) {
+  #reader-main:not(.pdf-reader-viewport) { padding-inline: 28px; }
+  #composer { padding-inline: 28px; }
+}
 
 /* ---------- CANVAS ---------- */
-#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: none;
+#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: pan-x pan-y;
   background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 26px 26px; }
 body.mode-canvas #viewport { display: block; }
 #viewport.panning { cursor: grabbing; }
 #viewport.pinching { cursor: zoom-in; }
+#canvas-gesture-plane { position: absolute; inset: 0; touch-action: none; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
@@ -372,6 +385,9 @@ body.mode-canvas #viewport { display: block; }
    action ("Canvas" / "Reader"), never as state. */
 :root { --taskbar-clear: 62px; }
 #taskbar { position: fixed; top: 14px; left: 14px; right: 14px; z-index: 50; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
+#taskbar > #tb-tools, #taskbar > #tb-session { flex: 0 0 auto; }
+#tb-document { position: fixed; top: 14px; left: var(--rh-pdf-reader-center, 50%); display: flex; width: max-content; max-width: calc(100vw - 28px); min-width: 0; justify-content: center; transform: translateX(-50%); pointer-events: none; }
+#tb-document:empty, body.mode-canvas #tb-document { display: none; }
 #tb-session { display: flex; align-items: flex-start; gap: 10px; }
 .tb-pill { display: flex; align-items: center; gap: var(--space-3); pointer-events: auto; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
 /* One control height for everything in the bar — icon or text, every button
@@ -402,6 +418,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
     box-shadow: var(--shadow); padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
     touch-action: pan-x; scrollbar-width: none; }
   #taskbar::-webkit-scrollbar { display: none; }
+  #tb-document { position: static; top: auto; left: auto; flex: 0 0 auto; transform: none; }
   .tb-pill { background: none; border: none; box-shadow: none; padding: 0; border-radius: 0; gap: 2px; flex: 0 0 auto; }
   #tb-session { position: sticky; right: 0; margin-left: auto; align-items: center; gap: 2px; background: var(--bar-bg); padding-left: 4px; }
   .tb-pill .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
@@ -531,52 +548,75 @@ body.frozen.session-over .ll-frozen { display: inline; }
 body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 
 /* ---------- native PDF pages ---------- */
-.doc-content.rh-pdf { display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
-.rh-pdf-page { position: relative; width: 100%; overflow: hidden; background: white; border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
-.rh-pdf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; user-select: none; }
-.rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
-.rh-pdf-textlayer { z-index: 2; cursor: text; }
-.rh-pdf-textlayer span { position: absolute; display: block; color: transparent; white-space: pre; line-height: 1; overflow: visible; transform-origin: left top; user-select: text; }
-.rh-pdf-marks { z-index: 3; pointer-events: none; }
+.doc-content.rh-pdf { display: flex; min-height: 0; flex-direction: column; background: var(--bg); }
+.rh-pdf-scroll { position: relative; min-width: 0; max-width: 100%; max-height: min(76vh, 980px); overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y; scrollbar-gutter: stable; }
+.node-body.pdf-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.node-body.pdf-body > .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; }
+.node .node-body.pdf-body .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
+.rh-pdf-stack { display: flex; box-sizing: border-box; width: max-content; min-width: 100%; flex-direction: column; align-items: center; gap: 18px; padding: 10px 12px 18px; }
+.rh-pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: white; outline: 1px solid var(--border); outline-offset: -1px; box-shadow: 0 2px 10px rgba(0,0,0,.12); contain: layout paint style; }
+.rh-pdf-canvas-layer, .rh-pdf-canvas-generation, .rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
+.rh-pdf-canvas-layer { z-index: 1; overflow: hidden; pointer-events: none; }
+.rh-pdf-canvas-generation { transform-origin: 0 0; }
+.rh-pdf-canvas-generation canvas { position: absolute; display: block; }
+.rh-pdf-textlayer { z-index: 2; overflow: hidden; cursor: text; line-height: 1; text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; }
+.rh-pdf-textlayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; user-select: text; }
+.rh-pdf-textlayer span.markedContent { top: 0; height: 0; }
+.rh-pdf-textlayer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.rh-pdf-textlayer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.rh-pdf-textlayer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
+.rh-pdf-marks { z-index: 3; overflow: visible; pointer-events: none; }
 /* Rect marks sit over the white page render in both themes, so they take the
    accent wash directly: a lighter cousin of the live-selection tint by default,
    selection-strength on hover / when the answer card is hovered (mark-focus). */
-.doc-content mark.rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; border-bottom: none;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
-  pointer-events: auto; cursor: pointer; transition: background 0.15s, box-shadow 0.15s; }
-.doc-content mark.rh-pdf-mark.mark-pending { background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: none; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
-.doc-content mark.rh-pdf-mark:hover, .doc-content mark.rh-pdf-mark.mark-focus {
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.doc-content .rh-pdf-mark { pointer-events: auto; cursor: pointer; }
+.doc-content .rh-pdf-mark polygon { pointer-events: all; fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill 0.15s, stroke 0.15s; }
+.doc-content .rh-pdf-mark.mark-pending polygon { fill: color-mix(in srgb, var(--accent) 9%, transparent); stroke-dasharray: 3 2; }
+.doc-content .rh-pdf-mark:hover polygon, .doc-content .rh-pdf-mark.mark-focus polygon { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); }
 .rh-pdf-textlayer span::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
-.rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-img, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
+.rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
 .rh-pdf-box-draft { position: absolute; z-index: 4; border: 1.5px solid var(--accent); border-radius: 2px; pointer-events: none;
   box-shadow: 0 0 0 100vmax color-mix(in srgb, black 26%, transparent), inset 0 0 0 1px color-mix(in srgb, white 35%, transparent); }
 .rh-pdf-box-draft::before, .rh-pdf-box-draft::after { content: ""; position: absolute; width: 8px; height: 8px; border: 2px solid var(--accent); }
 .rh-pdf-box-draft::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 3px; }
 .rh-pdf-box-draft::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 3px; }
 .rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow 180ms ease; }
-.rh-pdf-toolbar { position: relative; z-index: 6; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 28px; padding: 0; background: transparent; border: 0; border-radius: 0;
-  transition: min-height 140ms ease, padding 140ms ease, background-color 140ms ease, box-shadow 140ms ease; }
-.node.pdf-toolbar-docked .node-head { border-bottom-color: transparent; }
-.node > .rh-pdf-toolbar.is-stuck { width: 100%; min-height: 34px; margin: 0; padding: 4px 8px; flex-shrink: 0; background: var(--node-head); border-bottom: 1px solid var(--border); box-shadow: 0 4px 10px color-mix(in srgb, black 10%, transparent); }
-.rh-pdf-toolbar-placeholder { flex: 0 0 auto; }
-.rh-pdf-toolbar-info { display: flex; align-items: center; justify-content: center; min-width: 0; }
-.rh-pdf-scanned-note, .rh-pdf-box-hint, .rh-pdf-transcription-note { min-width: 0; font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); color: var(--fg-faint); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rh-pdf-transcription-note { color: var(--warn); }
-.rh-pdf-box-hint { display: none; color: var(--accent); }
-.rh-pdf-box-hint.visible { display: inline-block; }
-.rh-pdf-box-mode .rh-pdf-scanned-note { display: none; }
+.rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; box-sizing: border-box; width: 100%; min-height: 35px; padding: 4px 8px; flex: 0 0 auto; background: var(--node-head); border-bottom: 1px solid var(--border); border-radius: 0; }
 .rh-pdf-toolbar-actions { display: flex; align-items: center; gap: var(--control-gap); flex-shrink: 0; }
-.rh-pdf-toolbar-actions .node-btn span { white-space: nowrap; }
-.rh-pdf-toolbar-actions .node-btn { width: auto; height: 26px; gap: 5px; padding: 0 9px; font-size: calc(var(--text-ui) - 1px); font-weight: var(--weight-normal, 400); border: 1px solid transparent; background: transparent; border-radius: var(--radius-control);
+.rh-pdf-region-actions { min-width: 0; justify-content: flex-start; }
+.rh-pdf-document-actions { min-width: 0; justify-content: flex-end; }
+.rh-pdf-toolbar-center { display: flex; min-width: 0; align-items: center; justify-content: center; }
+.rh-pdf-toolbar-actions .node-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rh-pdf-toolbar-actions .node-btn { width: auto; max-width: 100%; height: 26px; gap: 5px; padding: 0 9px; font-size: calc(var(--text-ui) - 1px); font-weight: var(--weight-normal, 400); border: 1px solid transparent; background: transparent; border-radius: var(--radius-control);
   transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .rh-pdf-toolbar-actions .node-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); border-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .rh-pdf-toolbar-actions .node-btn:active:not(:disabled) { background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .rh-pdf-toolbar-actions .node-btn:disabled { opacity: .55; cursor: default; }
 .rh-pdf-toolbar-actions .node-btn svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.rh-pdf-toolbar-actions .node-btn.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+.rh-pdf-zoom-controls { display: inline-flex; align-items: center; gap: 1px; }
+.rh-pdf-zoom-controls .node-btn { width: 26px; height: 26px; padding: 0; color: var(--fg-faint); }
+.rh-pdf-zoom-controls .node-btn svg { width: 13px; height: 13px; }
+.rh-pdf-zoom-controls .rh-pdf-zoom-value { width: auto; min-width: 44px; padding-inline: 4px; font-size: calc(var(--text-ui) - 1px); font-variant-numeric: tabular-nums; }
+.rh-pdf-toolbar-message { max-width: 160px; overflow: hidden; color: var(--warn); font-family: var(--font-ui); font-size: calc(var(--text-ui) - 1px); text-overflow: ellipsis; white-space: nowrap; }
+.rh-pdf-toolbar-message[hidden], .rh-pdf-zoom-controls[hidden] { display: none; }
+/* Reader contributes its PDF controls to the one existing top-chrome row.
+   Canvas PDFs deliberately keep the edge-to-edge toolbar in their card. */
+#tb-document > .rh-pdf-reader-toolbar { position: static; z-index: auto; grid-template-columns: auto auto auto; width: max-content; min-width: 0; min-height: 40px; padding: 7px 10px; pointer-events: auto; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+@media (min-width: 761px) and (max-width: 959px) {
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn { width: 26px; padding-inline: 0; justify-content: center; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn span { display: none; }
+}
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  #reader-main.pdf-reader { padding-top: 0; }
+  #reader-main.pdf-reader-viewport { padding-inline: 0; }
+  #tb-document > .rh-pdf-reader-toolbar { width: max-content; min-height: 44px; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn { width: 44px; height: 44px; padding-inline: 0; justify-content: center; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-toolbar-actions .node-btn span { display: none; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .node-btn { width: 44px; height: 44px; }
+  #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .rh-pdf-zoom-value { min-width: 52px; }
+}
+.rh-pdf-legacy { margin: 0 0 14px; padding: 10px 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border)); border-radius: var(--radius-control); font-family: var(--font-ui); font-size: var(--text-ui); }
 .rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-convert:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 9%, transparent); }
 .rh-pdf-convert.primary:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }

@@ -12,10 +12,11 @@ import { createPortableProjection } from "./portable-projection.js";
  */
 export function createSnapshotProjection(hole, viewState, assets) {
   const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
-  // Shares exclude personal extension state while remaining valid canonical artifacts.
+  // Shares exclude personal extension state. Native PDF provenance is document
+  // content, not a preference, and is required to render the embedded source.
   projection.hole = {
     ...projection.hole,
-    nodes: projection.hole.nodes.map((node) => ({ ...node, extensions: {} })),
+    nodes: projection.hole.nodes.map((node) => ({ ...node, extensions: node.extensions?.pdf ? { pdf: node.extensions.pdf } : {} })),
   };
   return projection;
 }

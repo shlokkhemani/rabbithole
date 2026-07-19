@@ -41,11 +41,7 @@ import {
   renderVisibility,
   scheduleEdges
 } from "./canvas-view.js";
-import {
-  buildThreadItem,
-  ensureThread,
-  renderMarginNotes
-} from "./reader.js";
+import { renderMarginNotes } from "./reader.js";
 import { charOffset, mountPdfRectMark, wrapInContainer } from "./text-marks.js";
 import { easeOutMotion } from "./easing.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
@@ -212,6 +208,7 @@ export function showAskFromSelection(options){
     var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
       placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
+      ignoreOutsidePointer: function(event){ return !!(event.target?.closest?.(".rh-pdf-zoom-control")); },
       onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
         var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
@@ -288,6 +285,9 @@ export function disposeAskFollowups(){
   function retirePdfConversionAction(parent){
     parent?.bodyEl?.querySelector(".rh-pdf-convert")?.remove();
     if (mode === "reader") readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')?.remove();
+    // Reader stays mounted while Canvas is visible, so retire its docked action
+    // too; otherwise switching modes would resurrect an invalid conversion.
+    document.querySelector('#tb-document .rh-pdf-reader-toolbar[data-pdf-node-id="' + parent.id + '"] .rh-pdf-convert')?.remove();
   }
 
   function submitAsk(lensKey, source){
@@ -369,10 +369,9 @@ export function updateComposerState(){
   }
   function autoGrowComposer(){ autoGrowEl(composerText, 140); }
 
-  // Shared follow-up submission: from the reader composer or a card's docked one.
-  // The thread turn is only appended when the parent is the document currently
-  // open in the reader — otherwise it appears on the next open. A synthesis ask
-  // rides the same path but renders as a distinct branch node, not a chat turn.
+  // Shared follow-up submission: from the reader composer or a card's docked
+  // one. Every direct child uses the same Reader branch rail; selection asks,
+  // general follow-ups, and syntheses differ in context, not navigation.
 export function sendFollowup(parent, question, lens, synthesis){
     if (parent?.extensions?.pdf?.converting) return null;
     var requestId = uuid(), childId = uuid();
@@ -391,13 +390,7 @@ export function sendFollowup(parent, question, lens, synthesis){
     registerNode(node);
     retirePdfConversionAction(parent);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
-    if (currentNodeId === parent.id && mode === "reader"){
-      if (synthesis) renderMarginNotes();
-      else {
-        var t = ensureThread();
-        if (t) t.appendChild(buildThreadItem(node));
-      }
-    }
+    if (currentNodeId === parent.id && mode === "reader") renderMarginNotes();
     var payload = { type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: "", question: question, lens: lens, anchor: null,
            branch_type: BRANCH_FOLLOWUP,
@@ -457,7 +450,8 @@ export function animateScroll(el, target, source){
     composerText.value = "";
     autoGrowComposer();
     updateComposerState();
-    animateScroll(readerMain, readerMain.scrollHeight, source);
+    var notes = document.getElementById("margin-notes");
+    if (notes) animateScroll(notes, notes.scrollHeight, source);
   }
 
   // Undo an optimistic branch whose request the server rejected/never received.

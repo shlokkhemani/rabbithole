@@ -16,6 +16,8 @@ const STREAM_CHUNKS = Array.from({ length: 40 }, (_, i) => `${i ? " " : "# Budge
 export const budgetDefinitions = [
   ["bundle_client_bytes", "Built live client bundle size", "bytes", 0.05, "Exact file size after a deterministic build."],
   ["bundle_frozen_client_bytes", "Built frozen client bundle size", "bytes", 0.05, "Exact file size after a deterministic build."],
+  ["web_initial_js_bytes", "Statically loaded web application JavaScript", "bytes", 0.05, "Exact transitive size of app.js and its static chunks; the large PDF.js runtime and worker are excluded."],
+  ["pdf_runtime_distribution_bytes", "Production PDF.js runtime plus worker", "bytes", 0.05, "Exact size of the lazily loaded production PDF.js module and worker."],
   ["snapshot_math_bytes", "Frozen HTML size for the math-heavy reference corpus", "bytes", 0.05, "Exact UTF-8 snapshot size."],
   ["snapshot_assets_bytes", "Frozen HTML size for the PNG/SVG reference corpus", "bytes", 0.05, "Exact UTF-8 snapshot size including assets."],
   ["snapshot_math_build_ms", "Mean frozen-HTML build time (20 warm builds) for the math-heavy reference corpus", "ms", 2, "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.", 25],
@@ -36,6 +38,8 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
   const exact = {
     bundle_client_bytes: (await fs.stat(path.join(ROOT, "dist/client.js"))).size,
     bundle_frozen_client_bytes: (await fs.stat(path.join(ROOT, "dist/frozen-client.js"))).size,
+    web_initial_js_bytes: await staticModuleClosureBytes(path.join(WEB_DIST, "app.js")),
+    pdf_runtime_distribution_bytes: (await fs.stat(path.join(WEB_DIST, "pdf.mjs"))).size + (await fs.stat(path.join(WEB_DIST, "pdf.worker.mjs"))).size,
   };
   const pdfHole = representativePdfHole();
   const scaleNodes = Array.from({ length: 20000 }, (_, i) => ({ id: `scale-${i}`, parent_id: i ? `scale-${Math.floor((i - 1) / 3)}` : null, markdown: "" }));
@@ -84,16 +88,40 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
   }]));
 }
 
+async function staticModuleClosureBytes(entry) {
+  const visited = new Set();
+  async function visit(file) {
+    const absolute = path.resolve(file);
+    if (visited.has(absolute)) return 0;
+    visited.add(absolute);
+    const source = await fs.readFile(absolute, "utf8");
+    let total = Buffer.byteLength(source);
+    const imports = [];
+    const pattern = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
+    for (const match of source.matchAll(pattern)) imports.push(match[1] || match[2]);
+    for (const specifier of imports) if (specifier.startsWith(".")) total += await visit(path.resolve(path.dirname(absolute), specifier));
+    return total;
+  }
+  return visit(entry);
+}
+
 function representativePdfHole() {
   const markdown = "# PDF budget\n" + Array.from({ length: 2000 }, (_, i) => `line ${i}`).join("\n") + "\n";
   let offset = "# PDF budget\n".length;
   const lines = Array.from({ length: 2000 }, (_, i) => {
     const length = `line ${i}`.length;
-    const line = { p: Math.floor(i / 50) + 1, x: .1, y: .1, w: .8, h: .02, s: offset, e: offset + length };
+    const line = { p: Math.floor(i / 50) + 1, s: offset, e: offset + length };
     offset += length + 1;
     return line;
   });
-  return { hole_id: "pdf-budget", title: "PDF budget", root_id: "root", nodes: [{ id: "root", markdown, extensions: { pdf: { version: 1, scale: 2, page_count: 40, pages: Array.from({ length: 40 }, (_, i) => ({ n: i + 1, asset: `page-${String(i + 1).padStart(3, "0")}.jpg`, w: 1224, h: 1584 })), lines } } }] };
+  const sha256 = "ab".repeat(32);
+  return { hole_id: "pdf-budget", title: "PDF budget", root_id: "root", nodes: [{ id: "root", markdown, extensions: { pdf: {
+    version: 2,
+    source: { asset: `pdf-${sha256}.pdf`, sha256, byte_length: 10 * 1024 * 1024 },
+    page_count: 40,
+    pages: Array.from({ length: 40 }, (_, i) => ({ n: i + 1, view: [0, 0, 612, 792], rotate: 0, user_unit: 1 })),
+    lines,
+  } } }] };
 }
 
 async function measureSnapshots(browser, baseUrl, samples, onSample) {

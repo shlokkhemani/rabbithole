@@ -35,12 +35,17 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
   tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
+
+const pdfPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.worker.min.mjs"), path.join(absOutdir, "pdf.worker.mjs"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.min.mjs"), path.join(absOutdir, "pdf.mjs"));
 
 await esbuild.build({
   entryPoints: [path.join(rootDir, "src/ui/frozen-entry.js")],
@@ -49,10 +54,11 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeFrozenClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
   tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
 
@@ -117,7 +123,7 @@ async function buildWebApp(assetDir) {
     target: "es2022",
     entryNames: "[name]",
     chunkNames: "chunks/[name]-[hash]",
-    minify: false,
+    minify: true,
     sourcemap: false,
     // PDF.js imports `canvas` only inside its Node path. Native optional
     // dependencies are installed on some operating systems and omitted on
@@ -133,12 +139,14 @@ async function buildWebApp(assetDir) {
     logLevel: "silent"
   });
 
-  const [katexCss, dompurify, mermaid, frozenClient, webCss] = await Promise.all([
+  const [katexCss, dompurify, mermaid, frozenClient, webCss, pdfWorker, pdfJs] = await Promise.all([
     fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
     fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
     fs.readFile(path.join(assetDir, "mermaid.js"), "utf8"),
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.worker.mjs"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.mjs"), "utf8"),
   ]);
   const frozenStyles = `${CANVAS_STYLES}\n${katexCss}`;
 
@@ -151,6 +159,8 @@ async function buildWebApp(assetDir) {
     path.join(webDist, "frozen-source.js"),
     `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
       `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__=${safeJsString(pdfWorker)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__=${safeJsString(pdfJs)};\n` +
       `window.__RABBITHOLE_FROZEN_STYLES__=${safeJsString(frozenStyles)};\n`,
     "utf8"
   );
@@ -171,7 +181,8 @@ async function hashWebEntryAssets(webDist) {
 
 async function copyPdfAssets(webDist) {
   const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
-  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.mjs"), path.join(webDist, "pdf.worker.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.min.mjs"), path.join(webDist, "pdf.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.min.mjs"), path.join(webDist, "pdf.worker.mjs"));
   await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(webDist, "standard_fonts"), { recursive: true });
   await copyPackedCMaps(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"));
 }
@@ -190,6 +201,7 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
   const assetQuery = `?v=${assetVersion}`;
   const connectSrc = [
     "'self'",
+    "blob:",
     "https://openrouter.ai",
     "https://api.github.com",
     "https://arxiv.org",

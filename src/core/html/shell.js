@@ -30,6 +30,7 @@ export const CANVAS_SHELL = `
       ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout · T", ariaLabel: "Tidy up layout · T", svgIconHtml: iconSvg("tidy") })}
     </span>
   </div>
+  <div id="tb-document" aria-label="Document controls"></div>
   <div id="tb-session">
     <div class="tb-pill">
     ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
@@ -43,16 +44,24 @@ export const CANVAS_SHELL = `
 </div>
 
 <div id="reader">
-  <div id="reader-main"></div>
-  <div id="composer">
-    <div class="composer-inner" id="composer-inner">
-      <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-      <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+  <div id="reader-workspace">
+    <div id="reader-document">
+      <div id="reader-main"></div>
+      <div id="composer">
+        <div class="composer-inner" id="composer-inner">
+          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
+          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+        </div>
+      </div>
     </div>
+    <aside id="reader-rail" aria-labelledby="reader-rail-title">
+      <div class="reader-rail-head"><span id="reader-rail-title">Branches</span><span id="reader-rail-count">0</span></div>
+      <div id="margin-notes"></div>
+    </aside>
   </div>
 </div>
 
-<div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
+<div id="viewport"><div id="canvas-gesture-plane" aria-hidden="true"></div><div id="world"><svg id="edges"></svg></div></div>
 
 <div id="ask">
   <div class="ask-input">

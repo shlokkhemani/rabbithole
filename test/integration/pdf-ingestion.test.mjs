@@ -6,33 +6,42 @@ import { openRabbithole } from "../../src/node/index.js";
 import { ingestPdfDocument } from "../../src/node/pdf-ingest.js";
 import { closeAllSessions, getSession } from "../../src/node/sessions.js";
 import { defaultFsStore, resolveAsset } from "../../src/node/fs-store.js";
+import { ATTENTION_PDF_PAGE_COUNT, ATTENTION_PAGE_VIEW, readAttentionPdf } from "../support/attention-pdf.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-native-pdf-"));
+process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-native-pdf-v2-"));
 
-function tinyPdf(texts) {
-  const objects = [];
-  objects[1] = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-  objects[2] = `2 0 obj\n<< /Type /Pages /Kids [${texts.map((_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${texts.length} >>\nendobj\n`;
-  objects[3] = "3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
-  texts.forEach((raw, i) => {
-    const page = 4 + i * 2, stream = page + 1;
-    const text = String(raw).replace(/[\\()]/g, "\\$&");
-    const content = `BT /F1 18 Tf 40 160 Td (${text}) Tj ET\n`;
-    objects[page] = `${page} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 220] /Resources << /Font << /F1 3 0 R >> >> /Contents ${stream} 0 R >>\nendobj\n`;
-    objects[stream] = `${stream} 0 obj\n<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}endstream\nendobj\n`;
-  });
-  let pdf = "%PDF-1.4\n"; const offsets = [0];
-  for (let i = 1; i < objects.length; i++) { offsets[i] = Buffer.byteLength(pdf, "latin1"); pdf += objects[i]; }
-  const xref = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
-  for (let i = 1; i < objects.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  return Buffer.from(pdf + `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`, "latin1");
+function regionAnchor(sourceSha256) {
+  return {
+    offset_start: 0,
+    offset_end: 0,
+    pdf: {
+      version: 2,
+      source_sha256: sourceSha256,
+      kind: "region",
+      fragments: [{
+        page: 1,
+        quads: [[[211.488, 626.359], [281.296, 626.359], [281.296, 641.834], [211.488, 641.834]]],
+      }],
+    },
+  };
 }
 
+function assertPng(bytes, message) {
+  assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], message);
+}
+
+const sourceBytes = await readAttentionPdf();
 const filePath = path.join(process.env.RABBITHOLE_DIR, "native.PDF");
-await fs.writeFile(filePath, tinyPdf(["Same host geometry", "Second page"]));
+await fs.writeFile(filePath, sourceBytes);
+
 const staged = await ingestPdfDocument({ filePath, store: defaultFsStore });
+assert.equal(staged.pdfExtension.version, 2);
+assert.equal(staged.pdfExtension.source.byte_length, sourceBytes.length);
+assert.equal(staged.pdfExtension.page_count, ATTENTION_PDF_PAGE_COUNT);
+assert.deepEqual(staged.pdfExtension.pages.map((page) => page.view), Array.from({ length: ATTENTION_PDF_PAGE_COUNT }, () => ATTENTION_PAGE_VIEW));
+assert.deepEqual(staged.pdfExtension.pages.map((page) => page.rotate), Array(ATTENTION_PDF_PAGE_COUNT).fill(0));
+assert.match(staged.markdown, /Attention Is All You Need/);
 await staged.discard();
 
 const controller = new AbortController();
@@ -41,73 +50,56 @@ const opened = await openRabbithole({ filePath, signal: controller.signal });
 assert.equal(opened.status, "cancelled");
 const session = getSession(opened.session_id);
 const holeId = session.holeId;
-await session.handleBrowserEvent({ type: "node_extensions_patch", node_id: session.rootId, namespace: "pdf", value: staged.pdfExtension });
-assert(session.outboundEvents.some((entry) => entry.data.type === "node_extensions_patch"), "node host must forward extension patches to SSE");
-for (const page of staged.pdfExtension.pages) {
-  const bytes = await fs.readFile(await resolveAsset(holeId, page.asset));
-  assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
-  assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP", "page assets should use the sharper, more efficient WebP pipeline");
-}
-await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-request", node_id: "pdf-child", parent_id: session.rootId,
-  selected_text: "Same host", question: "Explain", lens: null, branch_type: "selection",
-  anchor: { offset_start: staged.pdfExtension.lines[0].s, offset_end: staged.pdfExtension.lines[0].s + 9,
-    pdf: { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } } }, position: { x: 10, y: 20 } });
+const root = session.nodes.get(session.rootId);
+const pdf = root.extensions.pdf;
+assert.equal(pdf.version, 2);
+assert.equal(pdf.source.asset, `pdf-${pdf.source.sha256}.pdf`);
+assert.deepEqual(await fs.readFile(await resolveAsset(holeId, pdf.source.asset)), sourceBytes, "the stored PDF must be byte-identical to the input");
+assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset], "imports must persist one source PDF, not page rasters");
+
+await session.handleBrowserEvent({
+  type: "branch_request",
+  request_id: "pdf-request",
+  node_id: "pdf-child",
+  parent_id: session.rootId,
+  selected_text: "Attention",
+  question: "Explain",
+  lens: null,
+  branch_type: "selection",
+  anchor: regionAnchor(pdf.source.sha256),
+  position: { x: 10, y: 20 },
+});
 const branch = await session.waitForEvent();
 assert.equal(branch.status, "branch_request");
-assert.equal(branch.selected_text, "Same host");
 assert.equal(branch.region.page, 1);
 assert.equal(path.isAbsolute(branch.region.image_path), true);
-const regionBytes = await fs.readFile(branch.region.image_path);
-assert.equal(regionBytes[0], 0xff); assert.equal(regionBytes[1], 0xd8, "region path should point at a readable JPEG");
-const regionPath = branch.region.image_path;
-assert.equal(path.basename(regionPath), "crop-pdf-child.jpg", "agent region must point at the branch-owned durable crop");
-session.inFlightBranchRequests.delete("pdf-request");
-await session.handleBrowserEvent({ type: "branch_request", request_id: "clip-followup", node_id: "clip-followup-child", parent_id: "pdf-child",
-  selected_text: "", question: "And what follows?", branch_type: "followup", anchor: null, position: { x: 20, y: 20 } });
-const inheritedFollowup = await session.waitForEvent();
-assert.equal(inheritedFollowup.region.image_path, regionPath, "follow-ups must expose the immediate parent's durable clip");
-session.inFlightBranchRequests.delete("clip-followup");
-await session.handleBrowserEvent({ type: "branch_request", request_id: "clip-selection", node_id: "clip-selection-child", parent_id: "pdf-child",
-  selected_text: "answer text", question: "Explain this", branch_type: "selection", anchor: { offset_start: 0, offset_end: 6 }, position: { x: 20, y: 40 } });
-const inheritedSelection = await session.waitForEvent();
-assert.equal(inheritedSelection.region.image_path, regionPath, "text selections must expose the immediate parent's durable clip");
-session.inFlightBranchRequests.delete("clip-selection");
-await fs.writeFile(await resolveAsset(holeId, staged.pdfExtension.pages[0].asset), Buffer.from("broken"));
-await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-fallback", node_id: "pdf-child-fallback", parent_id: session.rootId,
-  selected_text: "fallback", question: "Explain", anchor: { offset_start: 0, offset_end: 1,
-    pdf: { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } } }, position: { x: 20, y: 20 } });
-const fallback = await session.waitForEvent();
-assert.equal(fallback.request_id, "pdf-fallback");
-assert.equal(Object.hasOwn(fallback, "region"), false, "crop failure must preserve the lean branch request");
-await closeAllSessions("persist_native_pdf");
-const hole = await defaultFsStore.loadHole(holeId);
-const root = hole.nodes.find((node) => node.id === hole.root_id);
-assert.equal(root.markdown, staged.markdown, "node host must use the shared canonical builder");
-assert.deepEqual(root.extensions.pdf.lines, staged.pdfExtension.lines, "line geometry must match the shared host fixture");
-assert.deepEqual(hole.nodes.find((node) => node.id === "pdf-child").origin.anchor.pdf,
-  { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } });
-assert.equal(hole.nodes.find((node) => node.id === "pdf-child").origin.crop_asset, "crop-pdf-child.jpg");
-assert.equal(root.extensions.pdf.pages.length, 2);
-assert.equal(root.extensions.pdf.scale, 3, "new PDF imports should retain enough pixels for high-DPI readers");
-assert.deepEqual(await defaultFsStore.listAssets(holeId), ["crop-pdf-child.jpg", "page-001.webp", "page-002.webp"], "branch-owned region crops must outlive the session");
-await fs.access(regionPath);
-for (const page of root.extensions.pdf.pages) {
-  assert(page.w > 0 && page.h > 0);
-  assert.equal(page.asset.endsWith(".webp"), true);
-}
+assert.equal(path.basename(branch.region.image_path), "region-pdf-request.png");
+assertPng(await fs.readFile(branch.region.image_path), "agent crops must be lossless PNGs rendered from the source PDF");
+assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset], "transient agent crops must not enter the durable asset index");
 
-// A saved PDF ask reuses its durable crop on resume, so a reconnecting agent
-// sees byte-identical image context without re-cropping the page.
-await fs.copyFile(await resolveAsset(holeId, staged.pdfExtension.pages[1].asset), await resolveAsset(holeId, staged.pdfExtension.pages[0].asset));
+const firstRegionPath = branch.region.image_path;
+await closeAllSessions("persist_native_pdf_v2");
+await assert.rejects(fs.access(firstRegionPath), { code: "ENOENT" }, "session close must remove transient crops");
+
+const hole = await defaultFsStore.loadHole(holeId);
+const persistedRoot = hole.nodes.find((node) => node.id === hole.root_id);
+const persistedChild = hole.nodes.find((node) => node.id === "pdf-child");
+assert.equal(persistedRoot.extensions.pdf.version, 2);
+assert.deepEqual(persistedRoot.extensions.pdf.pages, pdf.pages);
+assert.deepEqual(persistedChild.origin.anchor, regionAnchor(pdf.source.sha256));
+assert.equal(Object.hasOwn(persistedChild.origin, "crop_asset"), false, "PDF v2 must not persist crop images");
+assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset]);
+
 const resumeController = new AbortController();
 setTimeout(() => resumeController.abort(), 4000);
 const resumed = await openRabbithole({ holeId, signal: resumeController.signal });
 assert.equal(resumed.status, "branch_request");
 assert.equal(resumed.saved, true);
-for (let i = 0; i < 100 && !resumed.region; i++) await new Promise((resolve) => setTimeout(resolve, 20));
-assert.equal(resumed.region?.page, 1, "saved PDF asks must expose their durable region on resume");
-assert.equal(resumed.region?.image_path, regionPath);
-const recropBytes = await fs.readFile(resumed.region.image_path);
-assert.equal(recropBytes[0], 0xff); assert.equal(recropBytes[1], 0xd8);
-await closeAllSessions("recrop_done");
-console.log("ok native PDF: shared ingest plus durable, byte-identical branch crop lifecycle");
+assert.equal(resumed.node_id, "pdf-child");
+assert.equal(resumed.region?.page, 1, "saved PDF asks must regenerate their exact source crop");
+assert.notEqual(resumed.region?.image_path, firstRegionPath, "resume gets a request-scoped transient path");
+assertPng(await fs.readFile(resumed.region.image_path));
+assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset]);
+
+await closeAllSessions("native_pdf_v2_done");
+console.log("ok native PDF v2: source fidelity, PDF-space anchor, transient lossless crop, and resume regeneration");

@@ -1,28 +1,40 @@
 import {
   MAX_PDF_BYTES,
-  MAX_PDF_PAGE_ASSET_BYTES,
-  PDF_PAGE_IMAGE_MIME,
-  PDF_PAGE_IMAGE_QUALITY,
-  PDF_RENDER_SCALE,
   describePdfOpenError,
   buildPdfDocument,
   extractPdfPageLines,
   normalizePdfTitle,
-  pdfPageAssetName,
+  pdfPageMetadata,
+  pdfSourceAssetName,
   resolvePagesToProcess,
   hasPdfMagic,
 } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
+import { loadPdfJsModule, primePdfDocument } from "../../ui/pdf-runtime.js";
+
+const PDF_RUNTIME_LOAD_FAILURE = /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|load failed/i;
+
+export function describePdfImportFailure(error) {
+  const detail = error instanceof Error ? error.message : String(error || "Unknown PDF import error.");
+  if (PDF_RUNTIME_LOAD_FAILURE.test(detail)) {
+    return "PDF import couldn't start because part of Rabbithole failed to load. Reload Rabbithole and try again — your PDF is not the problem.";
+  }
+  return `PDF import failed. ${detail} Try a different PDF.`;
+}
 
 async function ingestPdf(source, {
   pages,
   includeText = true,
   onProgress = null,
-  onAsset = null,
+  onSource = null,
 } = {}) {
   const { data, name } = await readPdfSource(source);
   validatePdfBytes(data, name);
-  const pdfjs = await loadPdfjs();
+  const sha256 = await sha256Hex(data);
+  const sourceAsset = pdfSourceAssetName(sha256);
+  const sourceBlob = new Blob([data], { type: "application/pdf" });
+  if (onSource) await onSource({ asset: sourceAsset, sha256, byte_length: sourceBlob.size }, sourceBlob);
+  const pdfjs = await loadPdfJsModule();
 
   const loadingTask = pdfjs.getDocument({
     data,
@@ -34,6 +46,7 @@ async function ingestPdf(source, {
   });
 
   let doc;
+  let transferred = false;
   try {
     try {
       doc = await loadingTask.promise;
@@ -55,33 +68,21 @@ async function ingestPdf(source, {
       title: normalizePdfTitle(metadata),
       page_count: doc.numPages,
       processed_pages: processedPages,
-      assets: {
-        pages: [],
-        embedded_images: [],
-      },
+      source: { asset: sourceAsset, sha256, byte_length: sourceBlob.size },
+      page_metadata: [],
       notes,
-      blobs: [],
     };
     if (includeText !== false) result.page_lines = [];
-    let assetBytes = 0;
-
     for (let index = 0; index < processedPages.length; index += 1) {
       const pageNumber = processedPages[index];
       onProgress?.({ phase: "page", message: `Preparing page ${index + 1} of ${processedPages.length}`, page: pageNumber, index: index + 1, total: processedPages.length, pageCount: doc.numPages });
       let page = null;
       try {
         page = await doc.getPage(pageNumber);
+        result.page_metadata.push(pdfPageMetadata(page, pageNumber));
         if (includeText !== false) {
           result.page_lines.push({ page: pageNumber, lines: await extractPdfPageLines(page) });
         }
-        const remaining = processedPages.length - index;
-        const remainingBudget = Math.max(0, MAX_PDF_PAGE_ASSET_BYTES - assetBytes);
-        const targetBytes = remainingBudget / Math.max(remaining, 1);
-        const rendered = await renderPageToImageBlob(page, pageNumber, targetBytes);
-        assetBytes += rendered.blob.size;
-        result.assets.pages.push(rendered.asset);
-        if (onAsset) await onAsset(rendered.asset, rendered.blob);
-        else result.blobs.push({ name: rendered.asset.name, blob: rendered.blob });
       } catch (err) {
         notes.push(`Page ${pageNumber} could not be fully processed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -89,10 +90,16 @@ async function ingestPdf(source, {
       }
     }
 
+    // Import and the first viewer mount are one user action. Transfer the
+    // parsed document into the shared runtime so the same bytes are not sent
+    // through PDF.js and parsed a second time immediately afterward.
+    transferred = primePdfDocument({ key: sha256, loadingTask, document: doc });
     return result;
   } finally {
-    doc?.cleanup?.();
-    await loadingTask.destroy().catch(() => {});
+    if (!transferred) {
+      doc?.cleanup?.();
+      await loadingTask.destroy().catch(() => {});
+    }
   }
 }
 
@@ -113,7 +120,7 @@ export async function ingestPdfToStoredHole({
   try {
     const result = await ingest(source, {
       pages, includeText, onProgress,
-      onAsset: (_asset, blob) => store.putStagedAsset(staging.ingest_id, _asset.name, blob),
+      onSource: (_source, blob) => store.putStagedAsset(staging.ingest_id, _source.asset, blob),
     });
     const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
     const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
@@ -121,9 +128,10 @@ export async function ingestPdfToStoredHole({
       title: holeTitle,
       pageCount: result.page_count,
       processedPages: result.processed_pages,
-      pageAssets: result.assets.pages,
+      pageMetadata: result.page_metadata,
       pageLines: result.page_lines || [],
       notes: result.notes,
+      source: result.source,
     });
     const hole = createHoleFromMarkdown({ title: holeTitle, markdown: built.markdown, baseUrl });
     hole.nodes[0].extensions = { pdf: built.pdfExtension };
@@ -172,75 +180,9 @@ function validatePdfBytes(data, name) {
   }
 }
 
-// Lazy so this module stays importable where pdf.js can't run (the staging
-// orchestration is host-neutral and unit-tested in Node).
-let pdfjsModule = null;
-async function loadPdfjs() {
-  pdfjsModule ||= import("pdfjs-dist/build/pdf.mjs").then((pdfjs) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = webAssetUrl("pdf.worker.mjs");
-    return pdfjs;
-  });
-  return pdfjsModule;
-}
-
-async function renderPageToImageBlob(page, pageNumber, targetBytes) {
-  let scale = PDF_RENDER_SCALE;
-  let blob;
-  let viewport;
-  let canvas;
-  let width = 0;
-  let height = 0;
-  do {
-    viewport = page.getViewport({ scale });
-    width = Math.ceil(viewport.width);
-    height = Math.ceil(viewport.height);
-    canvas = createRenderCanvas(width, height);
-    const context = canvas.getContext("2d", { alpha: false });
-    context.fillStyle = "white";
-    context.fillRect(0, 0, width, height);
-    const renderTask = page.render({ canvasContext: context, viewport });
-    await renderTask.promise;
-    blob = await canvasToPageBlob(canvas);
-    if (blob.size <= Math.min(20 * 1024 * 1024, Math.max(targetBytes, 256 * 1024)) || scale <= 0.5) break;
-    releaseCanvas(canvas);
-    scale *= 0.75;
-  } while (true);
-  // Canvas encoders must fall back to PNG for unsupported MIME types. Keep the
-  // durable filename honest so the asset server returns the matching type.
-  const extension = blob.type === "image/webp" ? "webp" : blob.type === "image/png" ? "png" : "jpg";
-  const name = pdfPageAssetName(pageNumber, extension);
-  releaseCanvas(canvas);
-  return {
-    asset: { page: pageNumber, name, width, height },
-    blob,
-  };
-}
-
-function createRenderCanvas(width, height) {
-  if (typeof OffscreenCanvas === "function") return new OffscreenCanvas(width, height);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas;
-}
-
-function canvasToPageBlob(canvas) {
-  if (typeof canvas.convertToBlob === "function") {
-    return canvas.convertToBlob({ type: PDF_PAGE_IMAGE_MIME, quality: PDF_PAGE_IMAGE_QUALITY });
-  }
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Canvas could not encode the PDF page image."));
-    }, PDF_PAGE_IMAGE_MIME, PDF_PAGE_IMAGE_QUALITY);
-  });
-}
-
-function releaseCanvas(canvas) {
-  try {
-    canvas.width = 0;
-    canvas.height = 0;
-  } catch {}
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function webAssetUrl(relativePath) {

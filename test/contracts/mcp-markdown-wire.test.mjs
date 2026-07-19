@@ -286,7 +286,7 @@ async function runMarkdownWireFixture() {
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));
   assert(!exportHtml.includes("new EventSource"), "export should not include EventSource wiring");
   assert(!exportHtml.includes("/sse"), "export should not include SSE routes");
-  assert(!exportHtml.includes("/assets/"), "export should not include live asset routes");
+  assert(!/\b(?:src|href)=["']\/assets\//.test(exportHtml), "export should not include live asset routes in rendered attributes");
 
   const frozenRenderer = createMarkdownRenderer({
     encodeBase64: encodeBase64Utf8,

@@ -281,22 +281,34 @@ async function verifyDesktopReaderLayout(browserEngine) {
       const mainStyle = getComputedStyle(main);
       const column = document.querySelector(".reader-col").getBoundingClientRect();
       const notesRect = notes.getBoundingClientRect();
+      const rail = document.getElementById("reader-rail").getBoundingClientRect();
+      const workspaceStyle = getComputedStyle(document.getElementById("reader-workspace"));
       const bar = document.getElementById("taskbar").getBoundingClientRect();
       const session = document.getElementById("tb-session").getBoundingClientRect();
       const readerTop = document.getElementById("reader").getBoundingClientRect().top
         + parseFloat(getComputedStyle(document.getElementById("reader")).paddingTop);
-      return { notesDisplay: getComputedStyle(notes).display, notesLeft: notesRect.left, columnRight: column.right,
-        mainWidth: main.getBoundingClientRect().width,
+      return { notesDisplay: getComputedStyle(notes).display, notesLeft: notesRect.left, notesRight: notesRect.right, columnRight: column.right,
+        mainWidth: main.getBoundingClientRect().width, mainRight: main.getBoundingClientRect().right,
+        railLeft: rail.left, railRight: rail.right, railWidth: rail.width,
         viewportWidth: innerWidth, barHeight: bar.height, barBottom: bar.bottom, contentTop: readerTop,
+        workspaceBorderTopStyle: workspaceStyle.borderTopStyle,
+        workspaceBorderTopWidth: parseFloat(workspaceStyle.borderTopWidth),
         sessionRight: session.right,
         doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display,
         mainPaddingLeft: parseFloat(mainStyle.paddingLeft) };
     });
-    assert.equal(desktop.notesDisplay, "block", `desktop: the margin-note layer must be live beside the text (${JSON.stringify(desktop)})`);
-    assert(desktop.notesLeft > desktop.columnRight, `desktop: margin notes hang in the right margin, outside the column (${JSON.stringify(desktop)})`);
-    assert(desktop.mainWidth >= desktop.viewportWidth - 1, `desktop: the document must own the full width (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.notesDisplay, "flex", `desktop: the branch rail must be live beside the document (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.mainRight - desktop.railLeft) <= 1, `desktop: the document and branch rail must meet without a dead strip (${JSON.stringify(desktop)})`);
+    assert(desktop.notesLeft >= desktop.railLeft && desktop.notesRight <= desktop.railRight,
+      `desktop: branch cards must stay inside the right rail (${JSON.stringify(desktop)})`);
+    assert(desktop.columnRight < desktop.railLeft, `desktop: prose must stay inside the remaining document pane (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.mainWidth + desktop.railWidth - desktop.viewportWidth) <= 1,
+      `desktop: document plus branch rail must consume exactly the viewport (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.viewportWidth - desktop.railRight) <= 1, `desktop: the branch rail must hug the physical right edge (${JSON.stringify(desktop)})`);
     assert(desktop.barHeight < 52, `desktop: the shared taskbar must remain a single compact row (${JSON.stringify(desktop)})`);
     assert(desktop.contentTop >= desktop.barBottom, `desktop: reader content must clear the floating taskbar (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.workspaceBorderTopStyle, "solid", `desktop: the Reader workspace must have a continuous top boundary (${JSON.stringify(desktop)})`);
+    assert(desktop.workspaceBorderTopWidth > 0, `desktop: the Reader workspace top boundary must remain visible (${JSON.stringify(desktop)})`);
     assert(desktop.viewportWidth - desktop.sessionRight <= 20, `desktop: the session cluster must hug the top-right corner (${JSON.stringify(desktop)})`);
     assert.equal(desktop.doneDisplay, "none", `desktop: Done ends an agent session — it must never render in the web app (${JSON.stringify(desktop)})`);
     assert.equal(desktop.mainPaddingLeft, 48, `desktop: the established reading gutter must stay at 48px`);
@@ -984,10 +996,12 @@ async function verifyCanvasBranching() {
   const pendingAlignment = await page.evaluate((id) => {
     const tile = document.querySelector(`#margin-notes .side-item[data-child="${id}"]`);
     const mark = document.querySelector(`#reader-main mark[data-child="${id}"]`);
-    return { tileTop: Math.round(tile.getBoundingClientRect().top), markTop: mark ? Math.round(mark.getBoundingClientRect().top) : null };
+    const rail = document.getElementById("reader-rail").getBoundingClientRect();
+    const card = tile.getBoundingClientRect();
+    return { tileLeft: card.left, tileRight: card.right, railLeft: rail.left, railRight: rail.right, hasMark: !!mark };
   }, pendingSidebarContract.id);
-  assert(pendingAlignment.markTop !== null && Math.abs(pendingAlignment.tileTop - pendingAlignment.markTop) <= 2,
-    `margin notes must top-align with their highlight like a document comment (${JSON.stringify(pendingAlignment)})`);
+  assert(pendingAlignment.hasMark && pendingAlignment.tileLeft >= pendingAlignment.railLeft && pendingAlignment.tileRight <= pendingAlignment.railRight,
+    `anchored branches must retain their inline mark while their card stays in the persistent rail (${JSON.stringify(pendingAlignment)})`);
   const streamedSidebarTile = page.locator(`.side-item[data-child="${pendingSidebarContract.id}"][role="link"]`);
   await page.waitForFunction((id) => !document.querySelector(`.side-item[data-child="${id}"]`)?.classList.contains("pending"), pendingSidebarContract.id);
   assert.equal(await streamedSidebarTile.evaluate((tile) => tile.__s9Identity),
@@ -1167,6 +1181,9 @@ async function verifyCanvasBranching() {
   await page.click("#t-reader");
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
+  const followupRailCard = page.locator("#margin-notes .side-item", { hasText: "Go one layer deeper." });
+  await followupRailCard.waitFor();
+  await followupRailCard.click();
   await page.locator("#reader-main", { hasText: "Second branch explains the geometric view" }).waitFor();
   assert.equal(providerCalls, 3);
 

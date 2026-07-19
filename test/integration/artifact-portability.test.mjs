@@ -7,6 +7,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { ensureWebDist } from "../support/build.mjs";
 import { serveStatic } from "../support/static-server.mjs";
+import { readAttentionPdf } from "../support/attention-pdf.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -91,13 +92,12 @@ try {
 
   await page.click("#t-new");
 
-  const pdfBytes = buildTinyPdf(["Portable asset page: import should render this JPEG asset."]);
+  const pdfBytes = await readAttentionPdf();
   await dropPdf(page, pdfBytes);
-  await page.waitForSelector(".node .doc-content[data-node-id] img");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await page.waitForFunction(() => {
-    const img = document.querySelector(".node .doc-content[data-node-id] img");
-    return !!img && img.complete && img.naturalWidth > 0;
+    const canvas = document.querySelector(".node .rh-pdf-canvas-generation canvas");
+    return !!canvas && canvas.width > 0 && canvas.height > 0;
   });
 
   const original = await page.evaluate(async () => {
@@ -106,8 +106,9 @@ try {
     const { names: assets, sizes } = await window.__rabbitholeTest.inspectAssets(holeId);
     return { holeId, raw, assets, sizes };
   });
-  assert.deepEqual(original.assets, ["page-001.webp"]);
-  assert(original.sizes["page-001.webp"] > 100, "PDF page asset should be non-empty");
+  assert.equal(original.assets.length, 1);
+  assert.match(original.assets[0], /^pdf-[a-f0-9]{64}\.pdf$/);
+  assert.equal(original.sizes[original.assets[0]], pdfBytes.length, "portable PDF source must retain exact byte length");
 
   const shareDownloadPromise = page.waitForEvent("download");
   await page.click("#t-share");
@@ -123,7 +124,8 @@ try {
   assert.equal(exported.format, "rabbithole");
   assert.equal(exported.format_version, 1);
   assert.equal(exported.hole.schema_version, 2);
-  assert.equal(typeof exported.assets["page-001.webp"], "string");
+  assert.equal(typeof exported.assets[original.assets[0]], "string");
+  assert.equal(Buffer.from(exported.assets[original.assets[0]], "base64").equals(Buffer.from(pdfBytes)), true, "portable export must preserve the original PDF bytes exactly");
 
   await ensureRailOpen(page);
   assert.equal(await page.locator(".rail-export").count(), 0, "sidebar rows should reserve their full width for titles");
@@ -132,11 +134,10 @@ try {
   const importPage = await fresh.newPage();
   await importPage.goto(baseUrl, { waitUntil: "networkidle" });
   await importPage.setInputFiles("#file-md", shareExportPath);
-  await importPage.waitForSelector(".node .doc-content[data-node-id] img");
   await importPage.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
   await importPage.waitForFunction(() => {
-    const img = document.querySelector(".node .doc-content[data-node-id] img");
-    return !!img && img.complete && img.naturalWidth > 0;
+    const canvas = document.querySelector(".node .rh-pdf-canvas-generation canvas");
+    return !!canvas && canvas.width > 0 && canvas.height > 0;
   });
 
   const imported = await importPage.evaluate(async () => {
@@ -147,7 +148,7 @@ try {
   });
   assert.deepEqual(projectHole(imported.raw), projectHole(original.raw));
   assert.deepEqual(imported.assets, original.assets);
-  assert.equal(imported.sizes["page-001.webp"], original.sizes["page-001.webp"]);
+  assert.equal(imported.sizes[original.assets[0]], original.sizes[original.assets[0]]);
 
   await fresh.close();
   await context.close();
@@ -212,6 +213,7 @@ function projectHole(hole) {
       collapsed: node.collapsed,
       status: node.status,
       read: node.read,
+      extensions: node.extensions,
     })),
   };
 }
@@ -228,53 +230,8 @@ function corsHeaders() {
   };
 }
 
-function pdfLiteral(value) {
-  return String(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-}
-
-function buildTinyPdf(pageTexts) {
-  const objects = [];
-  objects[1] = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-  const kids = pageTexts.map((_text, index) => `${4 + index * 2} 0 R`).join(" ");
-  objects[2] = `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pageTexts.length} >>\nendobj\n`;
-  objects[3] = "3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
-  for (let index = 0; index < pageTexts.length; index += 1) {
-    const pageObj = 4 + index * 2;
-    const contentObj = pageObj + 1;
-    const content = `BT /F1 15 Tf 40 160 Td (${pdfLiteral(pageTexts[index])}) Tj ET\n`;
-    objects[pageObj] =
-      `${pageObj} 0 obj\n` +
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 440 220] ` +
-      `/Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObj} 0 R >>\n` +
-      "endobj\n";
-    objects[contentObj] = `${contentObj} 0 obj\n<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}endstream\nendobj\n`;
-  }
-
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (let id = 1; id < objects.length; id += 1) {
-    offsets[id] = Buffer.byteLength(pdf, "latin1");
-    pdf += objects[id];
-  }
-  const startxref = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length}\n`;
-  pdf += "0000000000 65535 f \n";
-  for (let id = 1; id < objects.length; id += 1) {
-    pdf += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`;
-  return [...Buffer.from(pdf, "latin1")];
-}
-
 async function dropPdf(page, bytes) {
-  await page.evaluate((pdfBytes) => {
-    const file = new File([new Uint8Array(pdfBytes)], "pdf-document.pdf", { type: "application/pdf" });
-    const data = new DataTransfer();
-    data.items.add(file);
-    const target = document.querySelector("#composer-card");
-    target.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: data }));
-    target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
-  }, bytes);
+  await page.setInputFiles("#file-md", { name: "attention-is-all-you-need.pdf", mimeType: "application/pdf", buffer: Buffer.from(bytes) });
 }
 
 async function verifyPublishOutput() {
@@ -284,7 +241,7 @@ async function verifyPublishOutput() {
     process.exit(publish.status || 1);
   }
   const publishDir = path.join(ROOT, "publish");
-  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects", "_headers", "sitemap.xml", "about/index.html", "about/styles.css", "about/about.js", "about/demo-ask.mp4", "about/demo-map.mp4"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "pdf.mjs", "pdf.worker.mjs", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects", "_headers", "sitemap.xml", "about/index.html", "about/styles.css", "about/about.js", "about/demo-ask.mp4", "about/demo-map.mp4"]) {
     await fs.access(path.join(publishDir, file));
   }
   const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
@@ -294,19 +251,19 @@ async function verifyPublishOutput() {
   assert(redirects.includes("/self-host https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally 302"), "the stable self-host route should lead to local browser instructions");
   const headers = await fs.readFile(path.join(publishDir, "_headers"), "utf8");
   assert(headers.includes("/app.js\n  Cache-Control: public, max-age=0, must-revalidate"), "the mutable app entry must revalidate after every deployment");
-  assert(headers.includes("/chunks/*\n  Cache-Control: public, max-age=31536000, immutable"), "content-addressed chunks should keep long-lived browser caching");
+  assert.equal(headers.includes("/chunks/*"), false, "a chunk-free application must not publish dead chunk caching policy");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
-  assert(html.includes("connect-src 'self' https://openrouter.ai https://api.github.com"), "web CSP should allow the public GitHub star-count request");
+  assert(html.includes("connect-src 'self' blob: https://openrouter.ai https://api.github.com"), "web CSP should allow source-PDF blobs and the public GitHub star-count request");
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
   const entryVersions = [...html.matchAll(/(?:favicon\.svg|styles\.css|dompurify\.js|frozen-source\.js|app\.js)\?v=([a-f0-9]{12})/g)].map((match) => match[1]);
   assert.equal(entryVersions.length, 5, "every mutable browser entry asset should carry a content-derived version");
   assert.equal(new Set(entryVersions).size, 1, "browser entry assets should share one atomic release version");
-  const chunkNames = await fs.readdir(path.join(publishDir, "chunks"));
-  assert.equal(chunkNames.filter((name) => /^browser-canvas-stub-[A-Z0-9]+\.js$/.test(name)).length, 1,
-    "browser builds should pin PDF.js's Node-only canvas import to the deterministic stub");
-  assert.equal(chunkNames.some((name) => /^(?:browser|canvas)-[A-Z0-9]+\.js$/.test(name)), false,
-    "browser builds must not depend on whether the optional native canvas package installed");
+  const chunkNames = await fs.readdir(path.join(publishDir, "chunks")).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  assert.deepEqual(chunkNames, [], "the published app must not reintroduce fragile application lazy chunks");
   const initialStyleAt = html.indexOf('id="initial-theme-style"');
   const initialScriptAt = html.indexOf('id="initial-theme-script"');
   const stylesheetAt = html.indexOf('rel="stylesheet"');

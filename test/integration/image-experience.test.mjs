@@ -78,16 +78,17 @@ async function runPageFixtures() {
     assert.equal(live.status, 200);
     const liveHtml = await live.text();
     const script = extractScript(liveHtml);
+    const imageUxSource = await fs.readFile(path.resolve("src/ui/image-ux.js"), "utf8");
 
-    assertIncludes(script, "function mountDocImages", "client should mount markdown image wrappers");
-    assertIncludes(script, "function openImageLightbox", "client should include the lightbox");
-    assertIncludes(script, "function beginImageResize", "client should include resize handler code");
-    assertIncludes(script, "function nearestImageScrollContainer", "resize should discover the actual scroll container");
-    assertIncludes(script, "function keepImageHandleAnchored", "resize should compensate scroll while image height changes");
-    assertIncludes(script, "afterRect.bottom - beforeRect.bottom", "resize should anchor the handle by the frame-bottom delta");
-    assertIncludes(script, "scroller.scrollTop += delta / imageScrollScale(scroller)", "resize should adjust scrollTop in scroller-local pixels");
-    assertIncludes(script, "LIGHTBOX_MAX_ZOOM = 6", "lightbox zoom should clamp at the requested upper bound");
-    assertIncludes(script, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
+    assertIncludes(imageUxSource, "function mountDocImages", "image UX should mount markdown image wrappers");
+    assertIncludes(imageUxSource, "function openImageLightbox", "image UX should include the lightbox");
+    assertIncludes(imageUxSource, "function beginImageResize", "image UX should include resize handler code");
+    assertIncludes(imageUxSource, "function nearestImageScrollContainer", "resize should discover the actual scroll container");
+    assertIncludes(imageUxSource, "function keepImageHandleAnchored", "resize should compensate scroll while image height changes");
+    assertIncludes(imageUxSource, "afterRect.bottom - beforeRect.bottom", "resize should anchor the handle by the frame-bottom delta");
+    assertIncludes(imageUxSource, "scroller.scrollTop += delta / imageScrollScale(scroller)", "resize should adjust scrollTop in scroller-local pixels");
+    assertIncludes(imageUxSource, "LIGHTBOX_MAX_ZOOM = 6", "lightbox zoom should clamp at the requested upper bound");
+    assertIncludes(imageUxSource, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
     assertIncludes(liveHtml, 'html[data-theme="dark"] .md .rh-img-frame', "served page should include dark-mode image matte CSS");
     assertIncludes(liveHtml, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
     assert(!CANVAS_STYLES.includes('html[data-theme="dark"] .md img'), "matte selector should not target every .md img directly");
@@ -148,6 +149,11 @@ async function runLiveSnapshotDownload() {
     const page = await browser.newPage({ acceptDownloads: true });
     await page.goto(session.url);
     await page.waitForSelector("#t-share");
+    await page.waitForSelector(".rh-img-frame .rh-img-handle");
+    await page.click(".rh-img-frame img");
+    await page.waitForSelector(".rh-lightbox:not([hidden])");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".rh-lightbox", { state: "detached" });
     const liveStyles = await page.locator("head style:first-of-type").textContent();
 
     await page.click("#t-share");

@@ -7,7 +7,7 @@
  */
 
 import { escapeHtml, serializeForInlineScript } from "../../core/utils.js";
-import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss, getMermaidScript } from "./built-assets.js";
+import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss, getMermaidScript, getPdfJsScript, getPdfWorkerScript } from "./built-assets.js";
 import { CANVAS_SHELL } from "../../core/html/shell.js";
 import { CANVAS_STYLES } from "../../core/html/styles.js";
 
@@ -35,6 +35,8 @@ ${getKatexCss()}
 <body>
 ${CANVAS_SHELL}
 <script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">${getMermaidScript()}</script>
+<script type="application/vnd.rabbithole+pdfjs" id="rabbithole-pdfjs-runtime">${getPdfJsScript().replace(/<\/script/gi, "<\\/script")}</script>
+<script type="application/vnd.rabbithole+pdf-worker" id="rabbithole-pdf-worker-runtime">${getPdfWorkerScript().replace(/<\/script/gi, "<\\/script")}</script>
 <script>
 ${getDompurifyScript()}
 (function(){

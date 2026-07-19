@@ -1,4 +1,4 @@
-import { validateAssetName, MAX_ASSET_BYTES } from "../../core/assets.js";
+import { maxAssetBytes, validateAssetName } from "../../core/assets.js";
 import { parsePersistedHole, toPersistedHole } from "../../core/schema.js";
 import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } from "../../core/store.js";
 
@@ -25,12 +25,13 @@ function txDone(tx) {
   });
 }
 
-async function bytesToBlob(bytes, label = "asset bytes") {
+async function bytesToBlob(bytes, label = "asset bytes", name = "asset.png") {
   let blob;
   if (bytes instanceof Blob) blob = bytes;
   else if (bytes instanceof Uint8Array || bytes instanceof ArrayBuffer) blob = new Blob([bytes]);
   else throw new Error(`${label} must be a Blob, ArrayBuffer, or Uint8Array`);
-  if (blob.size > MAX_ASSET_BYTES) throw new Error(`${label} exceeds 20 MB`);
+  const limit = maxAssetBytes(name);
+  if (blob.size > limit) throw new Error(`${label} exceeds ${Math.round(limit / 1024 / 1024)} MB`);
   return blob;
 }
 
@@ -129,7 +130,7 @@ export class IdbStore {
   async putAsset(holeId, name, bytes) {
     const safeHoleId = assertSafeHoleId(holeId);
     const safeName = validateAssetName(name);
-    const blob = await bytesToBlob(bytes);
+    const blob = await bytesToBlob(bytes, "asset bytes", safeName);
     await this.requestPersistenceOnce();
     const db = await this.open();
     const tx = db.transaction(ASSETS, "readwrite");
@@ -163,7 +164,7 @@ export class IdbStore {
   async putStagedAsset(ingestId, name, bytes) {
     const safeIngestId = assertSafeIngestId(ingestId);
     const safeName = validateAssetName(name);
-    const blob = await bytesToBlob(bytes, "staged asset bytes");
+    const blob = await bytesToBlob(bytes, "staged asset bytes", safeName);
     await this.requestPersistenceOnce();
     const db = await this.open();
     const tx = db.transaction(STAGING, "readwrite");

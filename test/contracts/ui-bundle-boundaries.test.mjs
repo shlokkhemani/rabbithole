@@ -11,6 +11,7 @@ const result = await esbuild.build({
   format: "iife",
   platform: "browser",
   target: "es2018",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent",
 });
 
@@ -18,14 +19,13 @@ const inputs = Object.keys(result.metafile.inputs);
 const forbidden = inputs.filter((input) =>
   input === "src/ui/transport-status.js"
   || input === "src/ui/snapshot.js"
-  || input === "src/ui/pdf-view.js"
   || input.startsWith("src/web/")
 );
 
 assert.deepEqual(
   forbidden,
   [],
-  `frozen UI must not include live host modules:\n${forbidden.join("\n")}`,
+  `frozen UI must not include live host modules (the source-backed PDF viewer is intentionally shared):\n${forbidden.join("\n")}`,
 );
 
 const frozenBundle = result.outputFiles[0].text;

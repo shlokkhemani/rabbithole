@@ -376,6 +376,65 @@ export function mountPdfView(container, node, options = {}) {
     }) || null;
   }
 
+  function alignNativeSelection(span, offsets, state, quad) {
+    const textNode = span.firstChild, text = textNode?.nodeValue || "";
+    const props = state.textProperties?.get(span);
+    if (textNode?.nodeType !== 3 || !quad || Number(props?.angle)) return;
+    const selectedText = text.slice(offsets.start, offsets.end);
+    const selectedCharacters = [...selectedText].length;
+    if (!selectedCharacters) return;
+    const pageRect = state.element.getBoundingClientRect();
+    if (!(pageRect.width > 0) || !state.viewport) return;
+    const cssScale = pageRect.width / state.viewport.width;
+    const expected = quad.map((point) => state.viewport.convertToViewportPoint(point[0], point[1])[0] * cssScale + pageRect.left);
+    const expectedLeft = Math.min(...expected), expectedRight = Math.max(...expected);
+    const selectionRange = document.createRange();
+    selectionRange.setStart(textNode, offsets.start);
+    selectionRange.setEnd(textNode, offsets.end);
+    const wholeRange = document.createRange();
+    wholeRange.selectNodeContents(span);
+    const countSpaces = (value) => [...value].filter((character) => /\s/u.test(character)).length;
+    const beforeText = text.slice(0, offsets.start);
+    const beforeCharacters = [...beforeText].length, beforeSpaces = countSpaces(beforeText);
+    const selectedSpaces = countSpaces(selectedText);
+    const totalCharacters = [...text].length, totalSpaces = countSpaces(text);
+
+    // Letter and word spacing are the two independent degrees of freedom we
+    // can use without splitting the stable PDF.js text DOM. Solve them against
+    // the selected source quad plus either its leading edge or the whole item.
+    const calibrate = () => {
+      const selectedRect = selectionRange.getBoundingClientRect();
+      const computed = getComputedStyle(span);
+      let letterSpacing = Number.parseFloat(computed.letterSpacing) || 0;
+      let wordSpacing = Number.parseFloat(computed.wordSpacing) || 0;
+      const widthDelta = expectedRight - expectedLeft - selectedRect.width;
+      let aLetters, aSpaces, aDelta;
+      if (beforeCharacters && beforeCharacters * selectedSpaces !== beforeSpaces * selectedCharacters) {
+        aLetters = beforeCharacters;
+        aSpaces = beforeSpaces;
+        aDelta = expectedLeft - selectedRect.left;
+      } else {
+        const wholeRect = wholeRange.getBoundingClientRect();
+        const boundaries = state.textMetrics?.[Number(span.dataset.pdfItem)];
+        if (!Array.isArray(boundaries) || !Number.isFinite(boundaries[0]) || !Number.isFinite(boundaries[text.length])) return;
+        aLetters = totalCharacters;
+        aSpaces = totalSpaces;
+        aDelta = (boundaries[text.length] - boundaries[0]) * state.viewport.scale * cssScale - wholeRect.width;
+      }
+      const determinant = aLetters * selectedSpaces - aSpaces * selectedCharacters;
+      if (Math.abs(determinant) > 1e-6) {
+        letterSpacing += (aDelta * selectedSpaces - aSpaces * widthDelta) / determinant;
+        wordSpacing += (aLetters * widthDelta - aDelta * selectedCharacters) / determinant;
+      } else {
+        letterSpacing += widthDelta / selectedCharacters;
+      }
+      span.style.letterSpacing = `${letterSpacing}px`;
+      span.style.wordSpacing = `${wordSpacing}px`;
+    };
+    calibrate();
+    calibrate();
+  }
+
   function selectionToAsk() {
     if (boxMode || disposed) return;
     const selection = window.getSelection();
@@ -392,7 +451,9 @@ export function mountPdfView(container, node, options = {}) {
         if (offsets.end <= offsets.start) continue;
         const item = state.textItems[Number(span.dataset.pdfItem)];
         if (!item) continue;
-        quads.push(...textSelectionQuads(span.firstChild, offsets.start, offsets.end, state.element, state.viewport, item, state.textStyles[item.fontName] || {}, state.textMetrics[Number(span.dataset.pdfItem)]));
+        const selectedQuads = textSelectionQuads(span.firstChild, offsets.start, offsets.end, state.element, state.viewport, item, state.textStyles[item.fontName] || {}, state.textMetrics[Number(span.dataset.pdfItem)]);
+        if (selectedQuads.length) alignNativeSelection(span, offsets, state, selectedQuads[0]);
+        quads.push(...selectedQuads);
       }
       if (quads.length) fragments.push({ page: state.meta.n, quads });
     }
@@ -871,6 +932,7 @@ function tuneTextLayerSpacing(divs, items, styles, properties, viewport) {
   if (!textMeasureContext) return;
   for (let index = 0; index < divs.length; index++) {
     const div = divs[index], item = items[index], props = properties.get(div), text = String(item?.str || "");
+    div.style.letterSpacing = "";
     const spaces = [...text].filter((character) => /\s/u.test(character)).length;
     if (!spaces || !props?.canvasWidth || styles[item.fontName]?.vertical) continue;
     const fontSize = Number(props.fontSize) * viewport.scale;

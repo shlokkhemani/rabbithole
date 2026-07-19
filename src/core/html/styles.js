@@ -181,6 +181,8 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
    document and the "since" strip start below the chrome. */
 #reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; padding-top: var(--taskbar-clear); }
 body.mode-canvas #reader { display: none; }
+#reader-workspace { display: flex; flex: 1; min-height: 0; }
+#reader-document { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 /* The lineage trail lives at the top of the document column and scrolls with it. */
 #breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 12.5px; margin-bottom: 22px; }
 #breadcrumb:has(.crumb:only-child) { display: none; }
@@ -198,7 +200,7 @@ body.mode-canvas #reader { display: none; }
 #since .tool-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
 #since-x { background: none; border: none; color: var(--fg-faint); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
 #since-x:hover { color: var(--fg-bold); }
-#reader-main { flex: 1; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+#reader-main { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
 /* A PDF is already a complete reading surface. In Reader, give it the whole
    flex slot between the shared top chrome and composer instead of stacking a
@@ -209,7 +211,6 @@ body.mode-canvas #reader { display: none; }
 #reader-main.pdf-reader-viewport .reader-col.pdf-reader-viewport { display: flex; width: 100%; max-width: none; height: 100%; min-height: 0; flex-direction: column; }
 #reader-main.pdf-reader-viewport .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; min-height: 0; }
 #reader-main.pdf-reader-viewport .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
-#reader-main.pdf-reader-viewport #margin-notes { display: none; }
 .reader-context { font-family: var(--font-ui); font-size: 12.5px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding: 2px 0 2px 12px; margin-bottom: 26px; line-height: 1.55; }
 .reader-context .rc-label { color: var(--fg-faint); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; margin-right: 6px; }
 /* The FROM strip is a live link back to the exact spot this branch grew from. */
@@ -217,25 +218,27 @@ body.mode-canvas #reader { display: none; }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
 .reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color 0.15s; }
-/* ---------- margin notes ----------
-   Branches sit beside the text like document comments: each card hangs in the
-   right margin, top-aligned with the highlight it grew from (stacked apart when
-   they'd collide). No sidebar, no toggling — the margin appears whenever the
-   window is wide enough, and the inline marks carry narrow screens. */
-#margin-notes { display: none; position: absolute; top: 0; left: calc(100% + 36px);
-  width: min(250px, calc((100vw - var(--reader-column)) / 2 - 72px)); }
-@media (min-width: 1180px) { #margin-notes { display: block; } }
-.side-item { position: absolute; left: 0; width: 100%; border: 1px solid var(--border); border-radius: 10px;
-  padding: 9px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
+/* ---------- branch rail ----------
+   Reader content and its branches are sibling surfaces. The document gets all
+   remaining width; the rail stays at the physical right edge and scrolls on
+   its own, so PDF scrolling, prose scrolling, and branch browsing never fight
+   over the same gesture. */
+#reader-rail { display: flex; width: var(--reader-branch-rail); min-width: 0; min-height: 0; flex: 0 0 var(--reader-branch-rail); flex-direction: column;
+  border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bar-bg) 58%, var(--bg)); }
+.reader-rail-head { display: flex; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px;
+  border-bottom: 1px solid var(--border); color: var(--fg-bold); font-family: var(--font-ui); font-size: 12px; font-weight: 600; }
+#reader-rail-count { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--fg-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 500; }
+#margin-notes { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px; overflow: auto; padding: 12px 12px 24px;
+  overscroll-behavior: contain; scrollbar-gutter: stable; }
+.reader-rail-empty { margin: auto 8px; color: var(--fg-faint); font-family: var(--font-ui); font-size: 11.5px; line-height: 1.5; text-align: center; }
+.side-item { position: relative; width: 100%; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
-#margin-notes.settled .side-item { transition: border-color var(--duration-fast) var(--ease-standard),
-  box-shadow var(--duration-fast) var(--ease-standard), top var(--duration-enter) var(--ease-standard); }
 .side-item:hover { border-color: var(--border-focus); box-shadow: var(--shadow); }
 .side-item .si-q { font-size: 12px; color: var(--fg-bold); line-height: 1.45; }
-/* The highlight sits right beside the card, so the quote only appears on cards
-   that have no inline mark to point at (region branches, unmatched anchors). */
-.si-quote { display: none; font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-item.unanchored .si-quote { display: block; }
+.si-quote { display: block; font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-quote[hidden] { display: none; }
 .si-status { font-size: 10.5px; color: var(--fg-dim); margin-top: 6px; }
 .si-muted { color: var(--fg-faint); }
 .si-new { color: var(--accent); font-weight: 600; }
@@ -253,14 +256,6 @@ body.mode-canvas #reader { display: none; }
   color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 999px; padding: 1.5px 8px; vertical-align: 0.08em; }
 
-/* ---------- follow-up conversation thread ---------- */
-#thread { margin-top: 8px; }
-.thread-rule { display: flex; align-items: center; gap: 10px; margin: 34px 0 24px; font-family: var(--font-ui); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-faint); }
-.thread-rule::before, .thread-rule::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
-.turn { margin-bottom: 28px; }
-.turn-q { display: flex; justify-content: flex-end; margin-bottom: 16px; }
-.turn-q > span { max-width: 82%; background: var(--hl); border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg-bold); font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; padding: 8px 14px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: break-word; }
-
 /* ---------- composer (follow-up input) ---------- */
 /* overflow:hidden + the same stable gutter as #reader-main keeps the pill's
    column pixel-aligned with the document text even when a classic scrollbar
@@ -272,23 +267,30 @@ body.mode-canvas #reader { display: none; }
 #composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg); font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; max-height: 140px; padding: 4px 0; }
 #composer textarea::placeholder { color: var(--fg-faint); }
 
-/* Phones get a reader designed around one vertical reading surface: the inline
-   marks are the branch affordance, and the thread carries follow-ups. */
+/* Compact screens keep one uninterrupted reading surface. Inline marks remain
+   the branch affordance there; the full branch rail starts when both surfaces
+   have enough room to stay useful. */
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   #reader { height: 100dvh; min-height: -webkit-fill-available; overflow: hidden; }
   .crumb { max-width: min(72vw, 280px); }
   #reader-main { min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 24px max(18px, env(safe-area-inset-right)) 28px max(18px, env(safe-area-inset-left));
     overscroll-behavior-y: contain; scrollbar-gutter: auto; touch-action: pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
   .reader-col { width: 100%; max-width: none; }
-  #margin-notes { display: none; }
+  #reader-rail, #margin-notes { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
-  .turn-q > span { max-width: 92%; }
   .rh-origin-crop { max-width: 100%; }
   #composer { padding: 8px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     overflow: hidden; scrollbar-gutter: auto; }
   .composer-inner { width: 100%; padding: 6px 6px 6px 12px; }
   #composer textarea { min-height: 32px; font-size: 16px; line-height: 1.4; }
   #composer .send-btn { width: 44px; height: 44px; }
+}
+@media (min-width: 761px) and (max-width: 879px) {
+  #reader-rail, #margin-notes { display: none; }
+}
+@media (min-width: 880px) and (max-width: 1100px) {
+  #reader-main:not(.pdf-reader-viewport) { padding-inline: 28px; }
+  #composer { padding-inline: 28px; }
 }
 
 /* ---------- CANVAS ---------- */
@@ -584,7 +586,7 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
    accent wash directly: a lighter cousin of the live-selection tint by default,
    selection-strength on hover / when the answer card is hovered (mark-focus). */
 .doc-content .rh-pdf-mark { pointer-events: auto; cursor: pointer; }
-.doc-content .rh-pdf-mark polygon { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill 0.15s, stroke 0.15s; }
+.doc-content .rh-pdf-mark polygon { pointer-events: all; fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill 0.15s, stroke 0.15s; }
 .doc-content .rh-pdf-mark.mark-pending polygon { fill: color-mix(in srgb, var(--accent) 9%, transparent); stroke-dasharray: 3 2; }
 .doc-content .rh-pdf-mark:hover polygon, .doc-content .rh-pdf-mark.mark-focus polygon { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); }
 .rh-pdf-textlayer span::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }

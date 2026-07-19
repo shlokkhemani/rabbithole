@@ -45,12 +45,20 @@ export const CANVAS_SHELL = `
 
 <div id="reader">
   <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "×" })}</div>
-  <div id="reader-main"></div>
-  <div id="composer">
-    <div class="composer-inner" id="composer-inner">
-      <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-      <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+  <div id="reader-workspace">
+    <div id="reader-document">
+      <div id="reader-main"></div>
+      <div id="composer">
+        <div class="composer-inner" id="composer-inner">
+          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
+          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+        </div>
+      </div>
     </div>
+    <aside id="reader-rail" aria-labelledby="reader-rail-title">
+      <div class="reader-rail-head"><span id="reader-rail-title">Branches</span><span id="reader-rail-count">0</span></div>
+      <div id="margin-notes"></div>
+    </aside>
   </div>
 </div>
 

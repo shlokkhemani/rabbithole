@@ -127,7 +127,9 @@ try {
     const pdf = main.querySelector(".doc-content.rh-pdf");
     const scroll = pdf.querySelector(".rh-pdf-scroll");
     const toolbar = document.querySelector("#tb-document .rh-pdf-reader-toolbar");
+    const rail = document.querySelector("#reader-rail");
     return {
+      viewportWidth: innerWidth,
       mainClass: main.className,
       colClass: col.className,
       mainOverflow: getComputedStyle(main).overflow,
@@ -144,6 +146,9 @@ try {
       toolsRect: rect(document.querySelector("#tb-tools")),
       sessionRect: rect(document.querySelector("#tb-session")),
       composerRect: rect(document.querySelector("#composer")),
+      railRect: rect(rail),
+      railDisplay: getComputedStyle(rail).display,
+      railCount: document.querySelectorAll("#margin-notes .side-item").length,
       inlineToolbar: !!pdf.querySelector(".rh-pdf-toolbar"),
       canvasZoom: document.querySelector(".node .rh-pdf-scroll").dataset.zoom,
     };
@@ -163,7 +168,13 @@ try {
   assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
   assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport down to the composer");
   assert(Math.abs(readerContract.scrollRect.left - readerContract.mainRect.left) <= 0.5 && Math.abs(readerContract.scrollRect.right - readerContract.mainRect.right) <= 0.5,
-    "Reader must give PDF zoom the full window width instead of a prose-column viewport");
+    "Reader must give PDF zoom the full remaining document pane instead of a prose-column viewport");
+  assert.equal(readerContract.railDisplay, "flex", "desktop Reader must reserve a persistent branch rail even before the first branch");
+  assert.equal(readerContract.railCount, 0, "a new PDF must begin with an honest empty branch rail");
+  assert(Math.abs(readerContract.mainRect.right - readerContract.railRect.left) <= 0.5 && Math.abs(readerContract.railRect.right - readerContract.viewportWidth) <= 0.5,
+    "the PDF pane and right-edge branch rail must consume the viewport without overlap or dead space");
+  assert(Math.abs(readerContract.composerRect.right - readerContract.railRect.left) <= 0.5,
+    "the follow-up composer must belong to the document pane instead of running underneath the rail");
   assert(Math.abs(readerContract.composerRect.top - readerContract.mainRect.bottom) <= 0.5, "the composer must follow the PDF viewport without a dead band");
   assert(readerContract.pageRect.top - readerContract.scrollRect.top <= 11, "paper must begin immediately below the shared chrome clearance");
   assert(readerContract.scrollHeight > readerContract.scrollClientHeight * 5, "the docked Reader PDF must retain its complete document scroll range");
@@ -424,6 +435,44 @@ try {
   assert(dimensions.width >= 1749 && dimensions.width <= 1751, `Figure 2 crop must render its exact 420-point padded width at 300dpi: ${JSON.stringify(dimensions)}`);
   assert(dimensions.height >= 1137 && dimensions.height <= 1139, `Figure 2 crop must render its exact 273-point padded height at 300dpi: ${JSON.stringify(dimensions)}`);
   assert(Math.abs(dimensions.width / dimensions.height - 420 / 273) < 0.003, `crop dimensions must preserve the exact paper-space box plus 12-point padding: ${JSON.stringify(dimensions)}`);
+
+  const expectedReaderBranches = regionState.hole.nodes.filter((node) => node.parent_id === root.id).length;
+  await page.click("#t-reader");
+  await page.waitForSelector("body:not(.mode-canvas) #reader-rail");
+  await page.waitForFunction((count) => document.querySelectorAll("#margin-notes .side-item").length === count, expectedReaderBranches);
+  const pdfRail = await page.evaluate((pointerId) => {
+    const main = document.getElementById("reader-main").getBoundingClientRect();
+    const rail = document.getElementById("reader-rail").getBoundingClientRect();
+    const card = document.querySelector(`#margin-notes .side-item[data-child="${pointerId}"]`);
+    return {
+      cardCount: document.querySelectorAll("#margin-notes .side-item").length,
+      countLabel: document.getElementById("reader-rail-count").textContent,
+      cardText: card?.textContent || "",
+      cardName: card?.getAttribute("aria-label") || "",
+      seam: Math.abs(main.right - rail.left),
+      rightEdge: Math.abs(innerWidth - rail.right),
+    };
+  }, pointerChild.id);
+  assert.equal(pdfRail.cardCount, expectedReaderBranches, "Reader rail must expose every direct PDF branch, including text and region asks");
+  assert.equal(pdfRail.countLabel, String(expectedReaderBranches), "Reader rail count must match its navigable branch cards");
+  assert.match(pdfRail.cardText, /Real pointer target[\s\S]*Attention/, "PDF selection cards must retain both the question and selected context");
+  assert.match(pdfRail.cardName, /^Open branch: Real pointer target/, "PDF branch cards must expose named link semantics");
+  assert(pdfRail.seam <= 0.5 && pdfRail.rightEdge <= 0.5, `PDF document and branch rail must divide the full viewport exactly: ${JSON.stringify(pdfRail)}`);
+
+  const pointerReaderMark = page.locator(`#reader-main .rh-pdf-mark[data-child="${pointerChild.id}"]`);
+  await pointerReaderMark.waitFor();
+  await pointerReaderMark.focus();
+  await page.keyboard.press("Enter");
+  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
+  await page.locator('#breadcrumb .crumb[role="link"]').click();
+  const multiReaderMark = page.locator(`#reader-main .rh-pdf-mark[data-child="${multi.id}"]`);
+  await multiReaderMark.waitFor();
+  await multiReaderMark.locator("polygon").first().click();
+  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
+  await page.locator('#breadcrumb .crumb[role="link"]').click();
+  await page.waitForSelector(`#margin-notes .side-item[data-child="${region.id}"]`);
+  await page.click(`#margin-notes .side-item[data-child="${region.id}"]`);
+  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
 
   assert.deepEqual(pageErrors, [], `browser emitted PDF runtime errors:\n${pageErrors.join("\n")}`);
   console.log("ok PDF precision/performance (Attention paper): native trackpad scrolling, inert single-click and exact drag selection, flicker-free local zoom, stable text DOM, bounded reusable tiles, zoom-invariant pending regions and Poppler coordinates, multi-line quads, exact Figure 2 crop, and source fidelity");

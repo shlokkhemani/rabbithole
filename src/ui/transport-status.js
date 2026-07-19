@@ -12,7 +12,6 @@ import {
   frozen,
   hydration,
   incrementSseFails,
-  isFollowup,
   isUnread,
   markRead,
   mode,
@@ -33,8 +32,7 @@ import {
 import {
   renderBreadcrumb,
   renderReaderBody,
-  renderMarginNotes,
-  updateThreadItem
+  renderMarginNotes
 } from "./reader.js";
 import { upgradeMarks, wrapInContainer } from "./text-marks.js";
 import {
@@ -249,7 +247,7 @@ export function disposeTransportStatus(){
     return transportDisposePromise;
   }
   // Repaint a streaming node everywhere it is currently on screen: the reader
-  // main doc, its follow-up thread turn, and its canvas card. Scroll positions
+  // main doc, its branch-rail card, and its canvas card. Scroll positions
   // are restored exactly on every repaint — arriving text must never move the
   // human's place (an innerHTML swap briefly collapses scrollHeight, which
   // would otherwise clamp the scroll and make the view jump).
@@ -271,15 +269,12 @@ function renderStreamSurfaces(node, firstChunk){
         readerMain.scrollTop = keep;
       }
     } else if (currentNodeId === node.parent_id){
-      if (isFollowup(node)){ updateThreadItem(node); readerMain.scrollTop = keep; }
-      else {
-        // The branch streams live inside its margin note: the first chunk
-        // rebuilds the note (Thinking… → Writing… + the live pane), later
-        // chunks just repaint the pane.
-        var live = readerMain.querySelector('#margin-notes .side-item[data-child="' + node.id + '"] .si-live .md');
-        if (live && !firstChunk) live.innerHTML = node.html || "";
-        else renderMarginNotes();
-      }
+      // The branch streams live inside its rail card: the first chunk rebuilds
+      // the card (Thinking… → Writing… + the live pane), later chunks patch it.
+      var layer = document.getElementById("margin-notes");
+      var live = layer && layer.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
+      if (live && !firstChunk) live.innerHTML = node.html || "";
+      else renderMarginNotes();
     }
   }
 
@@ -326,10 +321,7 @@ function handleServer(msg){
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
           upgradeMarks(readerMain, node.id);
-          if (currentNodeId === node.parent_id){
-            if (isFollowup(node)){ updateThreadItem(node); markRead(node); } // you watched it land
-            else renderMarginNotes();
-          }
+          if (currentNodeId === node.parent_id) renderMarginNotes();
         }
       }
       // Upgrade the inline mark inside the parent's canvas card too.
@@ -385,10 +377,7 @@ function handleServer(msg){
         if (en.bodyEl){ fillBody(en); scheduleEdges(); }
         if (mode === "reader"){
           if (currentNodeId === en.id){ renderReaderBody(); updateComposerState(); }
-          else if (currentNodeId === en.parent_id){
-            if (isFollowup(en)) updateThreadItem(en);
-            else renderMarginNotes();
-          }
+          else if (currentNodeId === en.parent_id) renderMarginNotes();
         }
       }
     } else if (msg.type === "agent_status"){

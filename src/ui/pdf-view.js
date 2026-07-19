@@ -65,7 +65,14 @@ export function mountPdfView(container, node, options = {}) {
   function alignReaderToolbar() {
     if (!readerToolbarHost || !scroll.isConnected) return;
     const rect = scroll.getBoundingClientRect();
-    const center = rect.left + scroll.clientWidth / 2;
+    const desired = rect.left + scroll.clientWidth / 2;
+    const toolbarWidth = toolbar.element.getBoundingClientRect().width;
+    const tools = document.getElementById("tb-tools")?.getBoundingClientRect();
+    const session = document.getElementById("tb-session")?.getBoundingClientRect();
+    const half = toolbarWidth / 2;
+    const minimum = tools ? tools.right + 8 + half : desired;
+    const maximum = session ? session.left - 8 - half : desired;
+    const center = minimum <= maximum ? Math.min(maximum, Math.max(minimum, desired)) : desired;
     if (Number.isFinite(center)) readerToolbarHost.style.setProperty("--rh-pdf-reader-center", `${center}px`);
   }
 
@@ -588,7 +595,7 @@ export function mountPdfView(container, node, options = {}) {
       for (const generation of [...state.canvasLayer.children]) releaseGeneration(generation);
     }
     documentLease?.release();
-    readerToolbarHost?.style.removeProperty("--rh-pdf-reader-center");
+    readerToolbarHost?.style?.removeProperty("--rh-pdf-reader-center");
     toolbar.element.remove();
     delete container._rhPdfToolbarElement;
     toolbar.dispose();

@@ -32,7 +32,7 @@ export const DESIGN_TOKENS = `:root {
   --focus-field-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 
   /* Layout */
-  --reader-column: 680px; --rail-width: 224px;
+  --reader-column: 680px; --reader-branch-rail: clamp(252px, 24vw, 320px); --rail-width: 224px;
   --surface-width-menu: 240px; --surface-width-panel: 340px; --surface-width-selection: 372px;
   --surface-edge: 14px; --surface-gap: 14px; --breakpoint-compact: 760px;
 

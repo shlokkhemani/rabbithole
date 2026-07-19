@@ -471,6 +471,10 @@ export function mountPdfView(container, node, options = {}) {
     if (!span || !container.contains(span)) return;
     const start = textPositionAtPoint(container, event.clientX, event.clientY, span);
     if (!start) return;
+    // Own the complete gesture. Otherwise Chromium on Linux can turn the first
+    // programmatic range into a native text drag and cancel the pointer stream.
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
     textGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false };
   }
 

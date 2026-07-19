@@ -30480,7 +30480,8 @@ ${text2}</tr>
     if (node.collapsed) el.classList.add("collapsed");
     enableDrag(node, head);
     enableResize(node, resize);
-    head.addEventListener("dblclick", function() {
+    head.addEventListener("dblclick", function(e) {
+      if (e.target.closest(".node-acts")) return;
       openNode(node.id);
     });
     openBtn.addEventListener("click", function(e) {

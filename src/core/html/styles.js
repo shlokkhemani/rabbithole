@@ -205,8 +205,8 @@ body.mode-canvas #reader { display: none; }
    second toolbar and a second scrollbar around it. Threaded PDFs retain the
    normal outer reader flow so their conversation remains reachable. */
 #reader-main.pdf-reader { padding-top: 0; }
-#reader-main.pdf-reader-viewport { overflow: hidden; padding-bottom: 0; scrollbar-gutter: auto; }
-#reader-main.pdf-reader-viewport .reader-col.pdf-reader-viewport { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+#reader-main.pdf-reader-viewport { overflow: hidden; padding: 0; scrollbar-gutter: auto; }
+#reader-main.pdf-reader-viewport .reader-col.pdf-reader-viewport { display: flex; width: 100%; max-width: none; height: 100%; min-height: 0; flex-direction: column; }
 #reader-main.pdf-reader-viewport .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; min-height: 0; }
 #reader-main.pdf-reader-viewport .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
 #reader-main.pdf-reader-viewport #margin-notes { display: none; }
@@ -567,7 +567,7 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .node-body.pdf-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .node-body.pdf-body > .doc-content.rh-pdf { flex: 1 1 auto; height: 100%; }
 .node .node-body.pdf-body .rh-pdf-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
-.rh-pdf-stack { display: flex; width: max-content; min-width: 100%; flex-direction: column; align-items: center; gap: 18px; padding: 10px 12px 18px; }
+.rh-pdf-stack { display: flex; box-sizing: border-box; width: max-content; min-width: 100%; flex-direction: column; align-items: center; gap: 18px; padding: 10px 12px 18px; }
 .rh-pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: white; outline: 1px solid var(--border); outline-offset: -1px; box-shadow: 0 2px 10px rgba(0,0,0,.12); contain: layout paint style; }
 .rh-pdf-canvas-layer, .rh-pdf-canvas-generation, .rh-pdf-textlayer, .rh-pdf-marks { position: absolute; inset: 0; }
 .rh-pdf-canvas-layer { z-index: 1; overflow: hidden; pointer-events: none; }

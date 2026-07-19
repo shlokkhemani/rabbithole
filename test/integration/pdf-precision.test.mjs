@@ -162,6 +162,8 @@ try {
     "docked PDF controls must never overlap application or session controls");
   assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
   assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport down to the composer");
+  assert(Math.abs(readerContract.scrollRect.left - readerContract.mainRect.left) <= 0.5 && Math.abs(readerContract.scrollRect.right - readerContract.mainRect.right) <= 0.5,
+    "Reader must give PDF zoom the full window width instead of a prose-column viewport");
   assert(Math.abs(readerContract.composerRect.top - readerContract.mainRect.bottom) <= 0.5, "the composer must follow the PDF viewport without a dead band");
   assert(readerContract.pageRect.top - readerContract.scrollRect.top <= 11, "paper must begin immediately below the shared chrome clearance");
   assert(readerContract.scrollHeight > readerContract.scrollClientHeight * 5, "the docked Reader PDF must retain its complete document scroll range");
@@ -182,6 +184,28 @@ try {
 
   await page.click('#tb-document .rh-pdf-zoom-control[aria-label="Zoom PDF in"]');
   await page.waitForFunction(() => document.querySelector("#tb-document .rh-pdf-zoom-value")?.textContent === "125%");
+  await page.waitForFunction((initialWidth) => document.querySelector("#reader-main .rh-pdf-page")?.getBoundingClientRect().width >= initialWidth * 1.24,
+    readerContract.pageRect.width);
+  const readerZoomWidth = await page.evaluate(() => {
+    const scroll = document.querySelector("#reader-main .rh-pdf-scroll");
+    const page = scroll.querySelector(".rh-pdf-page");
+    return { pageWidth: page.getBoundingClientRect().width, clientWidth: scroll.clientWidth, scrollWidth: scroll.scrollWidth };
+  });
+  assert(readerZoomWidth.pageWidth >= readerContract.pageRect.width * 1.24, "Reader zoom must enlarge the paper into the available side margins");
+  assert(readerZoomWidth.pageWidth < readerZoomWidth.clientWidth, "125% Reader zoom should still fit inside the full-width viewport");
+  assert(readerZoomWidth.scrollWidth <= readerZoomWidth.clientWidth + 1, "Reader must not create horizontal scrolling while zoom still fits the window");
+  for (let i = 0; i < 3; i++) await page.click('#tb-document .rh-pdf-zoom-control[aria-label="Zoom PDF in"]');
+  await page.waitForFunction(() => document.querySelector("#tb-document .rh-pdf-zoom-value")?.textContent === "244%");
+  await page.waitForFunction(() => {
+    const scroll = document.querySelector("#reader-main .rh-pdf-scroll");
+    return scroll.querySelector(".rh-pdf-page")?.getBoundingClientRect().width > scroll.clientWidth;
+  });
+  const readerOverflowWidth = await page.evaluate(() => {
+    const scroll = document.querySelector("#reader-main .rh-pdf-scroll");
+    return { pageWidth: scroll.querySelector(".rh-pdf-page").getBoundingClientRect().width, clientWidth: scroll.clientWidth, scrollWidth: scroll.scrollWidth };
+  });
+  assert(readerOverflowWidth.pageWidth > readerOverflowWidth.clientWidth, "Reader must never fit an intentionally zoomed page back down to its viewport");
+  assert(readerOverflowWidth.scrollWidth > readerOverflowWidth.clientWidth, "Reader must expose horizontal scrolling once the enlarged paper exceeds the window");
   assert.equal(await page.locator(".node .rh-pdf-zoom-value").textContent(), "100%", "Reader zoom must remain local to the Reader PDF instance");
   await page.click("#tb-document .rh-pdf-zoom-value");
   await page.click("#t-canvas");

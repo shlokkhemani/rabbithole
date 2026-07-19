@@ -8,6 +8,7 @@ import { resolveAssetUrl } from "./renderer.js";
 
 const TILE_PIXELS = 1536;
 const FULL_PAGE_PIXELS = 12 * 1024 * 1024;
+const READER_DEFAULT_PAGE_WIDTH = 642;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
 const textMeasureCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
@@ -95,7 +96,11 @@ export function mountPdfView(container, node, options = {}) {
 
   function fitScaleFor(page) {
     const base = page.getViewport({ scale: 1, rotation: page.rotate });
-    const available = Math.max(240, scroll.clientWidth - 28);
+    const viewportWidth = Math.max(240, scroll.clientWidth - 28);
+    // Reader owns the whole viewport, but 100% remains a comfortable paper
+    // size. Local zoom can then consume the side margins before it needs a
+    // horizontal scroll range. Canvas PDFs continue fitting their card width.
+    const available = isReaderSurface ? Math.min(READER_DEFAULT_PAGE_WIDTH, viewportWidth) : viewportWidth;
     return Math.min(1.5, available / base.width);
   }
 

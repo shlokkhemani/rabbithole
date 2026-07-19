@@ -282,6 +282,7 @@ async function verifyDesktopReaderLayout(browserEngine) {
       const column = document.querySelector(".reader-col").getBoundingClientRect();
       const notesRect = notes.getBoundingClientRect();
       const rail = document.getElementById("reader-rail").getBoundingClientRect();
+      const workspaceStyle = getComputedStyle(document.getElementById("reader-workspace"));
       const bar = document.getElementById("taskbar").getBoundingClientRect();
       const session = document.getElementById("tb-session").getBoundingClientRect();
       const readerTop = document.getElementById("reader").getBoundingClientRect().top
@@ -290,6 +291,8 @@ async function verifyDesktopReaderLayout(browserEngine) {
         mainWidth: main.getBoundingClientRect().width, mainRight: main.getBoundingClientRect().right,
         railLeft: rail.left, railRight: rail.right, railWidth: rail.width,
         viewportWidth: innerWidth, barHeight: bar.height, barBottom: bar.bottom, contentTop: readerTop,
+        workspaceBorderTopStyle: workspaceStyle.borderTopStyle,
+        workspaceBorderTopWidth: parseFloat(workspaceStyle.borderTopWidth),
         sessionRight: session.right,
         doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display,
         mainPaddingLeft: parseFloat(mainStyle.paddingLeft) };
@@ -304,6 +307,8 @@ async function verifyDesktopReaderLayout(browserEngine) {
     assert(Math.abs(desktop.viewportWidth - desktop.railRight) <= 1, `desktop: the branch rail must hug the physical right edge (${JSON.stringify(desktop)})`);
     assert(desktop.barHeight < 52, `desktop: the shared taskbar must remain a single compact row (${JSON.stringify(desktop)})`);
     assert(desktop.contentTop >= desktop.barBottom, `desktop: reader content must clear the floating taskbar (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.workspaceBorderTopStyle, "solid", `desktop: the Reader workspace must have a continuous top boundary (${JSON.stringify(desktop)})`);
+    assert(desktop.workspaceBorderTopWidth > 0, `desktop: the Reader workspace top boundary must remain visible (${JSON.stringify(desktop)})`);
     assert(desktop.viewportWidth - desktop.sessionRight <= 20, `desktop: the session cluster must hug the top-right corner (${JSON.stringify(desktop)})`);
     assert.equal(desktop.doneDisplay, "none", `desktop: Done ends an agent session — it must never render in the web app (${JSON.stringify(desktop)})`);
     assert.equal(desktop.mainPaddingLeft, 48, `desktop: the established reading gutter must stay at 48px`);

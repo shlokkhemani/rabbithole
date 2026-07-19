@@ -181,7 +181,7 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
    document and the "since" strip start below the chrome. */
 #reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; padding-top: var(--taskbar-clear); }
 body.mode-canvas #reader { display: none; }
-#reader-workspace { display: flex; flex: 1; min-height: 0; }
+#reader-workspace { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
 #reader-document { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 /* The lineage trail lives at the top of the document column and scrolls with it. */
 #breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 12.5px; margin-bottom: 22px; }

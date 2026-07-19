@@ -492,8 +492,12 @@ export function mountPdfView(container, node, options = {}) {
   }
 
   function finishTextSelection(event) {
-    if (!textGesture || textGesture.pointerId !== event.pointerId) return;
+    const gesture = textGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
     textGesture = null;
+    // Preventing pointermove can suppress the compatibility mouseup event, so
+    // complete a real drag from its pointer lifecycle instead of relying on it.
+    if (event.type === "pointerup" && gesture.moved) selectionToAsk();
   }
 
   function selectTextWord(event) {

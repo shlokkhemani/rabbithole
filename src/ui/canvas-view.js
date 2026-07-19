@@ -229,7 +229,10 @@ export function createNodeEl(node, enter){
 
     enableDrag(node, head);
     enableResize(node, resize);
-    head.addEventListener("dblclick", function(){ openNode(node.id); });
+    head.addEventListener("dblclick", function(e){
+      if (e.target.closest(".node-acts")) return;
+      openNode(node.id);
+    });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });

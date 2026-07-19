@@ -3,7 +3,6 @@ import {
   DEFAULT_ROOT,
   MAX_SCALE,
   MIN_SCALE,
-  armSince,
   currentNodeId,
   frozen,
   hydration,
@@ -14,8 +13,6 @@ import {
   setCanvasFramed,
   setCurrentNodeId,
   setViewAdjusted,
-  unreadNodes,
-  updateSince,
   view
 } from "./core.js";
 import { openNode } from "./reader.js";
@@ -56,7 +53,6 @@ export function hydrateInitialState({ connectSse = null, refreshStatus = null } 
   }
   openNode(currentNodeId); // READER is the default; canvas DOM is built lazily
   if (vs && vs.mode === "canvas") setMode("canvas");
-  if (unreadNodes().length){ armSince(); updateSince(); }
   if (typeof refreshStatus === "function") refreshStatus();
   if (!frozen && typeof connectSse === "function") connectSse();
 }

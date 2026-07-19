@@ -102,17 +102,22 @@ function renderShell() {
           <div class="composer-paths" role="group" aria-label="Choose how to begin">
             <button class="composer-path" id="composer-path-ask" type="button" data-path="ask">
               <span class="composer-path-icon" aria-hidden="true">${iconSvg("question")}</span>
-              <span class="composer-path-copy"><strong>Ask a question</strong><small>Start with something you want to understand.</small></span>
+              <span class="composer-path-copy"><strong>Ask a question</strong><small>Begin with something you want to understand.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
             <button class="composer-path" id="composer-path-file" type="button" data-path="file">
               <span class="composer-path-icon" aria-hidden="true">${iconSvg("file")}</span>
-              <span class="composer-path-copy"><strong>Open PDF or Markdown</strong><small>Bring in a document from your device.</small></span>
+              <span class="composer-path-copy"><strong>Open a document</strong><small>Bring in a PDF or Markdown file from your device.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-paste" type="button" data-path="paste">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("paste")}</span>
+              <span class="composer-path-copy"><strong>Paste text or Markdown</strong><small>Start from your clipboard.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
             <button class="composer-path" id="composer-path-url" type="button" data-path="url">
               <span class="composer-path-icon" aria-hidden="true">${iconSvg("link")}</span>
-              <span class="composer-path-copy"><strong>Add a link</strong><small>Open an article or paper from the web.</small></span>
+              <span class="composer-path-copy"><strong>Open a link</strong><small>Start from an article, paper, or webpage.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
           </div>
@@ -382,10 +387,11 @@ function initComposer() {
   const fileInput = document.getElementById("file-md");
 
   input.addEventListener("input", () => {
-    autoGrowTextarea(input, 240);
+    autoGrowTextarea(input, composerInputMaxHeight());
   });
   input.addEventListener("keydown", (event) => {
-    if (isSubmitEnter(event)) {
+    const submitPaste = composerPath === "paste" && isSubmitEnter(event) && (event.metaKey || event.ctrlKey);
+    if (submitPaste || (composerPath !== "paste" && isSubmitEnter(event))) {
       event.preventDefault();
       runComposer();
     }
@@ -393,6 +399,7 @@ function initComposer() {
   primary.addEventListener("click", runComposer);
   document.getElementById("composer-back").addEventListener("click", showComposerStart);
   document.getElementById("composer-path-ask").addEventListener("click", () => selectComposerPath("ask"));
+  document.getElementById("composer-path-paste").addEventListener("click", () => selectComposerPath("paste"));
   document.getElementById("composer-path-url").addEventListener("click", () => selectComposerPath("url"));
   document.getElementById("composer-path-file").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
@@ -489,10 +496,11 @@ function openComposer({ source = "button", value = "", trigger } = {}) {
 
   composerPath = "";
   setIngestStatus("");
+  card.removeAttribute("data-path");
   document.getElementById("composer-start").hidden = false;
   document.getElementById("composer-entry").hidden = true;
   input.value = value;
-  autoGrowTextarea(input, 240);
+  autoGrowTextarea(input, composerInputMaxHeight());
   document.getElementById("blank-start").hidden = true;
   if (value) selectComposerPath(isSingleHttpUrl(value) ? "url" : "ask", { value });
   composerDialog?.close("programmatic", { restoreFocus: false });
@@ -517,23 +525,42 @@ function finishClosingComposer() {
 }
 
 function selectComposerPath(path, { value = "" } = {}) {
-  if (path !== "ask" && path !== "url") return;
+  const config = {
+    ask: {
+      title: "Ask a question",
+      copy: "What would you like to understand?",
+      placeholder: "Ask anything…",
+      primary: "Start exploring",
+    },
+    paste: {
+      title: "Paste text or Markdown",
+      copy: "Paste anything you want to explore. We’ll keep the Markdown intact.",
+      placeholder: "Paste text or Markdown here…",
+      primary: "Open in Rabbithole",
+    },
+    url: {
+      title: "Open a link",
+      copy: "Paste a link to an article, paper, or webpage. arXiv works especially well.",
+      placeholder: "https://…",
+      primary: "Open in Rabbithole",
+    },
+  }[path];
+  if (!config) return;
   composerPath = path;
   const input = document.getElementById("composer-input");
-  const isAsk = path === "ask";
   document.getElementById("composer-start").hidden = true;
   document.getElementById("composer-entry").hidden = false;
   document.getElementById("composer-card").dataset.path = path;
-  document.getElementById("composer-entry-title").textContent = isAsk ? "Ask a question" : "Add a link";
-  document.getElementById("composer-entry-copy").textContent = isAsk
-    ? "What would you like to understand?"
-    : "Paste a link to a paper or article. arXiv links work best.";
-  input.placeholder = isAsk ? "Type your question…" : "https://…";
-  input.spellcheck = isAsk;
+  document.getElementById("composer-entry-title").textContent = config.title;
+  document.getElementById("composer-entry-copy").textContent = config.copy;
+  input.placeholder = config.placeholder;
+  input.spellcheck = path !== "url";
   input.value = value;
-  document.getElementById("composer-primary").textContent = isAsk ? "Start exploring" : "Open link";
-  document.getElementById("composer-primary").title = "Submit (Enter) · New line (Shift+Enter)";
-  autoGrowTextarea(input, 240);
+  document.getElementById("composer-primary").textContent = config.primary;
+  document.getElementById("composer-primary").title = path === "paste"
+    ? "Create (Ctrl/⌘+Enter)"
+    : "Submit (Enter) · New line (Shift+Enter)";
+  autoGrowTextarea(input, composerInputMaxHeight());
   input.focus({ preventScroll: true });
 }
 
@@ -552,10 +579,11 @@ async function runComposer() {
   const value = input.value.trim();
   if (composerPath === "url") return createFromUrl(value);
   if (composerPath === "ask") return createFromAsk(value);
+  if (composerPath === "paste") return createFromComposerDocument(input.value);
 }
 
 async function createFromComposerDocument(markdown, { improveStructure = false } = {}) {
-  if (!markdown) {
+  if (!String(markdown || "").trim()) {
     setIngestStatus("Paste a document first.", "error");
     return;
   }
@@ -1196,6 +1224,10 @@ function autoGrowTextarea(textarea, maxHeight) {
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(maxHeight, textarea.scrollHeight)}px`;
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
+function composerInputMaxHeight() {
+  return composerPath === "paste" ? 360 : 240;
 }
 
 function isEditableTarget(target) {

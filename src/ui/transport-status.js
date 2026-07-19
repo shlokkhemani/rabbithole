@@ -12,8 +12,6 @@ import {
   frozen,
   hydration,
   incrementSseFails,
-  isUnread,
-  markRead,
   mode,
   nextOrder,
   nodes,
@@ -25,7 +23,6 @@ import {
   setClosedState,
   setConnLost,
   sessionPhase,
-  updateSince,
   view,
   viewAdjusted
 } from "./core.js";
@@ -310,13 +307,12 @@ function handleServer(msg){
       node.base_url_source = msg.base_url_source || null;
       node.origin = msg.origin || node.origin || null;
       if (hasStreamSurface(node)) refreshNodeHtml(node);
-      node.read = false; // unread until the human actually reaches it
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }
       updateCardComposer(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); markRead(node); }
+        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); }
         else {
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
@@ -327,8 +323,6 @@ function handleServer(msg){
       // Upgrade the inline mark inside the parent's canvas card too.
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      updateSince();
     } else if (msg.type === "node_deleted"){
       // Another surface (or a replayed event) removed a branch — mirror it.
       removeNodesLocal(msg.node_ids || [], null);

@@ -44,7 +44,6 @@ export const CANVAS_SHELL = `
 </div>
 
 <div id="reader">
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "×" })}</div>
   <div id="reader-workspace">
     <div id="reader-document">
       <div id="reader-main"></div>

@@ -350,14 +350,21 @@ async function verifyLandingAndComposer() {
   assert(toolbarIconSystem.length >= 8, "toolbar actions should use the shared SVG icon system");
   assert(toolbarIconSystem.every(({ width, height }) => width === "16" && height === "16"), `toolbar glyph boxes should stay 16×16: ${JSON.stringify(toolbarIconSystem)}`);
   assert.equal(await page.locator("#t-new svg path").count(), 2, "New Rabbithole should use a compose silhouette with no plus glyph");
-  assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should offer exactly three starting paths");
+  assert.equal(await page.locator(".composer-path").count(), 4, "new Rabbithole should offer exactly four starting paths");
   assert.equal(await page.locator("#composer-title").innerText(), "Enter a Rabbithole");
   assert.equal(await page.locator(".composer-title-mark svg").count(), 1, "composer title should include the rabbit mark");
   assert.equal(await page.locator(".composer-start-head p").count(), 0, "chooser should not add explanatory copy above the paths");
   assert.deepEqual(await page.locator(".composer-path strong").allTextContents(), [
     "Ask a question",
-    "Open PDF or Markdown",
-    "Add a link",
+    "Open a document",
+    "Paste text or Markdown",
+    "Open a link",
+  ]);
+  assert.deepEqual(await page.locator(".composer-path small").allTextContents(), [
+    "Begin with something you want to understand.",
+    "Bring in a PDF or Markdown file from your device.",
+    "Start from your clipboard.",
+    "Start from an article, paper, or webpage.",
   ]);
   assert.equal(await page.locator(".intent-chip, .composer-subline, .composer-examples").count(), 0, "ambiguous intent controls should be gone");
   assert.equal(await page.locator("#composer-entry").isVisible(), false, "text entry should wait until the user chooses a path");
@@ -365,11 +372,22 @@ async function verifyLandingAndComposer() {
 
   await page.click("#composer-path-ask");
   assert.equal(await page.locator("#composer-entry-title").innerText(), "Ask a question");
-  assert.equal(await page.getAttribute("#composer-input", "placeholder"), "Type your question…");
+  assert.equal(await page.locator("#composer-entry-copy").innerText(), "What would you like to understand?");
+  assert.equal(await page.getAttribute("#composer-input", "placeholder"), "Ask anything…");
   await page.click("#composer-back");
   await page.click("#composer-path-url");
-  assert.equal(await page.locator("#composer-entry-title").innerText(), "Add a link");
+  assert.equal(await page.locator("#composer-entry-title").innerText(), "Open a link");
+  assert.equal(await page.locator("#composer-entry-copy").innerText(), "Paste a link to an article, paper, or webpage. arXiv works especially well.");
   assert.equal(await page.getAttribute("#composer-input", "placeholder"), "https://…");
+  await page.click("#composer-back");
+  await page.click("#composer-path-paste");
+  assert.equal(await page.locator("#composer-entry-title").innerText(), "Paste text or Markdown");
+  assert.equal(await page.locator("#composer-entry-copy").innerText(), "Paste anything you want to explore. We’ll keep the Markdown intact.");
+  assert.equal(await page.getAttribute("#composer-input", "placeholder"), "Paste text or Markdown here…");
+  assert.equal(await page.locator("#composer-primary").innerText(), "Open in Rabbithole");
+  await page.fill("#composer-input", "First line");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.inputValue("#composer-input"), "First line\n", "plain Enter should add a line to pasted documents instead of submitting them");
   await page.click("#composer-back");
   assert.match(await page.getAttribute("#file-md", "accept"), /\.pdf/);
   assert.match(await page.getAttribute("#file-md", "accept"), /\.md/);
@@ -436,7 +454,11 @@ async function verifyLandingAndComposer() {
   await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
   assert.equal(await page.evaluate(() => document.activeElement?.id), "blank-start-new", "backdrop dismissal should restore focus to its trigger");
 
-  const first = await createDocument(page, "# First hole\n\nEuler identity $e^{i\\pi}+1=0$.");
+  const pastedMarkdown = "# First hole\n\nEuler identity $e^{i\\pi}+1=0$.\n";
+  const first = await createPastedDocument(page, pastedMarkdown);
+  const pastedHole = await page.evaluate(() => window.__rabbitholeTest.readStoredHole());
+  assert.equal(pastedHole.title, "First hole", "pasted Markdown should infer its Rabbithole title from the first heading");
+  assert.equal(pastedHole.nodes.find((node) => node.id === pastedHole.root_id)?.markdown, pastedMarkdown, "the paste path should preserve Markdown verbatim");
   await page.waitForSelector(".node.root .node-badge svg");
   assert.equal(await page.locator(".node.root .node-badge").innerText(), "", "root document badge should use the shared bunny SVG, not emoji");
   await page.reload({ waitUntil: "networkidle" });
@@ -1007,6 +1029,20 @@ async function verifyAskKeyUxAndRail() {
 async function createDocument(page, markdown) {
   const previous = await page.evaluate(() => window.__rabbitholeTest?.currentHoleId?.() || "");
   await page.evaluate((value) => window.__rabbitholeTest.createDocument(value), markdown);
+  await page.waitForFunction((oldId) => {
+    const id = window.__rabbitholeTest?.currentHoleId?.();
+    return id && id !== oldId;
+  }, previous);
+  await page.waitForSelector(".node .doc-content[data-node-id]");
+  return page.evaluate(() => window.__rabbitholeTest.currentHoleId());
+}
+
+async function createPastedDocument(page, markdown) {
+  const previous = await page.evaluate(() => window.__rabbitholeTest?.currentHoleId?.() || "");
+  await page.click("#blank-start-new");
+  await page.click("#composer-path-paste");
+  await page.fill("#composer-input", markdown);
+  await page.click("#composer-primary");
   await page.waitForFunction((oldId) => {
     const id = window.__rabbitholeTest?.currentHoleId?.();
     return id && id !== oldId;

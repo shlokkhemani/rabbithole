@@ -17,8 +17,7 @@ import {
   setCurrentNodeId,
   setSurfaceOrigin,
   shareMenu,
-  truncate,
-  updateSince
+  truncate
 } from "./core.js";
 import { sendFollowup } from "./ask-followups.js";
 import {
@@ -308,5 +307,4 @@ export function removeNodesLocal(ids, parentId){
     }
     if (canvasBuilt){ renderVisibility(); drawEdges(); }
     if (mode === "reader"){ renderBreadcrumb(); renderMarginNotes(); }
-    updateSince();
   }

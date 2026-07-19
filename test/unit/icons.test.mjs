@@ -7,6 +7,7 @@ const send = iconSvg("send");
 assert.match(send, /^<svg width="14" height="14" /);
 assert.match(send, /focusable="false" aria-hidden="true"/);
 assert.match(iconSvg("search", { size: 13 }), /^<svg width="13" height="13" /);
+assert.notEqual(iconSvg("paste"), iconSvg("file"), "paste and file actions need distinct silhouettes");
 assert.equal(BUNNY_MARK_SVG, iconSvg("bunny"));
 assert.match(faviconSvg(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
 assert.throws(() => iconSvg("missing"), /Unknown Rabbithole icon/);

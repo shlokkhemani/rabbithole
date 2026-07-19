@@ -177,8 +177,7 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
 }
 
 /* ---------- READER ---------- */
-/* The taskbar floats above; the reader clears it with top padding so the
-   document and the "since" strip start below the chrome. */
+/* The taskbar floats above; the reader clears it with top padding. */
 #reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; padding-top: var(--taskbar-clear); }
 body.mode-canvas #reader { display: none; }
 #reader-workspace { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
@@ -190,16 +189,6 @@ body.mode-canvas #reader { display: none; }
 .crumb:hover { color: var(--fg-bold); }
 .crumb.current { color: var(--fg-bold); font-weight: 600; cursor: default; }
 .crumb-sep { color: var(--fg-faint); flex-shrink: 0; }
-/* "Since you left" — shown once on re-entry when answers arrived while away. */
-#since { display: none; align-items: center; gap: 10px; padding: 7px 16px; font-family: var(--font-ui); font-size: 12px;
-  color: var(--fg); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 5%, var(--bar-bg)); flex-shrink: 0; }
-#since.visible { display: flex; }
-#since .since-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-#since .since-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#since .tool-btn { font-size: 12px; color: var(--accent); font-weight: 500; }
-#since .tool-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
-#since-x { background: none; border: none; color: var(--fg-faint); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
-#since-x:hover { color: var(--fg-bold); }
 #reader-main { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
 /* A PDF is already a complete reading surface. In Reader, give it the whole
@@ -241,8 +230,6 @@ body.mode-canvas #reader { display: none; }
 .si-quote[hidden] { display: none; }
 .si-status { font-size: 10.5px; color: var(--fg-dim); margin-top: 6px; }
 .si-muted { color: var(--fg-faint); }
-.si-new { color: var(--accent); font-weight: 600; }
-.si-new::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-right: 5px; vertical-align: 1px; }
 /* A pending branch streams its last lines live inside its sidebar tile — the
    answer is watchable from the moment the first words arrive. Bottom-aligned
    (the newest text) with the older text fading out at the top. */
@@ -342,8 +329,6 @@ body.mode-canvas #viewport { display: block; }
 .node.collapsed .node-body, .node.collapsed .node-resize, .node.collapsed .node-composer { display: none; }
 .node.collapsed { height: auto !important; }
 .node.collapsed .node-head { border-radius: var(--radius-card); border-bottom: none; }
-/* Unread answers wear a small accent dot until first opened. */
-.node.unread .node-title::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 /* Landing flash when ⌘K jumps the canvas to a card. */
 .node.flash::after { opacity: 1; }
 
@@ -508,7 +493,6 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .pal-t { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--fg-bold); min-width: 0; }
 .pal-t .pal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pal-kbd { margin-left: auto; line-height: 1.4; flex-shrink: 0; }
-.pal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .pal-t .lens-badge { flex-shrink: 0; }
 .pal-t .pal-writing { flex-shrink: 0; font-size: 10.5px; color: var(--accent); font-weight: 500; }
 .pal-s { font-size: 11.5px; color: var(--fg-dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -544,7 +528,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 #confirm button.cf-remove:hover { filter: brightness(1.08); color: var(--accent-contrast); }
 
 /* ---------- frozen (exported snapshot) ---------- */
-body.frozen #tb-done-pill, body.frozen .nc-handle, body.frozen #since, body.frozen .node-btn.danger { display: none !important; }
+body.frozen #tb-done-pill, body.frozen .nc-handle, body.frozen .node-btn.danger { display: none !important; }
 body.frozen .ll-closed { display: none !important; }
 body.frozen.session-over .ll-frozen { display: inline; }
 .ll-frozen { display: none; color: var(--fg-faint); font-weight: 500; }

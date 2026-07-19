@@ -10,11 +10,9 @@ import {
   currentNodeId,
   fontPx,
   isFollowup,
-  isUnread,
   goToNode,
   lensBadgeHtml,
   lineageNodes,
-  markRead,
   mode,
   motionSourceFromEvent,
   nodes,
@@ -84,7 +82,6 @@ export function openNode(id){
     }
     renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
-    if (nodes[id].status === "answered") markRead(nodes[id]);
     readerLifecycle.hooks.scheduleViewSave();
   }
 
@@ -299,9 +296,7 @@ export function renderMarginNotes(){
         : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
         : escapeHtml((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
       var quote = (k.origin && k.origin.selected_text) ? k.origin.selected_text : "";
-      var status = pending ? pendingStatusHtml(k)
-        : isUnread(k) ? '<span class="si-new">new — open →</span>'
-        : 'open →';
+      var status = pending ? pendingStatusHtml(k) : 'open →';
       var tile = noteNodes[k.id];
       if (!tile){
         tile = document.createElement("div");
@@ -323,7 +318,7 @@ export function renderMarginNotes(){
       tile._status.innerHTML = status;
       var name = (k.origin && k.origin.synthesis) ? "Synthesis"
         : ((k.origin && k.origin.question) || k.title || "Untitled");
-      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
+      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : ""));
       // A streaming answer is watchable right here: its last lines render live
       // inside the note (and the whole note opens the full streaming view).
       if (pending && k.html){

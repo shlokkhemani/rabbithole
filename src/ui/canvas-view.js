@@ -20,10 +20,8 @@ import {
   flashHint,
   isFollowup,
   isSelectionBranch,
-  isUnread,
   isVisible,
   lensLabel,
-  markRead,
   mode,
   motionSourceFromEvent,
   nodeBounds,
@@ -228,7 +226,6 @@ export function createNodeEl(node, enter){
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
-    if (isUnread(node)) el.classList.add("unread");
 
     enableDrag(node, head);
     enableResize(node, resize);
@@ -239,8 +236,6 @@ export function createNodeEl(node, enter){
     aUp.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, 0.1); });
     // Scrolling a card moves the inline marks its children's edges start from.
     body.addEventListener("scroll", scheduleEdges, { passive: true });
-    // Engaging with an answered card (reading it in place) counts as reading it.
-    body.addEventListener("pointerdown", function(){ if (node.status === "answered") markRead(node); });
     // Hovering a card lights up its edge and the exact text it branched from.
     el.addEventListener("mouseenter", function(){ focusOrigin(node, true); });
     el.addEventListener("mouseleave", function(){

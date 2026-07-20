@@ -15,15 +15,21 @@
     "build:publish": "node scripts/build-publish.mjs",
     "check:dist": "node scripts/check-dist.mjs",
     "check:purity": "node scripts/check-ui-purity.mjs",
-    "check:types": "tsc --noEmit",
-    "test": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e && npm run test:performance && npm run test:packaging",
-    "test:unit": "node test/unit/hole-id.test.mjs && node test/unit/markdown-renderer.test.mjs && node test/unit/content-blocks.test.mjs && node test/unit/base-url.test.mjs && node test/unit/icons.test.mjs && node test/unit/pdf-provenance.test.mjs && node test/unit/pdf-selection.test.mjs && node test/unit/pdf-ingest-staging.test.mjs && node test/unit/pdf-import-error.test.mjs && node test/unit/pdf-transcription-capability.test.mjs && node test/unit/ollama-diagnostics.test.mjs && node test/unit/reducer.test.mjs && node test/unit/lifecycle.test.mjs",
-    "test:contracts": "node test/contracts/prompts.test.mjs && node test/contracts/assets.test.mjs && node test/contracts/mcp-markdown-wire.test.mjs && node test/contracts/filesystem-store.test.mjs && node test/contracts/indexeddb-store.test.mjs && node test/contracts/data-boundaries.test.mjs && node test/contracts/artifact-roundtrip.test.mjs && node test/contracts/compatibility-security.test.mjs && node test/contracts/fetch-proxy-worker.test.mjs && node test/contracts/ui-bundle-boundaries.test.mjs",
-    "test:integration": "node test/integration/pdf-ingestion.test.mjs && node test/integration/pdf-conversion.test.mjs && node test/integration/pdf-node-conversion.test.mjs && node test/integration/pdf-portability-caps.test.mjs && node test/integration/pdf-gc.test.mjs && node test/integration/pdf-precision.test.mjs && node test/integration/pdf-snapshot.test.mjs && node test/integration/image-experience.test.mjs && node test/integration/mermaid-rendering.test.mjs && node test/integration/mcp-rearm.test.mjs && node test/integration/web-ingestion.test.mjs && node test/integration/artifact-portability.test.mjs && node test/integration/generation-lifecycle.test.mjs",
-    "test:e2e": "node test/e2e/web-app-setup.test.mjs && node test/e2e/enter-composition.test.mjs && node test/e2e/web-app-learning.test.mjs && node test/e2e/web-app-canvas-sharing.test.mjs && node test/e2e/ui-primitives-browsers.test.mjs && node test/e2e/cross-host-journey.test.mjs && node test/e2e/reducer-browser-parity.test.mjs",
-    "test:performance": "node test/performance/budgets.test.mjs",
-    "test:packaging": "node test/packaging/install-smoke.test.mjs",
-    "calibrate:budgets": "node test/support/calibrate-budgets.mjs",
+    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7 && npm run test:stage8 && npm run test:stage9 && npm run test:stage9-idb && npm run test:stage10 && npm run test:stage11 && npm run test:stage12 && npm run test:stage13",
+    "test:stage1": "node test/stage1-verify.mjs",
+    "test:stage2": "node test/stage2-verify.mjs",
+    "test:stage3": "node test/stage3-base-url-verify.mjs",
+    "test:stage4": "node test/stage4-assets-verify.mjs",
+    "test:stage5": "node test/stage5-pdf-verify.mjs",
+    "test:stage6": "node test/stage6-image-ux-verify.mjs",
+    "test:stage7": "node test/stage7-rearm-verify.mjs",
+    "test:stage8": "node test/stage8-md-wire-verify.mjs",
+    "test:stage9": "node test/stage9-store-contract.mjs",
+    "test:stage9-idb": "node test/stage9-idb-store-contract.mjs",
+    "test:stage10": "node test/stage10-web-verify.mjs",
+    "test:stage11": "node test/fetch-proxy-worker-verify.mjs && node test/stage11-web-ingest-verify.mjs",
+    "test:stage12": "node test/stage12-portability-verify.mjs",
+    "test:stage13": "node test/stage13-obsidian-export-verify.mjs",
     "eval": "node test/evals/run-eval.mjs"
   },
   "keywords": [
@@ -36,7 +42,8 @@
     "agent"
   ],
   "bin": {
-    "rabbithole-mcp": "./bin/mcp-server.js"
+    "rabbithole-mcp": "./bin/mcp-server.js",
+    "rabbithole-export": "./bin/export.js"
   },
   "files": [
     "bin",

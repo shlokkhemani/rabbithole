@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
-import { addAssetsToHole, defaultFsStore, resolveAsset } from "../fs-store.js";
+import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } from "../fs-store.js";
+import { maybeAutoSyncHole } from "../vault-export.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
@@ -460,7 +461,18 @@ export class RabbitHoleSession {
   }
 
   flushSave() {
-    this.savingChain = this.saveChain.flush();
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    // Snapshot now (synchronously) but serialize the actual writes so overlapping
+    // saves can't race; each save persists the state as of when it was requested.
+    const snapshot = this.toHole();
+    this.savingChain = this.savingChain
+      .catch(() => {})
+      .then(() => defaultFsStore.saveHole(snapshot))
+      .then(() => maybeAutoSyncHole(snapshot.hole_id))
+      .catch((err) => logError(`Save failed: ${err.message}`));
     return this.savingChain;
   }
 

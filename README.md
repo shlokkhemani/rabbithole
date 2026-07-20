@@ -163,8 +163,10 @@ are cached. If the browser must not auto-open (headless), set
 
 | Tool | What it does |
 |------|--------------|
-| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`) or resume one (`{ hole_id }`). A PDF `file_path` opens natively: rendered pages, selectable text, and box-select — no markdown authoring needed (`title` optional; PDF metadata or filename is used). Opens the canvas in the browser and blocks until the human asks something. |
-| `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. A `branch_request` from a PDF may include `region.image_path` — read that image before answering. Also streams "Convert to document" transcriptions when a `convert_request` arrives. |
+| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`, optional `ingest_id`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
+| `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. |
+| `ingest_pdf` | Extract a local PDF into page PNGs (`page-001.png`...), opportunistic embedded rasters (`embed-p001-01.png`...), metadata, and per-page text. Author the markdown yourself, reference returned asset names with `asset:`, then pass `ingest_id` to `open_rabbithole`; or pass `hole_id` to ingest directly into an existing hole. |
+| `export_to_obsidian` | Export a saved hole into an Obsidian vault as a JSON Canvas plus one markdown note per document — vault-native, crosslinkable knowledge. Re-exporting syncs instead of clobbering; pass `continuous: true` to auto-export on every save. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 
 The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.
@@ -215,21 +217,33 @@ asset directory. The web `.rabbithole` file is the same persisted hole JSON
 wrapped as `{ format: "rabbithole", format_version: 1, hole, assets }`, with
 assets base64-encoded into the single JSON file for portability.
 
-### Mermaid diagrams
+## Export to Obsidian
 
-Use an ordinary Mermaid code fence; Rabbithole renders it in live canvases, the
-hosted web app, and self-contained offline snapshots:
+Go down rabbit holes for spontaneous research, then bake the results into your
+vault where they can be crosslinked and referred to. Each hole exports as a
+folder: a `.canvas` file wiring together one markdown note per document, plus
+question cards and the hole's image assets. Notes carry frontmatter provenance
+(`rabbithole_hole`, `rabbithole_node`, the question, the lens), so everything
+is searchable, wiki-linkable, and shows up in the graph like any other note.
+Question cards also carry conversation-role annotations that AI-canvas plugins
+can read (invisible in native Obsidian; the default shape was verified to keep
+conversations continuable in the Caret plugin).
 
-```mermaid
-flowchart LR
-  Question --> Explore --> Understand
+```bash
+# ask your agent:  "export this rabbithole to my vault"
+# or from the terminal:
+npx -p github:shlokkhemani/rabbithole rabbithole-export --list
+npx -p github:shlokkhemani/rabbithole rabbithole-export <hole_id> --vault ~/Vault
+npx -p github:shlokkhemani/rabbithole rabbithole-export --all            # backfill everything
+npx -p github:shlokkhemani/rabbithole rabbithole-export --continuous on  # auto-export on every save
 ```
 
-The bundled runtime supports flowchart, sequence, class, state, and
-entity-relationship diagrams. Mindmaps, architecture diagrams, and
-Mermaid-side KaTeX are not included; use a `show` visual or regular Rabbithole
-math for those cases. Mermaid runs in strict mode, its SVG is sanitized again
-before mounting, and invalid diagrams fall back to their original source.
+The vault path is remembered after the first export (`RABBITHOLE_VAULT`
+overrides). Re-exporting the same hole is a sync, not a clobber: node
+positions you set in Obsidian win, notes you edited in the vault are left
+untouched (reported as conflicts), and cards you added yourself survive. With
+continuous sync on, every save of any hole re-exports it a couple of seconds
+later, so the vault quietly tracks your live rabbitholes.
 
 ## Configuration
 
@@ -237,6 +251,7 @@ before mounting, and invalid diagrams fall back to their original source.
 |---------|--------|
 | `RABBITHOLE_DIR` | Override the storage directory (default `~/.rabbithole/`). |
 | `RABBITHOLE_NO_BROWSER=1` | Don't auto-open the browser (headless/testing). |
+| `RABBITHOLE_VAULT` | Obsidian vault path for `rabbithole-export` / `export_to_obsidian` (overrides the remembered default). |
 | `RABBITHOLE_MAX_BLOCK_MS` | Max time for one blocking MCP wait before returning `keep_listening` (default `240000`). |
 | `RABBITHOLE_PROXY_URL` | Build-time: URL of your fetch-proxy relay for the web app (empty string disables the default). |
 

@@ -1,4 +1,4 @@
-import { openRabbithole, answerBranch, listRabbitholes } from "../index.js";
+import { openRabbithole, answerBranch, ingestPdf, listRabbitholes, exportHoleToVault } from "../index.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/index.js";
 import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
@@ -147,6 +147,36 @@ export const toolDefinitions = [
         partial,
         signal: extra?.signal,
       }),
+  },
+  {
+    name: "export_to_obsidian",
+    description:
+      "Export a saved Rabbithole into an Obsidian vault as a JSON Canvas plus one markdown note per " +
+      "document, so the hole becomes searchable, crosslinkable vault knowledge. Each answer becomes a " +
+      "note under <folder>/<slug>/notes/ with frontmatter provenance, questions become text cards, and " +
+      "the canvas wires them together. Re-exporting the same hole SYNCS instead of clobbering: positions " +
+      "and edits the human made in Obsidian win (edited notes are skipped and listed as conflicts). " +
+      "vault_path is remembered as the default after the first call. Pass continuous=true to also export " +
+      "automatically on every future save of any hole (continuous=false turns that off).",
+    input: obj({
+      hole_id: str("Hole to export (use list_rabbitholes to find it)"),
+      vault_path: str("Absolute path to the Obsidian vault; optional after the first export", {
+        optional: true,
+      }),
+      folder: str('Vault-relative folder to export into (default "Rabbitholes")', { optional: true }),
+      roles: str(
+        'Role annotations for AI-canvas plugins (invisible in native Obsidian): "context" (default; ' +
+          'questions are user turns, documents stay plain), "turns" (documents stamped user/assistant ' +
+          'too), or "none"',
+        { optional: true }
+      ),
+      continuous: bool("Turn continuous vault sync on (true) or off (false) for future saves", {
+        optional: true,
+      }),
+    }),
+    resultKind: "json",
+    run: ({ hole_id, vault_path, folder, roles, continuous }) =>
+      exportHoleToVault({ holeId: hole_id, vaultPath: vault_path, folder, roles, continuous }),
   },
   {
     name: "list_rabbitholes",

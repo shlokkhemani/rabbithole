@@ -1,16 +1,26 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { CANVAS_STYLES } from "./src/core/html/styles.js";
+import { faviconSvg } from "./src/core/html/icons.js";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const parsed = parseOutdir(process.argv.slice(2));
 const outdir = parsed.outdir;
 const absOutdir = path.resolve(rootDir, outdir);
-const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL);
+// Rabbithole's hosted link relay; RABBITHOLE_PROXY_URL overrides it, and an
+// empty value ships the app with no default relay.
+const PUBLIC_FETCH_PROXY_URL = "https://rabbithole-fetch-proxy.khemanishlok.workers.dev";
+const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL ?? PUBLIC_FETCH_PROXY_URL);
+
+// This runs in the parser-blocking head, before the external stylesheet or app
+// module can produce a frame. Keep it tiny: its hash is pinned in the CSP below.
+const INITIAL_THEME_SCRIPT = `(function(){var theme="";try{theme=localStorage.getItem("rh-theme")||"";}catch(error){}if(theme!=="dark"&&theme!=="light"){theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",theme);})();`;
+const INITIAL_THEME_STYLE = `:root{color-scheme:dark;background:#1a1918}:root[data-theme="light"]{color-scheme:light;background:#f5f3ee}`;
 
 const KATEX_FONT_SRC =
   /src:\s*url\((fonts\/[^)]+\.woff2)\)\s*format\("woff2"\),\s*url\((fonts\/[^)]+\.woff)\)\s*format\("woff"\),\s*url\((fonts\/[^)]+\.ttf)\)\s*format\("truetype"\);/g;
@@ -25,11 +35,17 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
+  tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
+
+const pdfPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.worker.min.mjs"), path.join(absOutdir, "pdf.worker.mjs"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.min.mjs"), path.join(absOutdir, "pdf.mjs"));
 
 await esbuild.build({
   entryPoints: [path.join(rootDir, "src/ui/frozen-entry.js")],
@@ -38,14 +54,17 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeFrozenClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
+  tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
 
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
+await fs.writeFile(path.join(absOutdir, "mermaid.js"), await buildMermaidScript(), "utf8");
 
 if (!parsed.explicit) {
   await buildWebApp(absOutdir);
@@ -70,6 +89,13 @@ async function buildDompurifyScript() {
   return (await fs.readFile(scriptPath, "utf8")).replace(/<\/script/gi, "<\\/script");
 }
 
+async function buildMermaidScript() {
+  const scriptPath = require.resolve("@mermaid-js/tiny/dist/mermaid.tiny.js");
+  return (await fs.readFile(scriptPath, "utf8"))
+    .replace(/[ \t]+$/gm, "")
+    .replace(/<\/script/gi, "<\\/script");
+}
+
 async function replaceAsync(source, regex, replacer) {
   const parts = [];
   let lastIndex = 0;
@@ -92,12 +118,20 @@ async function buildWebApp(assetDir) {
     outdir: webDist,
     bundle: true,
     format: "esm",
+    platform: "browser",
     splitting: true,
     target: "es2022",
     entryNames: "[name]",
     chunkNames: "chunks/[name]-[hash]",
-    minify: false,
+    minify: true,
     sourcemap: false,
+    // PDF.js imports `canvas` only inside its Node path. Native optional
+    // dependencies are installed on some operating systems and omitted on
+    // others, so resolving the package normally changes otherwise-identical
+    // browser chunk names. Pin it to the browser stub for reproducible builds.
+    alias: {
+      canvas: path.join(rootDir, "src/web/browser-canvas-stub.js"),
+    },
     define: {
       __RABBITHOLE_DEFAULT_PROXY_URL__: JSON.stringify(proxyConfig.defaultUrl),
     },
@@ -105,29 +139,50 @@ async function buildWebApp(assetDir) {
     logLevel: "silent"
   });
 
-  const [katexCss, dompurify, frozenClient, webCss] = await Promise.all([
+  const [katexCss, dompurify, mermaid, frozenClient, webCss, pdfWorker, pdfJs] = await Promise.all([
     fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
     fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
+    fs.readFile(path.join(assetDir, "mermaid.js"), "utf8"),
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.worker.mjs"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.mjs"), "utf8"),
   ]);
+  const frozenStyles = `${CANVAS_STYLES}\n${katexCss}`;
 
-  await fs.writeFile(path.join(webDist, "styles.css"), `${CANVAS_STYLES}\n${katexCss}\n${webCss}`, "utf8");
+  await fs.writeFile(path.join(webDist, "styles.css"), `${frozenStyles}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
-  await fs.writeFile(path.join(webDist, "favicon.svg"), buildFaviconSvg(), "utf8");
+  await fs.writeFile(path.join(webDist, "mermaid.js"), mermaid, "utf8");
+  await fs.writeFile(path.join(webDist, "favicon.svg"), faviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
     `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
-      `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n`,
+      `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__=${safeJsString(pdfWorker)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__=${safeJsString(pdfJs)};\n` +
+      `window.__RABBITHOLE_FROZEN_STYLES__=${safeJsString(frozenStyles)};\n`,
     "utf8"
   );
-  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig), "utf8");
+  const assetVersion = await hashWebEntryAssets(webDist);
+  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig, assetVersion), "utf8");
+}
+
+async function hashWebEntryAssets(webDist) {
+  const hash = createHash("sha256");
+  for (const name of ["app.js", "styles.css", "dompurify.js", "frozen-source.js", "favicon.svg"]) {
+    hash.update(name);
+    hash.update("\0");
+    hash.update(await fs.readFile(path.join(webDist, name)));
+    hash.update("\0");
+  }
+  return hash.digest("hex").slice(0, 12);
 }
 
 async function copyPdfAssets(webDist) {
   const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
-  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.mjs"), path.join(webDist, "pdf.worker.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.min.mjs"), path.join(webDist, "pdf.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.min.mjs"), path.join(webDist, "pdf.worker.mjs"));
   await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(webDist, "standard_fonts"), { recursive: true });
   await copyPackedCMaps(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"));
 }
@@ -141,12 +196,14 @@ async function copyPackedCMaps(sourceDir, targetDir) {
   }
 }
 
-function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
+function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
+  if (!/^[a-f0-9]{12}$/.test(assetVersion)) throw new Error("Web asset version must be a 12-character SHA-256 prefix");
+  const assetQuery = `?v=${assetVersion}`;
   const connectSrc = [
     "'self'",
+    "blob:",
     "https://openrouter.ai",
-    "https://api.openai.com",
-    "https://api.anthropic.com",
+    "https://api.github.com",
     "https://arxiv.org",
     "https://www.arxiv.org",
     "https://ar5iv.labs.arxiv.org",
@@ -159,9 +216,10 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
   if (proxyOrigin && !connectSrc.includes(proxyOrigin)) {
     connectSrc.push(proxyOrigin);
   }
+  const initialThemeHash = createHash("sha256").update(INITIAL_THEME_SCRIPT).digest("base64");
   const csp = [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self' 'sha256-${initialThemeHash}'`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' blob: data: https:",
@@ -171,11 +229,13 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
     "form-action 'none'",
   ].join("; ");
   return `<!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
+<style id="initial-theme-style">${INITIAL_THEME_STYLE}</style>
+<script id="initial-theme-script">${INITIAL_THEME_SCRIPT}</script>
 <title>Rabbithole — an infinite canvas for learning</title>
 <meta name="description" content="Rabbithole is an infinite canvas for learning. Open a document, ask from selections, and branch your understanding.">
 <link rel="canonical" href="https://rabbithole.ing/">
@@ -188,28 +248,15 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
 <meta name="twitter:title" content="Rabbithole — an infinite canvas for learning">
 <meta name="twitter:description" content="Open a document, ask from selections, and branch your understanding on an infinite canvas.">
 <meta name="twitter:image" content="https://rabbithole.ing/og.jpg">
-<link rel="icon" href="./favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./styles.css">
+<link rel="icon" href="./favicon.svg${assetQuery}" type="image/svg+xml">
+<link rel="stylesheet" href="./styles.css${assetQuery}">
 </head>
 <body>
-<script src="./dompurify.js"></script>
-<script src="./frozen-source.js"></script>
-<script type="module" src="./app.js"></script>
+<script src="./dompurify.js${assetQuery}"></script>
+<script src="./frozen-source.js${assetQuery}"></script>
+<script type="module" src="./app.js${assetQuery}"></script>
 </body>
 </html>`;
-}
-
-function buildFaviconSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1a1918"/>
-  <g fill="#efece5">
-    <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"/>
-    <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"/>
-    <circle cx="21" cy="33" r="9.5"/>
-    <ellipse cx="36" cy="45" rx="17" ry="13.5"/>
-    <circle cx="52.5" cy="49" r="5"/>
-  </g>
-</svg>`;
 }
 
 function safeJsString(value) {

@@ -1,0 +1,36 @@
+{
+  "format": "rabbithole",
+  "format_version": 1,
+  "hole": {
+    "schema_version": 2,
+    "hole_id": "corpus-math",
+    "title": "Math notebook",
+    "root_id": "root",
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "updated_at": "2026-01-01T00:00:00.000Z",
+    "view_state": null,
+    "nodes": [
+      {
+        "id": "root",
+        "parent_id": null,
+        "title": "Equations",
+        "markdown": "Inline $e^{i\\pi}+1=0$ and \\(a^2+b^2=c^2\\).\n\n$$\\int_0^1 x^2 dx=\\frac13$$\n\n\\[\\sum_{n=1}^{\\infty}n^{-2}=\\pi^2/6\\]",
+        "base_url": null,
+        "base_url_source": null,
+        "origin": null,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": null,
+        "font_scale": 1,
+        "collapsed": false,
+        "status": "answered",
+        "read": true,
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
+      }
+    ]
+  },
+  "assets": {}
+}

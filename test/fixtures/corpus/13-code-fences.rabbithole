@@ -1,0 +1,36 @@
+{
+  "format": "rabbithole",
+  "format_version": 1,
+  "hole": {
+    "schema_version": 2,
+    "hole_id": "corpus-code",
+    "title": "Code fences",
+    "root_id": "root",
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "updated_at": "2026-01-01T00:00:00.000Z",
+    "view_state": null,
+    "nodes": [
+      {
+        "id": "root",
+        "parent_id": null,
+        "title": "Code",
+        "markdown": "```js\nconsole.log(`template ${1 + 1}`);\n```\n\n```python\nprint('rabbit')\n```",
+        "base_url": null,
+        "base_url_source": null,
+        "origin": null,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": null,
+        "font_scale": 1,
+        "collapsed": false,
+        "status": "answered",
+        "read": true,
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
+      }
+    ]
+  },
+  "assets": {}
+}

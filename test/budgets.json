@@ -1,0 +1,174 @@
+{
+  "note": "Machine-relative ceilings. Run npm run calibrate:budgets in each enforcement environment; commit worsening only with an explicit recorded trade-off.",
+  "samples": 3,
+  "statistic": "Exact for byte gauges; minimum of repeated samples for timing and DOM-batch gauges.",
+  "budgets": [
+    {
+      "id": "bundle_client_bytes",
+      "description": "Built live client bundle size",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact file size after a deterministic build.",
+      "baseline": 605613,
+      "ceiling": 635893.65,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "bundle_frozen_client_bytes",
+      "description": "Built frozen client bundle size",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact file size after a deterministic build.",
+      "baseline": 578542,
+      "ceiling": 607469.1,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "web_initial_js_bytes",
+      "description": "Statically loaded web application JavaScript",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact transitive size of app.js and its static chunks; the large PDF.js runtime and worker are excluded.",
+      "baseline": 754138,
+      "ceiling": 791844.9,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "pdf_runtime_distribution_bytes",
+      "description": "Production PDF.js runtime plus worker",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact size of the lazily loaded production PDF.js module and worker.",
+      "baseline": 1334801,
+      "ceiling": 1401541.05,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "snapshot_math_bytes",
+      "description": "Frozen HTML size for the math-heavy reference corpus",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact UTF-8 snapshot size.",
+      "baseline": 1056473,
+      "ceiling": 1109296.65,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "snapshot_assets_bytes",
+      "description": "Frozen HTML size for the PNG/SVG reference corpus",
+      "unit": "bytes",
+      "tolerance": 0.05,
+      "rationale": "Exact UTF-8 snapshot size including assets.",
+      "baseline": 1056501,
+      "ceiling": 1109326.05,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "snapshot_math_build_ms",
+      "description": "Mean frozen-HTML build time (20 warm builds) for the math-heavy reference corpus",
+      "unit": "ms",
+      "tolerance": 2,
+      "rationale": "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.",
+      "floor": 25,
+      "baseline": 0.24,
+      "ceiling": 25,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "snapshot_assets_build_ms",
+      "description": "Mean frozen-HTML build time (20 warm builds) for the PNG/SVG reference corpus",
+      "unit": "ms",
+      "tolerance": 2,
+      "rationale": "Mean of a 20-build loop defeats timer coarsening; 3x ceiling plus a 25ms floor absorbs host noise.",
+      "floor": 25,
+      "baseline": 0.34,
+      "ceiling": 25,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "cold_open_ms",
+      "description": "Cold navigation to the visible interactive setup landing",
+      "unit": "ms",
+      "tolerance": 2,
+      "rationale": "Minimum of isolated browser-context samples; 3x ceiling absorbs startup noise.",
+      "baseline": 63.1,
+      "ceiling": 189.3,
+      "measured_at_commit": "ca405ac"
+    },
+    {
+      "id": "stream_dom_batches",
+      "description": "DOM mutation batches for a fixed 40-update synthetic stream",
+      "unit": "batches",
+      "tolerance": 1,
+      "rationale": "Minimum observed batch count on an otherwise-quiescent page; 2x ceiling with a 6-batch floor catches loss of rAF coalescing (which produces dozens of batches) without flaking.",
+      "floor": 6,
+      "baseline": 7,
+      "ceiling": 14,
+      "measured_at_commit": "ca405ac"
+    },
+    {
+      "id": "stream_update_ms",
+      "description": "Total browser duration for a fixed 40-update synthetic stream",
+      "unit": "ms",
+      "tolerance": 2,
+      "rationale": "Minimum of repeated samples; 3x ceiling absorbs browser scheduling noise.",
+      "baseline": 97.2,
+      "ceiling": 291.6,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "save_window_ms",
+      "description": "Elapsed time from final streamed DOM update until the final markdown is persisted",
+      "unit": "ms",
+      "tolerance": 1,
+      "rationale": "Minimum of repeated samples; 2x ceiling with a 100ms floor (poll quantization) still catches a lost flush-on-complete, which costs 400ms+.",
+      "floor": 100,
+      "baseline": 48.7,
+      "ceiling": 100,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "pdf_hole_serialized_bytes",
+      "description": "Serialized size of a representative 40-page native PDF hole",
+      "unit": "bytes",
+      "tolerance": 0.2,
+      "rationale": "Exact JSON byte size catches provenance growth.",
+      "baseline": 78522,
+      "ceiling": 94226.4,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "pdf_save_latency_ms",
+      "description": "JSON clone/serialize latency for a representative native PDF save",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated 20-save loops with a 20ms floor absorbs timer noise.",
+      "floor": 20,
+      "baseline": 0.3,
+      "ceiling": 20,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "owned_stream_reducer_ms",
+      "description": "One hundred owned-state stream updates in a 20,000-node hole",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated runs; a 10ms floor catches accidental whole-Map cloning while absorbing timer noise.",
+      "floor": 10,
+      "baseline": 0.07,
+      "ceiling": 10,
+      "measured_at_commit": "codex/pdf-v2"
+    },
+    {
+      "id": "subtree_collect_ms",
+      "description": "Collect all descendants in a 20,000-node ternary tree",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated runs; a 25ms floor catches repeated whole-graph scans while absorbing timer noise.",
+      "floor": 25,
+      "baseline": 2.19,
+      "ceiling": 25,
+      "measured_at_commit": "codex/pdf-v2"
+    }
+  ]
+}

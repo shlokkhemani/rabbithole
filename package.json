@@ -53,6 +53,7 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@mermaid-js/tiny": "11.16.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "dompurify": "^3.4.11",
     "highlight.js": "^11.11.1",
@@ -70,6 +71,7 @@
   "devDependencies": {
     "esbuild": "0.28.1",
     "fake-indexeddb": "^6.2.5",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "typescript": "5.9.3"
   }
 }

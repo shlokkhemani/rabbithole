@@ -1,8 +1,6 @@
 import {
-  esc,
   goToNode,
-  isUnread,
-  lensBadgeHtml,
+  lensLabel,
   mode,
   motionSourceFromEvent,
   nodes,
@@ -11,24 +9,32 @@ import {
   paletteEl,
   truncate
 } from "./core.js";
+import { escapeHtml } from "../core/utils.js";
 import { frameAll, tidy } from "./canvas-view.js";
-import { activateFocusTrap } from "./focus-trap.js";
+import { openDialog } from "./primitives/dialog.js";
+import { createModuleLifecycle } from "./lifecycle.js";
+import { ensureNodeHtml } from "./renderer.js";
+import { isCommandEnter } from "./input-intent.js";
 
-var paletteHooks = {
-  hideAsk: function(){},
-  hidePeek: function(){},
-  closeShare: function(){},
-  hideConfirm: function(){}
-};
+function defaultPaletteHooks(){
+  return {
+    hideAsk: function(){},
+    closeShare: function(){},
+    hideConfirm: function(){}
+  };
+}
+
+var paletteLifecycle = createModuleLifecycle({ defaults: defaultPaletteHooks });
 
 export function registerPaletteHooks(hooks) {
-  Object.assign(paletteHooks, hooks || {});
+  paletteLifecycle.register(hooks);
 }
 
   // ===========================================================================
   // ⌘K PALETTE — search the whole hole, plus canvas commands when opened there.
   // ===========================================================================
   function getPlain(node){
+    ensureNodeHtml(node);
     if (node._plainFor !== node.html){
       var d = document.createElement("div");
       d.innerHTML = node.html || "";
@@ -37,38 +43,70 @@ export function registerPaletteHooks(hooks) {
     }
     return node._plain || "";
   }
-  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palTrap = null;
+  var palOpen = false, palSel = 0, palItems = [], palCanvasCommands = false, palDialog = null, palRows = [];
 export function initPalette(){
-  paletteEl.addEventListener("mousedown", function(e){ if (e.target === paletteEl) closePalette(); });
-  palText.addEventListener("input", function(){ renderPalette(palText.value); });
-  palText.addEventListener("keydown", onPaletteKeydown);
-  palResults.addEventListener("click", onPaletteClick);
-  palResults.addEventListener("mousemove", onPaletteMousemove);
+  disposePaletteResources(false);
+  var paletteScope = paletteLifecycle.beginInit();
+  try {
+    palText.setAttribute("role", "combobox");
+    palText.setAttribute("aria-expanded", "false");
+    paletteScope.listen(palText, "input", function(){ renderPalette(palText.value); });
+    paletteScope.listen(palText, "keydown", onPaletteKeydown);
+    paletteScope.listen(palResults, "click", onPaletteClick);
+    paletteScope.listen(palResults, "mousemove", onPaletteMousemove);
+    return disposePalette;
+  } catch (error) {
+    disposePalette();
+    throw error;
+  }
+}
+
+export function disposePalette(){
+  disposePaletteResources(true);
+}
+
+function disposePaletteResources(resetHooks){
+  closePalette({ restoreFocus: false });
+  paletteLifecycle.dispose(resetHooks);
+  palOpen = false;
+  palSel = 0;
+  palItems = [];
+  palCanvasCommands = false;
+  palRows = [];
 }
 
 export function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
-export function openPalette(){
+function openPalette(){
     palOpen = true;
     palCanvasCommands = mode === "canvas";
-    paletteHooks.hideAsk(); paletteHooks.hidePeek(); paletteHooks.closeShare(); paletteHooks.hideConfirm();
+    paletteLifecycle.hooks.hideAsk(); paletteLifecycle.hooks.closeShare(); paletteLifecycle.hooks.hideConfirm();
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
-    if (palTrap) palTrap();
-    palTrap = activateFocusTrap(paletteEl, { initialFocus: palText, onEscape: closePalette });
+    if (palDialog) palDialog.close();
+    palDialog = openDialog({
+      dialog: document.getElementById("palette-panel"),
+      backdrop: paletteEl,
+      label: palText.getAttribute("aria-label") || palText.placeholder,
+      initialFocus: palText,
+      onClose: function(){
+        palOpen = false;
+        palCanvasCommands = false;
+        paletteEl.classList.remove("visible");
+        palText.setAttribute("aria-expanded", "false");
+        palText.removeAttribute("aria-activedescendant");
+        palDialog = null;
+      }
+    });
+    palText.setAttribute("aria-expanded", "true");
   }
-export function closePalette(){
-    palOpen = false;
-    palCanvasCommands = false;
-    paletteEl.classList.remove("visible");
-    if (palTrap){ palTrap(); palTrap = null; }
-    palText.blur();
+function closePalette(settings){
+    if (palDialog) palDialog.close("programmatic", settings);
   }
   function onPaletteKeydown(e){
-    if (e.key === "Escape"){ e.stopPropagation(); closePalette(); }
-    else if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
+    if (e.key === "ArrowDown"){ e.preventDefault(); movePalSel(1); }
     else if (e.key === "ArrowUp"){ e.preventDefault(); movePalSel(-1); }
-    else if (e.key === "Enter"){ e.preventDefault(); commitPal("keyboard"); }
+    else if (isCommandEnter(e)){ e.preventDefault(); commitPal("keyboard"); }
   }
   // Rank: title hits above quote/question hits above body hits; every token
   // must appear somewhere. An empty query lists everything, newest first.
@@ -77,10 +115,19 @@ export function closePalette(){
     var scored = [];
     for (var id in nodes){
       var n = nodes[id];
-      var title = (n.title || "").toLowerCase();
-      var ask = (((n.origin && n.origin.selected_text) || "") + " " + ((n.origin && n.origin.question) || "")).toLowerCase();
-      var body = getPlain(n).toLowerCase();
       var score = 0, ok = true;
+      var title = "", ask = "", body = "";
+      if (tokens.length){
+        var rawTitle = n.title || "";
+        if (n._searchTitleFor !== rawTitle){ n._searchTitleFor = rawTitle; n._searchTitle = rawTitle.toLowerCase(); }
+        title = n._searchTitle;
+        var rawAsk = ((n.origin && n.origin.selected_text) || "") + " " + ((n.origin && n.origin.question) || "");
+        if (n._searchAskFor !== rawAsk){ n._searchAskFor = rawAsk; n._searchAsk = rawAsk.toLowerCase(); }
+        ask = n._searchAsk;
+        var rawBody = getPlain(n);
+        if (n._searchBodyFor !== rawBody){ n._searchBodyFor = rawBody; n._searchBody = rawBody.toLowerCase(); }
+        body = n._searchBody;
+      }
       for (var i = 0; i < tokens.length; i++){
         var t = tokens[i];
         if (title.indexOf(t) !== -1) score += title.indexOf(t) === 0 ? 40 : 30;
@@ -96,28 +143,69 @@ export function closePalette(){
     palItems = scored.map(function(s){ return { type: "node", id: s.n.id }; }).concat(paletteCommandItems(tokens));
     palSel = 0;
     if (!palItems.length){
-      palResults.innerHTML = tokens.length ? '<div class="pal-empty">Nothing in this hole matches that.</div>' : "";
+      palRows.forEach(function(row){ row.hidden = true; });
+      palText.removeAttribute("aria-activedescendant");
+      var empty = palResults.querySelector(".pal-empty");
+      if (!empty){ empty = document.createElement("div"); empty.className = "pal-empty"; palResults.appendChild(empty); }
+      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
+      empty.hidden = !tokens.length;
       return;
     }
-    var html = "";
+    var empty = palResults.querySelector(".pal-empty");
+    if (empty) empty.hidden = true;
+    var fragment = document.createDocumentFragment();
     palItems.forEach(function(item, i){
+      var row = palRows[i] || createPalRow(i);
+      palRows[i] = row;
+      row.hidden = false;
+      row.dataset.idx = i;
+      row.classList.toggle("sel", i === palSel);
+      row._flag.textContent = "";
+      row._flag.className = "";
+      row._badge.hidden = true;
+      row._kbd.hidden = true;
+      row._snippet.hidden = item.type === "command";
       if (item.type === "command"){
-        html += '<div class="pal-item pal-command' + (i === palSel ? " sel" : "") + '" data-idx="' + i + '">';
-        html += '<div class="pal-t"><span class="pal-title">' + esc(item.name) + '</span><kbd class="pal-kbd">' + esc(item.kbd) + '</kbd></div>';
-        html += '</div>';
+        row._title.textContent = item.name;
+        row._kbd.textContent = item.kbd;
+        row._kbd.hidden = false;
+        fragment.appendChild(row);
         return;
       }
       var n = nodes[item.id];
       if (!n) return;
-      var badge = (n.origin && n.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
-        : (n.origin && n.origin.lens) ? lensBadgeHtml(n.origin.lens) : "";
-      var flags = (n.status === "pending") ? '<span class="pal-writing">writing…</span>' : (isUnread(n) ? '<span class="pal-dot"></span>' : "");
-      html += '<div class="pal-item' + (i === palSel ? " sel" : "") + '" data-idx="' + i + '">';
-      html += '<div class="pal-t">' + flags + '<span class="pal-title">' + esc(n.title || "Untitled") + '</span>' + badge + '</div>';
-      html += '<div class="pal-s">' + palSnippet(n, tokens) + '</div>';
-      html += '</div>';
+      row._title.textContent = n.title || "Untitled";
+      if (n.status === "pending"){ row._flag.className = "pal-writing"; row._flag.textContent = "writing…"; }
+      if (n.origin && (n.origin.synthesis || n.origin.lens)){
+        row._badge.textContent = n.origin.synthesis ? "✦ Synthesis" : lensLabel(n.origin.lens);
+        row._badge.hidden = false;
+      }
+      row._snippet.innerHTML = palSnippet(n, tokens);
+      fragment.appendChild(row);
     });
-    palResults.innerHTML = html;
+    for (var i = palItems.length; i < palRows.length; i++) palRows[i].hidden = true;
+    palResults.appendChild(fragment);
+    syncPalActiveDescendant();
+  }
+  function createPalRow(index){
+    var row = document.createElement("div");
+    row.className = "pal-item";
+    row.id = "pal-option-" + index;
+    row.setAttribute("role", "option");
+    var top = document.createElement("div"); top.className = "pal-t";
+    row._flag = document.createElement("span");
+    row._title = document.createElement("span"); row._title.className = "pal-title";
+    row._badge = document.createElement("span"); row._badge.className = "lens-badge";
+    row._kbd = document.createElement("kbd"); row._kbd.className = "pal-kbd";
+    row._snippet = document.createElement("div"); row._snippet.className = "pal-s";
+    top.append(row._flag, row._title, row._badge, row._kbd);
+    row.append(top, row._snippet);
+    return row;
+  }
+  function syncPalActiveDescendant(){
+    for (var i = 0; i < palRows.length; i++) palRows[i].setAttribute("aria-selected", i === palSel && !palRows[i].hidden ? "true" : "false");
+    if (palRows[palSel] && !palRows[palSel].hidden) palText.setAttribute("aria-activedescendant", palRows[palSel].id);
+    else palText.removeAttribute("aria-activedescendant");
   }
   function paletteCommandItems(tokens){
     if (!palCanvasCommands) return [];
@@ -152,11 +240,11 @@ export function closePalette(){
     if (quote) return "“" + hiTokens(truncate(quote, 90), tokens) + "”";
     var q = n.origin && n.origin.question;
     if (q) return hiTokens(truncate(q, 100), tokens);
-    return esc(truncate(body, 100));
+    return escapeHtml(truncate(body, 100));
   }
   // Escape text while wrapping every token match in <mark>.
   function hiTokens(text, tokens){
-    if (!tokens.length) return esc(text);
+    if (!tokens.length) return escapeHtml(text);
     var lower = text.toLowerCase(), out = "", i = 0;
     while (i < text.length){
       var best = -1, bl = 0;
@@ -164,8 +252,8 @@ export function closePalette(){
         var at = lower.indexOf(tokens[t], i);
         if (at !== -1 && (best === -1 || at < best)){ best = at; bl = tokens[t].length; }
       }
-      if (best === -1){ out += esc(text.slice(i)); break; }
-      out += esc(text.slice(i, best)) + "<mark>" + esc(text.slice(best, best + bl)) + "</mark>";
+      if (best === -1){ out += escapeHtml(text.slice(i)); break; }
+      out += escapeHtml(text.slice(i, best)) + "<mark>" + escapeHtml(text.slice(best, best + bl)) + "</mark>";
       i = best + bl;
     }
     return out;
@@ -175,6 +263,7 @@ export function closePalette(){
     palSel = Math.max(0, Math.min(palItems.length - 1, palSel + delta));
     var items = palResults.querySelectorAll(".pal-item");
     for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel);
+    syncPalActiveDescendant();
     if (items[palSel]) items[palSel].scrollIntoView({ block: "nearest" });
   }
   function commitPal(source){
@@ -199,5 +288,5 @@ export function closePalette(){
     var it = e.target.closest(".pal-item");
     if (!it) return;
     var idx = Number(it.dataset.idx) || 0;
-    if (idx !== palSel){ palSel = idx; var items = palResults.querySelectorAll(".pal-item"); for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel); }
+    if (idx !== palSel){ palSel = idx; var items = palResults.querySelectorAll(".pal-item"); for (var i = 0; i < items.length; i++) items[i].classList.toggle("sel", i === palSel); syncPalActiveDescendant(); }
   }

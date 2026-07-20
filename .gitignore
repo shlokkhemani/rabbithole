@@ -10,6 +10,8 @@ SPEC.md
 IDEAS.md
 SPEC-WEB.md
 SPEC-WEB-AUDIT.md
+SPEC-PDF.md
+*-plan.md
 
 # website build output
 website/.next/
@@ -19,3 +21,4 @@ website/next-env.d.ts
 # standalone web app build output
 web/dist/
 publish/
+scratchpad/

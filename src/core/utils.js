@@ -8,7 +8,10 @@
 const LINE_SEP = new RegExp(String.fromCharCode(0x2028), "g");
 const PARA_SEP = new RegExp(String.fromCharCode(0x2029), "g");
 
-/** Escapes a string for safe embedding in HTML text/attribute context. */
+/**
+ * Escapes a value for safe embedding in HTML text/attribute context.
+ * @param {unknown} str
+ */
 export function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -18,7 +21,34 @@ export function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-/** Serializes a value for safe embedding inside an inline <script>. */
+/**
+ * @param {unknown} title
+ * @param {{ fallback?: string }} [options]
+ */
+export function slugifyTitle(title, { fallback = "" } = {}) {
+  const slug = String(title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+export function randomUuidOrFallback() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+/** @param {string} prefix */
+export function randomId(prefix) {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Serializes a value for safe embedding inside an inline `<script>`.
+ * @param {unknown} value
+ */
 export function serializeForInlineScript(value) {
   return JSON.stringify(value)
     .replace(/</g, "\\u003c")

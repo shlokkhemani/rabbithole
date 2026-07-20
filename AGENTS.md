@@ -8,22 +8,28 @@ need to clone or build anything. Follow the Quick start in [README.md](./README.
 ## What this is
 
 An MCP server (stdio) that opens a branching-document canvas in the browser.
-Plain ES modules, no build step, no TypeScript, no test framework yet.
+Plain ES modules, a small esbuild-based browser build, and script-driven tests.
 
-- `bin/mcp-server.js` — entry; just imports `src/mcp/server.js`
-- `src/mcp/` — MCP wiring (server name `rabbithole`, tools from `src/tools/manifest.js`)
-- `src/core/` — sessions, storage, local HTTP + SSE transport, markdown
-- `src/core/html/` — the entire canvas UI, served as ONE self-contained HTML
-  document (see `src/core/html/README.md`). Client code is authored as JS
-  strings/template literals — mind your escaping, especially backslashes
-- `website/` — the Next.js site for rabbithole.ing; own package.json,
-  `cd website && npm install && npm run dev`
+- `bin/mcp-server.js` — entry; just imports `src/node/mcp/server.js`
+- `src/core/` — host-independent document engine, renderer, artifacts, and
+  contracts
+- `src/ui/` — browser runtime shared by live pages and frozen snapshots
+- `src/node/` — MCP wiring (server name `rabbithole`), filesystem storage,
+  sessions, local HTTP/SSE transport, and Node PDF ingestion
+- `src/web/` — static BYOK browser host, provider adapters, and IndexedDB store
+- `src/core/html/` — shared self-contained shell, tokens, and stylesheet source
+- `src/core/html/icons.js` — canonical repository for all product-owned SVG icons and brand marks
+- `dist/` — committed live and frozen UI bundles; regenerate after UI changes
+- `test/` — capability-oriented suites documented in `docs/testing.md`
+- `website/public/` — live public assets copied by `build:publish`
 
 ## Run / debug
 
 ```bash
 npm install
 RABBITHOLE_NO_BROWSER=1 node bin/mcp-server.js   # speaks MCP on stdio
+npm run build                                    # regenerate committed bundles
+npm test                                         # deterministic default suite
 ```
 
 Storage is JSON files under `~/.rabbithole/` (`RABBITHOLE_DIR` overrides).
@@ -36,3 +42,11 @@ stdout.
 - Node ≥ 18, ES modules everywhere.
 - The canvas page must stay fully self-contained (one HTML response, no
   external assets) — that constraint is load-bearing for export/snapshots.
+- stdout is reserved for MCP protocol messages; application logs go to stderr.
+- Preserve old `.rabbithole` files and snapshots according to
+  `docs/compatibility.md`; future formats must fail clearly rather than truncate.
+- Put every product-owned SVG icon or brand mark in `src/core/html/icons.js` and
+  render it with `iconSvg()`. Do not add inline icon geometry to shell, UI, web,
+  settings, or website files. Structural/document SVG (for example the canvas
+  edge layer or user-authored content) is not an icon and remains at its owning
+  trust boundary.

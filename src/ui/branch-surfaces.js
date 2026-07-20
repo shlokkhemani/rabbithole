@@ -3,27 +3,21 @@ import {
   canvasBuilt,
   childrenOf,
   currentNodeId,
-  esc,
   flashHint,
   frozen,
   closed,
-  isUnread,
-  lensBadgeHtml,
+  goToNode,
   lensLabel,
   lineageNodes,
   mode,
   motionSourceFromEvent,
   nodes,
-  peekEl,
-  playLandingCue,
   readerMain,
-  refreshAmbient,
   rootId,
   setCurrentNodeId,
   setSurfaceOrigin,
   shareMenu,
-  truncate,
-  updateSince
+  truncate
 } from "./core.js";
 import { sendFollowup } from "./ask-followups.js";
 import {
@@ -34,141 +28,147 @@ import {
 } from "./canvas-view.js";
 import {
   openNode,
-  removeMarks,
-  removeThreadItem,
   renderBreadcrumb,
-  renderSidebar
+  renderMarginNotes
 } from "./reader.js";
-import { mountVisuals } from "./visuals.js";
-import { downloadSnapshot } from "./snapshot.js";
-import { activateFocusTrap } from "./focus-trap.js";
+import { openPopover } from "./primitives/popover.js";
+import { createModuleLifecycle } from "./lifecycle.js";
+import { teardownNode } from "./node-teardown.js";
 
-var branchHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); },
-  exportPortable: null
-};
+function defaultBranchHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    exportSnapshot: null,
+    exportPortable: null
+  };
+}
+
+var branchLifecycle = createModuleLifecycle({ defaults: defaultBranchHooks });
 
 export function registerBranchHooks(hooks) {
-  Object.assign(branchHooks, hooks || {});
+  branchLifecycle.register(hooks);
 }
 
   // ===========================================================================
-  // HOVER PEEK — glance at a branch from its mark without leaving the page
+  // MARKS ARE LINKS — a mark takes you to its branch, nothing hovers over it.
+  // The click/Enter wiring lives with the marks in reader.js.
   // ===========================================================================
-  var peekTimer = 0, peekFor = null;
 export function initBranchSurfaces(){
-  readerMain.addEventListener("mouseover", onReaderMarkMouseover);
-  readerMain.addEventListener("mouseout", onReaderMarkMouseout);
-  peekEl.addEventListener("mouseleave", function(){ hidePeek(); });
-  peekEl.addEventListener("click", function(){
-    var kid = peekFor && nodes[peekFor];
-    hidePeek();
-    if (kid) openNode(kid.id);
-  });
-  document.getElementById("r-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
-  document.getElementById("t-share").addEventListener("click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget); });
-  document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
-  document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
-  document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
-  document.getElementById("sm-portable").addEventListener("click", onExportPortable);
-  document.getElementById("sm-synth").addEventListener("click", function(e){
+  disposeBranchSurfaceResources(false);
+  var branchScope = branchLifecycle.beginInit();
+  try {
+  branchScope.listen(document.getElementById("t-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
+  branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
+  branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
+  branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
+  branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
+  branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
+  branchScope.listen(document.getElementById("sm-synth"), "click", function(e){
     closeShare();
     synthesize(motionSourceFromEvent(e));
   });
-  document.getElementById("cf-keep").addEventListener("click", hideConfirm);
-  document.getElementById("cf-remove").addEventListener("click", function(){
+  branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
+  branchScope.listen(document.getElementById("cf-remove"), "click", function(){
     var node = confirmFor && nodes[confirmFor];
     hideConfirm();
     if (node) deleteBranch(node);
   });
+  return disposeBranchSurfaces;
+  } catch (error) {
+    disposeBranchSurfaces();
+    throw error;
+  }
 }
 
-export function hidePeek(){
-    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    peekFor = null;
-    peekEl.classList.remove("visible");
-  }
-  function showPeek(mark){
-    var kid = nodes[mark.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    peekFor = kid.id;
-    var badge = (kid.origin && kid.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
-      : (kid.origin && kid.origin.lens) ? lensBadgeHtml(kid.origin.lens) : "";
-    peekEl.innerHTML = '<div class="peek-title">' + (isUnread(kid) ? '<span class="pal-dot"></span>' : "") +
-      '<span>' + esc(kid.title || "Untitled") + '</span>' + badge + '</div>' +
-      '<div class="peek-body md">' + (kid.html || "") + '</div>' +
-      '<div class="peek-hint">Click to open</div>';
-    if (typeof mountVisuals === "function"){
-      var peekBody = peekEl.querySelector(".peek-body");
-      if (peekBody) mountVisuals(peekBody, "peek:" + kid.id);
-    }
-    var r = mark.getBoundingClientRect();
-    var top = r.bottom + 8;
-    if (top + peekEl.offsetHeight + 10 > window.innerHeight) top = Math.max(10, r.top - peekEl.offsetHeight - 8);
-    peekEl.style.left = Math.min(window.innerWidth - 360, Math.max(10, r.left)) + "px";
-    peekEl.style.top = top + "px";
-    peekEl.classList.add("visible");
-    setSurfaceOrigin(peekEl, r);
-  }
-  function onReaderMarkMouseover(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = setTimeout(function(){ peekTimer = 0; showPeek(m); }, 220);
-  }
-  function onReaderMarkMouseout(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    setTimeout(function(){
-      if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
-    }, 80);
-  }
+export function disposeBranchSurfaces(){
+  disposeBranchSurfaceResources(true);
+}
+
+function disposeBranchSurfaceResources(resetHooks){
+  closeShare({ restoreFocus: false });
+  hideConfirm({ restoreFocus: false });
+  branchLifecycle.dispose(resetHooks);
+  shareOpen = false;
+  shareAnchor = null;
+  confirmFor = null;
+}
+
 
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize
   // ===========================================================================
-  var shareOpen = false, shareTrap = null;
-export function toggleShare(anchor){
+  var shareOpen = false, shareAnchor = null, sharePopover = null;
+  function visibleShareItems(){
+    return Array.prototype.slice.call(shareMenu.querySelectorAll('[role="menuitem"]')).filter(function(item){
+      return item.style.display !== "none";
+    });
+  }
+  function focusShareItem(item){
+    visibleShareItems().forEach(function(candidate){ candidate.tabIndex = candidate === item ? 0 : -1; });
+    if (item) item.focus();
+  }
+  function onShareMenuKeydown(e){
+    var items = visibleShareItems();
+    if (!items.length) return;
+    var index = items.indexOf(document.activeElement), target = null;
+    if (e.key === "ArrowDown") target = items[(index + 1 + items.length) % items.length];
+    else if (e.key === "ArrowUp") target = items[(index - 1 + items.length) % items.length];
+    else if (e.key === "Home") target = items[0];
+    else if (e.key === "End") target = items[items.length - 1];
+    else if (e.key === "Enter" || e.key === " ") {
+      if (index < 0) return;
+      e.preventDefault();
+      items[index].click();
+      return;
+    } else if (e.key === "Tab") {
+      closeShare();
+      return;
+    } else return;
+    e.preventDefault();
+    focusShareItem(target);
+  }
+function toggleShare(anchor, openedByKeyboard){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
-    document.getElementById("sm-portable").style.display = (!frozen && typeof branchHooks.exportPortable === "function") ? "" : "none";
+    document.getElementById("sm-portable").style.display = (!frozen && typeof branchLifecycle.hooks.exportPortable === "function") ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
-    var r = anchor.getBoundingClientRect();
-    shareMenu.style.left = Math.min(window.innerWidth - shareMenu.offsetWidth - 10, Math.max(10, r.right - shareMenu.offsetWidth)) + "px";
-    shareMenu.style.top = (r.bottom + 8) + "px";
+    var items = visibleShareItems();
+    items.forEach(function(item, index){ item.tabIndex = index === 0 ? 0 : -1; });
+    shareAnchor = anchor;
     shareOpen = true;
     shareMenu.classList.add("visible");
-    setSurfaceOrigin(shareMenu, r);
-    if (shareTrap) shareTrap();
-    shareTrap = activateFocusTrap(shareMenu, {
-      initialFocus: shareMenu.querySelector("button"),
-      onEscape: closeShare
+    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
+    sharePopover = openPopover({ trigger: anchor, surface: shareMenu, placement: "bottom-end",
+      initialFocus: openedByKeyboard ? items[0] : null,
+      onClose: closeShare
     });
   }
-export function closeShare(){
+export function closeShare(settings){
     shareOpen = false;
     shareMenu.classList.remove("visible");
-    if (shareTrap){ shareTrap(); shareTrap = null; }
+    if (sharePopover){ sharePopover.close(settings); sharePopover = null; }
+    shareAnchor = null;
   }
 
   function copyText(text, okMsg){
     function done(){ flashHint(okMsg); }
-    function legacy(){
+    function copyWithTextarea(){
+      var previousFocus = document.activeElement;
       var ta = document.createElement("textarea");
       ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
       document.body.appendChild(ta); ta.select();
       try { document.execCommand("copy"); } catch(err){}
       document.body.removeChild(ta);
+      if (previousFocus && previousFocus.isConnected){
+        try { previousFocus.focus(); } catch(err){}
+      }
     }
     if (navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(done, function(){ legacy(); done(); });
-    } else { legacy(); done(); }
+      navigator.clipboard.writeText(text).then(done, function(){ copyWithTextarea(); done(); });
+    } else { copyWithTextarea(); done(); }
   }
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){
@@ -204,8 +204,12 @@ export function closeShare(){
   }
 	  function onExportSnapshot(){
 	    closeShare();
+	    if (typeof branchLifecycle.hooks.exportSnapshot !== "function"){
+	      flashHint("This snapshot is already portable.");
+	      return;
+	    }
 	    flashHint("Preparing snapshot...");
-	    downloadSnapshot().then(function(){
+	    Promise.resolve(branchLifecycle.hooks.exportSnapshot()).then(function(){
 	      flashHint("Snapshot downloading — a single file that opens anywhere.");
 	    }, function(){
 	      flashHint("Couldn't prepare the snapshot.");
@@ -213,13 +217,13 @@ export function closeShare(){
 	  }
   function onExportPortable(){
     closeShare();
-    if (typeof branchHooks.exportPortable !== "function"){
+    if (typeof branchLifecycle.hooks.exportPortable !== "function"){
       flashHint("Rabbithole export is only available in the web app.");
       return;
     }
     flashHint("Preparing Rabbithole export...");
     Promise.resolve()
-      .then(function(){ return branchHooks.exportPortable(); })
+      .then(function(){ return branchLifecycle.hooks.exportPortable(); })
       .then(function(result){
         var name = result && result.filename ? " " + result.filename : "";
         flashHint("Rabbithole export downloading." + name);
@@ -227,7 +231,7 @@ export function closeShare(){
         flashHint("Couldn't prepare the Rabbithole export.");
       });
   }
-export function synthesize(source){
+function synthesize(source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];
     if (!root) return;
@@ -242,30 +246,33 @@ export function synthesize(source){
     var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
     var kid = sendFollowup(root, q, null, true);
     if (mode === "canvas") revealNode(kid, source);
-    flashHint("✦ Synthesizing this journey — it will appear as a branch of the root document.");
+    flashHint("✦ Synthesizing this journey — it will branch from where this Rabbithole began.");
   }
 
   // ===========================================================================
   // DELETE — remove a branch (and its subtree) after an inline confirm
   // ===========================================================================
-  var confirmFor = null;
+  var confirmFor = null, confirmPopover = null;
 export function confirmDelete(node, anchor){
     if (closed){
       flashHint(frozen ? "This is a read-only snapshot." : "Session ended — changes can't be saved anymore.");
       return;
     }
-    confirmFor = node.id;
     var subCount = countSubtree(node.id) - 1;
     document.getElementById("cf-msg").textContent = subCount > 0
       ? "Remove this branch and " + subCount + " inside it?"
       : "Remove this branch?";
-    var r = anchor.getBoundingClientRect();
-    confirmEl.style.left = Math.min(window.innerWidth - confirmEl.offsetWidth - 10, Math.max(10, r.right - confirmEl.offsetWidth)) + "px";
-    confirmEl.style.top = (r.bottom + 8) + "px";
+    hideConfirm({ restoreFocus: false });
+    confirmFor = node.id;
     confirmEl.classList.add("visible");
-    setSurfaceOrigin(confirmEl, r);
+    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
+    confirmPopover = openPopover({ trigger: anchor, surface: confirmEl, placement: "bottom-end",
+      initialFocus: document.getElementById("cf-keep"), onClose: hideConfirm });
   }
-export function hideConfirm(){ confirmFor = null; confirmEl.classList.remove("visible"); }
+export function hideConfirm(settings){
+    confirmFor = null; confirmEl.classList.remove("visible");
+    if (confirmPopover){ var popover = confirmPopover; confirmPopover = null; popover.close(settings); }
+  }
   function countSubtree(id){
     var c = 1;
     childrenOf(id).forEach(function(k){ c += countSubtree(k.id); });
@@ -279,7 +286,7 @@ export function hideConfirm(){ confirmFor = null; confirmEl.classList.remove("vi
   function deleteBranch(node){
     var title = node.title || "Untitled";
     var ids = collectSubtree(node.id, []);
-    branchHooks.post({ type: "delete_node", node_id: node.id });
+    branchLifecycle.hooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
     flashHint(ids.length > 1
       ? "Removed “" + truncate(title, 40) + "” and " + (ids.length - 1) + " inside it"
@@ -291,20 +298,13 @@ export function removeNodesLocal(ids, parentId){
       var id = ids[i], n = nodes[id];
       if (!n) continue;
       if (currentNodeId === id) currentGone = true;
-      if (n.el && n.el.parentNode) n.el.parentNode.removeChild(n.el);
-      removeMarks(readerMain, id);
-      removeThreadItem(id);
-      var p = nodes[n.parent_id];
-      if (p && p.bodyEl) removeMarks(p.bodyEl, id);
       clearEdgeHighlight(id);
-      delete nodes[id];
+      teardownNode(id);
     }
     if (currentGone){
       setCurrentNodeId((parentId && nodes[parentId]) ? parentId : rootId);
       if (mode === "reader") openNode(currentNodeId);
     }
     if (canvasBuilt){ renderVisibility(); drawEdges(); }
-    if (mode === "reader"){ renderBreadcrumb(); renderSidebar(); }
-    refreshAmbient();
-    updateSince();
+    if (mode === "reader"){ renderBreadcrumb(); renderMarginNotes(); }
   }

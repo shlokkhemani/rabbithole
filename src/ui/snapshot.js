@@ -1,41 +1,50 @@
-import { CANVAS_SHELL } from "../core/html/shell.js";
+import { extractNodeAssetRefs } from "../core/assets.js";
+import { binaryToBase64 } from "../core/portable-projection.js";
+import { createSnapshotProjection } from "../core/snapshot-projection.js";
+import { buildSnapshotHtml as assembleSnapshotHtml, snapshotProjectionUsesMermaid, snapshotProjectionUsesPdf } from "../core/snapshot-html.js";
+import { slugifyTitle } from "../core/utils.js";
 import {
   currentNodeId,
-  hydration,
   mode,
   nodes,
   readerMain,
-  rootId,
   view
 } from "./core.js";
+import { flushPendingSaves } from "./transport-status.js";
 
-const ASSET_REF_RE = /asset:([a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg))/gi;
+function defaultSnapshotHooks(){
+  return {
+    fetchAssetBinary: null,
+    getSnapshotHole: null,
+    getFrozenClientSource: null,
+    getDompurifySource: null,
+    getMermaidSource: function(){
+      var carrier = document.getElementById("rabbithole-mermaid-runtime");
+      return carrier ? carrier.textContent || "" : "";
+    },
+    getPdfWorkerSource: function(){
+      var carrier = document.getElementById("rabbithole-pdf-worker-runtime");
+      return globalThis.__RABBITHOLE_PDF_WORKER_SOURCE__ || (carrier ? carrier.textContent || "" : "");
+    },
+    getPdfJsSource: function(){
+      var carrier = document.getElementById("rabbithole-pdfjs-runtime");
+      return globalThis.__RABBITHOLE_PDFJS_SOURCE__ || (carrier ? carrier.textContent || "" : "");
+    },
+    getStylesheetText: null
+  };
+}
 
-var snapshotHooks = {
-  fetchAssetData: null,
-  getFrozenClientSource: null,
-  getDompurifySource: null
-};
+var snapshotHooks = defaultSnapshotHooks();
+var preparedMermaidSource = "";
 
 export function setSnapshotHooks(hooks) {
-  snapshotHooks = Object.assign({}, snapshotHooks, hooks || {});
+  snapshotHooks = Object.assign(defaultSnapshotHooks(), hooks || {});
+  preparedMermaidSource = "";
 }
 
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function serializeForInlineScript(value) {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e")
-    .replace(/&/g, "\\u0026")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
+export function resetSnapshotHooks() {
+  snapshotHooks = defaultSnapshotHooks();
+  preparedMermaidSource = "";
 }
 
 function snapshotViewState() {
@@ -49,69 +58,42 @@ function snapshotViewState() {
   };
 }
 
-function serializeSnapshotNodes() {
-  return Object.keys(nodes).map(function(id){
-    var n = nodes[id];
-    return {
-      id: n.id,
-      parent_id: n.parent_id || null,
-      title: n.title || "",
-      markdown: n.md || "",
-      base_url: n.base_url || null,
-      base_url_source: n.base_url_source || null,
-      origin: n.origin || null,
-      position: { x: n.x || 0, y: n.y || 0 },
-      size: { w: n.w, h: n.h },
-      font_scale: n.font_scale || 1,
-      collapsed: !!n.collapsed,
-      status: n.status || "answered",
-      read: !!n.read
-    };
-  });
-}
-
 function collectAssetNames(snapshotNodes) {
   var names = {};
   snapshotNodes.forEach(function(node){
-    var source = String(node.markdown || "");
-    var match;
-    ASSET_REF_RE.lastIndex = 0;
-    while ((match = ASSET_REF_RE.exec(source))) names[match[1]] = true;
+    extractNodeAssetRefs(node).forEach(function(name){ names[name] = true; });
   });
   return Object.keys(names).sort();
 }
 
-function blobToDataUrl(blob) {
-  return new Promise(function(resolve){
-    var reader = new FileReader();
-    reader.onload = function(){ resolve(String(reader.result || "data:,")); };
-    reader.onerror = function(){ resolve("data:,"); };
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function fetchAssetData(name) {
-  if (typeof snapshotHooks.fetchAssetData === "function") {
+async function fetchAssetBinary(name) {
+  if (typeof snapshotHooks.fetchAssetBinary === "function") {
     try {
-      var hooked = await snapshotHooks.fetchAssetData(name);
+      var hooked = await snapshotHooks.fetchAssetBinary(name);
       if (hooked) return hooked;
     } catch(e) {}
   }
   try {
     var slash = String.fromCharCode(47);
     var res = await fetch(slash + "assets" + slash + name, { cache: "no-store" });
-    if (!res.ok) return "data:,";
-    return await blobToDataUrl(await res.blob());
+    if (!res.ok) return new Uint8Array();
+    return await res.blob();
   } catch(e) {
-    return "data:,";
+    return new Uint8Array();
   }
 }
 
 async function buildAssetData(snapshotNodes) {
-  var out = {};
   var names = collectAssetNames(snapshotNodes);
-  for (var i = 0; i < names.length; i++) out[names[i]] = await fetchAssetData(names[i]);
-  return out;
+  var entries = new Array(names.length);
+  var next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, async function(){
+    while (next < names.length){
+      var index = next++, name = names[index];
+      entries[index] = [name, await binaryToBase64(await fetchAssetBinary(name))];
+    }
+  }));
+  return Object.fromEntries(entries);
 }
 
 function extractDompurifySource() {
@@ -124,74 +106,56 @@ function extractDompurifySource() {
   return idx === -1 ? "" : script.slice(0, idx);
 }
 
-export async function buildSnapshotHydration() {
-  var snapshotNodes = serializeSnapshotNodes();
-  return {
-    session_id: hydration.session_id || null,
-    hole_id: hydration.hole_id || null,
-    title: hydration.title || "Rabbithole",
-    root_id: rootId,
-    last_event_id: 0,
-    agent_attached: false,
-    view_state: snapshotViewState(),
-    frozen: true,
-    asset_data: await buildAssetData(snapshotNodes),
-    nodes: snapshotNodes
-  };
+export async function buildSnapshotProjection() {
+  var viewState = snapshotViewState();
+  if (typeof snapshotHooks.getSnapshotHole !== "function") throw new Error("Snapshot document is unavailable");
+  await flushPendingSaves();
+  var hole = await snapshotHooks.getSnapshotHole();
+  var projection = createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
+  preparedMermaidSource = "";
+  if (snapshotProjectionUsesMermaid(projection)) {
+    if (typeof snapshotHooks.getMermaidSource !== "function") throw new Error("Mermaid runtime is unavailable for this snapshot");
+    preparedMermaidSource = await snapshotHooks.getMermaidSource() || "";
+    if (!preparedMermaidSource) throw new Error("Mermaid runtime is unavailable for this snapshot");
+  }
+  return projection;
 }
 
-export function buildSnapshotHtml(snapshotHydration) {
-  var title = (snapshotHydration && snapshotHydration.title) || "Rabbithole";
-  var styleText = document.querySelector("style")?.textContent || "";
+export function buildSnapshotHtml(snapshotProjection) {
+  var title = (snapshotProjection && snapshotProjection.hole && snapshotProjection.hole.title) || "Rabbithole";
+  var styleText = typeof snapshotHooks.getStylesheetText === "function"
+    ? snapshotHooks.getStylesheetText()
+    : "";
+  if (!styleText) throw new Error("Frozen stylesheet is unavailable");
   var dompurifySource = extractDompurifySource();
   var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function"
     ? snapshotHooks.getFrozenClientSource()
     : window.__RABBITHOLE_FROZEN_CLIENT__;
   if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
-  var lt = String.fromCharCode(60);
-  var gt = String.fromCharCode(62);
-  var scriptOpen = lt + "script" + gt;
-  var scriptClose = lt + String.fromCharCode(47) + "script" + gt;
-  return "<!DOCTYPE html>\n" +
-    '<html lang="en" data-theme="light">\n' +
-    "<head>\n" +
-    '<meta charset="utf-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    "<title>" + escapeHtml(title) + "</title>\n" +
-    "<style>\n" + styleText + "\n</style>\n" +
-    "</head>\n" +
-    "<body>\n" +
-    CANVAS_SHELL +
-    "\n" + scriptOpen + "\n" +
-    dompurifySource +
-    "\n(function(){\n" +
-    '  "use strict";\n' +
-    "  var hydration = " + serializeForInlineScript(snapshotHydration) + ";\n" +
-    frozenClient +
-    "\n  RabbitholeFrozenClient.startRabbithole(hydration);\n" +
-    "})();\n" +
-    scriptClose + "\n" +
-    "</body>\n" +
-    "</html>";
+  return assembleSnapshotHtml({
+    title,
+    stylesheetText: styleText,
+    dompurifySource,
+    mermaidSource: snapshotProjectionUsesMermaid(snapshotProjection) ? preparedMermaidSource : "",
+    pdfWorkerSource: snapshotProjectionUsesPdf(snapshotProjection) && typeof snapshotHooks.getPdfWorkerSource === "function" ? snapshotHooks.getPdfWorkerSource() : "",
+    pdfJsSource: snapshotProjectionUsesPdf(snapshotProjection) && typeof snapshotHooks.getPdfJsSource === "function" ? snapshotHooks.getPdfJsSource() : "",
+    frozenClientSource: frozenClient,
+    snapshotProjection,
+  });
 }
 
 function exportFilename(title) {
-  var slug = String(title || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return "rabbithole-" + (slug || "export") + ".html";
+  return "rabbithole-" + slugifyTitle(title, { fallback: "export" }) + ".html";
 }
 
 export async function downloadSnapshot() {
-  var snapshotHydration = await buildSnapshotHydration();
-  var html = buildSnapshotHtml(snapshotHydration);
+  var snapshotProjection = await buildSnapshotProjection();
+  var html = buildSnapshotHtml(snapshotProjection);
   var blob = new Blob([html], { type: "text/html;charset=utf-8" });
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
   a.href = url;
-  a.download = exportFilename(snapshotHydration.title);
+  a.download = exportFilename(snapshotProjection.hole.title);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

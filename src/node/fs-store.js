@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { warn } from "./logger.js";
-import { migratePersistedHole, toPersistedHole } from "../core/schema.js";
+import { parsePersistedHole, toPersistedHole } from "../core/schema.js";
+import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } from "../core/store.js";
 import {
-  ALLOWED_ASSET_EXTENSIONS,
   MAX_ASSET_BYTES,
   MAX_ASSETS_PER_CALL,
-  getAssetContentType,
+  maxAssetBytes,
   validateAssetName,
 } from "../core/assets.js";
 
@@ -35,16 +35,12 @@ async function ensureDir() {
  * files, so it must never be allowed to escape the storage dir via "../" or an
  * absolute path. Allow only the id shapes we actually mint (UUIDs / slugs).
  */
-function assertSafeHoleId(holeId) {
-  const id = String(holeId ?? "");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
-    throw new Error(`Invalid hole id: ${JSON.stringify(holeId)}`);
-  }
-  return id;
-}
-
 function holePath(holeId) {
   return path.join(holesDir(), `${assertSafeHoleId(holeId)}.json`);
+}
+
+function holeSummaryPath(holeId) {
+  return path.join(holesDir(), `${assertSafeHoleId(holeId)}.summary.json`);
 }
 
 function assetsDir() {
@@ -64,26 +60,12 @@ async function ensureAssetDir(holeId) {
 const STAGING_DIR_NAME = ".staging";
 const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 
-function assertSafeIngestId(ingestId) {
-  const id = String(ingestId ?? "");
-  if (!/^ingest-[a-z0-9][a-z0-9_-]*$/.test(id)) {
-    throw new Error(`Invalid ingest id: ${JSON.stringify(ingestId)}`);
-  }
-  return id;
-}
-
 function stagingRootDir() {
   return path.join(assetsDir(), STAGING_DIR_NAME);
 }
 
 function stagedAssetDir(ingestId) {
   return path.join(stagingRootDir(), assertSafeIngestId(ingestId));
-}
-
-function newIngestId() {
-  const stamp = Date.now().toString(36);
-  const suffix = randomUUID().replace(/-/g, "").slice(0, 16);
-  return `ingest-${stamp}-${suffix}`;
 }
 
 function normalizeAssetEntries(assets) {
@@ -105,10 +87,11 @@ function normalizeAssetEntries(assets) {
   });
 }
 
-function assertAssetFileStat(stat, filePath, label) {
+function assertAssetFileStat(stat, filePath, label, name) {
   if (!stat.isFile()) throw new Error(`${label}.file_path must be a file: ${filePath}`);
-  if (stat.size > MAX_ASSET_BYTES) {
-    throw new Error(`${label}.file_path exceeds 20 MB: ${filePath}`);
+  const limit = maxAssetBytes(name);
+  if (stat.size > limit) {
+    throw new Error(`${label}.file_path exceeds ${Math.round(limit / 1024 / 1024)} MB: ${filePath}`);
   }
 }
 
@@ -121,7 +104,7 @@ export function validateAssetEntriesSync(assets) {
     } catch {
       throw new Error(`${label}.file_path does not exist: ${entry.file_path}`);
     }
-    assertAssetFileStat(stat, entry.file_path, label);
+    assertAssetFileStat(stat, entry.file_path, label, entry.name);
     return entry;
   });
 }
@@ -137,13 +120,13 @@ async function validateAssetEntries(assets) {
       } catch {
         throw new Error(`${label}.file_path does not exist: ${entry.file_path}`);
       }
-      assertAssetFileStat(stat, entry.file_path, label);
+      assertAssetFileStat(stat, entry.file_path, label, entry.name);
       return entry;
     })
   );
 }
 
-async function bytesToBuffer(bytes, label = "asset bytes") {
+async function bytesToBuffer(bytes, label = "asset bytes", name = "asset.png") {
   let buffer;
   if (bytes instanceof Uint8Array) {
     buffer = Buffer.from(bytes);
@@ -154,7 +137,8 @@ async function bytesToBuffer(bytes, label = "asset bytes") {
   } else {
     throw new Error(`${label} must be a Blob, ArrayBuffer, or Uint8Array`);
   }
-  if (buffer.byteLength > MAX_ASSET_BYTES) throw new Error(`${label} exceeds 20 MB`);
+  const limit = maxAssetBytes(name);
+  if (buffer.byteLength > limit) throw new Error(`${label} exceeds ${Math.round(limit / 1024 / 1024)} MB`);
   return buffer;
 }
 
@@ -171,19 +155,18 @@ export class FsStore {
       if (err?.code === "ENOENT") return null;
       throw err;
     }
-    const migrated = migratePersistedHole(JSON.parse(raw));
-    if (migrated.changed) {
-      await fs.writeFile(holePath(holeId), JSON.stringify(migrated.hole, null, 2), "utf-8");
-    }
-    return migrated.hole;
+    return parsePersistedHole(JSON.parse(raw));
   }
 
   async saveHole(hole) {
-    await saveHole(hole);
+    await persistHole(hole);
   }
 
   async deleteHole(holeId) {
-    await fs.rm(holePath(holeId), { force: true });
+    await Promise.all([
+      fs.rm(holePath(holeId), { force: true }),
+      fs.rm(holeSummaryPath(holeId), { force: true }),
+    ]);
     await deleteHoleAssets(holeId);
   }
 
@@ -198,7 +181,7 @@ export class FsStore {
 
   async putAsset(holeId, name, bytes) {
     const safeName = validateAssetName(name);
-    const buffer = await bytesToBuffer(bytes);
+    const buffer = await bytesToBuffer(bytes, "asset bytes", safeName);
     const dir = await ensureAssetDir(holeId);
     await fs.writeFile(path.join(dir, safeName), buffer);
   }
@@ -214,7 +197,7 @@ export class FsStore {
 
   async putStagedAsset(ingestId, name, bytes) {
     const safeName = validateAssetName(name);
-    const buffer = await bytesToBuffer(bytes, "staged asset bytes");
+    const buffer = await bytesToBuffer(bytes, "staged asset bytes", safeName);
     const dir = stagedAssetDir(ingestId);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, safeName), buffer);
@@ -224,19 +207,13 @@ export class FsStore {
     const moved = await adoptStagedAssets(holeId, ingestId);
     return moved.map((asset) => asset.name);
   }
+
+  async discardStaging(ingestId) {
+    await fs.rm(stagedAssetDir(ingestId), { recursive: true, force: true });
+  }
 }
 
 export const defaultFsStore = new FsStore();
-
-export async function addAsset(holeId, { name, file_path: filePath }) {
-  const [entry] = await validateAssetEntries([{ name, file_path: filePath }]);
-  const dir = await ensureAssetDir(holeId);
-  const dest = path.join(dir, entry.name);
-  if (path.resolve(entry.file_path) !== path.resolve(dest)) {
-    await fs.copyFile(entry.file_path, dest);
-  }
-  return { name: entry.name, path: dest };
-}
 
 export async function addAssetsToHole(holeId, assets) {
   const entries = await validateAssetEntries(assets);
@@ -263,7 +240,7 @@ async function moveFile(source, dest) {
   }
 }
 
-export async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {}) {
+async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {}) {
   let entries;
   try {
     entries = await fs.readdir(stagingRootDir(), { withFileTypes: true });
@@ -281,11 +258,11 @@ export async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {})
   }
 }
 
-export async function createStagedAssetDir() {
+async function createStagedAssetDir() {
   await cleanupStagedAssets();
   await fs.mkdir(stagingRootDir(), { recursive: true });
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const ingestId = newIngestId();
+    const ingestId = createIngestId();
     const dir = stagedAssetDir(ingestId);
     try {
       await fs.mkdir(dir);
@@ -297,7 +274,7 @@ export async function createStagedAssetDir() {
   throw new Error("Unable to allocate a staging directory for PDF assets");
 }
 
-export async function resolveStagedAssetDir(ingestId) {
+async function resolveStagedAssetDir(ingestId) {
   const dir = stagedAssetDir(ingestId);
   try {
     const stat = await fs.stat(dir);
@@ -307,10 +284,10 @@ export async function resolveStagedAssetDir(ingestId) {
   }
 }
 
-export async function adoptStagedAssets(holeId, ingestId) {
+async function adoptStagedAssets(holeId, ingestId) {
   const sourceDir = await resolveStagedAssetDir(ingestId);
   if (!sourceDir) {
-    throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; run ingest_pdf again.`);
+    throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; restart the PDF import.`);
   }
   const destDir = await ensureAssetDir(holeId);
   const entries = await fs.readdir(sourceDir, { withFileTypes: true });
@@ -327,7 +304,7 @@ export async function adoptStagedAssets(holeId, ingestId) {
   return moved;
 }
 
-export async function listAssets(holeId) {
+async function listAssets(holeId) {
   let entries;
   try {
     entries = await fs.readdir(assetDir(holeId));
@@ -357,53 +334,58 @@ export async function resolveAsset(holeId, name) {
   }
 }
 
-export async function deleteAsset(holeId, name) {
+async function deleteAsset(holeId, name) {
   const safeName = validateAssetName(name);
   await fs.rm(path.join(assetDir(holeId), safeName), { force: true });
 }
 
-export async function deleteHoleAssets(holeId) {
+async function deleteHoleAssets(holeId) {
   await fs.rm(assetDir(holeId), { recursive: true, force: true });
 }
 
-export {
-  ALLOWED_ASSET_EXTENSIONS,
-  MAX_ASSET_BYTES,
-  MAX_ASSETS_PER_CALL,
-  getAssetContentType,
-  validateAssetName,
-  assertSafeHoleId,
-  assetDir,
-  ensureAssetDir,
-};
+export { ensureAssetDir };
+
+const holeSaveQueues = new Map();
 
 /**
  * @param {{ hole_id, title, root_id, created_at, nodes: object[] }} hole
  */
-export async function saveHole(hole) {
-  await ensureDir();
-  const persisted = toPersistedHole(hole);
+function persistHole(hole) {
+  const persisted = toPersistedHole(hole, { cloneExtensions: false });
+  const serialized = JSON.stringify(persisted);
+  const serializedSummary = JSON.stringify(holeSummary(persisted));
+  const holeId = persisted.hole_id;
+  const previous = holeSaveQueues.get(holeId) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    await ensureDir();
   // Unique temp name per write so concurrent/overlapping saves of the same hole
   // never clobber each other's temp file mid-write; rename is atomic, last wins.
-  const finalPath = holePath(hole.hole_id);
+  const finalPath = holePath(holeId);
   const tmp = `${finalPath}.${randomUUID()}.tmp`;
+  const summaryPath = holeSummaryPath(holeId);
+  const summaryTmp = `${summaryPath}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(tmp, JSON.stringify(persisted, null, 2), "utf-8");
+    await fs.rm(summaryPath, { force: true });
+    await fs.writeFile(tmp, serialized, "utf-8");
     await fs.rename(tmp, finalPath);
+    await fs.writeFile(summaryTmp, serializedSummary, "utf-8");
+    await fs.rename(summaryTmp, summaryPath);
   } catch (err) {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await Promise.all([
+      fs.rm(tmp, { force: true }).catch(() => {}),
+      fs.rm(summaryTmp, { force: true }).catch(() => {}),
+    ]);
     throw err;
   }
   return persisted;
+  });
+  holeSaveQueues.set(holeId, operation);
+  return operation.finally(() => {
+    if (holeSaveQueues.get(holeId) === operation) holeSaveQueues.delete(holeId);
+  });
 }
 
-export async function loadHole(holeId) {
-  const hole = await defaultFsStore.loadHole(holeId);
-  if (!hole) throw new Error(`Hole ${JSON.stringify(holeId)} not found`);
-  return hole;
-}
-
-export async function listHoles() {
+async function listHoles() {
   let entries;
   try {
     entries = await fs.readdir(holesDir());
@@ -411,22 +393,39 @@ export async function listHoles() {
     return [];
   }
 
-  const holes = [];
-  for (const name of entries) {
-    if (!name.endsWith(".json")) continue;
+  const names = entries.filter((name) => name.endsWith(".json") && !name.endsWith(".summary.json"));
+  const holes = await mapConcurrent(names, 32, async (name) => {
+    const id = name.slice(0, -5);
     try {
-      const raw = await fs.readFile(path.join(holesDir(), name), "utf-8");
-      const hole = JSON.parse(raw);
-      holes.push({
-        hole_id: hole.hole_id,
-        title: hole.title,
-        updated_at: hole.updated_at,
-        node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
-      });
+      try {
+        return JSON.parse(await fs.readFile(holeSummaryPath(id), "utf-8"));
+      } catch (err) {
+        if (err?.code !== "ENOENT" && !(err instanceof SyntaxError)) throw err;
+      }
+      const hole = JSON.parse(await fs.readFile(path.join(holesDir(), name), "utf-8"));
+      const summary = holeSummary(hole);
+      fs.writeFile(holeSummaryPath(id), JSON.stringify(summary), "utf-8").catch(() => {});
+      return summary;
     } catch (err) {
       warn(`Skipping unreadable hole ${name}: ${err.message}`);
+      return null;
+    }
+  });
+  const readable = holes.filter(Boolean);
+  readable.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+  return readable;
+}
+
+
+async function mapConcurrent(values, concurrency, fn) {
+  const results = new Array(values.length);
+  let next = 0;
+  async function worker() {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await fn(values[index]);
     }
   }
-  holes.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
-  return holes;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, worker));
+  return results;
 }

@@ -1,11 +1,42 @@
   // ===========================================================================
-  // VISUAL FENCES
-  // ===========================================================================
-export var visualSurfaceCaches = {};
-var visualHandlers = {};
+// VISUAL FENCES
+// ===========================================================================
+import { getBlockType } from "../core/blocks.js";
+import { escapeHtml } from "../core/utils.js";
+
+var visualSurfaceCaches = {};
+var blockMounts = {};
+var mermaidRuntimePromise = null;
+var mermaidRenderQueue = Promise.resolve();
+var mermaidRenderId = 0;
+var mermaidControllers = [];
+var mermaidThemeObserver = null;
+var mermaidGeneration = 0;
+
+function loadEmbeddedMermaidRuntime(){
+  if (window.mermaid) return window.mermaid;
+  var carrier = document.getElementById("rabbithole-mermaid-runtime");
+  if (!carrier || !carrier.textContent) throw new Error("Mermaid runtime is unavailable");
+  var script = document.createElement("script");
+  script.setAttribute("data-rabbithole-runtime", "mermaid");
+  script.textContent = carrier.textContent;
+  (document.head || document.body || document.documentElement).appendChild(script);
+  script.remove();
+  if (!window.mermaid) throw new Error("Mermaid runtime failed to initialize");
+  return window.mermaid;
+}
+
+function defaultVisualHooks(){
+  return {
+    post: function(){ return Promise.resolve({ ok: true }); },
+    getNode: function(){ return null; },
+    loadMermaid: loadEmbeddedMermaidRuntime
+  };
+}
+var visualHooks = defaultVisualHooks();
 var visualHooksReady = false;
 var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
-export var VISUAL_SANITIZE_CONFIG = {
+var VISUAL_SANITIZE_CONFIG = {
     USE_PROFILES: { html: true, svg: true, svgFilters: true },
     ADD_TAGS: ["style"],
     ADD_ATTR: ["style"],
@@ -23,9 +54,48 @@ export var VISUAL_SANITIZE_CONFIG = {
     ".rh-viz-content img{max-width:100%;height:auto;}" +
     ".rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}" +
     ".rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
-export function registerVisualHandler(type, build){
-    if (!type || typeof build !== "function") return;
-    visualHandlers[String(type).toLowerCase()] = build;
+  var CHECK_CSS =
+    ".rh-check{display:grid;gap:.75em;}" +
+    ".rh-check-question{font-weight:650;line-height:1.4;}" +
+    ".rh-check-options{display:grid;gap:.5em;}" +
+    ".rh-check-option,.rh-check-reset{appearance:none;border:1px solid var(--border);border-radius:7px;background:var(--node-bg);color:var(--fg);font:inherit;text-align:left;padding:.62em .75em;cursor:pointer;}" +
+    ".rh-check-option:hover:not(:disabled),.rh-check-option:focus-visible,.rh-check-reset:hover,.rh-check-reset:focus-visible{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);outline-offset:1px;}" +
+    ".rh-check-option:disabled{cursor:default;opacity:1;}" +
+    ".rh-check-option.is-correct{border-color:color-mix(in srgb,#2f9e44 70%,var(--border));background:color-mix(in srgb,#2f9e44 13%,var(--node-bg));}" +
+    ".rh-check-option.is-incorrect{border-color:color-mix(in srgb,#e03131 70%,var(--border));background:color-mix(in srgb,#e03131 12%,var(--node-bg));}" +
+    ".rh-check-explanation{padding:.7em .8em;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);line-height:1.45;}" +
+    ".rh-check-actions{display:flex;justify-content:flex-end;}" +
+    ".rh-check-reset{padding:.45em .7em;text-align:center;}";
+  var MERMAID_CSS =
+    ".rh-mermaid{display:grid;place-items:center;min-height:3.5em;width:100%;}" +
+    ".rh-mermaid svg{display:block;width:100%;max-width:100%!important;height:auto;margin:auto;}" +
+    ".rh-mermaid-loading{color:var(--fg-dim);font:500 .85em var(--font-ui);}" +
+    ".rh-mermaid .viz-fallback{width:100%;}";
+export function registerVisualHooks(hooks){
+    visualHooks = Object.assign({}, visualHooks, hooks || {});
+  }
+export function disposeVisuals(){
+    visualSurfaceCaches = {};
+    visualHooks = defaultVisualHooks();
+    mermaidRuntimePromise = null;
+    mermaidRenderQueue = Promise.resolve();
+    mermaidControllers = [];
+    mermaidGeneration += 1;
+    if (mermaidThemeObserver) mermaidThemeObserver.disconnect();
+    mermaidThemeObserver = null;
+  }
+export function registerBlockMount(type, mountSpec){
+    var key = String(type || "").toLowerCase();
+    var descriptor = getBlockType(key);
+    if (!descriptor) throw new Error('Cannot register mount for unknown block type "' + key + '"');
+    if (!mountSpec || typeof mountSpec !== "object") throw new TypeError('Block mount for "' + key + '" must be an object');
+    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function") {
+      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model)');
+    }
+    if (mountSpec.wire !== undefined && typeof mountSpec.wire !== "function") {
+      throw new TypeError('Block mount wire for "' + key + '" must be a function');
+    }
+    blockMounts[key] = mountSpec;
   }
   function ensureVisualSanitizer(){
     var purifier = window.DOMPurify;
@@ -38,10 +108,10 @@ export function registerVisualHandler(type, build){
     }
     return purifier;
   }
-export function sanitizeVisualSource(source){
+function sanitizeVisualSource(source){
     return ensureVisualSanitizer().sanitize(source, VISUAL_SANITIZE_CONFIG);
   }
-export function decodeVisualSource(encoded){
+function decodeVisualSource(encoded){
     var bin = atob(String(encoded || ""));
     if (typeof TextDecoder === "function"){
       var bytes = new Uint8Array(bin.length);
@@ -57,7 +127,7 @@ export function decodeVisualSource(encoded){
   function visualCacheKey(type, encoded){
     return String(type || "") + "\n" + String(encoded || "");
   }
-export function visualFallback(source, message){
+function visualFallback(source, message){
     var wrap = document.createElement("div");
     wrap.className = "viz-fallback";
     var note = document.createElement("div");
@@ -71,28 +141,119 @@ export function visualFallback(source, message){
     wrap.appendChild(pre);
     return wrap;
   }
-export function buildShowVisual(source){
-    try {
-      var clean = sanitizeVisualSource(source);
+function buildShowVisual(model){
+    return String(model == null ? "" : model);
+  }
+
+function buildMermaidVisual(){
+  return '<div class="rh-mermaid" role="img" aria-label="Mermaid diagram"><span class="rh-mermaid-loading">Drawing diagram…</span></div>';
+}
+
+function currentMermaidTheme(){
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "default";
+}
+
+function loadMermaidRuntime(){
+  if (!mermaidRuntimePromise) {
+    mermaidRuntimePromise = Promise.resolve().then(function(){
+      return visualHooks.loadMermaid();
+    }).then(function(runtime){
+      if (!runtime || typeof runtime.initialize !== "function" || typeof runtime.render !== "function") {
+        throw new Error("Mermaid runtime does not expose initialize() and render()");
+      }
+      return runtime;
+    }).catch(function(error){
+      mermaidRuntimePromise = null;
+      throw error;
+    });
+  }
+  return mermaidRuntimePromise;
+}
+
+function showMermaidFallback(target, source){
+  target.textContent = "";
+  target.removeAttribute("role");
+  target.removeAttribute("aria-label");
+  target.appendChild(visualFallback(source, "Mermaid could not render this diagram. Showing source."));
+}
+
+function trackMermaidController(controller){
+  mermaidControllers.push(controller);
+  if (mermaidThemeObserver || typeof MutationObserver !== "function") return;
+  mermaidThemeObserver = new MutationObserver(function(){
+    var live = [];
+    for (var i = 0; i < mermaidControllers.length; i++) {
+      var current = mermaidControllers[i];
+      if (current.root && current.root.isConnected !== false) {
+        live.push(current);
+        current.render();
+      }
+    }
+    mermaidControllers = live;
+  });
+  mermaidThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+}
+
+function wireMermaid(root, source){
+  var target = root.querySelector(".rh-mermaid");
+  var renderVersion = 0;
+  var generation = mermaidGeneration;
+  var controller = {
+    root: root,
+    render: function(){
+      var version = ++renderVersion;
+      mermaidRenderQueue = mermaidRenderQueue.then(async function(){
+        try {
+          var runtime = await loadMermaidRuntime();
+          if (generation !== mermaidGeneration || version !== renderVersion || !target) return;
+          runtime.initialize({
+            startOnLoad: false,
+            securityLevel: "strict",
+            htmlLabels: false,
+            suppressErrorRendering: true,
+            theme: currentMermaidTheme(),
+            flowchart: { htmlLabels: false, useMaxWidth: true },
+            sequence: { useMaxWidth: true }
+          });
+          var result = await runtime.render("rh-mermaid-" + (++mermaidRenderId), String(source || ""));
+          if (generation !== mermaidGeneration || version !== renderVersion || !target) return;
+          target.innerHTML = sanitizeVisualSource(result && result.svg || "");
+          var svg = target.querySelector("svg");
+          if (!svg) throw new Error("Mermaid produced no SVG");
+          svg.setAttribute("role", "img");
+          if (!svg.getAttribute("aria-label")) svg.setAttribute("aria-label", "Mermaid diagram");
+        } catch(e) {
+          if (generation === mermaidGeneration && version === renderVersion && target) showMermaidFallback(target, source);
+        }
+      });
+    }
+  };
+  trackMermaidController(controller);
+  controller.render();
+}
+
+  function buildMountedVisual(descriptor, mountSpec, model, context){
       var host = document.createElement("div");
-      host.className = "viz-mounted viz-show";
-      host.setAttribute("data-viz-mounted", "show");
+      host.className = "viz-mounted viz-" + descriptor.type;
+      host.setAttribute("data-viz-mounted", descriptor.type);
       host.style.contain = "content";
       var shadow = host.attachShadow({ mode: "open" });
       var style = document.createElement("style");
-      style.textContent = VISUAL_BASE_CSS;
+      style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : descriptor.type === "mermaid" ? MERMAID_CSS : "");
       var frame = document.createElement("div");
       frame.className = "rh-viz-frame";
       var content = document.createElement("div");
       content.className = "rh-viz-content";
-      content.innerHTML = clean;
+      if (descriptor.security === "sanitize-html") {
+        content.innerHTML = sanitizeVisualSource(mountSpec.renderHtml(model));
+      } else {
+        content.textContent = descriptor.toPlainText(model);
+      }
       frame.appendChild(content);
       shadow.appendChild(style);
       shadow.appendChild(frame);
+      if (mountSpec.wire) mountSpec.wire(content, model, context);
       return host;
-    } catch(e) {
-      return visualFallback(source, "Unable to render visual. Showing source.");
-    }
   }
   function getSurfaceCache(surfaceKey){
     var key = String(surfaceKey || "default");
@@ -108,6 +269,7 @@ export function mountVisuals(containerEl, surfaceKey){
     }
     var cache = getSurfaceCache(surfaceKey);
     var present = {};
+    var idCounts = {};
     var used = {};
     var mountable = [];
     for (var i = 0; i < placeholders.length; i++){
@@ -116,26 +278,64 @@ export function mountVisuals(containerEl, surfaceKey){
       var type = String(ph.getAttribute("data-viz") || "").toLowerCase();
       var encoded = ph.getAttribute("data-src") || "";
       if (!type || !encoded) continue;
-      var key = visualCacheKey(type, encoded);
+      var blockId = ph.getAttribute("data-block-id") || "";
+      var key = blockId ? "id\n" + blockId : visualCacheKey(type, encoded);
+      if (blockId) idCounts[blockId] = (idCounts[blockId] || 0) + 1;
       present[key] = (present[key] || 0) + 1;
-      mountable.push({ el: ph, type: type, encoded: encoded, key: key });
+      mountable.push({ el: ph, type: type, encoded: encoded, key: key, blockId: blockId });
     }
-    for (var m = 0; m < mountable.length; m++){
-      var item = mountable[m];
+    for (var d = 0; d < mountable.length; d++){
+      var candidate = mountable[d];
+      if (candidate.blockId && idCounts[candidate.blockId] > 1){
+        present[candidate.key] -= 1;
+        candidate.key = visualCacheKey(candidate.type, candidate.encoded);
+        present[candidate.key] = (present[candidate.key] || 0) + 1;
+        candidate.blockId = "";
+      }
+    }
+    for (let m = 0; m < mountable.length; m++){
+      let item = mountable[m];
       var idx = used[item.key] || 0;
       used[item.key] = idx + 1;
       if (!cache[item.key]) cache[item.key] = [];
       var mounted = cache[item.key][idx];
+      var signature = visualCacheKey(item.type, item.encoded);
+      if (mounted && mounted.__rhVisualSignature !== signature) mounted = null;
       if (!mounted){
-        var handler = visualHandlers[item.type];
+        var descriptor = getBlockType(item.type);
+        var mountSpec = blockMounts[item.type];
         var source;
         try {
           source = decodeVisualSource(item.encoded);
-          mounted = handler ? handler(source, item.type) : visualFallback(source, "Unsupported visual type. Showing source.");
         } catch(e) {
-          source = "";
           mounted = visualFallback("", "Unable to decode visual source.");
         }
+        if (!mounted) try {
+          var nodeId = String(item.el.closest && item.el.closest("[data-node-id]")?.getAttribute("data-node-id") || item.key && String(surfaceKey || "").split(":").slice(1).join(":") || "");
+          var node = visualHooks.getNode(nodeId);
+          var learn = node && node.extensions && node.extensions.learn;
+          var currentState = item.blockId && learn && typeof learn === "object" ? learn[item.blockId] : null;
+          var context = {
+            node_id: nodeId,
+            block_id: item.blockId,
+            state: currentState && typeof currentState === "object" ? currentState : {},
+            recordBlockState: function(nextState){
+              if (!item.blockId || !nodeId) return Promise.resolve({ ok: true });
+              if (node) {
+                node.extensions = node.extensions && typeof node.extensions === "object" ? node.extensions : {};
+                node.extensions.learn = node.extensions.learn && typeof node.extensions.learn === "object" ? node.extensions.learn : {};
+                node.extensions.learn[item.blockId] = Object.assign({}, node.extensions.learn[item.blockId] || {}, nextState);
+              }
+              return Promise.resolve(visualHooks.post({ type: "block_state", node_id: nodeId, block_id: item.blockId, state: nextState }));
+            }
+          };
+          mounted = descriptor && mountSpec
+            ? buildMountedVisual(descriptor, mountSpec, descriptor.parse(source), context)
+            : visualFallback(source, "Unsupported visual type. Showing source.");
+        } catch(e) {
+          mounted = visualFallback(source, "Unable to render visual. Showing source.");
+        }
+        mounted.__rhVisualSignature = signature;
         cache[item.key][idx] = mounted;
       }
       if (item.el.parentNode) item.el.parentNode.replaceChild(mounted, item.el);
@@ -147,8 +347,56 @@ export function mountVisuals(containerEl, surfaceKey){
     }
   }
 
-registerVisualHandler("show", function(source){ return buildShowVisual(source); });
+registerBlockMount("show", { renderHtml: buildShowVisual });
+registerBlockMount("mermaid", { renderHtml: buildMermaidVisual, wire: wireMermaid });
 
-export function initVisuals(){
-  window.__rhVisuals = { mount: mountVisuals, caches: visualSurfaceCaches, config: VISUAL_SANITIZE_CONFIG, register: registerVisualHandler };
+export function buildCheckVisual(model){
+  var options = model.options.map(function(option, index){
+    return '<button class="rh-check-option" type="button" data-option="' + index + '">' + escapeHtml(option ?? "") + '</button>';
+  }).join("");
+  return '<section class="rh-check"><div class="rh-check-question">' + escapeHtml(model.question ?? "") +
+    '</div><div class="rh-check-options">' + options + '</div><div class="rh-check-explanation" hidden>' +
+    escapeHtml(model.explanation || "") + '</div><div class="rh-check-actions" hidden><button class="rh-check-reset" type="button">Try again</button></div></section>';
 }
+
+function wireCheck(root, model, ctx){
+  var options = Array.from(root.querySelectorAll(".rh-check-option"));
+  var explanation = root.querySelector(".rh-check-explanation");
+  var actions = root.querySelector(".rh-check-actions");
+  var reset = root.querySelector(".rh-check-reset");
+  var state = ctx && ctx.state && typeof ctx.state === "object" ? ctx.state : {};
+  var attempts = Number.isInteger(state.attempts) && state.attempts >= 0 ? state.attempts : 0;
+  var currentLast = state.last || null;
+  function paint(last, revealed){
+    options.forEach(function(button, index){
+      button.disabled = !!revealed;
+      button.classList.remove("is-correct", "is-incorrect");
+      button.removeAttribute("aria-pressed");
+      if (revealed && last && index === last.option) {
+        button.classList.add(last.correct ? "is-correct" : "is-incorrect");
+        button.setAttribute("aria-pressed", "true");
+      }
+      if (revealed && index === model.answer) button.classList.add("is-correct");
+    });
+    explanation.hidden = !revealed;
+    actions.hidden = !revealed;
+  }
+  paint(state.last, state.revealed === true);
+  options.forEach(function(button, index){
+    button.addEventListener("click", function(){
+      if (button.disabled) return;
+      attempts += 1;
+      var last = { option: index, correct: index === model.answer };
+      currentLast = last;
+      paint(last, true);
+      if (ctx) ctx.recordBlockState({ attempts: attempts, last: last, revealed: true });
+    });
+  });
+  reset.addEventListener("click", function(){
+    paint(null, false);
+    options[0]?.focus();
+    if (ctx) ctx.recordBlockState({ attempts: attempts, last: currentLast, revealed: false });
+  });
+}
+
+registerBlockMount("check", { renderHtml: buildCheckVisual, wire: wireCheck });

@@ -1,19 +1,17 @@
 # Rabbithole
 
-> An infinite canvas for learning. Humans open the browser app at
-> `https://rabbithole.ing/` and bring their own model key. Agents install the
-> local MCP server and open a local browser canvas for the human.
+> An infinite canvas for learning. Humans can use the hosted browser app or
+> connect Rabbithole to an MCP-compatible AI agent.
 
 Source: https://github.com/shlokkhemani/rabbithole
 MCP path requires: Node >= 18 and a browser.
 
 ## Paths
 
-- Human path: open `https://rabbithole.ing/`. OpenRouter is recommended, with
-  Anthropic, OpenAI, and local OpenAI-compatible endpoints also supported. Keys
-  stay in the browser except for requests to the provider origin the human
-  configures. Holes persist in IndexedDB and can be exported/imported as
-  `.rabbithole` files.
+- Human path: open `https://rabbithole.ing/`. Use OpenRouter or an
+  OpenAI-compatible local endpoint such as Ollama. Keys stay in the browser
+  except for requests to the provider origin the human configures. Holes
+  persist in IndexedDB and can be exported/imported as `.rabbithole` files.
 - Agent path: install the MCP server below. The agent does the answering and
   Rabbithole opens a local browser canvas.
 
@@ -27,4 +25,7 @@ MCP path requires: Node >= 18 and a browser.
 ## Links
 
 - App: https://rabbithole.ing/
+- About and demos: https://rabbithole.ing/about/
+- MCP install: https://github.com/shlokkhemani/rabbithole#quick-start
+- Run the browser app locally: https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally
 - GitHub repo: https://github.com/shlokkhemani/rabbithole

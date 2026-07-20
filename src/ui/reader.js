@@ -1,5 +1,4 @@
 import {
-  BRANCH_SELECTION,
   CANVAS_BASE,
   MAX_FS,
   MIN_FS,
@@ -7,59 +6,63 @@ import {
   anchorStart,
   breadcrumbEl,
   buildDocContent,
-  buildLoading,
   childrenOf,
-  closed,
-  composerSend,
-  composerText,
-  connLost,
   currentNodeId,
-  esc,
-  followupsOf,
   fontPx,
-  frozen,
-  agentAttached,
   isFollowup,
-  isUnread,
+  goToNode,
   lensBadgeHtml,
   lineageNodes,
-  markRead,
   mode,
   motionSourceFromEvent,
   nodes,
   playLandingCue,
   readerMain,
-  rootId,
   setCurrentNodeId,
   setModeValue,
-  sideEl,
-  toggleTheme,
   truncate,
-  world
+  world,
+  sessionPhase
 } from "./core.js";
+import { escapeHtml } from "../core/utils.js";
+import { createModuleLifecycle } from "./lifecycle.js";
+import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
+import { mountVisuals } from "./visuals.js";
+import { applyChildHighlights } from "./text-marks.js";
+import { buildOriginCrop } from "./origin-provenance.js";
 
-var readerHooks = {
-  hideAsk: function(){},
-  hidePeek: function(){},
-  updateComposerState: function(){},
-  scheduleViewSave: function(){},
-  setMode: function(){},
-  post: function(){ return Promise.resolve({ ok: true }); },
-  mountVisuals: null,
-  mountDocImages: null,
-  persistNode: function(){},
-  animateScroll: function(){}
-};
+function defaultReaderHooks(){
+  return {
+    hideAsk: function(){},
+    updateComposerState: function(){},
+    scheduleViewSave: function(){},
+    setMode: function(){},
+    post: function(){ return Promise.resolve({ ok: true }); },
+    mountDocImages: null,
+    persistNode: function(){},
+    animateScroll: function(){}
+  };
+}
+
+var readerLifecycle = createModuleLifecycle({ defaults: defaultReaderHooks });
 
 export function registerReaderHooks(hooks) {
-  Object.assign(readerHooks, hooks || {});
+  readerLifecycle.register(hooks);
 }
+
+var breadcrumbNodes = {};
+var noteNodes = {};
+
+function marginNotesLayer(){ return document.getElementById("margin-notes"); }
 
   // ===========================================================================
   // READER
   // ===========================================================================
 export function openNode(id){
     if (!nodes[id]) return;
+    var transferredPosition = document.body.classList.contains("mode-canvas")
+      ? captureContentPosition(nodes[id].bodyEl)
+      : null;
     // Snapshot the outgoing document's position (belt & braces alongside the
     // scroll listener) so every window keeps its place when you come back.
     // Only while the reader is actually visible — hidden (canvas mode) it
@@ -69,49 +72,108 @@ export function openNode(id){
     setCurrentNodeId(id);
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
-    readerHooks.hideAsk();
-    readerHooks.hidePeek();
+    readerLifecycle.hooks.hideAsk();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
-    renderSidebar();
-    readerHooks.updateComposerState();
-    if (nodes[id].status === "answered") markRead(nodes[id]);
-    readerHooks.scheduleViewSave();
+    if (transferredPosition) {
+      restoreContentPosition(readerMain, transferredPosition);
+      nodes[id]._scrollTop = readerMain.scrollTop;
+    }
+    renderMarginNotes();
+    readerLifecycle.hooks.updateComposerState();
+    readerLifecycle.hooks.scheduleViewSave();
   }
 
 export function renderBreadcrumb(){
-    var path = lineageNodes(currentNodeId), html = "";
+    var path = lineageNodes(currentNodeId);
+    var fragment = document.createDocumentFragment();
     path.forEach(function(n, i){
-      if (i > 0) html += '<span class="crumb-sep">›</span>';
+      var crumb = breadcrumbNodes[n.id];
+      if (!crumb){
+        crumb = document.createElement("span");
+        crumb.className = "crumb";
+        crumb.dataset.id = n.id;
+        crumb._sep = document.createElement("span");
+        crumb._sep.className = "crumb-sep";
+        crumb._sep.textContent = "›";
+        breadcrumbNodes[n.id] = crumb;
+      }
       var cur = i === path.length - 1;
-      html += '<span class="crumb' + (cur ? ' current' : '') + '" data-id="' + n.id + '">' + esc(n.title || "Untitled") + '</span>';
+      crumb.textContent = n.title || "Untitled";
+      crumb.classList.toggle("current", cur);
+      if (cur){
+        crumb.removeAttribute("role");
+        crumb.removeAttribute("tabindex");
+        crumb.setAttribute("aria-current", "page");
+      } else {
+        crumb.setAttribute("role", "link");
+        crumb.tabIndex = 0;
+        crumb.removeAttribute("aria-current");
+      }
+      if (i > 0) fragment.appendChild(crumb._sep);
+      fragment.appendChild(crumb);
     });
-    breadcrumbEl.innerHTML = html;
+    breadcrumbEl.replaceChildren(fragment);
   }
 export function initReader(){
-    breadcrumbEl.addEventListener("click", function(e){
+    disposeReaderResources(false);
+    var readerScope = readerLifecycle.beginInit();
+    try {
+    readerScope.listen(breadcrumbEl, "click", function(e){
       var c = e.target.closest(".crumb");
       if (!c || c.classList.contains("current")) return;
       openNode(c.dataset.id);
     });
-    readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
-    readerMain.addEventListener("click", onMarkClick);
-    world.addEventListener("click", onMarkClick);
-    sideEl.addEventListener("click", onSidebarClick);
-    document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
-    document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
-    document.getElementById("r-canvas").addEventListener("click", function(){ readerHooks.setMode("canvas"); });
-    document.getElementById("r-done").addEventListener("click", function(){ if (!closed) readerHooks.post({ type: "done" }); });
-    document.getElementById("r-theme").addEventListener("click", toggleTheme);
-    document.getElementById("t-theme").addEventListener("click", toggleTheme);
+    readerScope.listen(breadcrumbEl, "keydown", function(e){
+      if (e.key !== "Enter") return;
+      var c = e.target.closest && e.target.closest('.crumb[role="link"]');
+      if (!c) return;
+      e.preventDefault();
+      openNode(c.dataset.id);
+    });
+    readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
+    readerScope.listen(readerMain, "click", onMarkClick);
+    readerScope.listen(readerMain, "keydown", onMarkKeydown);
+    // Canvas marks dive to the answer card in place — never yank into the reader.
+    readerScope.listen(world, "click", onCanvasMarkClick);
+    readerScope.listen(world, "keydown", onCanvasMarkKeydown);
+    var notes = marginNotesLayer();
+    readerScope.listen(notes, "click", onNoteClick);
+    readerScope.listen(notes, "keydown", onNoteKeydown);
+    // Hovering a margin note lights its highlight so the pair reads as one.
+    readerScope.listen(notes, "mouseover", function(e){ syncNoteHover(e, true); });
+    readerScope.listen(notes, "mouseout", function(e){ syncNoteHover(e, false); });
+    readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
+    readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
+    readerScope.listen(document.getElementById("t-canvas"), "click", function(){ if (mode === "canvas") return; readerLifecycle.hooks.setMode("canvas"); });
+    return disposeReader;
+    } catch (error) {
+      disposeReader();
+      throw error;
+    }
+  }
+
+export function disposeReader(){
+    disposeReaderResources(true);
+  }
+
+function disposeReaderResources(resetHooks){
+    readerLifecycle.dispose(resetHooks);
+    breadcrumbNodes = {};
+    noteNodes = {};
+    kbdMarkIdx = -1;
   }
 
 export function renderReaderBody(){
     var node = nodes[currentNodeId];
+    var previous = readerMain.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
+    // The lineage trail leads the document column and scrolls with it — the
+    // floating taskbar above carries no per-document state.
+    if (breadcrumbEl) col.appendChild(breadcrumbEl);
     if (node.origin && (node.origin.selected_text || node.origin.question)){
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
@@ -119,285 +181,223 @@ export function renderReaderBody(){
         ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
       } else if (node.origin.selected_text){
         var tail = node.origin.lens ? " — " + lensBadgeHtml(node.origin.lens)
-          : (node.origin.question ? " — " + esc(node.origin.question) : "");
-        ctx.innerHTML = '<span class="rc-label">From</span>“' + esc(truncate(node.origin.selected_text, 200)) + '”' + tail + '<span class="rc-go">→</span>';
+          : (node.origin.question ? " — " + escapeHtml(node.origin.question) : "");
+        ctx.innerHTML = '<span class="rc-label">From</span>“' + escapeHtml(truncate(node.origin.selected_text, 200)) + '”' + tail + '<span class="rc-go">→</span>';
       } else {
         ctx.innerHTML = '<span class="rc-label">Follow-up</span>' +
-          (node.origin.lens ? lensBadgeHtml(node.origin.lens) : esc(node.origin.question || ""));
+          (node.origin.lens ? lensBadgeHtml(node.origin.lens) : escapeHtml(node.origin.question || ""));
       }
       // The strip is a live link: click it to land on the exact spot in the
       // parent this branch grew from (flashed so the eye finds it).
       if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis){
         ctx.classList.add("linked");
         ctx.title = "See this in its original context";
+        ctx.setAttribute("role", "link");
+        ctx.tabIndex = 0;
+        ctx.setAttribute("aria-label", "See this in its original context");
         ctx.addEventListener("click", function(e){ jumpToOrigin(node, motionSourceFromEvent(e)); });
+        ctx.addEventListener("keydown", function(e){
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          jumpToOrigin(node, "keyboard");
+        });
       }
       col.appendChild(ctx);
     }
+    var crop = buildOriginCrop(node, "reader");
+    if (crop) col.appendChild(crop);
     var dc = buildDocContent(node, READER_BASE);
     col.appendChild(dc);
     applyChildHighlights(dc, node);
-    var fups = followupsOf(node.id);
-    if (fups.length){
-      var thread = document.createElement("div");
-      thread.id = "thread";
-      thread.appendChild(buildThreadRule());
-      fups.forEach(function(k){ thread.appendChild(buildThreadItem(k)); });
-      col.appendChild(thread);
-      // Rendering the thread IS reading it — answered follow-ups shed their dots.
-      fups.forEach(function(k){ if (k.status === "answered") markRead(k); });
-    }
+    var isPdfReader = dc.classList.contains("rh-pdf");
+    var isPdfViewport = isPdfReader && !node.parent_id && !crop;
+    readerMain.classList.toggle("pdf-reader", isPdfReader);
+    readerMain.classList.toggle("pdf-reader-viewport", isPdfViewport);
+    col.classList.toggle("pdf-reader-col", isPdfReader);
+    col.classList.toggle("pdf-reader-viewport", isPdfViewport);
     readerMain.appendChild(col);
     // Each document remembers where you were; a first open starts at the top.
     readerMain.scrollTop = node._scrollTop || 0;
   }
-  // Open the parent and land on the exact origin: the inline mark for a
-  // selection branch, the thread turn for a follow-up.
+  // Open the parent and land on the exact origin when this branch is anchored.
 export function jumpToOrigin(node, source){
     var parent = nodes[node.parent_id];
     if (!parent) return;
     openNode(parent.id);
-    var target = readerMain.querySelector('mark[data-child="' + node.id + '"]') ||
-                 readerMain.querySelector('[data-turn="' + node.id + '"]');
+    var target = readerMain.querySelector('[data-child="' + node.id + '"].rh-pdf-mark, mark[data-child="' + node.id + '"]');
     if (!target) return;
-    var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
-    if (target.tagName === "MARK"){
-      var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
-      for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
-    }
+    scrollMarkIntoView(target, 0.38, source);
+    var marks = readerMain.querySelectorAll('[data-child="' + node.id + '"].rh-pdf-mark, mark[data-child="' + node.id + '"]');
+    for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
+  }
+
+function scrollMarkIntoView(mark, viewportRatio, source){
+    var scroller = mark.closest && mark.closest(".rh-pdf-scroll");
+    if (!scroller) scroller = readerMain;
+    var top = mark.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    readerLifecycle.hooks.animateScroll(scroller, Math.max(0, top - scroller.clientHeight * viewportRatio), source);
   }
   function onReaderScroll(){
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    readerHooks.hidePeek();
-    readerHooks.scheduleViewSave();
+    readerLifecycle.hooks.scheduleViewSave();
   }
 
-  // ---------- follow-up thread ----------
-export function buildThreadRule(){
-    var r = document.createElement("div");
-    r.className = "thread-rule";
-    r.textContent = "Conversation";
-    return r;
-  }
-export function buildThreadItem(k){
-    var item = document.createElement("div");
-    item.className = "turn";
-    item.dataset.turn = k.id;
-    var q = document.createElement("div");
-    q.className = "turn-q";
-    var qs = document.createElement("span");
-    if (k.origin && k.origin.lens) qs.innerHTML = lensBadgeHtml(k.origin.lens);
-    else qs.textContent = (k.origin && k.origin.question) || "";
-    q.appendChild(qs);
-    var a = document.createElement("div");
-    a.className = "turn-a";
-    fillTurnAnswer(a, k);
-    item.appendChild(q);
-    item.appendChild(a);
-    return item;
-  }
-export function fillTurnAnswer(a, k){
-    a.innerHTML = "";
-    if (k.status === "pending" && !k.html){
-      a.appendChild(buildLoading(k));
-      return;
-    }
-    var dc = buildDocContent(k, READER_BASE);
-    // Thread answers are part of this window: they follow the parent's text zoom.
-    var host = nodes[currentNodeId];
-    if (host) dc.style.fontSize = fontPx(host, READER_BASE) + "px";
-    a.appendChild(dc);
-    // Marks only make sense on settled text — a streaming turn gets them when
-    // node_answered lands and the turn re-renders.
-    if (k.status === "answered") applyChildHighlights(dc, k);
-  }
-export function ensureThread(){
-    var t = readerMain.querySelector("#thread");
-    if (t) return t;
-    var col = readerMain.querySelector(".reader-col");
-    if (!col) return null;
-    t = document.createElement("div");
-    t.id = "thread";
-    t.appendChild(buildThreadRule());
-    col.appendChild(t);
-    return t;
-  }
-export function updateThreadItem(k){
-    var item = readerMain.querySelector('[data-turn="' + k.id + '"]');
-    if (!item){
-      var t = ensureThread();
-      if (t) t.appendChild(buildThreadItem(k));
-      return;
-    }
-    fillTurnAnswer(item.querySelector(".turn-a"), k);
-  }
-export function removeThreadItem(childId){
-    var item = readerMain.querySelector('[data-turn="' + childId + '"]');
-    if (item && item.parentNode) item.parentNode.removeChild(item);
-    var t = readerMain.querySelector("#thread");
-    if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
-  }
-
-export function applyChildHighlights(dc, node){
-    var kids = childrenOf(node.id).filter(function(k){ return k.origin && k.origin.anchor; });
-    kids.sort(function(a,b){ return b.origin.anchor.offset_start - a.origin.anchor.offset_start; }); // apply end→start
-    kids.forEach(function(k){
-      var a = k.origin.anchor;
-      var r = rangeFromOffsets(dc, a.offset_start, a.offset_end);
-      if (!r) return;
-      wrapRange(r, k.id, "hl " + (k.status === "answered" ? "mark-ready" : "mark-pending"));
-    });
-  }
-
-  // Wrap one selection (by offsets, always text-node endpoints) inside a container.
-export function wrapInContainer(dc, anchor, childId, cls){
-    if (!dc || !anchor) return;
-    var rr = rangeFromOffsets(dc, anchor.offset_start, anchor.offset_end);
-    if (rr){ try { wrapRange(rr, childId, cls); } catch(e){} }
-  }
-  // Promote a child's pending marks to ready within a container.
-export function upgradeMarks(root, childId){
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i = 0; i < marks.length; i++){ marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready"); }
-  }
-  // Unwrap a child's marks (used to roll back a failed ask) so offsets stay valid.
-export function removeMarks(root, childId){
-    if (!root) return;
-    var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
-    for (var i = 0; i < marks.length; i++){
-      var m = marks[i], p = m.parentNode; if (!p) continue;
-      while (m.firstChild) p.insertBefore(m.firstChild, m);
-      p.removeChild(m); p.normalize();
-    }
-  }
   function onMarkClick(e){
-    var m = e.target.closest("mark[data-child]");
+    var m = e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
     if (!m) return;
     if (!window.getSelection().isCollapsed) return; // user was selecting, not clicking
     var k = nodes[m.dataset.child];
     // Pending branches open too — the reader shows the answer streaming in live.
     if (k) openNode(k.id);
   }
-export function renderSidebar(){
-    var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){
-      return (anchorStart(a) - anchorStart(b)) || ((a._order||0) - (b._order||0));
+  function onMarkKeydown(e){
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    openNode(k.id);
+  }
+  function onCanvasMarkClick(e){
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (!window.getSelection().isCollapsed) return; // the human was selecting, not clicking
+    var k = nodes[m.dataset.child];
+    if (k) goToNode(k, motionSourceFromEvent(e));
+  }
+  function onCanvasMarkKeydown(e){
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    goToNode(k, motionSourceFromEvent(e));
+  }
+  // Every direct branch has one stable card in the Reader rail. Anchored
+  // comments lead, in document order; general follow-ups follow in creation
+  // order. Keeping one surface for both is especially important for PDFs,
+  // whose own scroller cannot share an old absolute text margin.
+export function renderMarginNotes(){
+    var layer = marginNotesLayer();
+    if (!layer) return;
+    var kids = childrenOf(currentNodeId).sort(function(a,b){
+      var aAnchored = !!(a.origin && a.origin.anchor), bAnchored = !!(b.origin && b.origin.anchor);
+      if (aAnchored !== bAnchored) return aAnchored ? -1 : 1;
+      return (aAnchored ? anchorStart(a) - anchorStart(b) : 0) || ((a._order||0) - (b._order||0));
     });
-    if (!kids.length){
-      sideEl.innerHTML = '<h3>Branches</h3><div class="side-empty">Select any text in the document and ask about it — the answer opens as a branch here. Or ask a follow-up in the box below the document.</div>';
-      return;
-    }
-    var html = '<h3>Branches (' + kids.length + ')</h3>';
-    kids.forEach(function(k, i){
+    var fragment = document.createDocumentFragment();
+    var newLivePanes = [];
+    kids.forEach(function(k){
       var pending = k.status !== "answered";
       var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
         : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
-        : esc((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
+        : escapeHtml((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
       var quote = (k.origin && k.origin.selected_text) ? k.origin.selected_text : "";
-      var status = pending ? pendingStatusHtml(k)
-        : isUnread(k) ? '<span class="si-new">new — open →</span>'
-        : 'open →';
-      html += '<div class="side-item' + (pending ? ' pending' : '') + '" data-child="' + k.id + '">';
-      html += '<div class="si-q"><span class="si-num">' + (i+1) + '</span><span>' + qHtml + '</span></div>';
-      if (quote) html += '<div class="si-quote">“' + esc(truncate(quote, 80)) + '”</div>';
-      html += '<div class="si-status">' + status + '</div>';
+      var status = pending ? pendingStatusHtml(k) : 'open →';
+      var tile = noteNodes[k.id];
+      if (!tile){
+        tile = document.createElement("div");
+        tile.className = "side-item";
+        tile.dataset.child = k.id;
+        tile.setAttribute("role", "link");
+        tile.tabIndex = 0;
+        tile._question = document.createElement("div"); tile._question.className = "si-q";
+        tile._quote = document.createElement("div"); tile._quote.className = "si-quote";
+        tile._status = document.createElement("div"); tile._status.className = "si-status";
+        tile.append(tile._question, tile._quote, tile._status);
+        noteNodes[k.id] = tile;
+      }
+      tile.classList.toggle("pending", pending);
+      tile.classList.toggle("followup", isFollowup(k));
+      tile._question.innerHTML = qHtml;
+      tile._quote.textContent = quote ? "“" + truncate(quote, 80) + "”" : "";
+      tile._quote.hidden = !quote;
+      tile._status.innerHTML = status;
+      var name = (k.origin && k.origin.synthesis) ? "Synthesis"
+        : ((k.origin && k.origin.question) || k.title || "Untitled");
+      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : ""));
       // A streaming answer is watchable right here: its last lines render live
-      // inside the tile (and the whole tile opens the full streaming view).
-      if (pending && k.html) html += '<div class="si-live"><div class="md">' + k.html + '</div></div>';
-      html += '</div>';
+      // inside the note (and the whole note opens the full streaming view).
+      if (pending && k.html){
+        if (!tile._live){
+          tile._live = document.createElement("div"); tile._live.className = "si-live";
+          tile._livePane = document.createElement("div"); tile._livePane.className = "md";
+          tile._live.appendChild(tile._livePane);
+          tile.appendChild(tile._live);
+          newLivePanes.push({ pane: tile._livePane, node: k });
+        }
+        tile._livePane.innerHTML = k.html;
+      } else if (tile._live){
+        tile._live.remove();
+        tile._live = null;
+        tile._livePane = null;
+      }
+      fragment.appendChild(tile);
     });
-    sideEl.innerHTML = html;
-    mountSidebarVisuals();
+    if (!kids.length){
+      var empty = document.createElement("div");
+      empty.className = "reader-rail-empty";
+      empty.textContent = "No branches yet";
+      fragment.appendChild(empty);
+    }
+    layer.replaceChildren(fragment);
+    var count = document.getElementById("reader-rail-count");
+    if (count) count.textContent = String(kids.length);
+    var rail = document.getElementById("reader-rail");
+    if (rail) rail.classList.toggle("empty", !kids.length);
+    mountNoteVisuals(newLivePanes);
   }
-export function mountSidebarVisuals(){
-    if (typeof readerHooks.mountVisuals !== "function") return;
-    var panes = sideEl.querySelectorAll(".side-item[data-child] .si-live .md");
+function onNoteClick(e){
+    var it = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!it) return;
+    openNode(it.dataset.child); // pending notes open too — the answer streams there
+  }
+function onNoteKeydown(e){
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('#margin-notes .side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
+  }
+function syncNoteHover(e, on){
+    var tile = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!tile) return;
+    var related = e.relatedTarget;
+    if (related && tile.contains(related)) return;
+    var marks = readerMain.querySelectorAll('[data-child="' + tile.dataset.child + '"].rh-pdf-mark, mark[data-child="' + tile.dataset.child + '"]');
+    for (var i = 0; i < marks.length; i++) marks[i].classList.toggle("mark-focus", on);
+  }
+function mountNoteVisuals(panes){
     for (var i = 0; i < panes.length; i++){
-      var item = panes[i].closest(".side-item[data-child]");
-      var key = "reader-side:" + (item ? item.dataset.child : i);
-      readerHooks.mountVisuals(panes[i], key);
-      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i], nodes[item ? item.dataset.child : ""], null, key);
+      var key = "margin-notes:" + panes[i].node.id;
+      mountVisuals(panes[i].pane, key);
+      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
   }
-export function pendingStatusHtml(k){
-    if (frozen) return '<span class="si-muted">unanswered in this snapshot</span>';
-    if (closed) return '<span class="si-muted">saved — answered when you reopen</span>';
-    if (connLost || !agentAttached) return '<span class="si-muted">saved — waiting for the agent</span>';
-    if (k && k.html) return '<span class="shimmer-text">Writing…</span>';
-    return '<span class="shimmer-text">Thinking…</span>';
+function pendingStatusHtml(k){
+    var copy = {
+      frozen: '<span class="si-muted">unanswered in this snapshot</span>',
+      closed: '<span class="si-muted">saved — answered when you reopen</span>',
+      away: '<span class="si-muted">saved — waiting for the agent</span>',
+      live: k && k.html ? '<span class="shimmer-text">Writing…</span>' : '<span class="shimmer-text">Thinking…</span>'
+    };
+    return copy[sessionPhase()];
   }
-  function onSidebarClick(e){
-    var it = e.target.closest(".side-item");
-    if (!it) return;
-    openNode(it.dataset.child); // pending items open too — the answer streams there
-  }
-
-export function setReaderFontScale(delta){
+function setReaderFontScale(delta){
     var node = nodes[currentNodeId];
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
     var dcs = readerMain.querySelectorAll(".doc-content");
     for (var i = 0; i < dcs.length; i++) dcs[i].style.fontSize = fontPx(node, READER_BASE) + "px";
     if (node.bodyEl){ var cdc = node.bodyEl.querySelector(".doc-content"); if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px"; }
-    readerHooks.persistNode(node);
+    readerLifecycle.hooks.persistNode(node);
   }
 
-  // ---------- offset <-> range highlighting ----------
-export function rangeFromOffsets(container, startOff, endOff){
-    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    var pos = 0, sN, sO, eN, eO;
-    while (walker.nextNode()){
-      var node = walker.currentNode, L = node.textContent.length;
-      if (sN == null && pos + L > startOff){ sN = node; sO = startOff - pos; }
-      if (pos + L >= endOff){ eN = node; eO = endOff - pos; break; }
-      pos += L;
-    }
-    if (sN == null || eN == null) return null;
-    var r = document.createRange();
-    try { r.setStart(sN, sO); r.setEnd(eN, eO); } catch(e){ return null; }
-    return r;
-  }
-export function charOffset(container, node, offset){
-    var r = document.createRange();
-    r.selectNodeContents(container);
-    try { r.setEnd(node, offset); } catch(e){ return 0; }
-    return r.toString().length;
-  }
-export function wrapTextNode(textNode, childId, cls){
-    var m = document.createElement("mark");
-    m.className = cls; m.dataset.child = childId;
-    textNode.parentNode.insertBefore(m, textNode);
-    m.appendChild(textNode);
-  }
-export function wrapRange(range, childId, cls){
-    var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
-    if (startC === endC && startC.nodeType === 3){
-      if (startO === endO) return;
-      var mid = startC.splitText(startO); mid.splitText(endO - startO);
-      wrapTextNode(mid, childId, cls); return;
-    }
-    var ancestor = range.commonAncestorContainer; if (ancestor.nodeType === 3) ancestor = ancestor.parentNode;
-    var walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT);
-    var collected = [], inRange = false;
-    while (walker.nextNode()){
-      var n = walker.currentNode;
-      if (n === startC){ inRange = true; var info = { node:n, start:startO, end:n.textContent.length }; if (n === endC){ info.end = endO; collected.push(info); break; } collected.push(info); continue; }
-      if (n === endC){ collected.push({ node:n, start:0, end:endO }); break; }
-      if (inRange) collected.push({ node:n, start:0, end:n.textContent.length });
-    }
-    for (var i = collected.length - 1; i >= 0; i--){
-      var c = collected[i], node = c.node, s = c.start, e = c.end, L = node.textContent.length;
-      if (s >= e || !L) continue;
-      var t = s > 0 ? node.splitText(s) : node;
-      if (e < L) t.splitText(e - s);
-      wrapTextNode(t, childId, cls);
-    }
-  }
-
-  // j/k focus ring over the current document's marks (doc order, thread included).
+  // j/k focus ring over the current document's anchored branches.
   var kbdMarkIdx = -1;
-export function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
+function allMarks(){ return readerMain.querySelectorAll("[data-child].rh-pdf-mark, mark[data-child]"); }
 export function focusedMark(){
     var marks = allMarks();
     return (kbdMarkIdx >= 0 && kbdMarkIdx < marks.length) ? marks[kbdMarkIdx] : null;
@@ -411,6 +411,5 @@ export function stepMark(delta){
       : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
     var m = marks[kbdMarkIdx];
     m.classList.add("mark-focus");
-    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerHooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+    scrollMarkIntoView(m, 0.42, "keyboard");
   }

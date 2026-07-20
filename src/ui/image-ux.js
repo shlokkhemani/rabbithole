@@ -1,13 +1,14 @@
 import { visualSurfaceKey } from "./core.js";
 import { scheduleEdges } from "./canvas-view.js";
 import { hideAsk } from "./ask-followups.js";
-import { activateFocusTrap } from "./focus-trap.js";
+import { openDialog } from "./primitives/dialog.js";
 
   // ===========================================================================
   // MARKDOWN IMAGE UX
   // ===========================================================================
   var imageResizeMemory = {};
   var activeLightbox = null;
+  var activeImageResizeCleanup = null;
   var IMAGE_MIN_WIDTH = 120;
   var LIGHTBOX_MIN_ZOOM = 0.25;
   var LIGHTBOX_MAX_ZOOM = 6;
@@ -25,7 +26,7 @@ import { activateFocusTrap } from "./focus-trap.js";
     var max = Math.max(IMAGE_MIN_WIDTH, dc ? dc.clientWidth : IMAGE_MIN_WIDTH);
     return Math.max(IMAGE_MIN_WIDTH, Math.min(max, value));
   }
-export function nearestImageScrollContainer(el){
+function nearestImageScrollContainer(el){
     var cur = el ? el.parentElement : null;
     while (cur && cur !== document.body && cur !== document.documentElement){
       var style = window.getComputedStyle(cur);
@@ -40,7 +41,7 @@ export function nearestImageScrollContainer(el){
     var rect = scroller.getBoundingClientRect();
     return rect.height ? rect.height / scroller.offsetHeight : 1;
   }
-export function keepImageHandleAnchored(scroller, beforeRect, afterRect){
+function keepImageHandleAnchored(scroller, beforeRect, afterRect){
     if (!scroller || !beforeRect || !afterRect) return;
     var delta = afterRect.bottom - beforeRect.bottom;
     if (!delta) return;
@@ -55,7 +56,7 @@ export function keepImageHandleAnchored(scroller, beforeRect, afterRect){
     delete frame.dataset.rhResized;
     if (key) delete imageResizeMemory[key];
   }
-export function beginImageResize(e, dc, frame, key){
+function beginImageResize(e, dc, frame, key){
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -75,14 +76,17 @@ export function beginImageResize(e, dc, frame, key){
       imageResizeMemory[key] = next;
       scheduleEdges();
     }
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
     function done(ev){
       if (ev) ev.stopPropagation();
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", done, true);
       window.removeEventListener("pointercancel", done, true);
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(_e){}
+      if (activeImageResizeCleanup === done) activeImageResizeCleanup = null;
       scheduleEdges();
     }
+    activeImageResizeCleanup = done;
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", done, true);
     window.addEventListener("pointercancel", done, true);
@@ -100,43 +104,41 @@ export function beginImageResize(e, dc, frame, key){
     var dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
-export function openImageLightbox(src, alt){
+export function openImageLightbox(src, alt, trigger){
     closeImageLightbox();
     var overlay = document.createElement("div");
     overlay.className = "rh-lightbox";
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", alt || "Image preview");
-    overlay.setAttribute("tabindex", "-1");
+    overlay.hidden = true;
+    var dialog = document.createElement("div");
+    dialog.className = "rh-lightbox-dialog";
     var img = document.createElement("img");
     img.className = "rh-lightbox-img";
     img.src = src;
     img.alt = alt || "";
     img.draggable = false;
-    overlay.appendChild(img);
+    dialog.appendChild(img);
+    overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     var state = { scale: 1, x: 0, y: 0 };
     var drag = null;
     var pointers = {};
     var pinch = null;
     setLightboxTransform(img, state);
-    var trap = activateFocusTrap(overlay, { initialFocus: overlay, onEscape: closeImageLightbox });
-    activeLightbox = { el: overlay, key: onKey, trap: trap };
-    function onKey(e){
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      closeImageLightbox();
-    }
+    activeLightbox = openDialog({
+      dialog: dialog,
+      backdrop: overlay,
+      label: alt || "Image preview",
+      initialFocus: dialog,
+      trigger: trigger,
+      removeOnDispose: true,
+      onClose: function(){ overlay.remove(); activeLightbox = null; }
+    });
     function clearPointer(id){
       delete pointers[id];
       var keys = Object.keys(pointers);
       if (keys.length < 2) pinch = null;
       if (!keys.length) drag = null;
     }
-    overlay.addEventListener("click", function(e){
-      if (e.target === overlay) closeImageLightbox();
-    });
     overlay.addEventListener("wheel", function(e){
       e.preventDefault();
       e.stopPropagation();
@@ -180,14 +182,17 @@ export function openImageLightbox(src, alt){
     });
     overlay.addEventListener("pointerup", function(e){ clearPointer(e.pointerId); });
     overlay.addEventListener("pointercancel", function(e){ clearPointer(e.pointerId); });
-    document.addEventListener("keydown", onKey, true);
   }
-export function closeImageLightbox(){
+function closeImageLightbox(){
     if (!activeLightbox) return;
-    document.removeEventListener("keydown", activeLightbox.key, true);
-    if (typeof activeLightbox.trap === "function") activeLightbox.trap();
-    if (activeLightbox.el && activeLightbox.el.parentNode) activeLightbox.el.parentNode.removeChild(activeLightbox.el);
+    var dialog = activeLightbox;
     activeLightbox = null;
+    dialog.dispose();
+  }
+export function disposeImageUx(){
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
+    closeImageLightbox();
+    imageResizeMemory = {};
   }
 export function mountDocImages(dc, node, base, surfaceKey){
     if (!dc || !dc.querySelectorAll) return;
@@ -207,6 +212,7 @@ export function mountDocImages(dc, node, base, surfaceKey){
       }
       var key = imageMemoryKey(dc, img, i, surfaceKey || visualSurfaceKey(node, base));
       img.dataset.rhImgReady = "1";
+      img.tabIndex = 0;
       img.draggable = false;
       if (imageResizeMemory[key]) applyImageWidth(frame, imageResizeMemory[key]);
       var handle = document.createElement("button");
@@ -219,7 +225,7 @@ export function mountDocImages(dc, node, base, surfaceKey){
       img.addEventListener("click", function(e){
         e.preventDefault();
         e.stopPropagation();
-        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt);
+        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
       });
       handle.addEventListener("pointerdown", (function(f, k){ return function(e){ beginImageResize(e, dc, f, k); }; })(frame, key));
       handle.addEventListener("dblclick", (function(f, k){ return function(e){

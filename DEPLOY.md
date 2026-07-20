@@ -1,9 +1,9 @@
 # Deploy Rabbithole
 
 These steps prepare the Cloudflare Pages app at the root of
-`rabbithole.ing`. The retired `website/` sources stay in the repo, but
-`npm run build:publish` publishes the static web app directly from `web/dist`.
-Old `/app` URLs are handled by `_redirects`.
+`rabbithole.ing`. `npm run build:publish` publishes the static web app from
+`web/dist` and copies deployment assets from `website/public`. `_redirects`
+keeps browser document paths refreshable through the single-page app.
 
 ## First Pages Deploy
 

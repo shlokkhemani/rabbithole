@@ -1,8 +1,9 @@
 import { MAX_PDF_BYTES } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
+import { ingestPdfToStoredHole } from "./pdf.js";
 
 const URL_FETCH_CAP_BYTES = 25 * 1024 * 1024;
-const PASTE_FALLBACK = "Paste the content manually or drop a PDF file instead.";
+const PASTE_FALLBACK = "Try another link or open a PDF file instead.";
 
 export async function openUrlToStoredHole({ rawUrl, store, title = "", proxyBaseUrl = "", transformMarkdown = null, onProgress = null } = {}) {
   const inputUrl = normalizeInputUrl(rawUrl);
@@ -19,7 +20,6 @@ export async function openUrlToStoredHole({ rawUrl, store, title = "", proxyBase
   const contentType = fetched.contentType;
   const isPdf = isPdfResponse(fetched.url, contentType, fetched.bytes);
   if (isPdf) {
-    const { ingestPdfToStoredHole } = await import("./pdf.js");
     return ingestPdfToStoredHole({
       source: fetched.bytes,
       store,
@@ -45,15 +45,19 @@ export async function openUrlToStoredHole({ rawUrl, store, title = "", proxyBase
 async function fetchWithProxyFallback(url, { proxyBaseUrl, capBytes, onProgress } = {}) {
   try {
     return await fetchUrl(url, { capBytes, via: "direct" });
-  } catch (directErr) {
+  } catch {
     if (!proxyBaseUrl) {
-      throw new Error(`Direct fetch failed and no fetch proxy is configured. ${PASTE_FALLBACK} Original error: ${messageOf(directErr)}`);
+      throw new Error(`This site blocks fetching from inside the browser, and no link relay is set in Settings → Advanced. ${PASTE_FALLBACK}`);
     }
     onProgress?.({ phase: "fetch", url: url.href, via: "proxy" });
     try {
       return await fetchUrl(proxyUrl(proxyBaseUrl, url), { capBytes, via: "proxy", finalUrl: url });
     } catch (proxyErr) {
-      throw new Error(`Direct fetch failed and the fetch proxy was unreachable or rejected the URL. ${PASTE_FALLBACK} Proxy error: ${messageOf(proxyErr)}`);
+      if (proxyErr?.status === 400) {
+        throw new Error(`This site isn't supported by the link relay yet — arXiv links work best. ${PASTE_FALLBACK}`);
+      }
+      const status = proxyErr?.status ? ` (HTTP ${proxyErr.status})` : "";
+      throw new Error(`That page couldn't be fetched right now${status}. ${PASTE_FALLBACK}`);
     }
   }
 }
@@ -64,7 +68,11 @@ async function fetchUrl(url, { capBytes, via, finalUrl = null } = {}) {
     credentials: "omit",
     headers: { Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.5,*/*;q=0.1" },
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+  if (!response.ok) {
+    const err = new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+    err.status = response.status;
+    throw err;
+  }
   const contentType = response.headers.get("content-type") || "";
   const limit = /application\/pdf/i.test(contentType) || /\.pdf(?:$|[?#])/i.test(url.pathname)
     ? MAX_PDF_BYTES

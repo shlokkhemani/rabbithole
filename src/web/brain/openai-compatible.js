@@ -1,65 +1,74 @@
-import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages, buildTranscribeMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
+import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class OpenAICompatibleBrain {
-  constructor({ baseUrl, apiKey, authorModel, answerModel, extraHeaders = {}, title = "Rabbithole" } = {}) {
+  constructor({ baseUrl, apiKey, model, transcribeModel, extraHeaders = {}, title = "Rabbithole" } = {}) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     this.apiKey = apiKey || "";
-    this.authorModel = authorModel || answerModel || "anthropic/claude-sonnet-5";
-    this.answerModel = answerModel || this.authorModel;
+    this.model = model || "anthropic/claude-sonnet-5";
+    this.transcribeModel = transcribeModel || this.model;
     this.extraHeaders = extraHeaders || {};
     this.title = title;
   }
 
   async *authorDocument(source, signal) {
     const body = {
-      model: this.authorModel,
+      model: this.model,
       messages: buildAuthorMessages(source),
       stream: true,
       temperature: 0.2,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptTextGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }));
   }
 
   async *authorExplainer({ question } = {}, signal) {
     const body = {
-      model: this.authorModel,
+      model: this.model,
       messages: buildExplainerMessages({ question }),
       stream: true,
       temperature: 0.35,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptTextGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }));
   }
 
   async *answerBranch(context, signal) {
     const body = {
-      model: this.answerModel,
+      model: this.model,
       messages: buildAnswerMessages(context),
       stream: true,
       temperature: 0.4,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptBranchGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }), { fallbackTitle: context?.fallbackTitle });
+  }
+
+  async *transcribePages(input, signal) {
+    yield* adaptTextGeneration(streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl), apiKey: this.apiKey,
+      body: { model: this.transcribeModel, messages: buildTranscribeMessages(input), stream: true, temperature: 0.1 },
+      signal, extraHeaders: this.extraHeaders, title: this.title,
+    }));
   }
 }
 
@@ -109,7 +118,7 @@ export async function* streamOpenAICompatible({ url, apiKey, body, signal, extra
   }
 }
 
-function parseOpenAISseEvent(eventText) {
+export function parseOpenAISseEvent(eventText) {
   const lines = String(eventText || "").split(/\r?\n/);
   let out = "";
   for (const line of lines) {

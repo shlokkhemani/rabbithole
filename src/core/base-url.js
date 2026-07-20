@@ -4,6 +4,10 @@ const BASE_URL_KEYS = ["base_url", "canonical", "canonical_url", "source_url", "
 const VALID_BASE_SOURCES = new Set(["explicit", "frontmatter", "inherited"]);
 const SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 
+/** @typedef {{ base_url: string | null, base_url_source: import("./contracts/artifact.js").BaseUrlSource | null }} BaseFields */
+/** @typedef {Record<string, any>} LooseObject */
+
+/** @param {unknown} value @param {string} [paramName] */
 export function normalizeBaseUrl(value, paramName = "base_url") {
   if (value == null) return null;
   let url;
@@ -21,6 +25,7 @@ export function normalizeBaseUrl(value, paramName = "base_url") {
   return url.href;
 }
 
+/** @param {unknown} value */
 function parseHttpBaseUrl(value) {
   try {
     return normalizeBaseUrl(value);
@@ -29,6 +34,7 @@ function parseHttpBaseUrl(value) {
   }
 }
 
+/** @param {unknown} value */
 function unquoteYamlValue(value) {
   const trimmed = String(value ?? "").trim();
   let unquoted = trimmed;
@@ -48,11 +54,13 @@ function unquoteYamlValue(value) {
   return compact;
 }
 
+/** @param {unknown} markdown */
 export function inferBaseUrlFromFrontmatter(markdown) {
   const lines = String(markdown ?? "").split(/\r?\n/);
   if (lines[0]?.charCodeAt(0) === 0xfeff) lines[0] = lines[0].slice(1);
   if (!/^---[ \t]*$/.test(lines[0] ?? "")) return null;
 
+  /** @type {Record<string, string>} */
   const entries = {};
   let closed = false;
   for (let i = 1; i < lines.length; i += 1) {
@@ -75,6 +83,7 @@ export function inferBaseUrlFromFrontmatter(markdown) {
   return null;
 }
 
+/** @param {{ markdown?: unknown, explicitBaseUrl?: unknown, inheritedBaseUrl?: unknown }} [options] @returns {BaseFields} */
 export function deriveNodeBaseUrl({ markdown, explicitBaseUrl = null, inheritedBaseUrl = null } = {}) {
   const explicit = normalizeBaseUrl(explicitBaseUrl);
   if (explicit) return { base_url: explicit, base_url_source: "explicit" };
@@ -88,6 +97,7 @@ export function deriveNodeBaseUrl({ markdown, explicitBaseUrl = null, inheritedB
   return { base_url: null, base_url_source: null };
 }
 
+/** @param {LooseObject | null | undefined} parent @returns {BaseFields} */
 export function inheritedNodeBaseUrl(parent) {
   const inherited = parseHttpBaseUrl(parent?.base_url);
   return inherited
@@ -95,8 +105,9 @@ export function inheritedNodeBaseUrl(parent) {
     : { base_url: null, base_url_source: null };
 }
 
+/** @param {LooseObject | null | undefined} node @returns {BaseFields} */
 export function normalizeStoredBaseUrlFields(node) {
-  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? node.base_url_source : null;
+  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? /** @type {import("./contracts/artifact.js").BaseUrlSource} */ (node?.base_url_source) : null;
   const baseUrl = parseHttpBaseUrl(node?.base_url);
   return {
     base_url: source && baseUrl ? baseUrl : null,
@@ -104,6 +115,7 @@ export function normalizeStoredBaseUrlFields(node) {
   };
 }
 
+/** @param {LooseObject | null | undefined} node */
 export function maybeUpgradeBaseUrlFromFrontmatter(node) {
   if (!node || (node.base_url_source !== "inherited" && node.base_url_source !== null)) return false;
   const frontmatter = inferBaseUrlFromFrontmatter(node.markdown ?? "");
@@ -113,74 +125,7 @@ export function maybeUpgradeBaseUrlFromFrontmatter(node) {
   return true;
 }
 
-export function backfillLegacyNodeBaseUrl(node) {
-  if (Object.prototype.hasOwnProperty.call(node, "base_url") && Object.prototype.hasOwnProperty.call(node, "base_url_source")) {
-    const normalized = normalizeStoredBaseUrlFields(node);
-    const changed = node.base_url !== normalized.base_url || node.base_url_source !== normalized.base_url_source;
-    node.base_url = normalized.base_url;
-    node.base_url_source = normalized.base_url_source;
-    return changed;
-  }
-
-  const frontmatter = inferBaseUrlFromFrontmatter(node?.markdown ?? "");
-  node.base_url = frontmatter;
-  node.base_url_source = frontmatter ? "frontmatter" : null;
-  return true;
-}
-
-export function backfillLegacyHoleBaseUrls(hole) {
-  if (!Array.isArray(hole?.nodes)) return false;
-  const byId = new Map();
-  for (const node of hole.nodes) {
-    if (node && typeof node === "object" && node.id != null) byId.set(String(node.id), node);
-  }
-
-  let changed = false;
-  const resolved = new Map();
-  const resolving = new Set();
-
-  function apply(node, base) {
-    const nodeChanged = node.base_url !== base.base_url || node.base_url_source !== base.base_url_source;
-    node.base_url = base.base_url;
-    node.base_url_source = base.base_url_source;
-    changed = changed || nodeChanged;
-    return base;
-  }
-
-  function resolve(node) {
-    if (!node || typeof node !== "object") return { base_url: null, base_url_source: null };
-    if (resolved.has(node)) return resolved.get(node);
-    if (resolving.has(node)) return { base_url: null, base_url_source: null };
-    resolving.add(node);
-
-    const hasStoredFields =
-      Object.prototype.hasOwnProperty.call(node, "base_url") &&
-      Object.prototype.hasOwnProperty.call(node, "base_url_source");
-    let base;
-    if (hasStoredFields) {
-      base = normalizeStoredBaseUrlFields(node);
-    } else {
-      const frontmatter = inferBaseUrlFromFrontmatter(node.markdown ?? "");
-      if (frontmatter) {
-        base = { base_url: frontmatter, base_url_source: "frontmatter" };
-      } else {
-        const parent = node.parent_id == null ? null : byId.get(String(node.parent_id));
-        const inherited = resolve(parent).base_url;
-        base = inherited
-          ? { base_url: inherited, base_url_source: "inherited" }
-          : { base_url: null, base_url_source: null };
-      }
-    }
-
-    resolving.delete(node);
-    resolved.set(node, base);
-    return apply(node, base);
-  }
-
-  for (const node of hole.nodes) resolve(node);
-  return changed;
-}
-
+/** @param {unknown} raw @param {string | null} baseUrl @returns {baseUrl is string} */
 function shouldResolveUrl(raw, baseUrl) {
   if (!baseUrl) return false;
   const value = String(raw ?? "");
@@ -188,6 +133,7 @@ function shouldResolveUrl(raw, baseUrl) {
   return !SCHEME_URL.test(value);
 }
 
+/** @param {string} value */
 function rewriteGithubImageUrl(value) {
   let url;
   try {
@@ -204,6 +150,7 @@ function rewriteGithubImageUrl(value) {
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
 }
 
+/** @param {unknown} raw @param {{ baseUrl?: string | null, image?: boolean, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) }} [options] */
 export function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null, resolveAssetUrl = undefined } = {}) {
   let value = String(raw ?? "");
   if (image) {

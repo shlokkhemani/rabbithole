@@ -3,20 +3,36 @@ import {
   flashHint,
   mode,
   nodes,
-  toggleTheme,
 } from "./core.js";
 import { focusedMark, jumpToOrigin, openNode, stepMark } from "./reader.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { togglePalette } from "./palette.js";
 import { hydrateInitialState } from "./hydrate.js";
+import { createCleanupScope } from "./lifecycle.js";
+
+var chromeScope = null;
 
   // ===========================================================================
   // chrome (theme, hint, keys)
   // ===========================================================================
 export function initChrome(options){
-  document.addEventListener("keydown", onGlobalKeydown);
-  applyInitialTheme();
-  hydrateInitialState(options || {});
+  disposeChrome();
+  chromeScope = createCleanupScope();
+  chromeScope.listen(document, "keydown", onGlobalKeydown);
+  try {
+    applyInitialTheme();
+    hydrateInitialState(options || {});
+  } catch (error) {
+    disposeChrome();
+    throw error;
+  }
+  return disposeChrome;
+}
+
+export function disposeChrome(){
+  var scope = chromeScope;
+  chromeScope = null;
+  if (scope) scope.dispose();
 }
 
 function onGlobalKeydown(e){

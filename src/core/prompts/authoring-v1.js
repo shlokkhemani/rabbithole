@@ -3,7 +3,8 @@ export const AUTHORING_VOCABULARY_V1 = [
   "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
   "- If the answer is content fetched from a URL or repo, pass its document URL as base_url so relative images and links resolve.",
   "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
-  "- Use ```show when a concept is spatial or structural: architecture, memory layout, relationships.",
+  "- Use standard ```mermaid fences for flowcharts, sequence, class, state, and entity-relationship diagrams.",
+  "- Use ```show for bespoke spatial explanations that Mermaid cannot express well: architecture layouts, memory diagrams, comparisons, and custom relationships.",
   "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
   "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",
   "- Design visuals for about 380px card width; make them fluid and keep labels short.",
@@ -14,14 +15,18 @@ export const AUTHORING_VOCABULARY_V1 = [
   "<style>.flow{display:grid;gap:8px}.box{border:1px solid var(--border);padding:8px;border-radius:6px}</style>",
   "<div class='flow'><div class='box'>Parse</div><div class='box' style='background:var(--hl)'>Render</div></div>",
   "```",
+  "- Example Mermaid:",
+  "```mermaid",
+  "flowchart LR",
+  "  Question --> Explore --> Understand",
+  "```",
+  "- Mermaid mindmap, architecture, and Mermaid-side KaTeX syntax are not supported; use ```show or ordinary math around the diagram instead.",
   "- Streaming choreography: send prose in 1-3 sentence chunks as usual.",
   "- Emit each visual fence contiguously, ideally in one chunk; readers see a placeholder until the fence closes.",
   "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
 ].join("\n");
 
-export const AUTHORING_VOCABULARY = AUTHORING_VOCABULARY_V1;
-
-export const AUTHORING_SYSTEM_PROMPT_V1 = [
+const AUTHORING_SYSTEM_PROMPT_V1 = [
   "You are the document authoring Brain for Rabbithole, a branching-document canvas.",
   "Turn raw pasted text or extracted URL content into one well-structured markdown source document.",
   "",
@@ -37,6 +42,21 @@ export const AUTHORING_SYSTEM_PROMPT_V1 = [
   AUTHORING_VOCABULARY_V1,
 ].join("\n");
 
+/**
+ * @typedef {object} AuthorSource
+ * @property {unknown} [title]
+ * @property {unknown} [name]
+ * @property {unknown} [source_name]
+ * @property {unknown} [base_url]
+ * @property {unknown} [baseUrl]
+ * @property {unknown} [kind]
+ * @property {unknown} [type]
+ * @property {unknown} [markdown]
+ * @property {unknown} [content]
+ * @property {unknown} [text]
+ */
+
+/** @param {AuthorSource} [source] */
 export function buildAuthorMessages(source = {}) {
   const title = clean(source.title || source.name || source.source_name || "");
   const baseUrl = clean(source.base_url || source.baseUrl || "");
@@ -60,6 +80,7 @@ export function buildAuthorMessages(source = {}) {
   ];
 }
 
+/** @param {unknown} value */
 function clean(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }

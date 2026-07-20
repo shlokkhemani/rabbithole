@@ -1,3 +1,4 @@
+// Kit-internal focus trap used only by the Popover primitive.
 var FOCUSABLE = [
   "a[href]",
   "button:not([disabled])",
@@ -51,9 +52,13 @@ export function activateFocusTrap(root, options) {
   }
 
   document.addEventListener("keydown", onKeydown, true);
-  setTimeout(focusInitial, 0);
+  var initialFocusTimer = setTimeout(function(){
+    initialFocusTimer = 0;
+    focusInitial();
+  }, 0);
 
   return function deactivateFocusTrap() {
+    if (initialFocusTimer) { clearTimeout(initialFocusTimer); initialFocusTimer = 0; }
     document.removeEventListener("keydown", onKeydown, true);
     if (options.restoreFocus !== false && previous && previous.focus) {
       try { previous.focus({ preventScroll: true }); } catch(e) { try { previous.focus(); } catch(_e){} }

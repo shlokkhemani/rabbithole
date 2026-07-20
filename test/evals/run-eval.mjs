@@ -1,7 +1,6 @@
 import katex from "katex";
 import { createMarkdownRenderer, encodeBase64Utf8 } from "../../src/core/markdown.js";
 import { OpenAICompatibleBrain } from "../../src/web/brain/openai-compatible.js";
-import { TitleSentinelParser } from "../../src/web/brain/title-sentinel.js";
 
 const REQUIRED_ENV = ["EVAL_BASE_URL", "EVAL_API_KEY", "EVAL_MODEL"];
 const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
@@ -14,8 +13,7 @@ if (missing.length) {
 const brain = new OpenAICompatibleBrain({
   baseUrl: process.env.EVAL_BASE_URL,
   apiKey: process.env.EVAL_API_KEY,
-  answerModel: process.env.EVAL_MODEL,
-  authorModel: process.env.EVAL_MODEL,
+  model: process.env.EVAL_MODEL,
 });
 
 const renderer = createMarkdownRenderer({
@@ -29,8 +27,8 @@ let hardFailures = 0;
 
 try {
   for (const ask of asks) {
-    const raw = await runAsk(ask);
-    const scored = scoreAsk(ask, raw);
+    const result = await runAsk(ask);
+    const scored = scoreAsk(ask, result);
     rows.push(scored);
     hardFailures += scored.failures;
   }
@@ -51,23 +49,25 @@ console.log(`Rabbithole golden-ask eval passed for ${process.env.EVAL_MODEL}.`);
 async function runAsk(ask) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120000);
-  let raw = "";
+  let body = "";
+  let title = "";
   try {
-    for await (const chunk of brain.answerBranch(ask.context, controller.signal)) raw += chunk;
+    for await (const event of brain.answerBranch({ ...ask.context, fallbackTitle: ask.name }, controller.signal)) {
+      if (event.type === "title") title = event.title;
+      if (event.type === "text") body += event.delta;
+    }
   } finally {
     clearTimeout(timer);
   }
-  return raw;
+  return { body, title };
 }
 
-function scoreAsk(ask, raw) {
-  const parser = new TitleSentinelParser({ fallbackTitle: ask.name });
-  const body = parser.push(raw) + parser.finish();
+function scoreAsk(ask, { body, title }) {
   const html = renderer.renderMarkdownToHtml(body);
   const checks = {};
 
-  checks.title = /^TITLE:\s*\S+/m.test(raw.trimStart());
-  checks.stripped = parser.title && !/^TITLE:/m.test(body.trimStart());
+  checks.title = Boolean(title);
+  checks.stripped = !/^TITLE:/m.test(body.trimStart());
   checks.length = withinWordBounds(body, ask.minWords || 20, ask.maxWords || 650);
   checks.no_html = noRawHtmlLeakage(html);
 
@@ -79,7 +79,7 @@ function scoreAsk(ask, raw) {
   if (ask.expectCode) checks.code = /```|`[^`]+`/.test(body);
 
   const failures = Object.values(checks).filter((value) => !value).length;
-  return { name: ask.name, checks, failures, title: parser.title || "" };
+  return { name: ask.name, checks, failures, title };
 }
 
 function printScorecard(rows) {

@@ -4,14 +4,18 @@ import {
 } from "../core/markdown-renderer.js";
 
 var assetData = null;
-
-export { MARKDOWN_RENDERER_SENTINEL };
+var assetNames = null;
 
 export function setRendererAssetData(data) {
   assetData = data && typeof data === "object" ? data : null;
+  assetNames = assetData ? new Set(Object.keys(assetData)) : null;
 }
 
-export function browserEncodeBase64Utf8(value) {
+export function registerRendererAssetName(name) {
+  if (assetNames) assetNames.add(name);
+}
+
+function browserEncodeBase64Utf8(value) {
   var source = String(value == null ? "" : value);
   if (typeof TextEncoder === "function") {
     var bytes = new TextEncoder().encode(source);
@@ -32,7 +36,7 @@ function liveAssetUrl(name) {
   return slash + "assets" + slash + name;
 }
 
-function resolveAssetUrl(name) {
+export function resolveAssetUrl(name) {
   if (assetData) return assetData[name] || "data:,";
   return liveAssetUrl(name);
 }
@@ -42,22 +46,28 @@ var markdownRenderer = createMarkdownRenderer({
   resolveAssetUrl: resolveAssetUrl
 });
 
-export function renderMarkdownToHtml(markdown, options) {
+function renderMarkdownToHtml(markdown, options) {
   return markdownRenderer.renderMarkdownToHtml(markdown, options || {});
 }
 
-export function renderNodeMarkdown(node) {
+function renderNodeMarkdown(node) {
   return renderMarkdownToHtml(node && node.md, {
     baseUrl: (node && node.base_url) || null,
-    assetNames: assetData ? new Set(Object.keys(assetData)) : null
+    assetNames: assetNames
   });
 }
 
 export function refreshNodeHtml(node) {
   if (!node) return "";
   node.html = renderNodeMarkdown(node);
+  node._htmlFor = node.md;
   node._plainFor = null;
   return node.html;
+}
+
+export function ensureNodeHtml(node) {
+  if (!node) return "";
+  return node._htmlFor === node.md ? node.html : refreshNodeHtml(node);
 }
 
 if (typeof window !== "undefined") {

@@ -44,9 +44,8 @@ export function parseRequestBody(req, res) {
   });
 }
 
-export function closeServerGracefully(server, { timeoutMs = CLOSE_TIMEOUT_MS, onForceClose, onClosed } = {}) {
+export function closeServerGracefully(server, { timeoutMs = CLOSE_TIMEOUT_MS, onClosed } = {}) {
   const timer = setTimeout(() => {
-    onForceClose?.();
     server.closeAllConnections?.();
   }, timeoutMs);
 

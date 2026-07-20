@@ -1,11 +1,7 @@
 import {
   DEFAULT_CHILD,
-  agentAttached,
-  agentDown,
   agentReason,
-  bannerEl,
-  bannerMsg,
-  bannerTitle,
+  bannerNotice,
   buildLoading,
   canvasBuilt,
   closed,
@@ -16,32 +12,26 @@ import {
   frozen,
   hydration,
   incrementSseFails,
-  isFollowup,
-  isUnread,
-  markRead,
   mode,
   nextOrder,
   nodes,
   readerMain,
-  refreshAmbient,
+  registerNode,
   resetSseFails,
   setAgentAttached,
   setAgentReason,
   setClosedState,
   setConnLost,
-  sideEl,
-  updateSince,
+  sessionPhase,
   view,
   viewAdjusted
 } from "./core.js";
 import {
   renderBreadcrumb,
   renderReaderBody,
-  renderSidebar,
-  updateThreadItem,
-  upgradeMarks,
-  wrapInContainer
+  renderMarginNotes
 } from "./reader.js";
+import { upgradeMarks, wrapInContainer } from "./text-marks.js";
 import {
   createNodeEl,
   drawEdges,
@@ -52,9 +42,8 @@ import {
 } from "./canvas-view.js";
 import { updateComposerState } from "./ask-followups.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
-import { mountDocImages } from "./image-ux.js";
 import { refreshNodeHtml } from "./renderer.js";
-import { mountVisuals } from "./visuals.js";
+import { cancelFrame, nextFrame } from "./lifecycle.js";
 
   // ===========================================================================
   // transport
@@ -62,66 +51,101 @@ import { mountVisuals } from "./visuals.js";
 var transportAdapter = null;
 var sse = null;
 var webTransport = null;
+var transportEpoch = 0;
+var transportDisposed = true;
+var transportDisposePromise = null;
+var healthProbeController = null;
 
 export function setTransportAdapter(adapter){
   transportAdapter = adapter && typeof adapter === "object" ? adapter : null;
 }
 
 export function initTransportStatus(){
-  document.getElementById("banner-x").addEventListener("click", function(){
-    if (bannerKey) bannerDismissed[bannerKey] = true;
-    bannerEl.classList.remove("visible");
-  });
+  transportEpoch += 1;
+  transportDisposed = false;
+  transportDisposePromise = null;
 }
 
 export function post(payload){
     if (frozen) return Promise.resolve({ ok: true }); // a snapshot has no server
-    if (transportAdapter && typeof transportAdapter.post === "function") {
-      return Promise.resolve(transportAdapter.post(payload)).catch(function(){ return null; });
+    if (transportDisposed) return Promise.resolve(null);
+    return postWithAdapter(transportAdapter, payload);
+  }
+  function postWithAdapter(adapter, payload){
+    if (adapter && typeof adapter.post === "function") {
+      return Promise.resolve(adapter.post(payload)).catch(function(){ return null; });
     }
     return fetch("/events", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) }).catch(function(){ return null; });
   }
   // Where-was-I, persisted (debounced) on every meaningful move so a reopen —
   // tomorrow or after a crash — lands exactly here.
   var viewSaveTimer = 0;
+  function currentViewState(){
+    var cur = nodes[currentNodeId];
+    var scroll = (mode === "reader") ? readerMain.scrollTop : ((cur && cur._scrollTop) || 0);
+    var state = { mode: mode, node_id: currentNodeId, scroll: scroll };
+    if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
+    return state;
+  }
 export function scheduleViewSave(){
-    if (frozen || closed) return;
+    if (frozen || closed || transportDisposed) return;
     if (viewSaveTimer) clearTimeout(viewSaveTimer);
     viewSaveTimer = setTimeout(function(){
       viewSaveTimer = 0;
       if (closed) return;
-      var cur = nodes[currentNodeId];
-      var scroll = (mode === "reader") ? readerMain.scrollTop : ((cur && cur._scrollTop) || 0);
-      var state = { mode: mode, node_id: currentNodeId, scroll: scroll };
-      if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
-      post({ type: "view_state", state: state });
+      post({ type: "view_state", state: currentViewState() });
     }, 600);
   }
   var saveTimers = {};
 export function persistNode(node){
+    if (transportDisposed) return;
     if (saveTimers[node.id]) clearTimeout(saveTimers[node.id]);
     saveTimers[node.id] = setTimeout(function(){
+      delete saveTimers[node.id];
       post({ type:"node_update", node_id: node.id, position:{x:node.x,y:node.y}, size:{w:node.w,h:node.h}, collapsed: node.collapsed, font_scale: node.font_scale });
     }, 350);
   }
+export function flushPendingSaves(){
+    return flushPendingSavesWith(post);
+  }
+  function flushPendingSavesWith(postPending){
+    var pending = saveTimers;
+    saveTimers = {};
+    var posts = Object.keys(pending).map(function(id){
+      clearTimeout(pending[id]);
+      var node = nodes[id];
+      if (!node) return Promise.resolve();
+      return postPending({ type:"node_update", node_id: node.id, position:{x:node.x,y:node.y}, size:{w:node.w,h:node.h}, collapsed: node.collapsed, font_scale: node.font_scale });
+    });
+    if (viewSaveTimer){
+      clearTimeout(viewSaveTimer);
+      viewSaveTimer = 0;
+      posts.push(postPending({ type: "view_state", state: currentViewState() }));
+    }
+    return Promise.all(posts);
+  }
   // One request for a whole-layout change (Tidy) instead of N debounced posts.
 export function persistNodesBulk(list){
-    if (!list || !list.length) return;
+    if (transportDisposed || !list || !list.length) return;
     post({ type:"nodes_update", nodes: list.map(function(n){
       return { node_id: n.id, position:{x:n.x,y:n.y}, size:{w:n.w,h:n.h}, collapsed: n.collapsed, font_scale: n.font_scale };
     }) });
   }
 export function connectSse(){
+    if (transportDisposed) return null;
+    closeConnections();
+    var epoch = ++transportEpoch;
     if (transportAdapter && typeof transportAdapter.connect === "function") {
       webTransport = transportAdapter.connect({
         after: hydration.last_event_id || 0,
         onOpen: function(){
+          if (!isCurrentTransport(epoch)) return;
           resetSseFails();
           if (connLost){ setConnLost(false); refreshStatus(); }
         },
-        onMessage: handleServer,
+        onMessage: function(msg){ if (isCurrentTransport(epoch)) handleServer(msg); },
         onError: function(){
-          if (closed) return;
+          if (!isCurrentTransport(epoch) || closed) return;
           if (incrementSseFails() >= 2 && !connLost){ setConnLost(true); refreshStatus(); }
         }
       });
@@ -132,53 +156,99 @@ export function connectSse(){
     var after = hydration.last_event_id || 0;
     sse = new EventSource("/sse?after=" + after);
     sse.onopen = function(){
+      if (!isCurrentTransport(epoch)) return;
       resetSseFails();
       if (connLost){ setConnLost(false); refreshStatus(); }
     };
-    sse.onmessage = function(ev){ try { handleServer(JSON.parse(ev.data)); } catch(e){} };
+    sse.onmessage = function(ev){ if (!isCurrentTransport(epoch)) return; try { handleServer(JSON.parse(ev.data)); } catch(e){} };
     // EventSource retries forever on its own; after a couple of failures probe
     // the server once — if it's gone (agent process died), say so instead of
     // letting pending asks shimmer into eternity. Recovers via onopen.
     sse.onerror = function(){
-      if (closed) return;
+      if (!isCurrentTransport(epoch) || closed) return;
       if (incrementSseFails() >= 2 && !connLost){
-        fetch("/health", { cache: "no-store" })
+        if (healthProbeController) healthProbeController.abort();
+        healthProbeController = typeof AbortController === "function" ? new AbortController() : null;
+        var probe = healthProbeController;
+        fetch("/health", { cache: "no-store", signal: probe ? probe.signal : undefined })
           .then(function(r){ if (!r.ok) throw new Error("bad status"); })
-          .catch(function(){ if (!closed && !connLost){ setConnLost(true); refreshStatus(); } });
+          .catch(function(err){
+            if (err && err.name === "AbortError") return;
+            if (isCurrentTransport(epoch) && !closed && !connLost){ setConnLost(true); refreshStatus(); }
+          })
+          .finally(function(){ if (healthProbeController === probe) healthProbeController = null; });
       }
     };
+    return sse;
   }
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
-  function requestFrame(fn){
-    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(fn);
-    return setTimeout(fn, 16);
+  function hasStreamSurface(node){
+    return !!node.bodyEl || (mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id));
   }
   function cancelQueuedStreamRender(nodeId){
     delete streamRenderQueue[nodeId];
   }
   function scheduleStreamRender(node, firstChunk){
+    if (transportDisposed) return;
+    var epoch = transportEpoch;
     var queued = streamRenderQueue[node.id];
     streamRenderQueue[node.id] = { node: node, firstChunk: queued ? queued.firstChunk : firstChunk };
     if (streamRenderRaf) return;
-    streamRenderRaf = requestFrame(function(){
+    streamRenderRaf = nextFrame(function(){
       streamRenderRaf = 0;
       var batch = streamRenderQueue;
       streamRenderQueue = {};
+      if (!isCurrentTransport(epoch)) return;
       Object.keys(batch).forEach(function(id){
         var item = batch[id];
         if (!item.node || item.node.status !== "pending") return;
+        if (!hasStreamSurface(item.node)) return;
         refreshNodeHtml(item.node);
         renderStreamSurfaces(item.node, item.firstChunk);
       });
     });
   }
+  function cancelStreamRender(){
+    if (streamRenderRaf) cancelFrame(streamRenderRaf);
+    streamRenderRaf = 0;
+    streamRenderQueue = {};
+  }
+  function isCurrentTransport(epoch){
+    return !transportDisposed && epoch === transportEpoch;
+  }
+  function closeConnections(){
+    if (healthProbeController){ healthProbeController.abort(); healthProbeController = null; }
+    if (sse){ try { sse.close(); } catch(e){} sse = null; }
+    if (webTransport && typeof webTransport.close === "function"){
+      try { webTransport.close(); } catch(e){}
+    }
+    webTransport = null;
+  }
+export function disposeTransportStatus(){
+    if (transportDisposePromise) return transportDisposePromise;
+    if (transportDisposed){
+      transportAdapter = null;
+      return Promise.resolve();
+    }
+    var adapter = transportAdapter;
+    transportDisposed = true;
+    transportEpoch += 1;
+    closeConnections();
+    cancelStreamRender();
+    transportDisposePromise = Promise.resolve(flushPendingSavesWith(function(payload){
+      return postWithAdapter(adapter, payload);
+    })).finally(function(){
+      if (transportAdapter === adapter) transportAdapter = null;
+    });
+    return transportDisposePromise;
+  }
   // Repaint a streaming node everywhere it is currently on screen: the reader
-  // main doc, its follow-up thread turn, and its canvas card. Scroll positions
+  // main doc, its branch-rail card, and its canvas card. Scroll positions
   // are restored exactly on every repaint — arriving text must never move the
   // human's place (an innerHTML swap briefly collapses scrollHeight, which
   // would otherwise clamp the scroll and make the view jump).
-export function renderStreamSurfaces(node, firstChunk){
+function renderStreamSurfaces(node, firstChunk){
     if (node.bodyEl){
       var cs = node.bodyEl.scrollTop;
       fillBody(node);
@@ -196,23 +266,16 @@ export function renderStreamSurfaces(node, firstChunk){
         readerMain.scrollTop = keep;
       }
     } else if (currentNodeId === node.parent_id){
-      if (isFollowup(node)){ updateThreadItem(node); readerMain.scrollTop = keep; }
-      else {
-        // The branch streams live inside its sidebar tile: the first chunk
-        // rebuilds the tile (Thinking… → Writing… + the live pane), later
-        // chunks just repaint the pane.
-	        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-	        if (live && !firstChunk) {
-	          live.innerHTML = node.html || "";
-	          mountVisuals(live, "reader-side:" + node.id);
-	          mountDocImages(live, node, null, "reader-side:" + node.id);
-	        }
-        else renderSidebar();
-      }
+      // The branch streams live inside its rail card: the first chunk rebuilds
+      // the card (Thinking… → Writing… + the live pane), later chunks patch it.
+      var layer = document.getElementById("margin-notes");
+      var live = layer && layer.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
+      if (live && !firstChunk) live.innerHTML = node.html || "";
+      else renderMarginNotes();
     }
   }
 
-export function handleServer(msg){
+function handleServer(msg){
     if (msg.type === "node_answered"){
       var node = nodes[msg.node_id];
       if (!node){
@@ -220,14 +283,14 @@ export function handleServer(msg){
         // that was optimistically rolled back after a lost ack). Recreate it from
         // the broadcast so the answer is never silently dropped.
         var pos = msg.position || {};
-        node = nodes[msg.node_id] = {
+        node = registerNode({
           id: msg.node_id, parent_id: msg.parent_id || null, title: msg.title || "…",
           html: "", md: "", base_url: msg.base_url || null, base_url_source: msg.base_url_source || null,
           read: false, origin: msg.origin || null, x: pos.x || 0, y: pos.y || 0,
           w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: msg.font_scale || 1,
           collapsed: false, status: "pending",
           _order: nextOrder(), _startTs: Date.now()
-        };
+        });
         if (canvasBuilt){ createNodeEl(node); renderVisibility(); drawEdges(); }
         if (node.origin && node.origin.anchor){
           if (mode === "reader")
@@ -242,30 +305,24 @@ export function handleServer(msg){
       node.md = msg.markdown || node.md || "";
       node.base_url = msg.base_url || null;
       node.base_url_source = msg.base_url_source || null;
-      refreshNodeHtml(node);
-      node.read = false; // unread until the human actually reaches it
+      node.origin = msg.origin || node.origin || null;
+      if (hasStreamSurface(node)) refreshNodeHtml(node);
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }
       updateCardComposer(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderSidebar(); updateComposerState(); markRead(node); }
+        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); }
         else {
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
           upgradeMarks(readerMain, node.id);
-          if (currentNodeId === node.parent_id){
-            if (isFollowup(node)){ updateThreadItem(node); markRead(node); } // you watched it land
-            else renderSidebar();
-          }
+          if (currentNodeId === node.parent_id) renderMarginNotes();
         }
       }
       // Upgrade the inline mark inside the parent's canvas card too.
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      refreshAmbient();
-      updateSince();
     } else if (msg.type === "node_deleted"){
       // Another surface (or a replayed event) removed a branch — mirror it.
       removeNodesLocal(msg.node_ids || [], null);
@@ -282,6 +339,23 @@ export function handleServer(msg){
         sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
         scheduleStreamRender(sn, firstChunk);
       }
+    } else if (msg.type === "node_extensions_patch"){
+      var pn = nodes[msg.node_id];
+      if (pn){
+        pn.extensions = pn.extensions || {};
+        pn.extensions[msg.namespace] = msg.value;
+        if (pn.bodyEl) fillBody(pn);
+        if (mode === "reader" && currentNodeId === pn.id) renderReaderBody();
+        scheduleEdges();
+      }
+    } else if (msg.type === "pdf_convert_progress"){
+      var cn = nodes[msg.node_id];
+      if (cn){
+        cn.md = msg.markdown || ""; cn._pdfProgress = { done: msg.page_done, total: msg.page_total };
+        refreshNodeHtml(cn);
+        if (cn.bodyEl) fillBody(cn);
+        if (mode === "reader" && currentNodeId === cn.id) renderReaderBody();
+      }
     } else if (msg.type === "node_error"){
       var en = nodes[msg.node_id];
       if (en && en.status === "pending"){
@@ -297,12 +371,8 @@ export function handleServer(msg){
         if (en.bodyEl){ fillBody(en); scheduleEdges(); }
         if (mode === "reader"){
           if (currentNodeId === en.id){ renderReaderBody(); updateComposerState(); }
-          else if (currentNodeId === en.parent_id){
-            if (isFollowup(en)) updateThreadItem(en);
-            else renderSidebar();
-          }
+          else if (currentNodeId === en.parent_id) renderMarginNotes();
         }
-        refreshAmbient();
       }
     } else if (msg.type === "agent_status"){
       setAgentAttached(!!msg.attached);
@@ -311,8 +381,8 @@ export function handleServer(msg){
     } else if (msg.type === "session_closed"){
       setClosedState(true, msg.reason || "session_closed");
       // Stop EventSource from reconnecting forever to the now-dead endpoint.
-      if (sse) { try { sse.close(); } catch(e){} sse = null; }
-      if (webTransport && typeof webTransport.close === "function") { try { webTransport.close(); } catch(e){} webTransport = null; }
+      transportEpoch += 1;
+      closeConnections();
       refreshStatus();
     }
   }
@@ -324,29 +394,30 @@ export function handleServer(msg){
   var bannerDismissed = {};
   function setBanner(key, warn, title, msg){
     bannerKey = key;
-    if (bannerDismissed[key]){ bannerEl.classList.remove("visible"); return; }
-    bannerTitle.textContent = title;
-    bannerMsg.textContent = msg;
-    bannerEl.classList.toggle("warn", !!warn);
-    bannerEl.classList.add("visible");
+    if (bannerDismissed[key]){ bannerNotice.hide(); return; }
+    document.getElementById("banner").classList.toggle("warn", !!warn);
+    bannerNotice.show({ title: title, message: msg, onDismiss: function(){
+      if (bannerKey) bannerDismissed[bannerKey] = true;
+    } });
   }
   function clearBanner(){
     bannerKey = null;
-    bannerEl.classList.remove("visible");
+    bannerNotice.hide();
   }
   function hasPendingAsks(){
     for (var k in nodes) if (nodes[k].status === "pending") return true;
     return false;
   }
 export function refreshStatus(){
-    document.body.classList.toggle("agent-down", agentDown());
-    document.body.classList.toggle("session-over", closed);
+    var phase = sessionPhase();
+    document.body.classList.toggle("agent-down", phase !== "live");
+    document.body.classList.toggle("session-over", phase === "closed" || phase === "frozen");
     // Once the session is over the server is gone, so new asks can't be taken —
     // but every question already asked is saved and re-queued on reopen.
     var savedNote = hasPendingAsks() ? " Your unanswered questions are saved and will be answered there." : "";
-    if (frozen){
+    if (phase === "frozen"){
       clearBanner(); // a snapshot needs no liveness story — the copy explains itself
-    } else if (closed){
+    } else if (phase === "closed"){
       if (closedReason === "done")
         setBanner("done", false, "Session ended", "This Rabbithole is saved. Reopen it from your terminal any time to keep exploring." + savedNote);
       else if (closedReason === "superseded")
@@ -355,10 +426,10 @@ export function refreshStatus(){
         setBanner("timeout", true, "Session timed out", "Everything is saved. Reopen this Rabbithole from your terminal to continue." + savedNote);
       else
         setBanner("closed", true, "The agent has left", "Everything answered so far is saved. Reopen this Rabbithole from your terminal to keep exploring." + savedNote);
-    } else if (connLost){
-      setBanner("connlost", true, "Connection lost", "Can't reach the agent session — it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
-    } else if (!agentAttached){
-      if (agentReason === "stalled")
+    } else if (phase === "away"){
+      if (connLost)
+        setBanner("connlost", true, "Connection lost", "Can't reach the agent session — it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
+      else if (agentReason === "stalled")
         setBanner("stalled", true, "The agent went quiet", "No response for a while — it may have stopped. You can keep asking: questions are saved and answered when the agent returns.");
       else
         setBanner("cancelled", true, "The agent stopped listening", "The tool call was cancelled. You can keep asking — questions are saved and answered when the agent picks this hole back up.");
@@ -366,7 +437,7 @@ export function refreshStatus(){
       clearBanner();
       bannerDismissed = {};
     }
-    if (mode === "reader") renderSidebar();
+    if (mode === "reader") renderMarginNotes();
     updateComposerState();
     if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
   }

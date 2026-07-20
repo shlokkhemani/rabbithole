@@ -1,4 +1,4 @@
 export function writeSseEvent(res, event) {
-  res.write(`id: ${event.id}\n`);
-  res.write(`data: ${JSON.stringify(event.data)}\n\n`);
+  if (!event.wire) event.wire = `id: ${event.id}\ndata: ${JSON.stringify(event.data)}\n\n`;
+  res.write(event.wire);
 }

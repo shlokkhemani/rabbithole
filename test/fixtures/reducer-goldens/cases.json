@@ -1,0 +1,139 @@
+[
+  {
+    "name": "branch_request happy path",
+    "initial": { "hole_id": "h", "title": "H", "root_id": "root", "nodes": [{ "id": "root", "parent_id": null, "title": "Root", "markdown": "root", "base_url": "https://example.test/doc", "base_url_source": "document" }] },
+    "events": [{ "event": { "type": "branch_request", "parent_id": "root", "node_id": "child", "selected_text": "  selected  ", "question": "Why does this happen?", "branch_type": "selection", "position": { "x": 12, "y": 34 } }, "options": { "now": "2026-01-02T03:04:05.000Z" } }],
+    "expected": { "hole_id": "h", "title": "H", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "parent_id": null, "title": "Root", "markdown": "root", "base_url": "https://example.test/doc", "base_url_source": "document" }, { "id": "child", "parent_id": "root", "title": "Why does this happen?", "markdown": "", "base_url": "https://example.test/doc", "base_url_source": "inherited", "origin": { "selected_text": "selected", "question": "Why does this happen?", "lens": null, "synthesis": false, "anchor": null, "branch_type": "selection" }, "position": { "x": 12, "y": 34 }, "size": null, "font_scale": 1, "collapsed": false, "status": "pending", "read": false, "created_at": "2026-01-02T03:04:05.000Z", "extensions": {} }] },
+    "expected_effects": { "createdNodeId": "child" }
+  },
+  { "name": "branch_request missing parent throws", "initial": { "root_id": "root", "nodes": [] }, "events": [{ "event": { "type": "branch_request", "parent_id": "missing", "node_id": "child" } }], "expected_error": "Parent node missing not found" },
+  { "name": "branch_request missing node_id throws", "initial": { "root_id": "root", "nodes": [{ "id": "root" }] }, "events": [{ "event": { "type": "branch_request", "parent_id": "root" }, "options": { "now": "fixed" } }], "expected_error": "Branch request node_id is required" },
+  {
+    "name": "node_progress grows then idempotently replays",
+    "initial": { "hole_id": "h", "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "Hello" } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "Hello world" } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "Hello world" } }],
+    "expected": { "hole_id": "h", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "Hello world", "base_url": null, "base_url_source": null }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "node_progress discards stale same-run sequence",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "newer and longer", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "older", "run": { "id": "run-1", "seq": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "newer and longer", "base_url": null, "base_url_source": null }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_progress accepts higher same-run sequence",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "first", "run": { "id": "run-1", "seq": 1 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "second", "run": { "id": "run-1", "seq": 2 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "second", "base_url": null, "base_url_source": null }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "node_progress new run id supersedes recorded run",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "old run", "run": { "id": "run-1", "seq": 8 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "retry", "run": { "id": "run-2", "seq": 1 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "retry stale", "run": { "id": "run-2", "seq": 0 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "retry", "base_url": null, "base_url_source": null }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_answered clears progress run before later tagged progress",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "partial", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "node_answered", "node_id": "root", "markdown": "complete" } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "accepted after clear", "run": { "id": "run-1", "seq": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "accepted after clear", "base_url": null, "base_url_source": null, "parent_id": null, "title": "Untitled", "origin": null, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "answered", "read": false }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "delete_node clears progress run before node id reuse",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }, { "id": "child", "parent_id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "child", "markdown": "partial", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "delete_node", "node_id": "child" } }, { "event": { "type": "branch_request", "parent_id": "root", "node_id": "child", "question": "Again" }, "options": { "now": "fixed" } }, { "event": { "type": "node_progress", "node_id": "child", "markdown": "accepted after reuse", "run": { "id": "run-1", "seq": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "child", "parent_id": "root", "title": "Again", "markdown": "accepted after reuse", "base_url": null, "base_url_source": null, "origin": { "selected_text": "", "question": "Again", "lens": null, "synthesis": false, "anchor": null, "branch_type": "followup" }, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "pending", "read": false, "created_at": "fixed", "extensions": {} }] },
+    "expected_effects": { "node_id": "child" }
+  },
+  {
+    "name": "node_answered updates an existing pending node",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "parent_id": null, "title": "…", "markdown": "partial", "status": "pending", "read": false, "position": { "x": 1, "y": 2 }, "font_scale": 1 }] },
+    "events": [{ "event": { "type": "node_answered", "node_id": "root", "title": "  Final  ", "markdown": "complete", "read": true } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "parent_id": null, "title": "Final", "markdown": "complete", "status": "answered", "read": true, "position": { "x": 1, "y": 2 }, "font_scale": 1, "base_url": null, "base_url_source": null, "origin": null, "size": null, "collapsed": false }] },
+    "expected_effects": { "answeredNodeId": "root" }
+  },
+  {
+    "name": "node_answered synthesizes an unknown node",
+    "initial": { "root_id": "root", "nodes": [] },
+    "events": [{ "event": { "type": "node_answered", "node_id": "new", "parent_id": "root", "title": "", "markdown": "answer", "created_at": "fixed" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "new", "parent_id": "root", "title": "Untitled", "markdown": "answer", "base_url": null, "base_url_source": null, "origin": null, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "answered", "read": false, "created_at": "fixed", "extensions": {} }] },
+    "expected_effects": { "answeredNodeId": "new" }
+  },
+  {
+    "name": "delete_node collects a subtree and reports effects",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "parent_id": null }, { "id": "a", "parent_id": "root" }, { "id": "b", "parent_id": "a" }, { "id": "keep", "parent_id": "root" }] },
+    "events": [{ "event": { "type": "delete_node", "node_id": "a" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "parent_id": null }, { "id": "keep", "parent_id": "root" }] },
+    "expected_effects": { "deletedNodeIds": ["a", "b"], "deletedNodes": [{ "id": "a", "parent_id": "root" }, { "id": "b", "parent_id": "a" }] }
+  },
+  {
+    "name": "delete_node honors explicit node_ids and reports missing ids",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }, { "id": "a" }, { "id": "b" }] },
+    "events": [{ "event": { "type": "delete_node", "node_id": "ignored", "node_ids": ["b", "ghost"] } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "a" }] },
+    "expected_effects": { "deletedNodeIds": ["b", "ghost"], "deletedNodes": [{ "id": "b" }] }
+  },
+  { "name": "delete_node rejects root deletion", "initial": { "root_id": "root", "nodes": [{ "id": "root" }] }, "events": [{ "event": { "type": "delete_node", "node_id": "root" } }], "expected_error": "The starting document can't be removed" },
+  {
+    "name": "node_update and nodes_update normalize supported fields and ignore unknown nodes",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "position": { "x": 0, "y": 0 }, "size": null, "collapsed": false, "font_scale": 1, "read": false }, { "id": "a", "position": { "x": 1, "y": 1 }, "size": null, "collapsed": false, "font_scale": 1, "read": false }] },
+    "events": [{ "event": { "type": "node_update", "node_id": "root", "position": { "x": "5", "y": null }, "size": { "w": 20, "h": 30 }, "collapsed": true, "font_scale": 1.25, "read": true, "title": "ignored" } }, { "event": { "type": "node_update", "node_id": "ghost", "position": { "x": 99, "y": 99 } } }, { "event": { "type": "nodes_update", "nodes": [{ "node_id": "a", "position": { "x": 8, "y": 9 }, "size": { "w": 0, "h": 2 }, "collapsed": true }, { "node_id": "ghost", "read": true }] } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "position": { "x": 5, "y": 0 }, "size": { "w": 20, "h": 30 }, "collapsed": true, "font_scale": 1.25, "read": true }, { "id": "a", "position": { "x": 8, "y": 9 }, "size": null, "collapsed": true, "font_scale": 1, "read": false }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "view_state normalizes reader and bounded canvas values",
+    "initial": { "root_id": "root", "nodes": [] },
+    "events": [{ "event": { "type": "view_state", "state": { "mode": "other", "node_id": 7, "scroll": -3, "view": { "x": "4", "y": null, "scale": 99 } } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": { "mode": "reader", "node_id": null, "scroll": 0, "view": { "x": 4, "y": 0, "scale": 2.5 } }, "nodes": [] },
+    "expected_effects": {}
+  },
+  {
+    "name": "hole_title replaces the document title",
+    "initial": { "title": "Before", "root_id": "root", "nodes": [{ "id": "root" }] },
+    "events": [{ "event": { "type": "hole_title", "title": "After" } }],
+    "expected": { "hole_id": "", "title": "After", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_origin replaces opaque node metadata",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "origin": null }] },
+    "events": [{ "event": { "type": "node_origin", "node_id": "root", "origin": { "web_root_question": "Why?" } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "origin": { "web_root_question": "Why?" } }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "node_extensions_patch replaces one opaque namespace",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "extensions": { "learn": { "kept": true }, "pdf": { "old": true } } }] },
+    "events": [{ "event": { "type": "node_extensions_patch", "node_id": "root", "namespace": "pdf", "value": { "version": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "extensions": { "learn": { "kept": true }, "pdf": { "version": 1 } } }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "branch_request normalizes and preserves a PDF selection anchor",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }] },
+    "events": [{ "event": { "type": "branch_request", "parent_id": "root", "node_id": "pdf-child", "selected_text": "picked", "anchor": { "offset_start": -2, "offset_end": 18, "pdf": { "version": 2, "source_sha256": "abababababababababababababababababababababababababababababababab", "kind": "text", "fragments": [{ "page": 2.8, "quads": [[[10.123456, 40], [80, 40], [80, 25], [10.123456, 25]]] }] } } }, "options": { "now": "fixed" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "pdf-child", "parent_id": "root", "title": "…", "markdown": "", "base_url": null, "base_url_source": null, "origin": { "selected_text": "picked", "question": "", "lens": null, "synthesis": false, "anchor": { "offset_start": 0, "offset_end": 18, "pdf": { "version": 2, "source_sha256": "abababababababababababababababababababababababababababababababab", "kind": "text", "fragments": [{ "page": 2, "quads": [[[10.1235, 40], [80, 40], [80, 25], [10.1235, 25]]] }] } }, "branch_type": "selection" }, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "pending", "read": false, "created_at": "fixed", "extensions": {} }] },
+    "expected_effects": { "createdNodeId": "pdf-child" }
+  },
+  {
+    "name": "malformed known node_progress is a no-op",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "before" }] },
+    "events": [{ "event": { "type": "node_progress" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "before" }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "block_state deep-merges learner state and tolerates invalid targets",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "extensions": { "kept": { "nested": [1] }, "learn": { "c8lb3": { "attempts": 1, "revealed": false }, "other": { "score": 9 } } } }] },
+    "events": [{ "event": { "type": "block_state", "node_id": "ghost", "block_id": "c8lb3", "state": { "attempts": 99 } } }, { "event": { "type": "block_state", "node_id": "root", "state": { "attempts": 99 } } }, { "event": { "type": "block_state", "node_id": "root", "block_id": "c8lb3", "state": { "attempts": 2, "last": { "option": 1, "correct": true }, "revealed": true } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "extensions": { "kept": { "nested": [1] }, "learn": { "c8lb3": { "attempts": 2, "revealed": true, "last": { "option": 1, "correct": true } }, "other": { "score": 9 } } } }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  { "name": "unknown event type throws", "initial": { "nodes": [] }, "events": [{ "event": { "type": "future_event" } }], "expected_error": "Unsupported hole event: future_event" }
+]

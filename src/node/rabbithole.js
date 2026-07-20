@@ -4,7 +4,9 @@ import { log } from "./logger.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
 import { addAssetsToHole, defaultFsStore } from "./fs-store.js";
-import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "../core/base-url.js";
+import { deriveNodeBaseUrl, normalizeBaseUrl } from "../core/base-url.js";
+import { normalizeBlockIds } from "../core/blocks.js";
+import { ingestPdfDocument, isPdfFile } from "./pdf-ingest.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -18,26 +20,27 @@ async function resolveMarkdown({ content, filePath }) {
  * `signal` is the MCP request's AbortSignal — if the human cancels the tool
  * call, the session tells the browser the agent detached.
  */
-export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, ingestId, signal }) {
+export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, signal }) {
   if (holeId) {
-    if (ingestId) {
-      throw new Error("ingest_id can only be used when starting a new Rabbithole; use ingest_pdf with hole_id for saved holes.");
-    }
     return resumeRabbithole(holeId, signal, assets);
   }
 
-  log(`openRabbithole: "${title}"`);
-  const markdown = await resolveMarkdown({ content, filePath });
+  const pdf = !content && filePath && await isPdfFile(filePath)
+    ? await ingestPdfDocument({ filePath, store: defaultFsStore, title })
+    : null;
+  const resolvedTitle = pdf?.title || title || "Document";
+  log(`openRabbithole: "${resolvedTitle}"`);
+  const markdown = pdf?.markdown || normalizeBlockIds(await resolveMarkdown({ content, filePath })).markdown;
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
   const newHoleId = randomUUID();
-  if (ingestId) await defaultFsStore.adoptStagedAssets(newHoleId, ingestId);
+  if (pdf) await pdf.adopt(newHoleId);
   await addAssetsToHole(newHoleId, assets);
   const assetNames = new Set(await defaultFsStore.listAssets(newHoleId));
   const rootId = randomUUID();
   const rootNode = {
     id: rootId,
     parent_id: null,
-    title: title || "Document",
+    title: resolvedTitle,
     markdown,
     base_url: base.base_url,
     base_url_source: base.base_url_source,
@@ -49,11 +52,12 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
     status: "answered",
     read: true, // the human lands on the root immediately
     created_at: new Date().toISOString(),
+    extensions: pdf ? { pdf: pdf.pdfExtension } : {},
   };
 
   const session = await createSession({
     holeId: newHoleId,
-    title: title || "Document",
+    title: resolvedTitle,
     rootId,
     nodes: [rootNode],
     assetNames,
@@ -81,7 +85,7 @@ async function resumeRabbithole(holeId, signal, assets) {
   // Guard against schema drift / partial files: a hole with no root_id or no
   // root node would open a session the browser can't render and the tool would
   // block on. Fail fast with an actionable error instead.
-  if (!hole || !hole.root_id || !Array.isArray(hole.nodes)) {
+  if (!hole.root_id || !Array.isArray(hole.nodes)) {
     throw new Error(`Hole ${holeId} is missing a root_id or nodes; cannot resume.`);
   }
   if (!hole.nodes.some((n) => n && n.id === hole.root_id)) {
@@ -94,14 +98,13 @@ async function resumeRabbithole(holeId, signal, assets) {
     // the agent at construction. Files predating the status field are all
     // answered nodes.
     const pending = raw.status === "pending";
-    const base = normalizeStoredBaseUrlFields(raw);
     nodes.push({
       id: raw.id,
       parent_id: raw.parent_id ?? null,
       title: raw.title ?? "",
       markdown: pending ? "" : (raw.markdown ?? ""),
-      base_url: base.base_url,
-      base_url_source: base.base_url_source,
+      base_url: raw.base_url,
+      base_url_source: raw.base_url_source,
       origin: raw.origin ?? null,
       position: raw.position ?? { x: 0, y: 0 },
       size: raw.size ?? null,
@@ -110,6 +113,7 @@ async function resumeRabbithole(holeId, signal, assets) {
       status: pending ? "pending" : "answered",
       read: !!raw.read,
       created_at: raw.created_at ?? null,
+      extensions: raw.extensions ?? {},
     });
   }
 

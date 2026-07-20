@@ -6,11 +6,12 @@ export class TitleSentinelParser {
     this.title = null;
     this.buffer = "";
     this.decided = false;
+    this.strippingLeadingBlankLines = false;
   }
 
   push(chunk) {
     const text = String(chunk ?? "");
-    if (this.decided) return text;
+    if (this.decided) return this.stripLeadingBlankLines(text);
     this.buffer += text;
     const newline = this.buffer.indexOf("\n");
     if (newline === -1 && this.buffer.length < 240) return "";
@@ -22,7 +23,8 @@ export class TitleSentinelParser {
       this.title = truncate(match[1].trim(), 72) || this.fallbackTitle;
       this.decided = true;
       this.buffer = "";
-      return rest.replace(/^\n+/, "");
+      this.strippingLeadingBlankLines = true;
+      return this.stripLeadingBlankLines(rest);
     }
     this.title = this.fallbackTitle;
     this.decided = true;
@@ -34,6 +36,13 @@ export class TitleSentinelParser {
   finish() {
     if (this.decided) return "";
     const out = this.push("\n");
+    return out;
+  }
+
+  stripLeadingBlankLines(text) {
+    if (!this.strippingLeadingBlankLines) return text;
+    const out = text.replace(/^\n+/, "");
+    if (out) this.strippingLeadingBlankLines = false;
     return out;
   }
 }

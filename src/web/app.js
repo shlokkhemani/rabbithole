@@ -1,52 +1,58 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
-import { createBrain, defaultBrainSettings, presetFor, settingsForPreset, BRAIN_PRESETS } from "./brain/index.js";
+import { createBrain, providerFor } from "./brain/index.js";
+import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./brain/pdf-transcription.js";
+import { loadSettings, saveSettings } from "./settings/preferences-store.js";
+import { getApiKey } from "./settings/credential-store.js";
+import { createSettingsPopover } from "./settings/settings-popover.js";
+import { createOllamaRecoveryDialog } from "./settings/ollama-recovery.js";
+import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
+import { getGenerationSetupStatus, invalidateGenerationSetup } from "./settings/setup-readiness.js";
+import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
-import { DirectRabbitholeHost, createHoleFromMarkdown, titleFromMarkdown } from "./transport/direct-host.js";
+import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
-import { activateFocusTrap } from "../ui/focus-trap.js";
-import { renderMarkdownToHtml } from "../ui/renderer.js";
-import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
+import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
+import { openDialog } from "../ui/primitives/dialog.js";
+import { openPopover } from "../ui/primitives/popover.js";
+import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
+import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
+import { escapeHtml } from "../core/utils.js";
+import { wireNotice } from "../ui/primitives/notice.js";
+import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
+import { flushPendingSaves } from "../ui/transport-status.js";
+import { registerRendererAssetName } from "../ui/renderer.js";
+import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
-import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
-import { testedModelHint } from "./brain/tested-models.js";
+import { describePdfImportFailure, ingestPdfToStoredHole } from "./ingest/pdf.js";
+import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
+import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
+import { getMermaidSource, loadMermaidRuntime } from "./mermaid-runtime.js";
 
-const SETTINGS_KEY = "rh-web-settings";
-const KEY_KEY = "rh-web-api-key";
 const LAST_HOLE_KEY = "rh-last-hole";
-const RAIL_KEY = "rh-rail-open";
-const AGENT_COMMAND = "claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole";
-const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
-const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
-const DEFAULT_FETCH_PROXY_URL =
-  typeof __RABBITHOLE_DEFAULT_PROXY_URL__ === "string" ? __RABBITHOLE_DEFAULT_PROXY_URL__ : "";
-
-const INTENTS = Object.freeze({
-  ask: { id: "ask", label: "Ask", primary: "Ask" },
-  document: { id: "document", label: "Open as document", primary: "Open document" },
-  url: { id: "url", label: "Open URL", primary: "Open URL" },
-});
-
-const EXAMPLE_QUESTIONS = [
-  "How do rockets land themselves?",
-  "Explain the attention mechanism",
-  "What actually happens in a black hole?",
-];
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
+const GITHUB_STARS_CACHE_KEY = "rh-github-stars-v1";
+const GITHUB_STARS_CACHE_TTL = 6 * 60 * 60 * 1000;
+const TOOLBAR_BUNNY_MARK_SVG = iconSvg("bunny", { size: 16 });
 
 const store = new IdbStore();
-let memoryKey = "";
 let currentHost = null;
 let currentHoleId = null;
-let uiStarted = false;
+let currentUi = null;
+let currentAssetLease = null;
+let holeTransition = Promise.resolve();
 let railOpen = false;
 let blankZoom = 1;
-let composerTrap = null;
-let settingsTrap = null;
-let composerIntentOverride = "";
-let composerAbortController = null;
-let composerStreamingHoleId = "";
-let pendingComposerAction = null;
-let pendingBranchRetry = null;
+let composerDialog = null;
+let settingsController = null;
+let ollamaRecoveryController = null;
+let projectMenuPopover = null;
+let githubStarsPromise = null;
+let composerPath = "";
 let lastHoleCount = 0;
+let railSummaries = null;
+let toastNotice = null;
+let currentPdfTranscriptionCapability = pdfTranscriptionCapability(loadSettings());
+let pdfTranscriptionCheckToken = 0;
 
 applyInitialWebTheme();
 
@@ -59,77 +65,116 @@ async function boot() {
   renderShell();
   initAppChrome();
   initComposer();
-  initSettingsModal();
   initGlobalDrops();
 
   const initial = await chooseInitialHole();
-  await renderRail();
+  await renderRail({ refresh: railSummaries == null });
   if (initial) {
     await startHole(initial, { replace: true });
   } else {
-    showBlankCanvas({ openComposer: true });
+    showBlankCanvas();
   }
-  exposeTestApi();
+  installTestSeam({
+    store,
+    currentHoleId: () => currentHoleId,
+    createDocument: createFromComposerDocument,
+    exportSnapshot: async () => buildSnapshotHtml(await buildSnapshotProjection()),
+    exportPortable: async () => {
+      await flushPendingSaves();
+      await currentHost?.flushSave();
+      return buildRabbitholeExport(store, currentHoleId);
+    },
+  });
 }
 
 function renderShell() {
-  document.documentElement.classList.remove("web-home-active");
   document.documentElement.classList.add("web-canvas-active");
   document.body.classList.add("mode-canvas", "web-shell");
   document.body.innerHTML = `<div id="canvas-root">${CANVAS_SHELL}</div>
     <aside id="web-rail" class="web-rail" aria-label="Rabbitholes" tabindex="-1"></aside>
-    <div id="composer-modal" class="composer-modal" role="dialog" aria-modal="true" aria-labelledby="composer-title" hidden>
-      <div class="composer-card" id="composer-card">
-        <div class="composer-question" id="composer-question" hidden></div>
-        <textarea id="composer-input" rows="1" placeholder="What do you want to understand?" autocomplete="off" spellcheck="true"></textarea>
-        <div class="composer-subline">Paste a doc or URL — or drop a PDF anywhere</div>
-        <div class="intent-row" role="group" aria-label="Intent">
-          ${Object.values(INTENTS).map((intent) => `<button class="intent-chip" type="button" data-intent="${intent.id}" aria-pressed="false">${escapeHtml(intent.label)}</button>`).join("")}
-          <label class="intent-chip improve-chip" id="improve-chip" hidden>
-            <input id="composer-improve" type="checkbox">
-            <span>Improve structure</span>
-          </label>
-        </div>
-        <div id="composer-examples" class="composer-examples" hidden></div>
-        <div id="composer-key-panel" class="inline-key-slot" hidden></div>
-        <div id="composer-stream" class="composer-stream" hidden>
-          <div id="composer-stream-doc" class="composer-stream-doc md" aria-live="polite"></div>
-        </div>
+    <div id="composer-modal" class="composer-modal" hidden>
+      <div class="composer-card" id="composer-card" tabindex="-1">
+        <section id="composer-start" class="composer-start">
+          <header class="composer-start-head">
+            <span class="composer-title-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
+            <h1 id="composer-title">Enter a Rabbithole</h1>
+          </header>
+          <div class="composer-paths" role="group" aria-label="Choose how to begin">
+            <button class="composer-path" id="composer-path-ask" type="button" data-path="ask">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("question")}</span>
+              <span class="composer-path-copy"><strong>Ask a question</strong><small>Begin with something you want to understand.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-file" type="button" data-path="file">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("file")}</span>
+              <span class="composer-path-copy"><strong>Open a document</strong><small>Bring in a PDF or Markdown file from your device.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-paste" type="button" data-path="paste">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("paste")}</span>
+              <span class="composer-path-copy"><strong>Paste text or Markdown</strong><small>Start from your clipboard.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-url" type="button" data-path="url">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("link")}</span>
+              <span class="composer-path-copy"><strong>Open a link</strong><small>Start from an article, paper, or webpage.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </section>
+        <section id="composer-entry" class="composer-entry" hidden>
+          <button id="composer-back" class="composer-back" type="button"><span aria-hidden="true">←</span> All options</button>
+          <header class="composer-entry-head">
+            <h2 id="composer-entry-title"></h2>
+            <p id="composer-entry-copy"></p>
+          </header>
+          <textarea id="composer-input" rows="1" autocomplete="off" spellcheck="true"></textarea>
+          <div class="composer-entry-actions">
+            <button id="composer-primary" class="web-primary" type="button"></button>
+          </div>
+        </section>
+        <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,.html,text/markdown,text/plain,text/html,application/pdf,application/json" hidden>
         <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
-        <div class="composer-actions">
-          <label class="file-pick" for="file-md">
-            <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json">
-            <span>Choose file</span>
-          </label>
-          <button id="composer-primary" class="web-primary" type="button">Ask</button>
-        </div>
       </div>
     </div>
-    <div id="blank-start-hint" class="blank-start-hint" hidden>Press N to start a new Rabbithole</div>
-    <div id="web-settings-modal" class="web-settings-modal" role="dialog" aria-modal="true" aria-label="Provider settings" hidden>
-      <div class="web-settings-dialog">
-        <button id="web-settings-close" class="web-close" type="button">Close</button>
-        <div id="settings-inline-key" class="settings-inline-key" hidden></div>
-        <section id="settings-panel" class="settings-panel expanded"></section>
-      </div>
+    <div id="blank-start" class="blank-start" hidden>
+      <span id="blank-start-new-wrap" class="blank-start-new-wrap">
+        ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: iconSvg("plus") })}
+        <span id="blank-start-status" class="blank-start-tooltip" role="tooltip">Set up AI before starting a Rabbithole.</span>
+      </span>
+      ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
     </div>
-    <div id="web-toast" class="web-toast" aria-live="polite"></div>`;
-  railOpen = loadRailOpen();
+    <nav id="project-menu" class="project-menu popover-surface" role="menu" aria-label="Rabbithole project" hidden>
+      <div class="project-menu-head" role="presentation">
+        <span class="project-menu-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
+        <span><strong>Rabbithole</strong><small>Open source · MIT</small></span>
+      </div>
+      <a class="project-menu-item" role="menuitem" href="/about/" target="_blank" rel="noopener noreferrer"><span>About Rabbithole</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="/about/#install" target="_blank" rel="noopener noreferrer"><span>Install &amp; self-host</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item project-menu-github" role="menuitem" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span>GitHub</span><span class="project-menu-meta"><span id="project-github-stars" class="github-star-count" aria-label="GitHub stars"><span aria-hidden="true">★</span> Stars</span><span aria-hidden="true">↗</span></span></a>
+    </nav>
+    <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
+  toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
+  document.getElementById("tb-tools")?.insertAdjacentHTML("afterbegin",
+    `${iconButtonMarkup({ className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: TOOLBAR_BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
+  railOpen = false;
   applyRailState();
+  syncRailPosition();
+  requestAnimationFrame(syncRailPosition);
 }
 
 async function chooseInitialHole() {
-  const hashHole = holeIdFromHash();
-  if (hashHole) {
-    const hole = await store.loadHole(hashHole);
-    if (hole) return hole;
+  const pathHole = holeIdFromPathname(location.pathname);
+  if (pathHole) {
+    return store.loadHole(pathHole);
   }
   const storedId = safeLocalStorageGet(LAST_HOLE_KEY);
-  if (storedId && storedId !== hashHole) {
+  if (storedId) {
     const stored = await store.loadHole(storedId);
     if (stored) return stored;
   }
   const holes = await store.listHoles();
+  railSummaries = holes;
   lastHoleCount = holes.length;
   if (!holes.length) return null;
   return store.loadHole(holes[0].hole_id);
@@ -137,9 +182,57 @@ async function chooseInitialHole() {
 
 function initAppChrome() {
   const rail = document.getElementById("web-rail");
+  window.addEventListener("resize", syncRailPosition, { passive: true });
+  window.addEventListener("popstate", () => { void openHistoryLocation(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void currentHost?.flushSave();
+  });
+  window.addEventListener("pagehide", () => {
+    void currentHost?.flushSave();
+    store.close();
+  });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
-  document.getElementById("t-new")?.addEventListener("click", () => openComposer({ source: "button" }));
-  document.getElementById("t-settings")?.addEventListener("click", () => openSettingsModal());
+  document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
+  const projectTrigger = document.getElementById("t-project");
+  const projectMenu = document.getElementById("project-menu");
+  projectTrigger?.addEventListener("click", () => projectMenuPopover ? closeProjectMenu() : openProjectMenu());
+  projectMenu?.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeProjectMenu({ restoreFocus: false });
+  });
+  projectMenu?.addEventListener("keydown", moveProjectMenuFocus);
+  const settingsTrigger = document.getElementById("t-settings");
+  ollamaRecoveryController = createOllamaRecoveryDialog({
+    onResolved: async ({ model, transcribeModel }) => {
+      const current = loadSettings();
+      saveSettings({ ...current, model, transcribe_model: transcribeModel, api_key: getApiKey(current) });
+      settingsController?.completeLocalSetup?.();
+      refreshCurrentBrain();
+      syncGenerationSetupUi();
+      if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
+    },
+  });
+  settingsController = createSettingsPopover({
+    trigger: settingsTrigger,
+    onSettingsChange: () => {
+      refreshCurrentBrain();
+      syncGenerationSetupUi();
+      if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
+      else currentPdfTranscriptionCapability = pdfTranscriptionCapability(loadSettings());
+    },
+    eyeSvg,
+    setKeyStatus,
+    validateKey: validateKeyForPreset,
+    openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
+  });
+  // The gear toggles: the layer stack ignores pointerdown on its own trigger,
+  // so a second click reaches us with the popover still open — close it.
+  settingsTrigger?.addEventListener("click", () => {
+    if (settingsController.isOpen()) settingsController.close();
+    else settingsController.open();
+  });
+  document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
+  document.getElementById("blank-start-setup")?.addEventListener("click", (event) => openModelSetup({ trigger: event.currentTarget }));
+  syncGenerationSetupUi();
   rail?.addEventListener("click", async (event) => {
     const row = event.target?.closest?.(".rail-row");
     if (!row) return;
@@ -150,12 +243,6 @@ function initAppChrome() {
       await deleteHoleFromRail(id);
       return;
     }
-    if (event.target.closest(".rail-export")) {
-      event.preventDefault();
-      event.stopPropagation();
-      await exportHoleFromRail(id);
-      return;
-    }
     if (event.target.closest(".rail-open")) {
       event.preventDefault();
       if (!id || id === currentHoleId) return;
@@ -163,6 +250,13 @@ function initAppChrome() {
       const hole = await store.loadHole(id);
       if (hole) await startHole(hole);
     }
+  });
+  rail?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    // Contain Escape to the rail: the canvas client's document-level handler
+    // treats a loose Escape as "open the reader".
+    event.stopPropagation();
+    setRailOpen(false);
   });
   document.getElementById("t-theme")?.addEventListener("click", () => {
     if (currentHoleId) return;
@@ -181,12 +275,109 @@ function initAppChrome() {
     if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return;
     if (event.key === "n" || event.key === "N") {
       event.preventDefault();
-      openComposer({ source: "keyboard" });
+      const trigger = document.getElementById("blank-start-new")?.offsetParent !== null
+        ? document.getElementById("blank-start-new")
+        : document.getElementById("t-new");
+      requestNewRabbithole({ source: "keyboard", trigger });
     } else if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       toggleRail();
     }
   });
+}
+
+function openProjectMenu() {
+  const trigger = document.getElementById("t-project");
+  const surface = document.getElementById("project-menu");
+  if (!trigger || !surface || projectMenuPopover) return;
+  surface.hidden = false;
+  projectMenuPopover = openPopover({
+    trigger,
+    surface,
+    placement: "top-start",
+    initialFocus: surface.querySelector('[role="menuitem"]'),
+    onClose: closeProjectMenu,
+  });
+  void loadGithubStars();
+}
+
+async function loadGithubStars() {
+  const cached = readGithubStarsCache();
+  if (cached) {
+    renderGithubStars(cached.count);
+    if (Date.now() - cached.updatedAt < GITHUB_STARS_CACHE_TTL) return;
+  }
+  if (githubStarsPromise) return githubStarsPromise;
+  githubStarsPromise = fetch(GITHUB_REPO_API_URL, {
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+    const count = Number((await response.json())?.stargazers_count);
+    if (!Number.isFinite(count) || count < 0) throw new Error("GitHub returned an invalid star count");
+    const value = { count: Math.floor(count), updatedAt: Date.now() };
+    safeLocalStorageSet(GITHUB_STARS_CACHE_KEY, JSON.stringify(value));
+    renderGithubStars(value.count);
+  }).catch(() => {}).finally(() => {
+    githubStarsPromise = null;
+  });
+  return githubStarsPromise;
+}
+
+function readGithubStarsCache() {
+  try {
+    const value = JSON.parse(safeLocalStorageGet(GITHUB_STARS_CACHE_KEY));
+    if (!Number.isFinite(value?.count) || !Number.isFinite(value?.updatedAt)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function renderGithubStars(count) {
+  const target = document.getElementById("project-github-stars");
+  if (!target) return;
+  const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(count);
+  target.innerHTML = `<span aria-hidden="true">★</span> ${escapeHtml(compact)}`;
+  target.setAttribute("aria-label", `${count.toLocaleString("en-US")} GitHub stars`);
+  target.title = `${count.toLocaleString("en-US")} GitHub stars`;
+}
+
+function closeProjectMenu(settings) {
+  if (!projectMenuPopover) return;
+  const active = projectMenuPopover;
+  projectMenuPopover = null;
+  active.close(settings);
+  document.getElementById("project-menu").hidden = true;
+}
+
+function moveProjectMenuFocus(event) {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = [...event.currentTarget.querySelectorAll('[role="menuitem"]')];
+  if (!items.length) return;
+  event.preventDefault();
+  const current = Math.max(0, items.indexOf(document.activeElement));
+  const next = event.key === "Home" ? 0
+    : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (current + 1) % items.length
+        : (current - 1 + items.length) % items.length;
+  items[next].focus({ preventScroll: true });
+}
+
+async function openHistoryLocation() {
+  const holeId = holeIdFromPathname(location.pathname);
+  if (holeId === currentHoleId) return;
+  await currentHost?.flushSave();
+  if (holeId) {
+    const hole = await store.loadHole(holeId);
+    if (hole) {
+      await startHole(hole, { replace: true });
+      return;
+    }
+  }
+  await disposeCurrentHole();
+  resetHoleSurface();
+  showBlankCanvas();
 }
 
 function initComposer() {
@@ -196,29 +387,25 @@ function initComposer() {
   const fileInput = document.getElementById("file-md");
 
   input.addEventListener("input", () => {
-    autoGrowTextarea(input, 240);
-    updateComposerIntent();
+    autoGrowTextarea(input, composerInputMaxHeight());
   });
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    const submitPaste = composerPath === "paste" && isSubmitEnter(event) && (event.metaKey || event.ctrlKey);
+    if (submitPaste || (composerPath !== "paste" && isSubmitEnter(event))) {
       event.preventDefault();
       runComposer();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      closeComposer();
     }
   });
   primary.addEventListener("click", runComposer);
+  document.getElementById("composer-back").addEventListener("click", showComposerStart);
+  document.getElementById("composer-path-ask").addEventListener("click", () => selectComposerPath("ask"));
+  document.getElementById("composer-path-paste").addEventListener("click", () => selectComposerPath("paste"));
+  document.getElementById("composer-path-url").addEventListener("click", () => selectComposerPath("url"));
+  document.getElementById("composer-path-file").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (file) await createFromFile(file);
     fileInput.value = "";
-  });
-  modal.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
-    button.addEventListener("click", () => {
-      composerIntentOverride = button.dataset.intent;
-      updateComposerIntent();
-    });
   });
   for (const type of ["dragenter", "dragover"]) {
     modal.addEventListener(type, (event) => {
@@ -236,9 +423,6 @@ function initComposer() {
     const file = event.dataTransfer?.files?.[0];
     if (file) await createFromFile(file);
   });
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) closeComposer();
-  });
 }
 
 function initGlobalDrops() {
@@ -247,7 +431,7 @@ function initGlobalDrops() {
     viewport.addEventListener(type, (event) => {
       if (currentHoleId || !event.dataTransfer?.types?.includes("Files")) return;
       event.preventDefault();
-      document.body.classList.add("blank-dragging");
+      if (getGenerationSetupStatus().ready) document.body.classList.add("blank-dragging");
     });
   }
   for (const type of ["dragleave", "drop"]) {
@@ -261,124 +445,156 @@ function initGlobalDrops() {
     if (currentHoleId) return;
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
+    if (!getGenerationSetupStatus().ready) {
+      openModelSetup({ trigger: document.getElementById("blank-start-setup") });
+      return;
+    }
     openComposer({ source: "drop" });
     await createFromFile(file);
   });
 }
 
-function openComposer({ source = "button", value = "" } = {}) {
+function requestNewRabbithole({ source = "button", value = "", trigger } = {}) {
+  if (!getGenerationSetupStatus().ready) {
+    openModelSetup({ trigger });
+    return;
+  }
+  openComposer({ source, value, trigger });
+}
+
+function openModelSetup({ trigger, status = "", onReady = null } = {}) {
+  const blankSetup = document.getElementById("blank-start-setup");
+  const safeTrigger = trigger?.disabled ? (blankSetup?.offsetParent !== null ? blankSetup : document.getElementById("t-settings")) : trigger;
+  settingsController.open({ trigger: safeTrigger || document.getElementById("t-settings"), purpose: status ? "recovery" : "setup", status, onReady });
+}
+
+function syncGenerationSetupUi() {
+  const setup = getGenerationSetupStatus();
+  const newButtons = [document.getElementById("blank-start-new"), document.getElementById("t-new")].filter(Boolean);
+  newButtons.forEach((button) => { button.disabled = !setup.ready; });
+  const blankNew = document.getElementById("blank-start-new");
+  const blankNewWrap = document.getElementById("blank-start-new-wrap");
+  const setupButton = document.getElementById("blank-start-setup");
+  const status = document.getElementById("blank-start-status");
+  if (blankNew) {
+    if (setup.ready) blankNew.removeAttribute("aria-describedby");
+    else blankNew.setAttribute("aria-describedby", "blank-start-status");
+  }
+  if (blankNewWrap) blankNewWrap.toggleAttribute("data-disabled", !setup.ready);
+  if (setupButton) setupButton.textContent = setup.ready ? "Model settings" : "Set up AI";
+  if (status) status.hidden = setup.ready;
+}
+
+function openComposer({ source = "button", value = "", trigger } = {}) {
+  if (!getGenerationSetupStatus().ready) {
+    openModelSetup({ trigger });
+    return;
+  }
   const modal = document.getElementById("composer-modal");
   const input = document.getElementById("composer-input");
-  const examples = document.getElementById("composer-examples");
-  const hint = document.getElementById("blank-start-hint");
+  const card = document.getElementById("composer-card");
 
-  pendingComposerAction = null;
-  composerIntentOverride = "";
+  composerPath = "";
   setIngestStatus("");
-  clearComposerKeyPanel();
-  resetComposerStreaming();
-  document.getElementById("composer-question").hidden = true;
-  document.getElementById("composer-stream").hidden = true;
-  document.getElementById("composer-input").hidden = false;
-  document.querySelector(".composer-subline").hidden = false;
-  document.querySelector(".intent-row").hidden = false;
-  document.querySelector(".composer-actions").hidden = false;
+  card.removeAttribute("data-path");
+  document.getElementById("composer-start").hidden = false;
+  document.getElementById("composer-entry").hidden = true;
   input.value = value;
-  autoGrowTextarea(input, 240);
-  renderComposerExamples();
-  examples.hidden = lastHoleCount !== 0 || source !== "empty";
-  modal.hidden = false;
-  hint.hidden = true;
-  updateComposerIntent();
-  if (composerTrap) composerTrap();
-  composerTrap = activateFocusTrap(modal, {
-    initialFocus: input,
-    onEscape: closeComposer,
+  autoGrowTextarea(input, composerInputMaxHeight());
+  document.getElementById("blank-start").hidden = true;
+  if (value) selectComposerPath(isSingleHttpUrl(value) ? "url" : "ask", { value });
+  composerDialog?.close("programmatic", { restoreFocus: false });
+  composerDialog = openDialog({
+    backdrop: modal,
+    dialog: card,
+    labelledby: "composer-title",
+    trigger,
+    initialFocus: value ? input : card,
+    onClose: finishClosingComposer,
   });
+}
+
+function finishClosingComposer() {
+  const modal = document.getElementById("composer-modal");
+  modal.hidden = true;
+  modal.classList.remove("dragging");
+  composerDialog = null;
+  if (!currentHoleId && lastHoleCount === 0) {
+    document.getElementById("blank-start").hidden = false;
+  }
+}
+
+function selectComposerPath(path, { value = "" } = {}) {
+  const config = {
+    ask: {
+      title: "Ask a question",
+      copy: "What would you like to understand?",
+      placeholder: "Ask anything…",
+      primary: "Start exploring",
+    },
+    paste: {
+      title: "Paste text or Markdown",
+      copy: "Paste anything you want to explore. We’ll keep the Markdown intact.",
+      placeholder: "Paste text or Markdown here…",
+      primary: "Open in Rabbithole",
+    },
+    url: {
+      title: "Open a link",
+      copy: "Paste a link to an article, paper, or webpage. arXiv works especially well.",
+      placeholder: "https://…",
+      primary: "Open in Rabbithole",
+    },
+  }[path];
+  if (!config) return;
+  composerPath = path;
+  const input = document.getElementById("composer-input");
+  document.getElementById("composer-start").hidden = true;
+  document.getElementById("composer-entry").hidden = false;
+  document.getElementById("composer-card").dataset.path = path;
+  document.getElementById("composer-entry-title").textContent = config.title;
+  document.getElementById("composer-entry-copy").textContent = config.copy;
+  input.placeholder = config.placeholder;
+  input.spellcheck = path !== "url";
+  input.value = value;
+  document.getElementById("composer-primary").textContent = config.primary;
+  document.getElementById("composer-primary").title = path === "paste"
+    ? "Create (Ctrl/⌘+Enter)"
+    : "Submit (Enter) · New line (Shift+Enter)";
+  autoGrowTextarea(input, composerInputMaxHeight());
   input.focus({ preventScroll: true });
 }
 
-function closeComposer() {
-  if (composerAbortController) {
-    composerAbortController.abort();
-    cleanupStreamingHole();
-  }
-  const modal = document.getElementById("composer-modal");
-  modal.hidden = true;
-  modal.classList.remove("dragging", "streaming");
-  pendingComposerAction = null;
-  clearComposerKeyPanel();
-  if (composerTrap) {
-    composerTrap();
-    composerTrap = null;
-  }
-  if (!currentHoleId && lastHoleCount === 0) {
-    document.getElementById("blank-start-hint").hidden = false;
-  }
-}
-
-function renderComposerExamples() {
-  const examples = document.getElementById("composer-examples");
-  examples.innerHTML = EXAMPLE_QUESTIONS.map((question) =>
-    `<button type="button" class="example-chip">${escapeHtml(question)}</button>`
-  ).join("");
-  examples.querySelectorAll(".example-chip").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.getElementById("composer-input").value = button.textContent.trim();
-      composerIntentOverride = "ask";
-      autoGrowTextarea(document.getElementById("composer-input"), 240);
-      updateComposerIntent();
-      document.getElementById("composer-input").focus();
-    });
-  });
-}
-
-function updateComposerIntent() {
-  const input = document.getElementById("composer-input");
-  const inferred = inferIntent(input.value);
-  const active = composerIntentOverride || inferred;
-  document.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
-    const isActive = button.dataset.intent === active;
-    button.classList.toggle("active", isActive);
-    button.classList.toggle("inferred", button.dataset.intent === inferred);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
-  document.getElementById("improve-chip").hidden = active !== "document";
-  document.getElementById("composer-primary").textContent = INTENTS[active]?.primary || "Ask";
-}
-
-function inferIntent(value) {
-  const text = String(value || "").trim();
-  if (isSingleHttpUrl(text)) return "url";
-  if (looksLikeDocument(text)) return "document";
-  return "ask";
+function showComposerStart() {
+  composerPath = "";
+  setIngestStatus("");
+  document.getElementById("composer-card").removeAttribute("data-path");
+  document.getElementById("composer-entry").hidden = true;
+  document.getElementById("composer-start").hidden = false;
+  document.getElementById("composer-input").value = "";
+  document.getElementById("composer-card").focus({ preventScroll: true });
 }
 
 async function runComposer() {
   const input = document.getElementById("composer-input");
   const value = input.value.trim();
-  const intent = document.querySelector(".intent-chip.active")?.dataset.intent || inferIntent(value);
-  if (intent === "url") return createFromUrl(value);
-  if (intent === "document") return createFromComposerDocument(value);
-  return createFromAsk(value);
+  if (composerPath === "url") return createFromUrl(value);
+  if (composerPath === "ask") return createFromAsk(value);
+  if (composerPath === "paste") return createFromComposerDocument(input.value);
 }
 
-async function createFromComposerDocument(markdown) {
-  if (!markdown) {
+async function createFromComposerDocument(markdown, { improveStructure = false } = {}) {
+  if (!String(markdown || "").trim()) {
     setIngestStatus("Paste a document first.", "error");
     return;
   }
-  const action = () => createFromComposerDocument(markdown);
-  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
   try {
-    const authored = await maybeAuthorMarkdown({
+    const hole = await maybeAuthorDocument({
       title: "",
       markdown,
       sourceName: "pasted text",
       kind: "paste",
+      improveStructure,
     });
-    const hole = createHoleFromMarkdown({ title: "", markdown: authored });
-    await store.saveHole(hole);
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
@@ -392,104 +608,23 @@ async function createFromAsk(question) {
     return;
   }
   const action = () => createFromAsk(question);
-  if (!(await ensureKeyForComposerAction(action))) return;
 
-  const settings = loadSettings();
-  const key = getApiKey(settings);
-  const brain = createBrain(settings, key);
-  const controller = new AbortController();
-  composerAbortController = controller;
-  composerStreamingHoleId = "";
-
-  const modal = document.getElementById("composer-modal");
-  const questionEl = document.getElementById("composer-question");
-  const stream = document.getElementById("composer-stream");
-  const streamDoc = document.getElementById("composer-stream-doc");
-  modal.classList.add("streaming");
-  questionEl.hidden = false;
-  questionEl.textContent = question;
-  stream.hidden = false;
-  streamDoc.innerHTML = "";
-  document.getElementById("composer-input").hidden = true;
-  document.querySelector(".composer-subline").hidden = true;
-  document.querySelector(".intent-row").hidden = true;
-  document.querySelector(".composer-actions").hidden = true;
-  setIngestStatus("Writing the root document...", "busy");
-
-  let markdown = "";
-  let hole = null;
   try {
-    for await (const chunk of brain.authorExplainer({ question }, controller.signal)) {
-      if (controller.signal.aborted) return;
-      markdown += chunk;
-      renderComposerStream(markdown);
-      if (!hole && markdown.trim()) {
-        hole = createHoleFromMarkdown({ title: "", markdown });
-        composerStreamingHoleId = hole.hole_id;
-        await store.saveHole(hole);
-      }
-    }
-    if (!markdown.trim()) throw new Error("The provider returned an empty document.");
-    if (!hole) {
-      hole = createHoleFromMarkdown({ title: "", markdown });
-      composerStreamingHoleId = hole.hole_id;
-    }
-    updateHoleRootMarkdown(hole, markdown);
+    setIngestStatus("Starting Rabbithole...", "busy");
+    const hole = createPendingHoleFromQuestion(question);
     await store.saveHole(hole);
-    setIngestStatus("");
-    composerStreamingHoleId = "";
+    setIngestStatus("Opening Rabbithole...", "busy");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    if (controller.signal.aborted) return;
-    await cleanupStreamingHole();
     const message = err?.message || String(err);
     if (isAuthLikeError(err)) {
-      showComposerKeyPanel({
-        message,
-        afterValidated: action,
-      });
+      invalidateGenerationSetup();
+      syncGenerationSetupUi();
+      settingsController.open({ trigger: document.getElementById("t-settings"), purpose: "recovery", status: message, onReady: action, focusKey: true });
     } else {
       setIngestStatus(`Ask failed. ${message}`, "error");
     }
-  } finally {
-    if (composerAbortController === controller) composerAbortController = null;
   }
-}
-
-function renderComposerStream(markdown) {
-  const streamDoc = document.getElementById("composer-stream-doc");
-  streamDoc.innerHTML = `${renderMarkdownToHtml(markdown)}<span class="stream-caret" aria-hidden="true"></span>`;
-  const stream = document.getElementById("composer-stream");
-  stream.scrollTop = stream.scrollHeight;
-}
-
-function updateHoleRootMarkdown(hole, markdown) {
-  const title = titleFromMarkdown(markdown) || hole.title || "Untitled";
-  hole.title = title;
-  const root = hole.nodes?.find((node) => node.id === hole.root_id) || hole.nodes?.[0];
-  if (root) {
-    root.title = title;
-    root.markdown = markdown;
-    root.status = "answered";
-    root.read = true;
-  }
-}
-
-async function cleanupStreamingHole() {
-  const id = composerStreamingHoleId;
-  composerStreamingHoleId = "";
-  if (!id) return;
-  try { await store.deleteHole(id); } catch {}
-  await renderRail();
-}
-
-function resetComposerStreaming() {
-  if (composerAbortController) {
-    composerAbortController.abort();
-    composerAbortController = null;
-  }
-  composerStreamingHoleId = "";
-  document.getElementById("composer-modal")?.classList.remove("streaming");
 }
 
 async function createFromUrl(rawUrl) {
@@ -519,24 +654,25 @@ async function createFromUrl(rawUrl) {
 
 async function createFromFile(file) {
   if (isRabbitholeFile(file)) return createFromRabbitholeFile(file);
+  if (isSnapshotFile(file)) return createFromSnapshotFile(file);
   if (isPdfFile(file)) return createFromPdfFile(file);
   if (!isMarkdownFile(file)) {
-    setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
+    setIngestStatus("Choose a markdown, PDF, .rabbithole, or snapshot HTML file.", "error");
     return;
   }
-  const action = () => createFromFile(file);
-  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
+  if (file.size > 16 * 1024 * 1024) {
+    setIngestStatus("Import failed: file exceeds 16 MB.", "error");
+    return;
+  }
   try {
     setIngestStatus("Reading markdown file...", "busy");
     const markdown = await file.text();
-    const authored = await maybeAuthorMarkdown({
+    const hole = await maybeAuthorDocument({
       title: file.name.replace(/\.[^.]+$/, ""),
       markdown,
       sourceName: file.name,
       kind: "file",
     });
-    const hole = createHoleFromMarkdown({ title: "", markdown: authored });
-    await store.saveHole(hole);
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
@@ -544,10 +680,23 @@ async function createFromFile(file) {
   }
 }
 
+async function createFromSnapshotFile(file) {
+  try {
+    setIngestStatus("Importing Rabbithole snapshot...", "busy");
+    const imported = await importSnapshotFile(store, file, { mintHoleId: createWhimsicalHoleId });
+    setIngestStatus("");
+    const hole = await store.loadHole(imported.hole_id);
+    if (!hole) throw new Error("Imported snapshot could not be loaded.");
+    await startHole(hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
+  }
+}
+
 async function createFromRabbitholeFile(file) {
   try {
     setIngestStatus("Importing Rabbithole file...", "busy");
-    const imported = await importRabbitholeFile(store, file);
+    const imported = await importRabbitholeFile(store, file, { mintHoleId: createWhimsicalHoleId });
     setIngestStatus("");
     const hole = await store.loadHole(imported.hole_id);
     if (!hole) throw new Error("Imported file could not be loaded.");
@@ -559,225 +708,259 @@ async function createFromRabbitholeFile(file) {
 
 async function createFromPdfFile(file) {
   try {
-    const { ingestPdfToStoredHole } = await import("./ingest/pdf.js");
-    setIngestStatus("Loading PDF importer...", "busy");
+    setIngestStatus("Preparing PDF...", "busy");
     const { hole } = await ingestPdfToStoredHole({
       source: file,
       store,
       title: "",
       onProgress: ({ page, index, total }) => {
-        if (page) setIngestStatus(`Importing PDF page ${index}/${total}...`, "busy");
+        if (page) setIngestStatus(`Preparing page ${index} of ${total}`, "busy");
       },
     });
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Paste the text manually or drop a different PDF.`, "error");
+    setIngestStatus(describePdfImportFailure(err), "error");
   }
 }
 
-async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "", kind = "source", baseUrl = "" } = {}) {
-  if (!shouldImproveStructure()) return markdown;
+async function maybeAuthorDocument({
+  title = "",
+  markdown = "",
+  sourceName = "",
+  kind = "source",
+  baseUrl = "",
+  improveStructure = false,
+} = {}) {
+  const hole = createHoleFromMarkdown({ title, markdown, baseUrl });
+  if (!improveStructure) {
+    await store.saveHole(hole);
+    return hole;
+  }
   const settings = loadSettings();
   const key = getApiKey(settings);
-  setIngestStatus("Improving structure with the author model...", "busy");
+  setIngestStatus("Improving structure with the model...", "busy");
   const brain = createBrain(settings, key);
-  const controller = new AbortController();
-  let out = "";
-  for await (const chunk of brain.authorDocument({
+  const root = hole.nodes[0];
+  root.status = "pending";
+  root.markdown = "";
+  const host = new DirectRabbitholeHost({ store, hole, brain });
+  return host.authorDocument({
     title,
     markdown,
     source_name: sourceName,
     kind,
     base_url: baseUrl,
-  }, controller.signal)) {
-    out += chunk;
-    if (out.length) setIngestStatus(`Improving structure... ${out.length.toLocaleString()} characters`, "busy");
-  }
-  return out.trim() || markdown;
+  }, { onProgress: (length) => {
+    if (length) setIngestStatus(`Improving structure... ${length.toLocaleString()} characters`, "busy");
+  } });
 }
 
-function shouldImproveStructure() {
-  return document.getElementById("composer-improve")?.checked === true &&
-    !document.getElementById("improve-chip")?.hidden;
+function startHole(hole, options = {}) {
+  const transition = holeTransition.then(() => mountHole(hole, options));
+  holeTransition = transition.catch(() => {});
+  return transition;
 }
 
-async function ensureKeyForComposerAction(action) {
-  const settings = loadSettings();
-  const preset = presetFor(settings.preset);
-  if (!preset.requires_key || getApiKey(settings)) return true;
-  pendingComposerAction = action;
-  showComposerKeyPanel({
-    message: shouldImproveStructure()
-      ? "Improve structure uses your model key."
-      : "Ask uses your model key.",
-    afterValidated: action,
-  });
-  return false;
-}
-
-function showComposerKeyPanel({ message = "", afterValidated = null } = {}) {
-  const slot = document.getElementById("composer-key-panel");
-  slot.hidden = false;
-  renderInlineKeyPanel(slot, {
-    idPrefix: "composer",
-    message,
-    afterValidated: async () => {
-      slot.hidden = true;
-      pendingComposerAction = null;
-      await afterValidated?.();
-    },
-  });
-}
-
-function clearComposerKeyPanel() {
-  const slot = document.getElementById("composer-key-panel");
-  if (slot) {
-    slot.hidden = true;
-    slot.innerHTML = "";
-  }
-}
-
-async function startHole(hole, { replace = false } = {}) {
-  if (uiStarted) {
-    await currentHost?.flushSave();
-    location.hash = `hole=${encodeURIComponent(hole.hole_id)}`;
-    location.reload();
-    return;
-  }
-  uiStarted = true;
+async function mountHole(hole, { replace = false } = {}) {
+  await disposeCurrentHole();
+  resetHoleSurface();
   currentHoleId = hole.hole_id;
-  currentHost = null;
   document.body.classList.remove("web-blank-canvas");
-  document.getElementById("blank-start-hint").hidden = true;
+  document.getElementById("blank-start").hidden = true;
   closeComposerSilently();
   safeLocalStorageSet(LAST_HOLE_KEY, hole.hole_id);
-  if (replace) history.replaceState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
-  else history.pushState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
+  if (replace) history.replaceState(null, "", pathnameForHole(hole.hole_id));
+  else history.pushState(null, "", pathnameForHole(hole.hole_id));
 
   setSnapshotHooks({
-    fetchAssetData: async (name) => blobToDataUrl(await store.getAsset(currentHoleId, name)),
+    fetchAssetBinary: async (name) => store.getAsset(currentHoleId, name),
+    getSnapshotHole: async () => {
+      await currentHost.flushSave();
+      return store.loadHole(currentHoleId);
+    },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getPdfWorkerSource: () => window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__ || "",
+    getPdfJsSource: () => window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__ || "",
+    getMermaidSource,
+    getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
+  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted)) {
+    await refreshPdfTranscriptionCapability();
+  }
   const settings = loadSettings();
   const key = getApiKey(settings);
-  const brain = key || !presetFor(settings.preset).requires_key ? createBrain(settings, key) : null;
-  currentHost = new DirectRabbitholeHost({
+  const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  const host = new DirectRabbitholeHost({
     store,
     hole,
     brain,
-    onToast: showToast,
+    registerAssetUrl: (name, blob) => currentAssetLease?.register(name, blob),
+    onToast: (notice) => { if (currentHost === host) showToast(notice); },
     onDone: async () => {
-      await currentHost?.flushSave();
+      if (currentHost !== host) return;
+      await host.flushSave();
       history.replaceState(null, "", location.pathname);
       location.reload();
     },
-    onRestore: () => location.reload(),
-    onAuthRequired: handleBranchAuthRequired,
+    onRestore: () => { if (currentHost === host) location.reload(); },
+    onAuthRequired: (...args) => { if (currentHost === host) return handleBranchAuthRequired(...args); },
+    onProviderFailure: (...args) => { if (currentHost === host) return handleBranchProviderFailure(...args); },
+    onRootAnswered: () => { if (currentHost === host) return renderRail(); },
+    getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
   });
+  currentHost = host;
 
-  const hydration = currentHost.hydration();
-  hydration.asset_data = await buildLiveAssetData(hole.hole_id);
-  startRabbithole(hydration, {
-    transport: currentHost.adapter(),
-    exportPortable: exportCurrentRabbithole,
-  });
-  document.getElementById("r-canvas")?.click();
-  await renderRail();
-  exposeTestApi();
+  try {
+    const hydration = host.hydration();
+    currentAssetLease = await createLiveAssetData(hole.hole_id);
+    hydration.asset_data = currentAssetLease.data;
+    currentUi = startRabbithole(hydration, {
+      transport: host.adapter(),
+      exportPortable: exportCurrentRabbithole,
+      loadMermaid: loadMermaidRuntime,
+      getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
+    });
+    document.getElementById("t-canvas")?.click();
+    const isNewRailItem = !railSummaries?.some((summary) => summary.hole_id === hole.hole_id);
+    await renderRail({ refresh: isNewRailItem, firstHoleId: isNewRailItem ? hole.hole_id : null });
+    host.startRootAnswer();
+  } catch (error) {
+    await disposeCurrentHole();
+    throw error;
+  }
+}
+
+async function disposeCurrentHole() {
+  settingsController?.close();
+  closeComposerSilently();
+  const ui = currentUi;
+  const host = currentHost;
+  const assets = currentAssetLease;
+  currentUi = null;
+  currentHost = null;
+  currentAssetLease = null;
+  currentHoleId = null;
+  const errors = [];
+  if (ui) {
+    try { await ui.flush(); } catch (error) { errors.push(error); }
+    try { await ui.dispose(); } catch (error) { errors.push(error); }
+  }
+  if (host) {
+    try { await host.flushSave(); } catch (error) { errors.push(error); }
+    try { await host.dispose(); } catch (error) { errors.push(error); }
+  }
+  try { assets?.dispose(); } catch (error) { errors.push(error); }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, "Failed to dispose the previous Rabbithole");
+}
+
+function resetHoleSurface() {
+  document.body.classList.remove("agent-down", "session-over", "blank-dragging", "frozen");
+  const world = document.getElementById("world");
+  if (world) {
+    const edges = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    edges.id = "edges";
+    world.replaceChildren(edges);
+    world.style.transform = "";
+  }
+  document.getElementById("reader-main")?.replaceChildren();
+  document.getElementById("breadcrumb")?.replaceChildren();
 }
 
 function closeComposerSilently() {
   const modal = document.getElementById("composer-modal");
   if (modal) modal.hidden = true;
-  if (composerTrap) {
-    composerTrap();
-    composerTrap = null;
-  }
+  composerDialog?.close("programmatic", { restoreFocus: false });
+  composerDialog = null;
 }
 
-function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
-  uiStarted = false;
+function showBlankCanvas() {
   currentHost = null;
   currentHoleId = null;
   document.body.classList.add("mode-canvas", "web-blank-canvas");
-  document.getElementById("world").innerHTML = `<svg id="edges"></svg>`;
+  const edges = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  edges.id = "edges";
+  document.getElementById("world").replaceChildren(edges);
   setBlankZoom(1);
   history.replaceState(null, "", location.pathname);
-  if (shouldOpenComposer) openComposer({ source: "empty" });
+  document.getElementById("blank-start").hidden = false;
+  syncGenerationSetupUi();
 }
 
 async function exportCurrentRabbithole() {
+  await flushPendingSaves();
   await currentHost?.flushSave();
   if (!currentHoleId) throw new Error("No open Rabbithole to export.");
   const payload = await downloadRabbitholeExport(store, currentHoleId);
   return { filename: rabbitholeFilename(payload.hole?.title), payload };
 }
 
-async function renderRail() {
+async function renderRail({ refresh = true, firstHoleId = null } = {}) {
   const rail = document.getElementById("web-rail");
   if (!rail) return;
-  const summaries = await store.listHoles();
+  if (refresh || !railSummaries) railSummaries = await store.listHoles();
+  const summaries = firstHoleId
+    ? [...railSummaries].sort((a, b) => (b.hole_id === firstHoleId) - (a.hole_id === firstHoleId))
+    : railSummaries;
   lastHoleCount = summaries.length;
-  const holes = [];
-  for (const summary of summaries) {
-    const hole = await store.loadHole(summary.hole_id);
-    if (hole) holes.push({ summary, hole });
+  let inner = rail.querySelector(":scope > .rail-inner");
+  let list = inner?.querySelector(":scope > .rail-list");
+  if (!inner || !list) {
+    inner = document.createElement("div"); inner.className = "rail-inner";
+    list = document.createElement("div"); list.className = "rail-list"; list.id = "rail-list";
+    inner.appendChild(list); rail.replaceChildren(inner);
   }
-  rail.innerHTML = `<div class="rail-inner">
-    <header class="rail-head">
-      <div class="rail-wordmark"><span class="rail-mark">${bunnyMarkSvg()}</span><span>Rabbithole</span></div>
-      <span class="rail-count">${holes.length}</span>
-    </header>
-    <div class="rail-list" id="rail-list">
-      ${holes.length ? holes.map(({ summary, hole }) => railRowHtml(summary, hole)).join("") : `<div class="rail-empty">No Rabbitholes yet.</div>`}
-    </div>
-    <footer class="rail-footer">
-      <details>
-        <summary>Use with a coding agent</summary>
-        <div class="agent-command-row">
-          <code>${escapeHtml(AGENT_COMMAND)}</code>
-          <button class="rail-mini" type="button" data-copy-agent>Copy</button>
-        </div>
-      </details>
-      <a href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noreferrer">GitHub</a>
-    </footer>
-  </div>`;
-  rail.querySelectorAll("[data-copy-agent]").forEach((button) => {
-    button.addEventListener("click", () => copyText(AGENT_COMMAND, "Command copied."));
+  const rows = new Map(Array.from(list.querySelectorAll(".rail-row"), (row) => [row.dataset.hole, row]));
+  const next = summaries.map((summary) => {
+    const row = rows.get(summary.hole_id) || createRailRow(summary.hole_id);
+    patchRailRow(row, summary);
+    return row;
   });
-  rail.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setRailOpen(false);
-  });
+  if (!next.length) {
+    const empty = list.querySelector(".rail-empty") || document.createElement("div");
+    empty.className = "rail-empty"; empty.textContent = "No Rabbitholes yet."; next.push(empty);
+  }
+  list.replaceChildren(...next);
+  if (firstHoleId) list.scrollTop = 0;
   applyRailState();
 }
 
-function railRowHtml(summary, hole) {
-  const title = summary.title || hole.title || "Untitled";
-  return `<article class="rail-row${summary.hole_id === currentHoleId ? " current" : ""}" data-hole="${escapeAttr(summary.hole_id)}">
-    <button class="rail-open" type="button">
-      <span class="rail-thumb" aria-hidden="true">${constellationSvg(hole)}</span>
-      <span class="rail-row-copy">
-        <span class="rail-title">${escapeHtml(title)}</span>
-        <span class="rail-meta">${summary.node_count} ${summary.node_count === 1 ? "node" : "nodes"} · ${escapeHtml(formatRelativeDate(summary.updated_at, { compact: true }))}</span>
-      </span>
-    </button>
-    <span class="rail-actions">
-      <button class="rail-icon rail-export" type="button" aria-label="Export ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M8 2.75v7"/><path d="M5.25 7.1 8 9.85l2.75-2.75"/><path d="M3.25 12.75h9.5"/></svg></button>
-      <button class="rail-icon rail-delete" type="button" aria-label="Delete ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.25 4.25h9.5"/><path d="M6.25 2.75h3.5"/><path d="M5.25 4.25v8.25h5.5V4.25"/><path d="M7 6.5v3.75"/><path d="M9 6.5v3.75"/></svg></button>
-    </span>
-  </article>`;
+function createRailIconButton(className, label, iconName) {
+  const button = document.createElement("button");
+  button.className = `rail-icon ${className}`; button.type = "button"; button.setAttribute("aria-label", label);
+  button.innerHTML = iconSvg(iconName);
+  return button;
+}
+
+function createRailRow(holeId) {
+  const row = document.createElement("article"); row.className = "rail-row"; row.dataset.hole = holeId;
+  const open = document.createElement("button"); open.className = "rail-open"; open.type = "button";
+  const copy = document.createElement("span"); copy.className = "rail-row-copy";
+  const title = document.createElement("span"); title.className = "rail-title"; copy.appendChild(title); open.appendChild(copy);
+  const actions = document.createElement("span"); actions.className = "rail-actions";
+  actions.append(createRailIconButton("rail-delete", "Delete", "delete"));
+  row.append(open, actions);
+  return row;
+}
+
+function patchRailRow(row, summary) {
+  const title = summary.title || "Untitled";
+  const updated = formatRelativeDate(summary.updated_at);
+  row.classList.toggle("current", summary.hole_id === currentHoleId);
+  row.querySelector(".rail-title").textContent = title;
+  const open = row.querySelector(".rail-open"); open.setAttribute("aria-label", title); open.title = updated;
+  row.querySelector(".rail-delete").setAttribute("aria-label", `Delete ${title}`);
 }
 
 async function deleteHoleFromRail(holeId) {
   if (!holeId) return;
   const deletingCurrent = holeId === currentHoleId;
   if (deletingCurrent) {
-    await currentHost?.flushSave();
-    currentHost?.dispose?.();
-    currentHost = null;
+    await disposeCurrentHole();
+    resetHoleSurface();
   }
   const hole = await store.loadHole(holeId);
   if (!hole) return;
@@ -806,19 +989,8 @@ async function deleteHoleFromRail(holeId) {
       const nextHole = await store.loadHole(next.hole_id);
       if (nextHole) await startHole(nextHole, { replace: true });
     } else {
-      location.hash = "";
-      location.reload();
+      showBlankCanvas();
     }
-  }
-}
-
-async function exportHoleFromRail(holeId) {
-  try {
-    if (holeId === currentHoleId) await currentHost?.flushSave();
-    const payload = await downloadRabbitholeExport(store, holeId);
-    showToast({ message: `Exported ${rabbitholeFilename(payload.hole?.title)}.` });
-  } catch (err) {
-    showToast({ message: err?.message || String(err) });
   }
 }
 
@@ -826,9 +998,15 @@ function toggleRail() {
   setRailOpen(!railOpen);
 }
 
+function syncRailPosition() {
+  const rail = document.getElementById("web-rail");
+  const toolbar = document.getElementById("tb-tools");
+  if (!rail || !toolbar) return;
+  rail.style.setProperty("--rail-top", `${toolbar.getBoundingClientRect().bottom + 14}px`);
+}
+
 function setRailOpen(value) {
   railOpen = !!value;
-  safeLocalStorageSet(RAIL_KEY, railOpen ? "1" : "0");
   applyRailState();
   if (railOpen) document.getElementById("web-rail")?.focus({ preventScroll: true });
 }
@@ -838,238 +1016,53 @@ function applyRailState() {
   const rail = document.getElementById("web-rail");
   const toggle = document.getElementById("t-rail");
   if (rail) rail.classList.toggle("open", railOpen);
-  if (toggle) toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
-}
-
-function loadRailOpen() {
-  const raw = safeLocalStorageGet(RAIL_KEY);
-  if (raw === "1") return true;
-  if (raw === "0") return false;
-  return window.innerWidth >= 1100;
-}
-
-function initSettingsModal() {
-  initSettingsPanel();
-  const modal = document.getElementById("web-settings-modal");
-  const close = document.getElementById("web-settings-close");
-  close.addEventListener("click", closeSettingsModal);
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) closeSettingsModal();
-  });
-  modal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeSettingsModal();
-  });
-}
-
-function openSettingsModal({ focusKey = false } = {}) {
-  const modal = document.getElementById("web-settings-modal");
-  initSettingsPanel();
-  modal.hidden = false;
-  document.getElementById("t-settings")?.setAttribute("aria-expanded", "true");
-  if (settingsTrap) settingsTrap();
-  settingsTrap = activateFocusTrap(modal, {
-    initialFocus: focusKey ? modal.querySelector("#api-key") : modal.querySelector("select, input, button, summary"),
-    onEscape: closeSettingsModal,
-  });
-}
-
-function closeSettingsModal() {
-  const modal = document.getElementById("web-settings-modal");
-  modal.hidden = true;
-  document.getElementById("t-settings")?.setAttribute("aria-expanded", "false");
-  const inline = document.getElementById("settings-inline-key");
-  inline.hidden = true;
-  inline.innerHTML = "";
-  pendingBranchRetry = null;
-  if (settingsTrap) {
-    settingsTrap();
-    settingsTrap = null;
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
+    toggle.classList.toggle("rail-on", railOpen);
   }
 }
 
-function initSettingsPanel() {
-  const panel = document.getElementById("settings-panel");
-  if (!panel) return;
-  const settings = loadSettings();
-  const preset = presetFor(settings.preset);
-  const presetOptions = Object.values(BRAIN_PRESETS).map((item) => {
-    const label = item.recommended ? `${item.label} (recommended)` : item.label;
-    return `<option value="${item.id}" ${preset.id === item.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
-  }).join("");
-  panel.dataset.preset = preset.id;
-  panel.innerHTML = `<div class="settings-inner">
-    <div class="settings-hero">
-      <div>
-        <h2>OpenRouter</h2>
-        <p>Use one key for Rabbithole's Ask and Improve structure actions.</p>
-      </div>
-      <a class="key-walkthrough" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
-    </div>
-    <div class="settings-basic settings-openrouter">
-      <div class="field key-field">
-        <label for="api-key">API key</label>
-        <div class="secret-input">
-          <input id="api-key" type="password" autocomplete="off" placeholder="${escapeAttr(apiKeyPlaceholder(settings.preset))}" value="${escapeAttr(getApiKey(settings))}">
-          <button id="api-key-toggle" class="web-secondary" type="button" aria-label="Show API key" aria-pressed="false">Show</button>
-        </div>
-        <div id="api-key-status" class="key-status" aria-live="polite"></div>
-      </div>
-      <label class="switch-field remember-field" for="session-only">
-        <input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}>
-        <span class="switch-track" aria-hidden="true"></span>
-        <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
-      </label>
-    </div>
-    <details class="settings-other">
-      <summary>Other providers</summary>
-      <div class="settings-other-grid">
-        <label class="field provider-field" for="provider-preset">
-          <span>Provider</span>
-          <select id="provider-preset">${presetOptions}</select>
-        </label>
-        <label class="field custom-only" for="provider-base">
-          <span>Base URL</span>
-          <input id="provider-base" value="${escapeAttr(settings.base_url || "")}" placeholder="http://localhost:11434/v1">
-        </label>
-      </div>
-    </details>
-    <details class="settings-advanced">
-      <summary>Advanced</summary>
-      <div class="settings-advanced-grid">
-        <label class="field" for="answer-model">
-          <span>Answer model</span>
-          <input id="answer-model" value="${escapeAttr(settings.answer_model || "")}">
-          <small class="model-hint" data-model-hint="answer">${escapeHtml(testedModelHint(settings.answer_model || preset.answer_model))}</small>
-        </label>
-        <label class="field" for="author-model">
-          <span>Author model</span>
-          <input id="author-model" value="${escapeAttr(settings.author_model || "")}">
-          <small class="model-hint" data-model-hint="author">${escapeHtml(testedModelHint(settings.author_model || preset.author_model))}</small>
-        </label>
-        <label class="field wide-field" for="fetch-proxy-url">
-          <span>Fetch proxy URL</span>
-          <input id="fetch-proxy-url" value="${escapeAttr(settings.fetch_proxy_url || "")}" placeholder="https://your-worker.example/?url=">
-        </label>
-        <p class="custom-csp-note wide-field">Custom remote origins require editing this static app's CSP. Localhost custom endpoints are allowed by default.</p>
-      </div>
-    </details>
-    <div class="settings-actions">
-      <div></div>
-      <button id="save-settings" class="web-primary" type="button">Save settings</button>
-    </div>
-  </div>`;
-
-  const keyInput = panel.querySelector("#api-key");
-  const status = panel.querySelector("#api-key-status");
-  let validateTimer = 0;
-  panel.querySelector("#provider-preset").addEventListener("change", (event) => {
-    const next = settingsForPreset(event.target.value, readSettingsForm());
-    panel.dataset.preset = next.preset;
-    panel.querySelector("#provider-base").value = next.base_url;
-    panel.querySelector("#answer-model").value = next.answer_model;
-    panel.querySelector("#author-model").value = next.author_model;
-    keyInput.placeholder = apiKeyPlaceholder(next.preset);
-    setKeyStatus(status, providerKeyHint(keyInput.value, next.preset), "hint");
-    updateModelHints(panel);
-  });
-  keyInput.addEventListener("input", () => {
-    window.clearTimeout(validateTimer);
-    const hint = providerKeyHint(keyInput.value, panel.querySelector("#provider-preset").value);
-    setKeyStatus(status, hint, hint ? "hint" : "");
-    validateTimer = window.setTimeout(() => validateKeyFromSettings(false), 350);
-  });
-  keyInput.addEventListener("blur", () => validateKeyFromSettings(false));
-  keyInput.addEventListener("paste", () => window.setTimeout(() => validateKeyFromSettings(false), 0));
-  panel.querySelector("#answer-model").addEventListener("input", () => updateModelHints(panel));
-  panel.querySelector("#author-model").addEventListener("input", () => updateModelHints(panel));
-  panel.querySelector("#api-key-toggle").addEventListener("click", () => toggleSecretInput(panel));
-  panel.querySelector("#save-settings").addEventListener("click", async () => {
-    if (keyInput.value.trim() && !(await validateKeyFromSettings(true))) return;
-    const next = readSettingsForm();
-    saveSettings(next);
-    refreshCurrentBrain(next);
-    showToast({ message: "Settings saved." });
-  });
-  updateModelHints(panel);
-}
-
-async function validateKeyFromSettings(required) {
-  const panel = document.getElementById("settings-panel");
-  const settings = readSettingsForm();
-  const input = panel.querySelector("#api-key");
-  const status = panel.querySelector("#api-key-status");
-  return validateKeyForPreset({
-    key: input.value,
-    presetId: settings.preset,
-    statusEl: status,
-    required,
-    onShake: () => input.classList.add("shake-once"),
-  });
-}
-
-function readSettingsForm(root = document) {
-  const remember = root.getElementById?.("session-only")?.checked === true ||
-    root.querySelector?.("#session-only")?.checked === true;
-  return {
-    preset: root.getElementById?.("provider-preset")?.value || root.querySelector?.("#provider-preset")?.value || "openrouter",
-    base_url: root.getElementById?.("provider-base")?.value.trim() || root.querySelector?.("#provider-base")?.value.trim() || "",
-    author_model: root.getElementById?.("author-model")?.value.trim() || root.querySelector?.("#author-model")?.value.trim() || "",
-    answer_model: root.getElementById?.("answer-model")?.value.trim() || root.querySelector?.("#answer-model")?.value.trim() || "",
-    fetch_proxy_url: root.getElementById?.("fetch-proxy-url")?.value.trim() || root.querySelector?.("#fetch-proxy-url")?.value.trim() || "",
-    session_only: !remember,
-    api_key: root.getElementById?.("api-key")?.value || root.querySelector?.("#api-key")?.value || "",
-  };
-}
-
-function loadSettings() {
-  const defaults = defaultWebSettings();
-  try {
-    return { ...defaults, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-  } catch {
-    return defaults;
-  }
-}
-
-function defaultWebSettings() {
-  return { ...defaultBrainSettings(), fetch_proxy_url: DEFAULT_FETCH_PROXY_URL || "" };
-}
-
-function saveSettings(settings) {
-  const { api_key, ...persistable } = settings;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistable));
-  if (settings.session_only === false) {
-    localStorage.setItem(KEY_KEY, api_key || "");
-    memoryKey = "";
-  } else {
-    localStorage.removeItem(KEY_KEY);
-    memoryKey = api_key || "";
-  }
-}
-
-function getApiKey(settings) {
-  if (settings.session_only === false) {
-    try { return localStorage.getItem(KEY_KEY) || ""; } catch { return ""; }
-  }
-  return memoryKey;
+function eyeSvg(open) {
+  return iconSvg(open ? "eye-off" : "eye");
 }
 
 function refreshCurrentBrain(settings = loadSettings()) {
   if (!currentHost) return;
   const key = getApiKey(settings);
-  currentHost.brain = key || !presetFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  currentHost.brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+}
+
+function currentHoleNeedsPdfTranscription() {
+  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted);
+}
+
+async function refreshPdfTranscriptionCapability(settings = loadSettings()) {
+  const token = ++pdfTranscriptionCheckToken;
+  currentPdfTranscriptionCapability = pdfTranscriptionCapability(settings);
+  syncPdfTranscriptionControls(document, currentPdfTranscriptionCapability);
+  let detected = await detectPdfTranscriptionCapability(settings);
+  if (token !== pdfTranscriptionCheckToken) return currentPdfTranscriptionCapability;
+  if (detected.recommendedModel) {
+    const next = { ...settings, transcribe_model: detected.recommendedModel };
+    saveSettings({ ...next, api_key: getApiKey(settings) });
+    refreshCurrentBrain(next);
+    detected = await detectPdfTranscriptionCapability(next);
+    if (token !== pdfTranscriptionCheckToken) return currentPdfTranscriptionCapability;
+  }
+  currentPdfTranscriptionCapability = detected;
+  syncPdfTranscriptionControls(document, detected);
+  return detected;
 }
 
 function handleBranchAuthRequired({ node, error, retry }) {
-  pendingBranchRetry = retry;
-  openSettingsModal({ focusKey: true });
-  const slot = document.getElementById("settings-inline-key");
-  slot.hidden = false;
-  renderInlineKeyPanel(slot, {
-    idPrefix: "branch",
-    message: error?.message || "Update your key to retry this ask.",
-    afterValidated: async () => {
-      slot.hidden = true;
-      pendingBranchRetry = null;
+  invalidateGenerationSetup();
+  syncGenerationSetupUi();
+  settingsController.open({
+    trigger: document.getElementById("t-settings"),
+    purpose: "recovery",
+    status: error?.message || "Reconnect your model to continue.",
+    focusKey: providerFor(loadSettings().preset).requires_key,
+    onReady: async () => {
       refreshCurrentBrain();
       retry?.();
       showToast({ message: `Retrying "${node?.title || "ask"}".` });
@@ -1077,243 +1070,67 @@ function handleBranchAuthRequired({ node, error, retry }) {
   });
 }
 
-function renderInlineKeyPanel(container, { idPrefix, message = "", afterValidated = null } = {}) {
+function handleBranchProviderFailure({ node, error, retry }) {
   const settings = loadSettings();
-  const remember = settings.session_only === false;
-  container.innerHTML = `<section class="inline-key-panel">
-    <div class="inline-key-head">
-      <div>
-        <h3>Add your OpenRouter key</h3>
-        <p>${escapeHtml(message || "Rabbithole uses your key directly from this browser.")}</p>
-      </div>
-      <a href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
-    </div>
-    <label class="field key-field" for="${idPrefix}-key">
-      <span>API key</span>
-      <input id="${idPrefix}-key" type="password" autocomplete="off" placeholder="sk-or-v1-..." value="">
-    </label>
-    <label class="switch-field remember-field" for="${idPrefix}-remember">
-      <input id="${idPrefix}-remember" type="checkbox" role="switch" ${remember ? "checked" : ""}>
-      <span class="switch-track" aria-hidden="true"></span>
-      <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
-    </label>
-    <div id="${idPrefix}-key-status" class="key-status" aria-live="polite"></div>
-    <div class="inline-key-actions">
-      <button class="web-primary" type="button" id="${idPrefix}-connect">Connect</button>
-    </div>
-  </section>`;
-  const input = container.querySelector(`#${idPrefix}-key`);
-  const status = container.querySelector(`#${idPrefix}-key-status`);
-  let timer = 0;
-  let continued = false;
-  const continueOnce = async () => {
-    if (continued) return;
-    continued = true;
-    const current = loadSettings();
-    saveSettings({
-      ...current,
-      preset: current.preset || "openrouter",
-      api_key: input.value,
-      session_only: !container.querySelector(`#${idPrefix}-remember`).checked,
-    });
-    initSettingsPanel();
-    refreshCurrentBrain();
-    await afterValidated?.();
-  };
-  const validate = async (required = false) => {
-    const presetId = loadSettings().preset || "openrouter";
-    const switched = await maybeSwitchProviderFromKey(input.value, container, continueOnce);
-    if (switched) return true;
-    const ok = await validateKeyForPreset({
-      key: input.value,
-      presetId,
-      statusEl: status,
-      required,
-      onShake: () => input.classList.add("shake-once"),
-    });
-    if (ok && input.value.trim()) await continueOnce();
-    return ok;
-  };
-  input.addEventListener("input", () => {
-    window.clearTimeout(timer);
-    const hint = providerKeyHint(input.value, loadSettings().preset || "openrouter");
-    setKeyStatus(status, hint, hint ? "hint" : "");
-    timer = window.setTimeout(() => validate(false), 350);
+  if (providerFor(settings.preset).id !== "custom") return;
+  showToast({
+    message: error?.message || "Couldn't reach the local model.",
+    actionLabel: "Troubleshoot",
+    timeoutMs: 10000,
+    onAction: () => {
+      ollamaRecoveryController.open({
+        settings: loadSettings(),
+        trigger: document.getElementById("t-settings"),
+        onResolved: async () => {
+          refreshCurrentBrain();
+          retry?.();
+          showToast({ message: `Retrying "${node?.title || "ask"}".` });
+        },
+      });
+    },
   });
-  input.addEventListener("paste", () => window.setTimeout(() => validate(false), 0));
-  input.addEventListener("blur", () => validate(false));
-  container.querySelector(`#${idPrefix}-connect`).addEventListener("click", () => validate(true));
-  input.focus({ preventScroll: true });
 }
 
-async function maybeSwitchProviderFromKey(key, container, continueOnce) {
-  const value = String(key || "").trim();
-  const status = container.querySelector(".key-status");
-  let target = "";
-  if (value.startsWith("sk-ant-")) target = "anthropic";
-  else if (value.startsWith("sk-") && !value.startsWith("sk-or-")) target = "openai";
-  if (!target) return false;
-  const label = presetFor(target).label;
-  status.innerHTML = `That looks like an ${escapeHtml(label)} key. <button type="button" class="key-switch">Switch provider</button>`;
-  status.className = "key-status hint visible";
-  status.querySelector("button").addEventListener("click", async () => {
-    const current = loadSettings();
-    const next = settingsForPreset(target, current);
-    saveSettings({
-      ...next,
-      api_key: value,
-      session_only: !container.querySelector("input[role='switch']").checked,
-    });
-    initSettingsPanel();
-    refreshCurrentBrain();
-    await continueOnce?.();
-  }, { once: true });
-  return true;
-}
-
-async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
-  const value = String(key || "").trim();
-  const preset = presetFor(presetId);
-  if (!preset.requires_key) {
-    setKeyStatus(statusEl, "No key required for this provider.", "valid");
-    return true;
-  }
-  const hint = providerKeyHint(value, preset.id);
-  if (!value) {
-    if (required) {
-      setKeyStatus(statusEl, "Enter a key first.", "invalid");
-      shake(onShake);
-      return false;
-    }
-    setKeyStatus(statusEl, "", "");
-    return false;
-  }
-  if (hint) {
-    setKeyStatus(statusEl, hint, "hint");
-    if (required && /truncated|looks like/i.test(hint)) shake(onShake);
-    if (preset.id !== "openrouter") return true;
-    if (!isPlausibleOpenRouterKey(value)) return false;
-  }
-  if (preset.id !== "openrouter") {
-    setKeyStatus(statusEl, "Key saved for this provider.", "valid");
-    return true;
-  }
-  if (!isPlausibleOpenRouterKey(value)) {
-    setKeyStatus(statusEl, "That OpenRouter key looks too short.", "invalid");
-    if (required) shake(onShake);
-    return false;
-  }
-  setKeyStatus(statusEl, "Validating...", "busy");
+async function createLiveAssetData(holeId) {
+  const data = {};
+  const urls = [];
   try {
-    const result = await validateOpenRouterKey(value);
-    setKeyStatus(statusEl, openRouterValidMessage(result), "valid");
-    return true;
-  } catch (err) {
-    setKeyStatus(statusEl, err?.message || "OpenRouter rejected that key.", "invalid");
-    shake(onShake);
-    return false;
+    const names = await store.listAssets(holeId);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, names.length) }, async () => {
+      while (next < names.length) {
+        const name = names[next++];
+        const blob = await store.getAsset(holeId, name);
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          data[name] = url;
+          urls.push(url);
+        }
+      }
+    }));
+  } catch (error) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    throw error;
   }
-}
-
-async function validateOpenRouterKey(key) {
-  const response = await fetch(OPENROUTER_KEY_CHECK_URL, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${key}` },
-  });
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new Error("That key was rejected by OpenRouter.");
-    throw new Error(`OpenRouter returned HTTP ${response.status}.`);
-  }
-  let json = {};
-  try { json = await response.json(); } catch {}
-  return json;
-}
-
-function providerKeyHint(key, presetId) {
-  const value = String(key || "").trim();
-  if (!value) return "";
-  if (value.startsWith("sk-ant-") && presetId !== "anthropic") return "That looks like an Anthropic key — switch provider?";
-  if (value.startsWith("sk-") && !value.startsWith("sk-or-") && !value.startsWith("sk-ant-") && presetId !== "openai") {
-    return "That looks like an OpenAI key — switch provider?";
-  }
-  if (presetId === "openrouter" && value.startsWith("sk-or-v1-") && value.length < 30) {
-    return "That OpenRouter key looks truncated.";
-  }
-  return "";
-}
-
-function isPlausibleOpenRouterKey(value) {
-  return /^sk-or-v1-[A-Za-z0-9_-]{24,}$/.test(String(value || "").trim());
-}
-
-function openRouterValidMessage(result) {
-  const data = result?.data || result || {};
-  const label = data.label || data.name || data.key_name || "";
-  const limit = data.limit || data.usage_limit || data.limit_remaining || "";
-  const detail = [label, limit ? `limit ${limit}` : ""].filter(Boolean).join(" · ");
-  return detail ? `Connected · ${detail}` : "Connected";
-}
-
-function setKeyStatus(el, message, tone = "") {
-  if (!el) return;
-  el.textContent = message || "";
-  el.className = `key-status${message ? " visible" : ""}${tone ? ` ${tone}` : ""}`;
-}
-
-function shake(onShake) {
-  onShake?.();
-  window.setTimeout(() => document.querySelectorAll(".shake-once").forEach((el) => el.classList.remove("shake-once")), 260);
-}
-
-function toggleSecretInput(root) {
-  const input = root.querySelector("#api-key");
-  const showing = input.type === "text";
-  input.type = showing ? "password" : "text";
-  const button = root.querySelector("#api-key-toggle");
-  button.textContent = showing ? "Show" : "Hide";
-  button.setAttribute("aria-label", showing ? "Show API key" : "Hide API key");
-  button.setAttribute("aria-pressed", showing ? "false" : "true");
-}
-
-function updateModelHints(panel = document.getElementById("settings-panel")) {
-  if (!panel) return;
-  const answer = panel.querySelector("#answer-model")?.value || "";
-  const author = panel.querySelector("#author-model")?.value || "";
-  const answerHint = panel.querySelector("[data-model-hint='answer']");
-  const authorHint = panel.querySelector("[data-model-hint='author']");
-  if (answerHint) answerHint.textContent = testedModelHint(answer);
-  if (authorHint) authorHint.textContent = testedModelHint(author);
-}
-
-async function buildLiveAssetData(holeId) {
-  const out = {};
-  for (const name of await store.listAssets(holeId)) {
-    const blob = await store.getAsset(holeId, name);
-    if (blob) out[name] = URL.createObjectURL(blob);
-  }
-  return out;
+  let disposed = false;
+  return {
+    data,
+    register(name, blob) {
+      if (disposed) return;
+      if (data[name]) URL.revokeObjectURL(data[name]);
+      const url = URL.createObjectURL(blob); data[name] = url; urls.push(url);
+      registerRendererAssetName(name);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    },
+  };
 }
 
 function showToast({ message, actionLabel = "", timeoutMs = 4000, onAction = null } = {}) {
-  const el = document.getElementById("web-toast");
-  if (!el) return;
-  el.innerHTML = `<span>${escapeHtml(message || "")}</span>${actionLabel ? `<button type="button">${escapeHtml(actionLabel)}</button>` : ""}`;
-  el.classList.add("visible");
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    el.classList.remove("visible");
-  };
-  const timer = setTimeout(finish, timeoutMs);
-  const button = el.querySelector("button");
-  if (button) {
-    button.addEventListener("click", async () => {
-      clearTimeout(timer);
-      await onAction?.();
-      finish();
-    }, { once: true });
-  }
+  toastNotice?.show({ message, actionLabel, onAction, duration: timeoutMs });
 }
 
 function setIngestStatus(message, tone = "") {
@@ -1322,47 +1139,6 @@ function setIngestStatus(message, tone = "") {
   el.textContent = message || "";
   el.className = `ingest-status${message ? " visible" : ""}${tone ? ` ${tone}` : ""}`;
   el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
-}
-
-function constellationSvg(hole) {
-  const nodes = Array.isArray(hole?.nodes) ? hole.nodes : [];
-  if (!nodes.length) return `<svg viewBox="0 0 44 32" role="img" aria-label=""></svg>`;
-  const points = nodes.map((node) => {
-    const size = node.size || {};
-    const pos = node.position || {};
-    return {
-      id: node.id,
-      parent: node.parent_id,
-      root: node.id === hole.root_id,
-      x: Number(pos.x || 0) + Number(size.w || 0) / 2,
-      y: Number(pos.y || 0) + Number(size.h || 0) / 2,
-    };
-  });
-  const minX = Math.min(...points.map((p) => p.x));
-  const maxX = Math.max(...points.map((p) => p.x));
-  const minY = Math.min(...points.map((p) => p.y));
-  const maxY = Math.max(...points.map((p) => p.y));
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const fit = (p) => ({
-    x: width ? 4 + ((p.x - minX) / width) * 36 : 22,
-    y: height ? 4 + ((p.y - minY) / height) * 24 : 16,
-  });
-  const byId = new Map(points.map((p) => [p.id, p]));
-  const lines = points.filter((p) => p.parent && byId.has(p.parent)).map((p) => {
-    const a = fit(byId.get(p.parent));
-    const b = fit(p);
-    return `<line x1="${round(a.x)}" y1="${round(a.y)}" x2="${round(b.x)}" y2="${round(b.y)}"></line>`;
-  }).join("");
-  const dots = points.map((p) => {
-    const f = fit(p);
-    return `<circle class="${p.root ? "root-dot" : ""}" cx="${round(f.x)}" cy="${round(f.y)}" r="${p.root ? "2.3" : "1.55"}"></circle>`;
-  }).join("");
-  return `<svg viewBox="0 0 44 32" role="img" aria-label="">${lines}${dots}</svg>`;
-}
-
-function round(value) {
-  return Math.round(value * 10) / 10;
 }
 
 function setBlankZoom(value) {
@@ -1381,15 +1157,26 @@ function toggleBlankTheme() {
 }
 
 function isPdfFile(file) {
-  return /(\.pdf$|application\/pdf)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.pdf$/.test(name) || type === "application/pdf";
 }
 
 function isRabbitholeFile(file) {
   return /\.rabbithole$/i.test(file?.name || "");
 }
 
+function isSnapshotFile(file) {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.html?$/.test(name) || type === "text/html";
+}
+
 function isMarkdownFile(file) {
-  return /(\.md$|\.markdown$|markdown|text\/plain|application\/json)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.(md|markdown)$/.test(name) ||
+    type === "text/markdown" || type === "text/plain" || type === "application/json";
 }
 
 function isSingleHttpUrl(value) {
@@ -1403,23 +1190,9 @@ function isSingleHttpUrl(value) {
   }
 }
 
-function looksLikeDocument(value) {
-  const text = String(value || "").trim();
-  if (text.length > 400) return true;
-  if (/^#{1,6}\s+\S/m.test(text)) return true;
-  if (/```/.test(text)) return true;
-  const paragraphs = text.split(/\n\s*\n/).filter((part) => part.trim().length > 24);
-  return paragraphs.length >= 2;
-}
-
-function holeIdFromHash() {
-  const match = /^#hole=(.+)$/.exec(location.hash || "");
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-function formatRelativeDate(value, { compact = false } = {}) {
+function formatRelativeDate(value) {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return compact ? "unknown" : "Updated at an unknown time";
+  if (!date || Number.isNaN(date.getTime())) return "Updated at an unknown time";
   const deltaSeconds = Math.round((date.getTime() - Date.now()) / 1000);
   const abs = Math.abs(deltaSeconds);
   const ranges = [
@@ -1434,28 +1207,9 @@ function formatRelativeDate(value, { compact = false } = {}) {
     const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
     const [, unit, divisor] = ranges.find(([limit]) => abs < limit);
     const formatted = formatter.format(Math.round(deltaSeconds / divisor), unit);
-    return compact ? formatted : `Updated ${formatted}`;
+    return `Updated ${formatted}`;
   } catch {
     return date.toLocaleString(undefined, { month: "short", day: "numeric" });
-  }
-}
-
-function blobToDataUrl(blob) {
-  if (!blob) return Promise.resolve("data:,");
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || "data:,"));
-    reader.onerror = () => resolve("data:,");
-    reader.readAsDataURL(blob);
-  });
-}
-
-function apiKeyPlaceholder(presetId) {
-  switch (presetFor(presetId).id) {
-    case "openrouter": return "sk-or-v1-...";
-    case "anthropic": return "sk-ant-...";
-    case "openai": return "sk-...";
-    default: return "optional";
   }
 }
 
@@ -1472,20 +1226,12 @@ function autoGrowTextarea(textarea, maxHeight) {
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
+function composerInputMaxHeight() {
+  return composerPath === "paste" ? 360 : 240;
+}
+
 function isEditableTarget(target) {
   return !!target?.closest?.("input, textarea, select, [contenteditable='true']");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/'/g, "&#39;");
 }
 
 function applyInitialWebTheme() {
@@ -1497,58 +1243,10 @@ function applyInitialWebTheme() {
   } catch {}
 }
 
-async function copyText(text, message) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    fallbackCopyText(text);
-  }
-  showToast({ message });
-}
-
-function fallbackCopyText(text) {
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.left = "-999px";
-  document.body.append(area);
-  area.select();
-  try { document.execCommand("copy"); } catch {}
-  area.remove();
-}
-
 function safeLocalStorageGet(key) {
   try { return localStorage.getItem(key) || ""; } catch { return ""; }
 }
 
 function safeLocalStorageSet(key, value) {
   try { localStorage.setItem(key, value); } catch {}
-}
-
-function bunnyMarkSvg() {
-  return `<svg width="24" height="24" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true">
-    <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"></ellipse>
-    <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"></ellipse>
-    <circle cx="21" cy="33" r="9.5"></circle>
-    <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
-    <circle cx="52.5" cy="49" r="5"></circle>
-  </svg>`;
-}
-
-function exposeTestApi() {
-  window.__rhWebApp = {
-    store,
-    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
-    exportRabbitholeForTest: async (id = currentHoleId) => {
-      await currentHost?.flushSave();
-      return downloadRabbitholeExport(store, id);
-    },
-    exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
-    currentHoleId: () => currentHoleId,
-    readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
-    renderRailForTest: renderRail,
-    deleteHoleForTest: deleteHoleFromRail,
-    exportHoleFromRailForTest: exportHoleFromRail,
-  };
 }

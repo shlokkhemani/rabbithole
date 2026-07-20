@@ -1,26 +1,40 @@
-import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
 import {
   MAX_PDF_BYTES,
-  PDF_RENDER_SCALE,
-  buildPdfMarkdown,
-  extractPdfPageText,
+  describePdfOpenError,
+  buildPdfDocument,
+  extractPdfPageLines,
   normalizePdfTitle,
-  pdfPageAssetName,
+  pdfPageMetadata,
+  pdfSourceAssetName,
   resolvePagesToProcess,
+  hasPdfMagic,
 } from "../../core/pdf-shared.js";
 import { createHoleFromMarkdown } from "../transport/direct-host.js";
+import { loadPdfJsModule, primePdfDocument } from "../../ui/pdf-runtime.js";
 
-const PDF_MAGIC = "%PDF";
+const PDF_RUNTIME_LOAD_FAILURE = /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|load failed/i;
 
-export async function ingestPdf(source, {
+export function describePdfImportFailure(error) {
+  const detail = error instanceof Error ? error.message : String(error || "Unknown PDF import error.");
+  if (PDF_RUNTIME_LOAD_FAILURE.test(detail)) {
+    return "PDF import couldn't start because part of Rabbithole failed to load. Reload Rabbithole and try again — your PDF is not the problem.";
+  }
+  return `PDF import failed. ${detail} Try a different PDF.`;
+}
+
+async function ingestPdf(source, {
   pages,
   includeText = true,
-  extractEmbeddedImages = false,
   onProgress = null,
+  onSource = null,
 } = {}) {
   const { data, name } = await readPdfSource(source);
   validatePdfBytes(data, name);
-  configurePdfjs();
+  const sha256 = await sha256Hex(data);
+  const sourceAsset = pdfSourceAssetName(sha256);
+  const sourceBlob = new Blob([data], { type: "application/pdf" });
+  if (onSource) await onSource({ asset: sourceAsset, sha256, byte_length: sourceBlob.size }, sourceBlob);
+  const pdfjs = await loadPdfJsModule();
 
   const loadingTask = pdfjs.getDocument({
     data,
@@ -32,17 +46,19 @@ export async function ingestPdf(source, {
   });
 
   let doc;
+  let transferred = false;
   try {
     try {
       doc = await loadingTask.promise;
     } catch (err) {
-      throw new Error(describePdfOpenError(err, name));
+      throw new Error(describePdfOpenError(err, {
+        label: name || "selected file",
+        encryptedHint: "Provide a decrypted copy, or paste the text instead.",
+        engine: "pdf.js",
+      }));
     }
 
     const notes = [];
-    if (extractEmbeddedImages) {
-      notes.push("Embedded raster extraction is disabled in the browser importer; page render PNGs were created instead.");
-    }
     const metadata = await doc.getMetadata().catch((err) => {
       notes.push(`PDF metadata could not be read: ${err instanceof Error ? err.message : String(err)}`);
       return null;
@@ -52,27 +68,21 @@ export async function ingestPdf(source, {
       title: normalizePdfTitle(metadata),
       page_count: doc.numPages,
       processed_pages: processedPages,
-      assets: {
-        pages: [],
-        embedded_images: [],
-      },
+      source: { asset: sourceAsset, sha256, byte_length: sourceBlob.size },
+      page_metadata: [],
       notes,
-      blobs: [],
     };
-    if (includeText !== false) result.text = [];
-
+    if (includeText !== false) result.page_lines = [];
     for (let index = 0; index < processedPages.length; index += 1) {
       const pageNumber = processedPages[index];
-      onProgress?.({ phase: "page", page: pageNumber, index: index + 1, total: processedPages.length, pageCount: doc.numPages });
+      onProgress?.({ phase: "page", message: `Preparing page ${index + 1} of ${processedPages.length}`, page: pageNumber, index: index + 1, total: processedPages.length, pageCount: doc.numPages });
       let page = null;
       try {
         page = await doc.getPage(pageNumber);
+        result.page_metadata.push(pdfPageMetadata(page, pageNumber));
         if (includeText !== false) {
-          result.text.push({ page: pageNumber, text: await extractPdfPageText(page) });
+          result.page_lines.push({ page: pageNumber, lines: await extractPdfPageLines(page) });
         }
-        const rendered = await renderPageToPngBlob(page, pageNumber);
-        result.assets.pages.push(rendered.asset);
-        result.blobs.push({ name: rendered.asset.name, blob: rendered.blob });
       } catch (err) {
         notes.push(`Page ${pageNumber} could not be fully processed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -80,10 +90,16 @@ export async function ingestPdf(source, {
       }
     }
 
+    // Import and the first viewer mount are one user action. Transfer the
+    // parsed document into the shared runtime so the same bytes are not sent
+    // through PDF.js and parsed a second time immediately afterward.
+    transferred = primePdfDocument({ key: sha256, loadingTask, document: doc });
     return result;
   } finally {
-    doc?.cleanup?.();
-    await loadingTask.destroy().catch(() => {});
+    if (!transferred) {
+      doc?.cleanup?.();
+      await loadingTask.destroy().catch(() => {});
+    }
   }
 }
 
@@ -94,27 +110,42 @@ export async function ingestPdfToStoredHole({
   pages,
   onProgress = null,
   includeText = true,
-  extractEmbeddedImages = false,
   baseUrl = null,
+  ingest = ingestPdf, // injectable so failure-path cleanup is testable without pdf.js
 } = {}) {
   if (!store) throw new Error("PDF import needs a store.");
-  const result = await ingestPdf(source, { pages, includeText, extractEmbeddedImages, onProgress });
-  const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
-  const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
-  const markdown = buildPdfMarkdown({
-    title: holeTitle,
-    pageCount: result.page_count,
-    processedPages: result.processed_pages,
-    pageAssets: result.assets.pages,
-    pageText: result.text || [],
-    notes: result.notes,
-  });
-  const hole = createHoleFromMarkdown({ title: holeTitle, markdown, baseUrl });
-  for (const asset of result.blobs) {
-    await store.putAsset(hole.hole_id, asset.name, asset.blob);
+  const staging = await store.createStaging();
+  let adopted = false;
+  let savedHole = null;
+  try {
+    const result = await ingest(source, {
+      pages, includeText, onProgress,
+      onSource: (_source, blob) => store.putStagedAsset(staging.ingest_id, _source.asset, blob),
+    });
+    const sourceName = typeof File !== "undefined" && source instanceof File ? source.name : "";
+    const holeTitle = title || result.title || titleFromFileName(sourceName) || "PDF Document";
+    const built = buildPdfDocument({
+      title: holeTitle,
+      pageCount: result.page_count,
+      processedPages: result.processed_pages,
+      pageMetadata: result.page_metadata,
+      pageLines: result.page_lines || [],
+      notes: result.notes,
+      source: result.source,
+    });
+    const hole = createHoleFromMarkdown({ title: holeTitle, markdown: built.markdown, baseUrl });
+    hole.nodes[0].extensions = { pdf: built.pdfExtension };
+    await store.saveHole(hole);
+    savedHole = hole;
+    await store.adoptStagedAssets(hole.hole_id, staging.ingest_id);
+    adopted = true;
+    return { hole, result };
+  } finally {
+    if (!adopted) {
+      await store.discardStaging?.(staging.ingest_id).catch(() => {});
+      if (savedHole) await store.deleteHole?.(savedHole.hole_id).catch(() => {});
+    }
   }
-  await store.saveHole(hole);
-  return { hole, result };
 }
 
 async function readPdfSource(source) {
@@ -144,69 +175,14 @@ function validatePdfBytes(data, name) {
   if (!(data instanceof Uint8Array) || data.byteLength < 4) {
     throw new Error(`${name || "PDF"} is not a PDF: expected a %PDF header.`);
   }
-  let magic = "";
-  for (let i = 0; i < 4; i += 1) magic += String.fromCharCode(data[i]);
-  if (magic !== PDF_MAGIC) {
+  if (!hasPdfMagic(data)) {
     throw new Error(`${name || "PDF"} is not a PDF: expected a %PDF header.`);
   }
 }
 
-function configurePdfjs() {
-  pdfjs.GlobalWorkerOptions.workerSrc = webAssetUrl("pdf.worker.mjs");
-}
-
-async function renderPageToPngBlob(page, pageNumber) {
-  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-  const width = Math.ceil(viewport.width);
-  const height = Math.ceil(viewport.height);
-  const canvas = createRenderCanvas(width, height);
-  const context = canvas.getContext("2d", { alpha: false });
-  context.fillStyle = "white";
-  context.fillRect(0, 0, width, height);
-  const renderTask = page.render({ canvasContext: context, viewport });
-  await renderTask.promise;
-  const blob = await canvasToPngBlob(canvas);
-  const name = pdfPageAssetName(pageNumber);
-  releaseCanvas(canvas);
-  return {
-    asset: { page: pageNumber, name, width, height },
-    blob,
-  };
-}
-
-function createRenderCanvas(width, height) {
-  if (typeof OffscreenCanvas === "function") return new OffscreenCanvas(width, height);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas;
-}
-
-function canvasToPngBlob(canvas) {
-  if (typeof canvas.convertToBlob === "function") {
-    return canvas.convertToBlob({ type: "image/png" });
-  }
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Canvas could not be encoded as PNG."));
-    }, "image/png");
-  });
-}
-
-function releaseCanvas(canvas) {
-  try {
-    canvas.width = 0;
-    canvas.height = 0;
-  } catch {}
-}
-
-function describePdfOpenError(err, name) {
-  const message = err instanceof Error ? err.message : String(err);
-  if (/password|encrypted|PasswordException/i.test(`${err?.name || ""} ${message}`)) {
-    return `PDF is encrypted or password-protected: ${name || "selected file"}. Provide a decrypted copy, or paste the text instead.`;
-  }
-  return `PDF could not be opened by pdf.js: ${name || "selected file"}. Check that the file is not corrupt. Original error: ${message}`;
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function webAssetUrl(relativePath) {

@@ -79,6 +79,7 @@ async function runPageFixtures() {
     const liveHtml = await live.text();
     const script = extractScript(liveHtml);
     const imageUxSource = await fs.readFile(path.resolve("src/ui/image-ux.js"), "utf8");
+    const lightboxSource = await fs.readFile(path.resolve("src/ui/lightbox.js"), "utf8");
 
     assertIncludes(imageUxSource, "function mountDocImages", "image UX should mount markdown image wrappers");
     assertIncludes(imageUxSource, "function openImageLightbox", "image UX should include the lightbox");
@@ -87,7 +88,8 @@ async function runPageFixtures() {
     assertIncludes(imageUxSource, "function keepImageHandleAnchored", "resize should compensate scroll while image height changes");
     assertIncludes(imageUxSource, "afterRect.bottom - beforeRect.bottom", "resize should anchor the handle by the frame-bottom delta");
     assertIncludes(imageUxSource, "scroller.scrollTop += delta / imageScrollScale(scroller)", "resize should adjust scrollTop in scroller-local pixels");
-    assertIncludes(imageUxSource, "LIGHTBOX_MAX_ZOOM = 6", "lightbox zoom should clamp at the requested upper bound");
+    assertIncludes(lightboxSource, "LIGHTBOX_MAX_ZOOM = 6", "shared lightbox zoom should clamp at the requested upper bound");
+    assertIncludes(imageUxSource, "openLightbox({", "image UX should delegate previews to the shared lightbox");
     assertIncludes(imageUxSource, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
     assertIncludes(liveHtml, 'html[data-theme="dark"] .md .rh-img-frame', "served page should include dark-mode image matte CSS");
     assertIncludes(liveHtml, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
@@ -150,10 +152,25 @@ async function runLiveSnapshotDownload() {
     await page.goto(session.url);
     await page.waitForSelector("#t-share");
     await page.waitForSelector(".rh-img-frame .rh-img-handle");
-    await page.click(".rh-img-frame img");
+    const sourceImage = page.locator(".rh-img-frame img").first();
+    await sourceImage.click();
     await page.waitForSelector(".rh-lightbox:not([hidden])");
+    assert.equal(await page.locator('.rh-lightbox-close[aria-label="Close"]').count(), 1);
+    await page.locator(".rh-lightbox-img").dblclick();
+    assert.equal(await page.locator(".rh-lightbox-img").evaluate((img) => img.style.getPropertyValue("--rh-zoom")), "2");
+    await page.locator(".rh-lightbox-img").dblclick();
+    assert.equal(await page.locator(".rh-lightbox-img").evaluate((img) => img.style.getPropertyValue("--rh-zoom")), "1");
+    await page.locator(".rh-lightbox-img").hover();
+    await page.mouse.wheel(0, -100);
+    assert(Number(await page.locator(".rh-lightbox-img").evaluate((img) => img.style.getPropertyValue("--rh-zoom"))) > 1, "image wheel zoom should remain active");
     await page.keyboard.press("Escape");
     await page.waitForSelector(".rh-lightbox", { state: "detached" });
+    assert.equal(await sourceImage.evaluate((img) => img === img.getRootNode().activeElement), true, "image Escape should restore source focus");
+    await sourceImage.click();
+    await page.waitForSelector(".rh-lightbox:not([hidden])");
+    await page.click('.rh-lightbox-close[aria-label="Close"]');
+    await page.waitForSelector(".rh-lightbox", { state: "detached" });
+    assert.equal(await sourceImage.evaluate((img) => img === img.getRootNode().activeElement), true, "image close button should restore source focus");
     const liveStyles = await page.locator("head style:first-of-type").textContent();
 
     await page.click("#t-share");

@@ -3,6 +3,8 @@
 // ===========================================================================
 import { getBlockType } from "../core/blocks.js";
 import { escapeHtml } from "../core/utils.js";
+import { iconSvg } from "../core/html/icons.js";
+import { disposeLightbox, openLightbox } from "./lightbox.js";
 
 var visualSurfaceCaches = {};
 var blockMounts = {};
@@ -67,14 +69,25 @@ var VISUAL_SANITIZE_CONFIG = {
     ".rh-check-actions{display:flex;justify-content:flex-end;}" +
     ".rh-check-reset{padding:.45em .7em;text-align:center;}";
   var MERMAID_CSS =
+    ":host{box-sizing:border-box;padding:10px 15px 0 0;}" +
+    ".rh-viz-frame{position:relative;overflow:visible;overscroll-behavior-x:auto;}" +
     ".rh-mermaid{display:grid;place-items:center;min-height:3.5em;width:100%;}" +
+    ".rh-mermaid.is-rendered{cursor:zoom-in;}" +
     ".rh-mermaid svg{display:block;width:100%;max-width:100%!important;height:auto;margin:auto;}" +
+    ".rh-mermaid-expand{position:absolute;top:-10px;right:-15px;z-index:1;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid color-mix(in srgb,var(--fg) 22%,transparent);border-radius:6px;background:var(--node-bg);color:var(--fg-dim);box-shadow:0 2px 10px rgba(0,0,0,.18);cursor:pointer;opacity:0;transition:opacity var(--duration-fast) var(--ease-standard),background var(--duration-fast) var(--ease-standard),color var(--duration-fast) var(--ease-standard);}" +
+    ".rh-mermaid:hover .rh-mermaid-expand,.rh-mermaid-expand:focus-visible{opacity:1;}" +
+    ".rh-mermaid-expand:hover{background:var(--bar-bg);color:var(--fg-bold);}" +
+    ".rh-mermaid-expand:focus{outline:none;}" +
+    ".rh-mermaid-expand:focus-visible{outline:var(--focus-ring);outline-offset:var(--focus-offset);}" +
+    ".rh-mermaid-expand svg{width:16px;height:16px;margin:0;}" +
     ".rh-mermaid-loading{color:var(--fg-dim);font:500 .85em var(--font-ui);}" +
     ".rh-mermaid .viz-fallback{width:100%;}";
 export function registerVisualHooks(hooks){
     visualHooks = Object.assign({}, visualHooks, hooks || {});
   }
 export function disposeVisuals(){
+    for (var i = 0; i < mermaidControllers.length; i++) mermaidControllers[i].dispose();
+    disposeLightbox();
     visualSurfaceCaches = {};
     visualHooks = defaultVisualHooks();
     mermaidRuntimePromise = null;
@@ -172,9 +185,89 @@ function loadMermaidRuntime(){
 
 function showMermaidFallback(target, source){
   target.textContent = "";
+  target.classList.remove("is-rendered");
   target.removeAttribute("role");
   target.removeAttribute("aria-label");
   target.appendChild(visualFallback(source, "Mermaid could not render this diagram. Showing source."));
+}
+
+function mermaidAccessibleName(svg){
+  return String(svg.getAttribute("aria-label") || svg.querySelector("title")?.textContent || "Mermaid diagram").trim() || "Mermaid diagram";
+}
+
+function cloneMermaidSvg(svg){
+  var clone = svg.cloneNode(true);
+  clone.removeAttribute("width");
+  clone.removeAttribute("height");
+  clone.style.removeProperty("width");
+  clone.style.removeProperty("height");
+  clone.style.removeProperty("max-width");
+  clone.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  clone.classList.add("rh-lightbox-diagram");
+  return clone;
+}
+
+function openMermaidLightbox(controller, target, trigger){
+  var svg = target.querySelector("svg");
+  if (!svg || !target.classList.contains("is-rendered")) return;
+  var label = mermaidAccessibleName(svg);
+  controller.lightbox = openLightbox({
+    content: cloneMermaidSvg(svg),
+    label: label,
+    trigger: trigger,
+    variant: "diagram"
+  });
+}
+
+function mountMermaidAffordance(controller, target, svg){
+  target.classList.add("is-rendered");
+  target.removeAttribute("role");
+  target.removeAttribute("aria-label");
+  var button = target.querySelector("button.rh-mermaid-expand");
+  if (!button){
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "rh-mermaid-expand";
+    button.setAttribute("aria-label", "Open diagram fullscreen");
+    button.title = "Open fullscreen";
+    button.innerHTML = iconSvg("expand");
+    button.addEventListener("click", function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      openMermaidLightbox(controller, target, button);
+    });
+    target.appendChild(button);
+  }
+  if (controller.lightbox && controller.lightbox.isOpen()) {
+    controller.lightbox.replaceContent(cloneMermaidSvg(svg));
+  }
+}
+
+function wireMermaidSurface(controller, target){
+  var start = null;
+  function onPointerdown(e){
+    start = null;
+    if (!target.classList.contains("is-rendered") || e.button !== 0 || e.isPrimary === false || e.target.closest?.(".rh-mermaid-expand")) return;
+    start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  }
+  function onPointerup(e){
+    if (!start || start.id !== e.pointerId) return;
+    var dx = e.clientX - start.x;
+    var dy = e.clientY - start.y;
+    start = null;
+    if (dx * dx + dy * dy >= 25) return;
+    var button = target.querySelector("button.rh-mermaid-expand");
+    if (button) openMermaidLightbox(controller, target, button);
+  }
+  function onPointercancel(){ start = null; }
+  target.addEventListener("pointerdown", onPointerdown);
+  target.addEventListener("pointerup", onPointerup);
+  target.addEventListener("pointercancel", onPointercancel);
+  return function(){
+    target.removeEventListener("pointerdown", onPointerdown);
+    target.removeEventListener("pointerup", onPointerup);
+    target.removeEventListener("pointercancel", onPointercancel);
+  };
 }
 
 function trackMermaidController(controller){
@@ -200,6 +293,8 @@ function wireMermaid(root, source){
   var generation = mermaidGeneration;
   var controller = {
     root: root,
+    lightbox: null,
+    dispose: function(){},
     render: function(){
       var version = ++renderVersion;
       mermaidRenderQueue = mermaidRenderQueue.then(async function(){
@@ -217,17 +312,26 @@ function wireMermaid(root, source){
           });
           var result = await runtime.render("rh-mermaid-" + (++mermaidRenderId), String(source || ""));
           if (generation !== mermaidGeneration || version !== renderVersion || !target) return;
-          target.innerHTML = sanitizeVisualSource(result && result.svg || "");
-          var svg = target.querySelector("svg");
+          var rendered = document.createElement("div");
+          rendered.innerHTML = sanitizeVisualSource(result && result.svg || "");
+          var svg = rendered.querySelector("svg");
           if (!svg) throw new Error("Mermaid produced no SVG");
           svg.setAttribute("role", "img");
           if (!svg.getAttribute("aria-label")) svg.setAttribute("aria-label", "Mermaid diagram");
+          var previous = target.querySelector("svg");
+          if (previous && target.classList.contains("is-rendered")) previous.replaceWith(svg);
+          else {
+            target.textContent = "";
+            target.appendChild(svg);
+          }
+          mountMermaidAffordance(controller, target, svg);
         } catch(e) {
           if (generation === mermaidGeneration && version === renderVersion && target) showMermaidFallback(target, source);
         }
       });
     }
   };
+  controller.dispose = wireMermaidSurface(controller, target);
   trackMermaidController(controller);
   controller.render();
 }
@@ -236,7 +340,7 @@ function wireMermaid(root, source){
       var host = document.createElement("div");
       host.className = "viz-mounted viz-" + descriptor.type;
       host.setAttribute("data-viz-mounted", descriptor.type);
-      host.style.contain = "content";
+      host.style.contain = descriptor.type === "mermaid" ? "layout style" : "content";
       var shadow = host.attachShadow({ mode: "open" });
       var style = document.createElement("style");
       style.textContent = VISUAL_BASE_CSS + (descriptor.type === "check" ? CHECK_CSS : descriptor.type === "mermaid" ? MERMAID_CSS : "");

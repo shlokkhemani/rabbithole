@@ -1,17 +1,14 @@
 import { visualSurfaceKey } from "./core.js";
 import { scheduleEdges } from "./canvas-view.js";
 import { hideAsk } from "./ask-followups.js";
-import { openDialog } from "./primitives/dialog.js";
+import { closeLightbox, disposeLightbox, openLightbox } from "./lightbox.js";
 
   // ===========================================================================
   // MARKDOWN IMAGE UX
   // ===========================================================================
   var imageResizeMemory = {};
-  var activeLightbox = null;
   var activeImageResizeCleanup = null;
   var IMAGE_MIN_WIDTH = 120;
-  var LIGHTBOX_MIN_ZOOM = 0.25;
-  var LIGHTBOX_MAX_ZOOM = 6;
 
   function imageSurfaceScale(dc){
     if (!dc || !dc.offsetWidth) return 1;
@@ -91,107 +88,26 @@ function beginImageResize(e, dc, frame, key){
     window.addEventListener("pointerup", done, true);
     window.addEventListener("pointercancel", done, true);
   }
-  function setLightboxTransform(img, state){
-    img.style.setProperty("--rh-zoom", state.scale);
-    img.style.setProperty("--rh-pan-x", Math.round(state.x) + "px");
-    img.style.setProperty("--rh-pan-y", Math.round(state.y) + "px");
-  }
-  function clampLightboxZoom(value){
-    return Math.max(LIGHTBOX_MIN_ZOOM, Math.min(LIGHTBOX_MAX_ZOOM, value));
-  }
-  function pointerDistance(a, b){
-    var dx = a.clientX - b.clientX;
-    var dy = a.clientY - b.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
 export function openImageLightbox(src, alt, trigger){
     closeImageLightbox();
-    var overlay = document.createElement("div");
-    overlay.className = "rh-lightbox";
-    overlay.hidden = true;
-    var dialog = document.createElement("div");
-    dialog.className = "rh-lightbox-dialog";
     var img = document.createElement("img");
     img.className = "rh-lightbox-img";
     img.src = src;
     img.alt = alt || "";
     img.draggable = false;
-    dialog.appendChild(img);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-    var state = { scale: 1, x: 0, y: 0 };
-    var drag = null;
-    var pointers = {};
-    var pinch = null;
-    setLightboxTransform(img, state);
-    activeLightbox = openDialog({
-      dialog: dialog,
-      backdrop: overlay,
+    return openLightbox({
+      content: img,
       label: alt || "Image preview",
-      initialFocus: dialog,
       trigger: trigger,
-      removeOnDispose: true,
-      onClose: function(){ overlay.remove(); activeLightbox = null; }
+      variant: "image"
     });
-    function clearPointer(id){
-      delete pointers[id];
-      var keys = Object.keys(pointers);
-      if (keys.length < 2) pinch = null;
-      if (!keys.length) drag = null;
-    }
-    overlay.addEventListener("wheel", function(e){
-      e.preventDefault();
-      e.stopPropagation();
-      var next = clampLightboxZoom(state.scale * (e.deltaY < 0 ? 1.12 : 0.88));
-      state.scale = next;
-      if (state.scale <= 1){
-        state.x = 0;
-        state.y = 0;
-      }
-      setLightboxTransform(img, state);
-    }, { passive: false });
-    overlay.addEventListener("pointerdown", function(e){
-      e.preventDefault();
-      e.stopPropagation();
-      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
-      try { overlay.setPointerCapture(e.pointerId); } catch(_e){}
-      var ids = Object.keys(pointers);
-      if (ids.length >= 2){
-        pinch = { dist: pointerDistance(pointers[ids[0]], pointers[ids[1]]), scale: state.scale };
-        drag = null;
-      } else if (e.target === img && state.scale > 1){
-        drag = { x: e.clientX, y: e.clientY, ox: state.x, oy: state.y };
-      }
-    });
-    overlay.addEventListener("pointermove", function(e){
-      if (!pointers[e.pointerId]) return;
-      e.preventDefault();
-      e.stopPropagation();
-      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
-      var ids = Object.keys(pointers);
-      if (pinch && ids.length >= 2){
-        var dist = pointerDistance(pointers[ids[0]], pointers[ids[1]]);
-        if (pinch.dist > 0) state.scale = clampLightboxZoom(pinch.scale * dist / pinch.dist);
-        if (state.scale <= 1){ state.x = 0; state.y = 0; }
-        setLightboxTransform(img, state);
-      } else if (drag && state.scale > 1){
-        state.x = drag.ox + e.clientX - drag.x;
-        state.y = drag.oy + e.clientY - drag.y;
-        setLightboxTransform(img, state);
-      }
-    });
-    overlay.addEventListener("pointerup", function(e){ clearPointer(e.pointerId); });
-    overlay.addEventListener("pointercancel", function(e){ clearPointer(e.pointerId); });
   }
 function closeImageLightbox(){
-    if (!activeLightbox) return;
-    var dialog = activeLightbox;
-    activeLightbox = null;
-    dialog.dispose();
+    closeLightbox();
   }
 export function disposeImageUx(){
     if (activeImageResizeCleanup) activeImageResizeCleanup();
-    closeImageLightbox();
+    disposeLightbox();
     imageResizeMemory = {};
   }
 export function mountDocImages(dc, node, base, surfaceKey){

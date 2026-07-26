@@ -89,9 +89,9 @@ async function verifySetupDefaultsToOpenRouterAndGatesLocalGuide() {
     assert.equal(await page.locator("#api-key").count(), 1, "default setup should immediately show the OpenRouter form");
     assert.equal(await page.locator("#local-model").count(), 0, "Local controls should stay hidden until Local is selected");
     assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "opening setup must not force OpenRouter users into Ollama setup");
-    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
 
-    await page.click('[data-provider="custom"]');
+    await page.click('[data-provider="local"]');
     await page.waitForSelector("#local-model-setup");
     assert.equal(localModelRequests, 1, "choosing Local should start Local model discovery");
     assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "failed Local discovery should stay in the Local settings screen");
@@ -304,7 +304,7 @@ async function verifyLandingAndComposer() {
   })), { role: "tooltip", opacity: "1", visibility: "visible", transitionDuration: "0s", transitionDelay: "0s" }, "disabled New Rabbithole guidance should appear immediately as a tooltip");
   await page.keyboard.press("N");
   await page.waitForSelector("#web-settings-popover");
-  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "setup should select OpenRouter by default");
   assert.equal(await page.locator("#api-key").count(), 1, "setup should open the full OpenRouter form immediately");
   assert.equal(await page.locator(".settings-info-trigger").count(), 1);
@@ -635,7 +635,7 @@ async function verifySetupReadinessInvalidation() {
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "matching setup fingerprint should unlock creation");
 
   await page.click("#blank-start-setup");
-  await page.click('[data-provider="custom"]');
+  await page.click('[data-provider="local"]');
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing provider should invalidate completed setup");
   await page.click('[data-provider="openrouter"]');
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "returning to the completed provider fingerprint should restore readiness");
@@ -757,7 +757,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await absentPage.route(LOCAL_MODEL_URL, (route) => route.abort());
   await absentPage.route(LOCAL_VERSION_URL, (route) => route.abort());
   await openFreshSettings(absentPage);
-  await absentPage.click('[data-provider="custom"]');
+  await absentPage.click('[data-provider="local"]');
   await absentPage.waitForSelector("#local-model-setup");
   assert.equal(await absentPage.locator("#ollama-recovery-modal").count(), 0, "missing Ollama should first produce an inline setup action");
   await absentPage.click("#local-model-setup");
@@ -778,7 +778,7 @@ async function openFreshSettings(page) {
 }
 
 async function switchSettingsToLocal(page) {
-  await page.click('[data-provider="custom"]');
+  await page.click('[data-provider="local"]');
 }
 
 async function verifyAskKeyUxAndRail() {
@@ -950,10 +950,10 @@ async function verifyAskKeyUxAndRail() {
   }, null, { timeout: 5000 });
   assert.equal(await page.locator("#save-settings, #web-settings-close").count(), 0, "settings should apply live without save or close buttons");
   assert.equal(await page.locator(".settings-section").first().getAttribute("class"), "settings-section provider-section", "provider should be the first settings decision");
-  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
-  await page.click('[data-provider="custom"]');
-  assert.equal(await page.getAttribute('[data-provider="custom"]', "aria-pressed"), "true");
+  await page.click('[data-provider="local"]');
+  assert.equal(await page.getAttribute('[data-provider="local"]', "aria-pressed"), "true");
   await page.waitForSelector(".local-model-section .field-hint");
   await page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("installed models"));
   assert.equal(await page.locator("#provider-base").count(), 1, "Local endpoint should remain available in Connection settings");

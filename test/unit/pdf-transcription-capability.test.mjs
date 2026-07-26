@@ -21,6 +21,18 @@ assert.equal(
   true,
 );
 
+/* A custom endpoint cannot be probed for vision, so it is trusted like OpenRouter rather
+   than having transcription silently switched off. */
+const endpointSettings = { preset: "custom_endpoint", base_url: "https://api.example.com/v1", model: "my-model" };
+assert.equal(pdfTranscriptionCapability({ ...endpointSettings, transcribe_model: "my-vision" }).available, true);
+assert.equal(pdfTranscriptionCapability({ ...endpointSettings, transcribe_model: "my-vision" }).model, "my-vision");
+assert.equal(pdfTranscriptionCapability(endpointSettings).status, "model_required", "with nothing chosen it asks, it does not guess");
+assert.equal(
+  pdfTranscriptionCapability({ ...endpointSettings, transcribe_model: "my-vision" }, { models: [], discoveryError: true }).available,
+  true,
+  "a custom endpoint must not inherit Local's vision gate",
+);
+
 const originalFetch = globalThis.fetch;
 const calls = [];
 globalThis.fetch = async (url, options = {}) => {

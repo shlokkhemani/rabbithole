@@ -14,13 +14,16 @@ function fingerprint(settings) {
 }
 
 function fingerprintsMatch(left, right) {
-  return !!left && left.version === right.version && left.preset === right.preset
+  return !!left && left.version === right.version && providerFor(left.preset).id === providerFor(right.preset).id
     && left.base_url === right.base_url && left.model === right.model;
 }
 
 export function getGenerationSetupStatus(settings = loadSettings()) {
   const preset = providerFor(settings.preset);
   const expected = fingerprint(settings);
+  if (preset.requires_base_url && !expected.base_url) {
+    return { ready: false, reason: "missing_endpoint", preset, model: expected.model };
+  }
   if (!fingerprintsMatch(settings.generation_setup, expected)) {
     return { ready: false, reason: "setup_incomplete", preset, model: expected.model };
   }

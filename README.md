@@ -10,8 +10,9 @@ revisitable.
 There are two ways in:
 
 - **The web app** — [rabbithole.ing](https://rabbithole.ing). Bring an
-  OpenRouter key or point it at a local model. Static site, no account, no
-  backend: your key stays in your browser, and so do your documents.
+  OpenRouter key, run a local model, or point it at your own endpoint. Static
+  site, no account, no backend: your key stays in your browser, and so do your
+  documents.
 - **The MCP server** — for terminal agents. Claude Code, Codex, or any MCP
   client does the answering; Rabbithole gives it a canvas in your browser.
   The server, storage, and canvas all run on your machine — your documents
@@ -24,12 +25,16 @@ drop in a PDF or Markdown file, paste a URL, import a `.rabbithole` or
 snapshot `.html` — or just ask a question and let the answer become your
 first document.
 
-Two ways to run a model:
+Three ways to run a model:
 
 - **OpenRouter** (recommended) — one key, every major model. The model picker
   pulls OpenRouter's live catalog.
-- **Local** — any OpenAI-compatible endpoint: Ollama, LM Studio, llama.cpp.
-  No key required.
+- **Local** — Ollama on your machine, with setup help and installed-model
+  discovery. No key required.
+- **Custom** — any other OpenAI-compatible endpoint: LM Studio, llama.cpp,
+  vLLM, LiteLLM, or a hosted API. Paste the base URL, add a key if it needs
+  one, and Rabbithole lists the models it offers. The endpoint has to allow
+  browser requests from rabbithole.ing (CORS).
 
 Keys never leave the browser: they're stored locally (or session-only, your
 choice) and sent exclusively to the provider origin you configure. Exports

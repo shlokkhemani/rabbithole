@@ -10,7 +10,7 @@ export function localVisionModels(models) {
 export function pdfTranscriptionCapability(settings, { models = null, discoveryError = false } = {}) {
   const preset = providerFor(settings?.preset);
   const configuredModel = String(settings?.transcribe_model || preset.transcribe_model || "").trim();
-  if (preset.id !== "custom") {
+  if (preset.id !== "local") {
     return configuredModel
       ? { available: true, status: "available", model: configuredModel, reason: "" }
       : { available: false, status: "model_required", model: "", reason: "Choose a PDF transcription model in Model settings." };
@@ -46,7 +46,7 @@ export function pdfTranscriptionCapability(settings, { models = null, discoveryE
 }
 
 export async function detectPdfTranscriptionCapability(settings, { signal } = {}) {
-  if (providerFor(settings?.preset).id !== "custom") return pdfTranscriptionCapability(settings);
+  if (providerFor(settings?.preset).id !== "local") return pdfTranscriptionCapability(settings);
   try {
     const models = await discoverLocalModels(settings?.base_url, { signal });
     return { ...pdfTranscriptionCapability(settings, { models }), models };

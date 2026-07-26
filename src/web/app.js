@@ -1,6 +1,7 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, providerFor } from "./brain/index.js";
 import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./brain/pdf-transcription.js";
+import { isHttpUrl } from "./brain/model-endpoint.js";
 import { loadSettings, saveSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
@@ -791,8 +792,7 @@ async function mountHole(hole, { replace = false } = {}) {
     await refreshPdfTranscriptionCapability();
   }
   const settings = loadSettings();
-  const key = getApiKey(settings);
-  const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  const brain = brainForSettings(settings);
   const host = new DirectRabbitholeHost({
     store,
     hole,
@@ -1028,8 +1028,16 @@ function eyeSvg(open) {
 
 function refreshCurrentBrain(settings = loadSettings()) {
   if (!currentHost) return;
+  currentHost.brain = brainForSettings(settings);
+}
+
+function brainForSettings(settings) {
+  const preset = providerFor(settings.preset);
   const key = getApiKey(settings);
-  currentHost.brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  if (preset.requires_key && !key) return null;
+  if (preset.requires_base_url && !isHttpUrl(settings.base_url)) return null;
+  if (!String(settings.model || preset.model || "").trim()) return null;
+  return createBrain(settings, key);
 }
 
 function currentHoleNeedsPdfTranscription() {
@@ -1072,7 +1080,7 @@ function handleBranchAuthRequired({ node, error, retry }) {
 
 function handleBranchProviderFailure({ node, error, retry }) {
   const settings = loadSettings();
-  if (providerFor(settings.preset).id !== "custom") return;
+  if (providerFor(settings.preset).id !== "local") return;
   showToast({
     message: error?.message || "Couldn't reach the local model.",
     actionLabel: "Troubleshoot",

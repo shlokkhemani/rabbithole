@@ -202,6 +202,11 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
   const connectSrc = [
     "'self'",
     "blob:",
+    // A custom endpoint is any host the person running this owns, so it cannot be
+    // enumerated here. script-src stays locked to 'self', which is what keeps an
+    // injection from using this. Plain-http endpoints stay limited to loopback:
+    // the browser blocks mixed content from an https page regardless of policy.
+    "https:",
     "https://openrouter.ai",
     "https://api.github.com",
     "https://arxiv.org",

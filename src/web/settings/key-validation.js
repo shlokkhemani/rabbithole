@@ -6,7 +6,7 @@ const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
 export async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
   const value = String(key || "").trim();
   const preset = providerFor(presetId);
-  if (!preset.requires_key) {
+  if (!preset.requires_key && !preset.allows_key) {
     setKeyStatus(statusEl, "No key required for this provider.", "valid");
     return true;
   }

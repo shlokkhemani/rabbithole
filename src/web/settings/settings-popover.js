@@ -79,6 +79,27 @@ export function createSettingsPopover(options) {
     return capability.reason;
   }
 
+  /*
+   * These fields commit on blur, so the one holding focus is the only place text can exist
+   * that settings has not seen yet — a key is 350ms of debounce away from being saved. A
+   * repaint renders saved settings, and the endpoint's verdict on a keyless probe routinely
+   * arrives mid-word, so without carrying that text across the repaint it gets painted over
+   * with the saved value and silently discarded.
+   */
+  function textBeingTyped(host) {
+    const el = document.activeElement;
+    if (!el || el.tagName !== "INPUT" || el.type === "checkbox" || !host.contains(el)) return null;
+    return { id: el.id, value: el.value, start: el.selectionStart, end: el.selectionEnd };
+  }
+
+  function restoreTextBeingTyped(host, typed) {
+    const el = typed?.id ? host.querySelector(`#${typed.id}`) : null;
+    if (!el) return;
+    el.value = typed.value;
+    el.focus({ preventScroll: true });
+    if (typed.start !== null) el.setSelectionRange(typed.start, typed.end);
+  }
+
   function renderConditionalSections() {
     const host = surface?.querySelector("#settings-conditional-sections");
     if (!host) return;
@@ -110,10 +131,12 @@ export function createSettingsPopover(options) {
       : preset.id === "custom_endpoint"
         ? `<div class="settings-section endpoint-section">${fieldMarkup({ id: "provider-base", label: "Endpoint", value: settings.base_url || "", placeholder: "https://api.example.com/v1", autocomplete: "off", autocapitalize: "none", autocorrect: "off", inputmode: "url", enterkeyhint: "done", spellcheck: "false", status: { id: "endpoint-status", className: `key-status ${endpointStatusTone()} visible`, text: endpointStatusCopy() || ENDPOINT_HINT } })}</div>`
         : "";
+    const typed = textBeingTyped(host);
     host.innerHTML = `${recoveryStatus ? `<div class="settings-section settings-recovery" role="status">${escapeHtml(recoveryStatus)}</div>` : ""}
       ${preset.id === "custom_endpoint" ? `${endpointSection}${keySection}${modelSection}` : `${modelSection}${keySection}${endpointSection}`}
       <div class="settings-section model-section transcription-model-section"><div class="settings-row">${transcriptionHelpMarkup(preset)}${comboboxMarkup({ id: "transcribe-model", labelledBy: "transcribe-model-label", describedBy: preset.id === "local" ? "transcribe-model-status" : "", value: transcribeDisabled ? "" : transcribeModel, label: transcribeLabel, title: transcribeDisabled ? localCapability.reason : transcribeModel, iconHtml: chevron, disabled: transcribeDisabled })}</div>${preset.id === "local" ? `<small id="transcribe-model-status" class="field-hint transcription-status ${escapeHtml(localCapability.status)}">${escapeHtml(transcriptionStatusCopy(localCapability))}${localDiscovery === "success" && !localCapability.available && localCapability.status !== "checking" ? ` <button id="local-vision-retry" class="settings-text-action" type="button">Check again</button>` : ""}</small>` : ""}</div>
       ${purpose !== "settings" || !getGenerationSetupStatus(settings).ready ? `<div class="settings-section settings-complete-section"><button id="complete-model-setup" class="web-primary" type="button"${localModelReady && endpointReady ? "" : " disabled"}>Finish setup</button></div>` : ""}`;
+    restoreTextBeingTyped(host, typed);
     wireConditionalSections(host);
     popover?.update();
   }

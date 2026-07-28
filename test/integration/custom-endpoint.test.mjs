@@ -17,6 +17,7 @@ const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
   await verifyConnectStatesAndAuth();
+  await verifyTypedKeySurvivesAnEndpointVerdict();
   await verifyGenerationSendsTheKey();
   await verifySettingsSurviveProviderSwitching();
   console.log("custom endpoint verification passed");
@@ -144,6 +145,45 @@ async function verifyConnectStatesAndAuth() {
     await routeEndpoint(page, { models: [] });
     await fillEndpoint(page, `${ENDPOINT}/`);
     await waitForEndpointStatus(page, "Connected · no models listed");
+  } finally {
+    await context.close();
+  }
+}
+
+/*
+ * Typing a key takes longer than the endpoint takes to answer, so the "needs a key" verdict
+ * routinely lands mid-word. It repaints the settings body, and a repaint reads saved settings —
+ * which have not yet seen the key, because the field commits on a debounce. Holding the 401
+ * open until the key is typed makes that ordering deterministic instead of a matter of load.
+ */
+async function verifyTypedKeySurvivesAnEndpointVerdict() {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    page.on("pageerror", (error) => process.stderr.write(`browser page error: ${error.stack || error.message}\n`));
+    let releaseUnauthorized = () => {};
+    let announceKeylessProbe = () => {};
+    const unauthorized = new Promise((resolve) => { releaseUnauthorized = resolve; });
+    const keylessProbe = new Promise((resolve) => { announceKeylessProbe = resolve; });
+    let keylessProbes = 0;
+    await page.route(MODELS_URL, async (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
+      if ((route.request().headers().authorization || "").replace(/^Bearer\s+/i, "") === KEY) {
+        return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "my-model" }] }) });
+      }
+      if ((keylessProbes += 1) === 1) { announceKeylessProbe(); await unauthorized; }
+      return route.fulfill({ status: 401, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "missing key" } }) });
+    });
+    await openSettingsOnCustom(page);
+    await fillEndpoint(page, ENDPOINT);
+    await keylessProbe;
+    await page.fill("#api-key", KEY);
+    releaseUnauthorized();
+
+    await waitForEndpointStatus(page, "Connected · 1 model");
+    assert.equal(await page.locator("#api-key").inputValue(), KEY, "a repaint must not paint the saved key back over one still being typed");
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-api-keys") || "{}").custom_endpoint), KEY,
+      "the key the person typed must be the key that gets stored");
   } finally {
     await context.close();
   }

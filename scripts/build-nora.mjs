@@ -30,7 +30,7 @@ const extensionBuild = await esbuild.build({
   metafile: true,
   logLevel: "silent",
 });
-await fs.writeFile(path.join(outdir, "extension.metafile.json"), JSON.stringify(extensionBuild.metafile, null, 2), "utf8");
+await fs.writeFile(path.join(outdir, "extension.metafile.json"), JSON.stringify(normalizeMetafile(extensionBuild.metafile), null, 2), "utf8");
 await ensureLegalFile(path.join(outdir, "extension.cjs.LEGAL.txt"));
 
 await esbuild.build({
@@ -148,4 +148,14 @@ function parseOutdir(args) {
   const value = arg.startsWith("--outdir=") ? arg.slice("--outdir=".length) : args[index + 1];
   if (!value) throw new Error("--outdir requires a directory");
   return value;
+}
+
+function normalizeMetafile(metafile) {
+  const outputs = {};
+  for (const [file, record] of Object.entries(metafile.outputs ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    const absolute = path.resolve(rootDir, file);
+    const relative = path.relative(outdir, absolute).split(path.sep).join("/");
+    outputs[relative] = record;
+  }
+  return { ...metafile, outputs };
 }

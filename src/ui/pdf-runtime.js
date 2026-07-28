@@ -17,7 +17,7 @@ export async function loadPdfJsModule() {
         .catch((error) => { pdfjsPromise = null; throw error; });
     } else {
       const nodeRuntime = typeof process !== "undefined" && process.versions?.node;
-      let runtimeUrl = nodeRuntime ? ["pdfjs-dist", "build/pdf.mjs"].join("/") : new URL("pdf.mjs", document.baseURI).href;
+      let runtimeUrl = nodeRuntime ? ["pdfjs-dist", "build/pdf.mjs"].join("/") : new URL("pdf.mjs", import.meta.url).href;
       if (!nodeRuntime && pdfjsNetworkAttempts) {
         const retryUrl = new URL(runtimeUrl);
         retryUrl.searchParams.set("retry", String(pdfjsNetworkAttempts));
@@ -41,13 +41,13 @@ function configurePdfJs() {
     workerObjectUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     pdfjs.GlobalWorkerOptions.workerSrc = workerObjectUrl;
   } else if (typeof window !== "undefined") {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdf.worker.mjs", document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdf.worker.mjs", import.meta.url).href;
   }
 }
 
 function runtimeAssetUrl(directory) {
   if (typeof document === "undefined" || location.protocol === "file:") return undefined;
-  return new URL(`${directory}/`, document.baseURI).href;
+  return new URL(`${directory}/`, import.meta.url).href;
 }
 
 /** Share a parsed PDF between Reader and Canvas mounts of the same node. */

@@ -42,6 +42,7 @@ await esbuild.build({
   external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
+await stripTrailingWhitespace(path.join(absOutdir, "client.js"));
 
 const pdfPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
 await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.worker.min.mjs"), path.join(absOutdir, "pdf.worker.mjs"));
@@ -61,6 +62,7 @@ await esbuild.build({
   external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
+await stripTrailingWhitespace(path.join(absOutdir, "frozen-client.js"));
 
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
@@ -106,6 +108,12 @@ async function replaceAsync(source, regex, replacer) {
   }
   parts.push(source.slice(lastIndex));
   return parts.join("");
+}
+
+/** @param {string} filePath */
+async function stripTrailingWhitespace(filePath) {
+  const source = await fs.readFile(filePath, "utf8");
+  await fs.writeFile(filePath, source.replace(/[ \t]+$/gm, ""), "utf8");
 }
 
 async function buildWebApp(assetDir) {

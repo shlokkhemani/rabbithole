@@ -100,6 +100,7 @@ export function createNoraCustomTools(options) {
 export function createNoraCustomToolBundle(options) {
   const mcpBundle = options.mcpSupervisor || options.workspaceFolderPath || options.vscode
     ? createMcpToolBundle({
+        document: options.document,
         workspaceFolderPath: options.workspaceFolderPath,
         vscode: options.vscode,
         supervisor: options.mcpSupervisor,

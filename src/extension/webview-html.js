@@ -31,7 +31,7 @@ export function createNoraWebviewHtml(options) {
     `style-src ${cspSource} 'unsafe-inline'`,
     `script-src 'nonce-${nonce}'`,
     `worker-src ${cspSource} blob:`,
-    "connect-src 'none'",
+    `connect-src ${cspSource}`,
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");

@@ -2,6 +2,7 @@ import { readWorkspaceMcpConfig } from "./config.js";
 import { boundMcpModelResult } from "./output.js";
 import { McpSupervisor } from "./supervisor.js";
 import { resolveMcpServerConfig } from "./variables.js";
+import { addMcpResourceBlobAttachment } from "../attachments.js";
 
 const MCP_DIRECT_TOOLS_SETTING = "nora.mcp.directTools";
 
@@ -12,18 +13,20 @@ export class McpToolService {
    * @param {{
    *   workspaceFolderPath?: string | null,
    *   supervisor?: McpSupervisor,
- *   vscode?: typeof import("vscode"),
- *   directTools?: string[],
- *   readConfig?: typeof readWorkspaceMcpConfig,
- *   resolveServerConfig?: typeof resolveMcpServerConfig,
- *   inputResolver?: (input: import("./config.js").NoraMcpInput) => Promise<string> | string,
- *   env?: NodeJS.ProcessEnv | Record<string, string | undefined>,
- *   userHome?: string
- * }} [options]
+   *   document?: import("../nora-document.js").NoraDocument | null,
+   *   vscode?: typeof import("vscode"),
+   *   directTools?: string[],
+   *   readConfig?: typeof readWorkspaceMcpConfig,
+   *   resolveServerConfig?: typeof resolveMcpServerConfig,
+   *   inputResolver?: (input: import("./config.js").NoraMcpInput) => Promise<string> | string,
+   *   env?: NodeJS.ProcessEnv | Record<string, string | undefined>,
+   *   userHome?: string
+   * }} [options]
    */
   constructor(options = {}) {
     this.workspaceFolderPath = options.workspaceFolderPath ?? null;
     this.supervisor = options.supervisor ?? new McpSupervisor();
+    this.document = options.document ?? null;
     this.vscode = options.vscode;
     this.directTools = options.directTools ?? readConfiguredDirectTools(options.vscode);
     this.readConfig = options.readConfig ?? readWorkspaceMcpConfig;
@@ -60,7 +63,7 @@ export class McpToolService {
     if (operation === "list_resources") return this.#wrapResult({ operation }, await this.#listResources(input, options));
     const server = requireString(input.server, "server");
     const uri = requireString(input.uri ?? input.resourceUri, "uri");
-    const result = await (await this.#handle(server)).connection.readResource(uri, options);
+    const result = await this.#readResource(server, uri, options);
     return this.#wrapResult({ operation, server, resourceUri: uri }, result);
   }
 
@@ -130,6 +133,41 @@ export class McpToolService {
       }
     }
     return { results, diagnostics: safeDiagnostics(config) };
+  }
+
+  /**
+   * @param {string} server
+   * @param {string} uri
+   * @param {{ signal?: AbortSignal }} options
+   */
+  async #readResource(server, uri, options) {
+    const raw = await (await this.#handle(server)).connection.readResource(uri, options);
+    if (!this.document) return raw;
+    const result = cloneJson(raw);
+    const contents = Array.isArray(result?.contents) ? result.contents : [];
+    for (let index = 0; index < contents.length; index += 1) {
+      const content = contents[index];
+      if (!content || typeof content !== "object" || Array.isArray(content) || typeof content.blob !== "string") continue;
+      const attachment = await addMcpResourceBlobAttachment(this.document, {
+        server,
+        uri: String(content.uri ?? uri),
+        content: /** @type {Record<string, unknown>} */ (content),
+      });
+      const { blob: _blob, ...withoutBlob } = content;
+      contents[index] = {
+        ...withoutBlob,
+        attachment: {
+          id: attachment.attachment.id,
+          sha256: attachment.attachment.sha256,
+          bytes: attachment.attachment.bytes,
+          mediaType: attachment.attachment.mediaType,
+          assetName: attachment.assetName,
+          sourceId: attachment.source.id,
+          evidenceIds: [attachment.evidence.id],
+        },
+      };
+    }
+    return result;
   }
 
   /** @param {string} serverName */
@@ -340,4 +378,9 @@ function objectArguments(value) {
 /** @param {unknown} error */
 function errorClass(error) {
   return error instanceof Error && error.name ? error.name : "Error";
+}
+
+/** @param {unknown} value */
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
 }

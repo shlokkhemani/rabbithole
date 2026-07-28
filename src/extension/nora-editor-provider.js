@@ -4,6 +4,8 @@ import { serializeExtensionMessage, validateWebviewMessage } from "./protocol.js
 import { NoraDocument, requireFilePath, titleForUri } from "./nora-document.js";
 import { resolveWorkspaceScope } from "./workspace-scope.js";
 import { NoraRunController } from "./agent/run-controller.js";
+import { addWebviewCropAttachment } from "./attachments.js";
+import { normalizePdfExtension } from "../core/pdf-shared.js";
 
 export const VIEW_TYPE = "nora.research";
 
@@ -64,7 +66,7 @@ export class NoraEditorProvider {
     const assetRoot = vscode.Uri.joinPath(this.context.extensionUri, "out", "webview");
     webview.options = {
       enableScripts: true,
-      localResourceRoots: [assetRoot],
+      localResourceRoots: [assetRoot, vscode.Uri.file(noraDocument.getMaterializedAssetsRoot())],
     };
     webview.html = createNoraWebviewHtml({
       nonce: createNonce(),
@@ -104,7 +106,15 @@ export class NoraEditorProvider {
       }
       if (message.event.type === "nora_ask" || message.event.type === "branch_request") {
         try {
-          await this.runController.startFromWebviewEvent(noraDocument, message.event);
+          await this.#handleRunEvent(noraDocument, message.event);
+        } catch (error) {
+          await postError(panel, error);
+        }
+        return;
+      }
+      if (message.event.type === "convert_pdf") {
+        try {
+          await handleConvertPdf(noraDocument, message.event);
         } catch (error) {
           await postError(panel, error);
         }
@@ -179,6 +189,32 @@ export class NoraEditorProvider {
     await Promise.all([...panels].map((panel) => panel.webview.postMessage(serializeExtensionMessage({ type: "command", command }))));
     return true;
   }
+
+  /**
+   * @param {NoraDocument} document
+   * @param {Record<string, unknown>} event
+   */
+  async #handleRunEvent(document, event) {
+    const crop = event.type === "branch_request" && event.crop && typeof event.crop === "object" && !Array.isArray(event.crop)
+      ? await addWebviewCropAttachment(document, /** @type {Record<string, unknown>} */ (event.crop))
+      : null;
+    const runEvent = crop ? {
+      ...event,
+      crop_asset: crop.assetName,
+      crop_attachment_id: crop.attachment.id,
+    } : event;
+    const started = await this.runController.startFromWebviewEvent(document, runEvent);
+    if (!crop) return started;
+    const nodeId = String(event.node_id ?? event.nodeId ?? started?.targetNodeId ?? "");
+    const events = [
+      { type: "node_references", node_id: nodeId, source_ids: [crop.source.id], evidence_ids: [crop.evidence.id], attachment_ids: [crop.attachment.id] },
+    ];
+    for (const mutation of events) {
+      if (document.activeRun) await document.commitRunEvent(mutation);
+      else await document.commitEvent(mutation);
+    }
+    return started;
+  }
 }
 
 /** @param {vscode.CustomDocument} document @returns {NoraDocument} */
@@ -188,10 +224,12 @@ function asNoraDocument(document) {
 }
 
 /** @param {vscode.WebviewPanel} panel @param {NoraDocument} document */
-function postHydration(panel, document) {
+async function postHydration(panel, document) {
+  const hydration = /** @type {ReturnType<NoraDocument["toHydration"]> & { asset_data?: Record<string, string> }} */ (document.toHydration());
+  hydration.asset_data = await buildAssetData(panel.webview, document);
   return panel.webview.postMessage(serializeExtensionMessage({
     type: "hydrate",
-    hydration: document.toHydration(),
+    hydration,
     readonly: false,
   }));
 }
@@ -202,4 +240,77 @@ function postError(panel, error) {
     type: "error",
     message: error instanceof Error ? error.message : String(error),
   }));
+}
+
+/**
+ * @param {vscode.Webview} webview
+ * @param {NoraDocument} document
+ */
+async function buildAssetData(webview, document) {
+  /** @type {Record<string, string>} */
+  const assetData = {};
+  for (const entry of document.getAssetNames()) {
+    try {
+      const filePath = await document.materializeAssetByName(entry.name);
+      assetData[entry.name] = String(webview.asWebviewUri(vscode.Uri.file(filePath)));
+    } catch {
+      assetData[entry.name] = "data:,";
+    }
+  }
+  return assetData;
+}
+
+/**
+ * @param {NoraDocument} document
+ * @param {Record<string, unknown>} event
+ */
+async function handleConvertPdf(document, event) {
+  const nodeId = String(event.node_id ?? event.nodeId ?? "");
+  const node = document.state.nodes.get(nodeId);
+  if (!node) throw new Error(`PDF node ${nodeId} does not exist`);
+  const conversion = event.conversion && typeof event.conversion === "object" && !Array.isArray(event.conversion)
+    ? /** @type {Record<string, unknown>} */ (event.conversion)
+    : null;
+  if (!conversion) throw new Error("PDF conversion payload is required");
+  const markdown = String(conversion.markdown ?? "");
+  const pdfExtension = conversion.pdfExtension ?? conversion.pdf_extension;
+  if (!markdown || !normalizePdfExtension({ markdown, extensions: { pdf: pdfExtension } })) {
+    throw new Error("PDF conversion payload is malformed");
+  }
+  const childId = String(event.request_id ?? event.child_node_id ?? `pdf-text:${nodeId}`);
+  const createdAt = typeof event.created_at === "string" ? event.created_at : new Date().toISOString();
+  await document.commitEvent({
+    type: "branch_request",
+    request_id: childId,
+    node_id: childId,
+    parent_id: nodeId,
+    question: "Text version",
+    branch_type: "followup",
+    position: { x: Number(node.position?.x ?? 0) + 360, y: Number(node.position?.y ?? 0) },
+    size: { w: 320, h: 220 },
+    created_at: createdAt,
+  });
+  await document.commitEvent({
+    type: "node_answered",
+    node_id: childId,
+    parent_id: nodeId,
+    title: "Text version",
+    markdown,
+    read: false,
+    created_at: createdAt,
+  });
+  await document.commitEvent({
+    type: "node_extensions_patch",
+    node_id: childId,
+    namespace: "pdf",
+    value: { .../** @type {Record<string, unknown>} */ (pdfExtension), converted: true, original_markdown: node.markdown },
+  });
+  await document.commitEvent({
+    type: "node_references",
+    node_id: childId,
+    source_ids: [...node.sourceIds],
+    evidence_ids: [...node.evidenceIds],
+    attachment_ids: [...node.attachmentIds],
+    updated_at: createdAt,
+  });
 }

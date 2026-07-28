@@ -10,7 +10,7 @@ import {
   reduceDocumentEvent,
 } from "../core/document-state.js";
 import { canonicalJsonBytes } from "./archive/manifest.js";
-import { readNoraArchive } from "./archive/reader.js";
+import { extractArchiveEntryToFile, readNoraArchive } from "./archive/reader.js";
 import { writeNoraArchive, writeNoraArchiveToPath } from "./archive/writer.js";
 import { createNoraArchiveWorkspace } from "./archive/workspace.js";
 import { DocumentMutationQueue } from "./document-mutation-queue.js";
@@ -79,6 +79,7 @@ export class NoraDocument {
     this.changeEmitter = new SimpleEmitter();
     this.disposeEmitter = new SimpleEmitter();
     this.requestSaveEmitter = new SimpleEmitter();
+    this.materializedAssetsDir = path.join(this.archiveWorkspace.tempDir, "materialized-assets");
     /** @type {Map<string, { repository: import("./git/cache.js").AcquiredRepository, release: () => unknown | Promise<unknown> }>} */
     this.repositoryHandles = new Map();
     if (options.onRequestSave) this.onDidRequestSave(options.onRequestSave);
@@ -422,6 +423,53 @@ export class NoraDocument {
     };
   }
 
+  getMaterializedAssetsRoot() {
+    return this.materializedAssetsDir;
+  }
+
+  getAssetNames() {
+    const entries = [];
+    for (const attachment of this.state.attachments.values()) {
+      const assetName = assetNameForAttachment(attachment);
+      if (assetName) entries.push({ name: assetName, sha256: attachment.sha256 });
+    }
+    for (const node of this.state.nodes.values()) {
+      const pdf = /** @type {{ source?: { asset?: unknown, sha256?: unknown } } | undefined} */ (node.extensions?.pdf);
+      if (pdf?.source?.asset && pdf.source.sha256) entries.push({
+        name: String(pdf.source.asset),
+        sha256: String(pdf.source.sha256),
+      });
+    }
+    return uniqueByName(entries);
+  }
+
+  /** @param {string} assetName */
+  async materializeAssetByName(assetName) {
+    const match = this.getAssetNames().find((entry) => entry.name === assetName);
+    if (!match) throw new Error(`Nora asset is not referenced by the document: ${assetName}`);
+    const safeName = safeMaterializedAssetName(assetName);
+    await fs.mkdir(this.materializedAssetsDir, { recursive: true });
+    const targetPath = path.join(this.materializedAssetsDir, safeName);
+    const existing = await hashExistingFile(targetPath).catch(() => null);
+    if (existing?.sha256 === match.sha256) return targetPath;
+    const staged = this.archiveWorkspace.assets.get(match.sha256);
+    if (staged?.filePath) {
+      await fs.copyFile(staged.filePath, targetPath);
+      const hashed = await hashExistingFile(targetPath);
+      if (hashed.sha256 !== match.sha256) throw new Error(`Materialized Nora asset ${assetName} failed verification`);
+      return targetPath;
+    }
+    const previous = this.previousArchive?.assets.get(match.sha256);
+    if (previous?.archivePath && previous.path) {
+      await extractArchiveEntryToFile(previous.archivePath, previous.path, targetPath, {
+        expectedSha256: match.sha256,
+        expectedBytes: previous.bytes,
+      });
+      return targetPath;
+    }
+    throw new Error(`Nora asset bytes are unavailable: ${assetName}`);
+  }
+
   #assertOpen() {
     if (this.disposed) throw new Error("Nora document is disposed");
   }
@@ -617,6 +665,42 @@ export function uriToString(uri) {
   if (typeof uri === "string") return uri;
   const toString = /** @type {{ toString?: unknown }} */ (uri).toString;
   return typeof toString === "function" ? String(toString.call(uri)) : String(uri);
+}
+
+/** @param {import("../core/contracts/document.js").NoraAttachment} attachment */
+function assetNameForAttachment(attachment) {
+  const extensions = attachment.extensions && typeof attachment.extensions === "object" && !Array.isArray(attachment.extensions)
+    ? /** @type {Record<string, unknown>} */ (attachment.extensions)
+    : {};
+  const assetName = extensions.assetName;
+  return typeof assetName === "string" && assetName ? assetName : null;
+}
+
+/** @param {Array<{ name: string, sha256: string }>} entries */
+function uniqueByName(entries) {
+  const out = new Map();
+  for (const entry of entries) if (!out.has(entry.name)) out.set(entry.name, entry);
+  return [...out.values()];
+}
+
+/** @param {string} assetName */
+function safeMaterializedAssetName(assetName) {
+  const safe = path.basename(assetName);
+  if (safe !== assetName || !/^[A-Za-z0-9._-]+$/.test(safe)) throw new Error(`Unsafe Nora asset name: ${assetName}`);
+  return safe;
+}
+
+/** @param {string} filePath */
+async function hashExistingFile(filePath) {
+  const hash = createHash("sha256");
+  let bytes = 0;
+  const { createReadStream } = await import("node:fs");
+  for await (const chunk of createReadStream(filePath)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.byteLength;
+    hash.update(buffer);
+  }
+  return { sha256: hash.digest("hex"), bytes };
 }
 
 /** @param {MemorySnapshot} snapshot */

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { registerDocumentCommands } from "./commands/document-commands.js";
+import { registerAttachmentCommands } from "./commands/attachment-commands.js";
 import { registerLlmCommands } from "./commands/llm-commands.js";
 import { registerRepositoryCommands } from "./commands/repository-commands.js";
 import { DocumentRegistry } from "./document-registry.js";
@@ -41,6 +42,7 @@ export function activate(context) {
       },
     ),
     ...registerDocumentCommands(context, registry, provider),
+    ...registerAttachmentCommands(context, registry, { vscode }),
     ...registerLlmCommands(context, registry, { vscode }),
     ...registerRepositoryCommands(context, registry, { vscode }),
   );

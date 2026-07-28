@@ -1,5 +1,15 @@
 import { createNoraUi } from "./composition.js";
 import { mountPdfView } from "./pdf-view.js";
+import { cropPdfSourceToBlob } from "./pdf-crop.js";
+import { loadPdfJsModule } from "./pdf-runtime.js";
+import {
+  buildPdfDocument,
+  extractPdfPageLines,
+  normalizePdfExtension,
+  normalizePdfTitle,
+  pdfPageMetadata,
+  resolvePagesToProcess,
+} from "../core/pdf-shared.js";
 import { showWholeCanvasAsk } from "./ask-followups.js";
 
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
@@ -34,9 +44,10 @@ async function startNora(hydration) {
   runtime = createNoraUi({
     hydration,
     host: {
-      post: (event) => {
-        postToExtension({ type: "uiEvent", event });
-        return Promise.resolve({ ok: true });
+      post: async (event) => {
+        const prepared = await prepareOutgoingEvent(event);
+        postToExtension({ type: "uiEvent", event: prepared.event });
+        return { ok: true, crop_asset: prepared.cropAsset ?? null };
       },
       refreshStatus: () => {},
       start: () => {},
@@ -51,6 +62,145 @@ async function startNora(hydration) {
     },
   });
   exposeTestApi();
+}
+
+/** @param {Record<string, unknown>} event */
+async function prepareOutgoingEvent(event) {
+  if (event?.type === "branch_request" && event.anchor && typeof event.anchor === "object") {
+    const crop = await preparePdfCropForEvent(event).catch(() => null);
+    if (crop) return { event: { ...event, crop }, cropAsset: crop.asset_name };
+  }
+  if (event?.type === "convert_pdf") {
+    const conversion = await preparePdfConversionForEvent(event);
+    return { event: { ...event, conversion }, cropAsset: null };
+  }
+  return { event, cropAsset: null };
+}
+
+/** @param {Record<string, unknown>} event */
+async function preparePdfCropForEvent(event) {
+  const anchor = /** @type {{ pdf?: any }} */ (event.anchor).pdf;
+  const pageNumber = Number(anchor?.fragments?.[0]?.page);
+  if (!anchor || !Number.isFinite(pageNumber)) return null;
+  const source = pdfSourceForAnchor(anchor, String(event.parent_id ?? ""));
+  if (!source) return null;
+  const blob = await fetchPdfBlob(source);
+  const crop = await cropPdfSourceToBlob(blob, { sourceKey: source.sha256, pageNumber, anchor });
+  const bytes = new Uint8Array(await crop.arrayBuffer());
+  const sha256 = await sha256Hex(bytes);
+  const assetName = `image-${sha256}.png`;
+  return {
+    media_type: "image/png",
+    bytes_base64: base64Bytes(bytes),
+    sha256,
+    asset_name: assetName,
+    filename: assetName,
+    title: `PDF crop page ${pageNumber}`,
+    source_sha256: source.sha256,
+    page: pageNumber,
+    anchor,
+    selected_text: String(event.selected_text ?? ""),
+  };
+}
+
+/** @param {Record<string, unknown>} event */
+async function preparePdfConversionForEvent(event) {
+  const node = findHydratedNode(String(event.node_id ?? ""));
+  const pdf = normalizePdfExtension(node);
+  if (!node || !pdf) throw new Error("PDF conversion needs a hydrated PDF node");
+  const blob = await fetchPdfBlob(pdf.source);
+  const pdfjs = await loadPdfJsModule();
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const loadingTask = pdfjs.getDocument({
+    data,
+    standardFontDataUrl: new URL("standard_fonts/", import.meta.url).href,
+    cMapUrl: new URL("cmaps/", import.meta.url).href,
+    cMapPacked: true,
+    isEvalSupported: false,
+    useWorkerFetch: true,
+  });
+  let loaded = null;
+  try {
+    loaded = await loadingTask.promise;
+    const notes = [];
+    const metadata = await loaded.getMetadata().catch((error) => {
+      notes.push(`PDF metadata could not be read: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    });
+    const processedPages = resolvePagesToProcess(loaded.numPages, null, notes);
+    const pageMetadata = [];
+    const pageLines = [];
+    for (const pageNumber of processedPages) {
+      const page = await loaded.getPage(pageNumber);
+      try {
+        pageMetadata.push(pdfPageMetadata(page, pageNumber));
+        pageLines.push({ page: pageNumber, lines: await extractPdfPageLines(page) });
+      } finally {
+        page.cleanup?.();
+      }
+    }
+    const title = normalizePdfTitle(metadata) || String(node.title || "PDF Document");
+    const built = buildPdfDocument({
+      title,
+      pageCount: loaded.numPages,
+      processedPages,
+      pageMetadata,
+      pageLines,
+      notes,
+      source: pdf.source,
+    });
+    return { markdown: built.markdown, pdfExtension: built.pdfExtension };
+  } finally {
+    loaded?.cleanup?.();
+    await loadingTask.destroy().catch(() => {});
+  }
+}
+
+/** @param {{ source_sha256?: string }} anchor @param {string} parentNodeId */
+function pdfSourceForAnchor(anchor, parentNodeId) {
+  const wanted = String(anchor.source_sha256 ?? "");
+  for (const node of lastHydration?.nodes || []) {
+    const pdf = normalizePdfExtension(node);
+    if (pdf && (!wanted || pdf.source.sha256 === wanted)) return pdf.source;
+  }
+  let cursor = findHydratedNode(parentNodeId);
+  const seen = new Set();
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    const pdf = normalizePdfExtension(cursor);
+    if (pdf) return pdf.source;
+    cursor = findHydratedNode(String(cursor.parent_id ?? ""));
+  }
+  return null;
+}
+
+/** @param {string} nodeId */
+function findHydratedNode(nodeId) {
+  return (lastHydration?.nodes || []).find((node) => String(node?.id ?? "") === nodeId) || null;
+}
+
+/** @param {{ asset: string }} source */
+async function fetchPdfBlob(source) {
+  const url = lastHydration?.asset_data?.[source.asset];
+  if (!url || url === "data:,") throw new Error(`PDF asset is unavailable: ${source.asset}`);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`PDF asset could not be loaded: ${response.status}`);
+  return response.blob();
+}
+
+/** @param {Uint8Array} bytes */
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+/** @param {Uint8Array} bytes */
+function base64Bytes(bytes) {
+  const chunks = [];
+  for (let index = 0; index < bytes.length; index += 8192) {
+    chunks.push(String.fromCharCode(...bytes.subarray(index, index + 8192)));
+  }
+  return btoa(chunks.join(""));
 }
 
 /** @param {{ type: "ready" } | { type: "uiEvent", event: Record<string, unknown> }} message */
@@ -137,6 +287,7 @@ function exposeTestApi() {
   window.__noraTest = {
     hydration: () => lastHydration,
     ask: () => showWholeCanvasAsk(null, "test"),
+    prepareOutgoingEvent,
     dispose: () => runtime?.dispose(),
   };
 }

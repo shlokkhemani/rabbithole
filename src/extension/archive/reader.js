@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { crc32 } from "node:zlib";
+import { pipeline } from "node:stream/promises";
 import yauzl from "yauzl";
 import { parseNoraDocument } from "../../core/document-schema.js";
 import {
@@ -37,6 +39,40 @@ export async function readNoraArchive(archivePath) {
     }
     const entries = await readEntries(zip);
     return await validateReadEntries(archivePath, entries);
+  } finally {
+    zip.close();
+  }
+}
+
+/**
+ * Stream one validated ZIP entry into a local file.
+ * @param {string} archivePath
+ * @param {string} entryPath
+ * @param {string} targetPath
+ * @param {{ expectedSha256?: string, expectedBytes?: number }} [options]
+ */
+export async function extractArchiveEntryToFile(archivePath, entryPath, targetPath, options = {}) {
+  const zip = await yauzl.openPromise(archivePath, {
+    autoClose: false,
+    lazyEntries: true,
+    strictFileNames: true,
+    validateEntrySizes: true,
+  });
+  try {
+    const entry = await findEntry(zip, normalizeArchivePath(entryPath));
+    const hash = createHash("sha256");
+    let bytes = 0;
+    const stream = await openEntryStream(zip, entry);
+    stream.on("data", (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.byteLength;
+      hash.update(buffer);
+    });
+    await pipeline(stream, createWriteStream(targetPath, { mode: 0o600 }));
+    const sha256 = hash.digest("hex");
+    if (options.expectedSha256 && sha256 !== options.expectedSha256) throw new Error(`${entryPath} SHA-256 does not match manifest`);
+    if (options.expectedBytes != null && bytes !== options.expectedBytes) throw new Error(`${entryPath} size does not match manifest`);
+    return { sha256, bytes };
   } finally {
     zip.close();
   }
@@ -85,6 +121,56 @@ function readEntries(zip) {
       resolve(entries);
     });
     zip.readEntry();
+  });
+}
+
+/**
+ * @param {import("yauzl").ZipFile} zip
+ * @param {string} entryPath
+ * @returns {Promise<import("yauzl").Entry>}
+ */
+function findEntry(zip, entryPath) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    /** @param {unknown} error */
+    const fail = (error) => {
+      if (done) return;
+      done = true;
+      reject(error);
+    };
+    zip.on("error", fail);
+    zip.on("entry", (entry) => {
+      if (done) return;
+      let normalized;
+      try {
+        normalized = normalizeArchivePath(entry.fileName);
+      } catch (error) {
+        fail(error);
+        return;
+      }
+      if (normalized === entryPath) {
+        done = true;
+        resolve(entry);
+        return;
+      }
+      zip.readEntry();
+    });
+    zip.on("end", () => fail(new Error(`Archive entry ${entryPath} was not found`)));
+    zip.readEntry();
+  });
+}
+
+/**
+ * @param {import("yauzl").ZipFile} zip
+ * @param {import("yauzl").Entry} entry
+ * @returns {Promise<import("node:stream").Readable>}
+ */
+function openEntryStream(zip, entry) {
+  return new Promise((resolve, reject) => {
+    zip.openReadStream(entry, (error, stream) => {
+      if (error) reject(error);
+      else resolve(stream);
+    });
   });
 }
 

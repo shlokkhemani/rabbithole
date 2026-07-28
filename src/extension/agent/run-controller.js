@@ -59,7 +59,7 @@ export class NoraRunController {
     const prepared = this.#prepareAsk(document, event);
     const modelRuntimeBundle = await this.#createModelRuntime(document);
     const context = buildRunContext(document, {
-      prompt: prepared.prompt,
+      prompt: prepared.contextPrompt ?? prepared.prompt,
       scope: prepared.scope,
       model: modelRuntimeBundle.model,
       estimateTokens: this.estimateTokens,
@@ -110,7 +110,7 @@ export class NoraRunController {
       if (!targetNodeId) throw new TypeError("branch_request node_id is required");
       const parentNodeId = String(event.parent_id ?? event.parentId ?? "");
       const scope = event.scope ?? (parentNodeId ? { type: "node", node_id: parentNodeId } : { type: "whole_canvas" });
-      return { prompt, scope, targetNodeId, branchEvent: event };
+      return { prompt, contextPrompt: promptWithSelectionContext(prompt, event), scope, targetNodeId, branchEvent: event };
     }
     const prompt = String(event.prompt ?? "").trim();
     if (!prompt) throw new TypeError("Ask Nora prompt is required");
@@ -131,7 +131,7 @@ export class NoraRunController {
       size: { w: 320, h: 220 },
       created_at: this.now(),
     };
-    return { prompt, scope: { type: "whole_canvas" }, targetNodeId, branchEvent };
+    return { prompt, contextPrompt: prompt, scope: { type: "whole_canvas" }, targetNodeId, branchEvent };
   }
 
   /** @param {import("../nora-document.js").NoraDocument} document */
@@ -176,6 +176,29 @@ export class NoraRunController {
     }
     return records;
   }
+}
+
+/** @param {string} prompt @param {Record<string, unknown>} event */
+function promptWithSelectionContext(prompt, event) {
+  const selectedText = String(event.selected_text ?? "").trim();
+  const anchor = event.anchor && typeof event.anchor === "object" && !Array.isArray(event.anchor)
+    ? /** @type {{ pdf?: unknown }} */ (event.anchor)
+    : null;
+  const pdf = anchor?.pdf && typeof anchor.pdf === "object" && !Array.isArray(anchor.pdf)
+    ? /** @type {Record<string, unknown>} */ (anchor.pdf)
+    : null;
+  const lines = [prompt];
+  if (selectedText) lines.push("", "Selected text:", selectedText);
+  if (pdf) {
+    lines.push("", "PDF selection metadata:", JSON.stringify({
+      sourceSha256: pdf.source_sha256 ?? null,
+      kind: pdf.kind ?? null,
+      fragments: pdf.fragments ?? [],
+      cropAttachmentId: event.crop_attachment_id ?? null,
+      cropAsset: event.crop_asset ?? null,
+    }));
+  }
+  return lines.join("\n");
 }
 
 class ActiveNoraRun {

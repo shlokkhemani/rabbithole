@@ -628,18 +628,18 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Delete after port: `src/node/pdf-crop.js`
 - Delete after port: `src/web/pdf-crop.js`
 
-- [ ] Add attachments through a VS Code file picker and through validated MCP resource results. Preflight exact per-asset and aggregate archive limits before document mutation.
-- [ ] When an MCP resource contains a binary blob, stream and hash the raw blob into the archive before producing the bounded model-facing resource result; return its attachment/evidence reference to Pi and persist that same bounded reference in the transcript.
-- [ ] Compute SHA-256 while streaming bytes into the archive staging area; deduplicate by hash and store title, media type, original filename, bytes, and source/evidence linkage in `document.json`.
-- [ ] Lazily materialize a verified archive asset into the document temp directory and expose only that directory through the webview's `localResourceRoots`.
-- [ ] Load and render PDFs with bundled PDF.js in the webview. Move browser-canvas crop behavior from `src/web/pdf-crop.js` to `src/ui/pdf-crop.js`.
-- [ ] Extract selectable page text in the webview and persist a conversion node only when the user chooses the existing convert-to-document action.
-- [ ] Return crop PNG bytes to the extension through the validated protocol, pass the normal attachment preflight, and link the new asset to its PDF page/region provenance.
-- [ ] Put user-selected PDF text or region metadata into the next `Ask Nora` prompt context. Pass a selected crop to Pi as image content through the SDK image-preprocessing path while preserving the original PDF and crop assets plus their provenance in `.nora`.
-- [ ] Keep original PDFs byte-exact in `assets/<sha256>`; rendered pages/crops never replace originals.
-- [ ] Keep Markdown/image URLs within VS Code webview/resource CSP and preserve lightbox/selection behavior.
-- [ ] Test exact 100 MiB acceptance and one-byte oversize rejection without allocating giant fixture buffers, total-limit preflight, hash dedupe, MIME/name handling, lazy materialization, PDF text/image context, crop provenance, Photon WASM loading, malformed PDF, webview reload, and no native canvas dependency.
-- [ ] Run `node --test test/contracts/attachment-boundaries.test.mjs test/integration/pdf-webview.test.mjs test/unit/pdf-selection.test.mjs test/unit/pdf-provenance.test.mjs`, `npm run build`, `node scripts/check-pi-runtime-assets.mjs`, and `npm run check:native`.
+- [x] Add attachments through a VS Code file picker and through validated MCP resource results. Preflight exact per-asset and aggregate archive limits before document mutation.
+- [x] When an MCP resource contains a binary blob, stream and hash the raw blob into the archive before producing the bounded model-facing resource result; return its attachment/evidence reference to Pi and persist that same bounded reference in the transcript.
+- [x] Compute SHA-256 while streaming bytes into the archive staging area; deduplicate by hash and store title, media type, original filename, bytes, and source/evidence linkage in `document.json`.
+- [x] Lazily materialize a verified archive asset into the document temp directory and expose only that directory through the webview's `localResourceRoots`.
+- [x] Load and render PDFs with bundled PDF.js in the webview. Move browser-canvas crop behavior from `src/web/pdf-crop.js` to `src/ui/pdf-crop.js`.
+- [x] Extract selectable page text in the webview and persist a conversion node only when the user chooses the existing convert-to-document action.
+- [x] Return crop PNG bytes to the extension through the validated protocol, pass the normal attachment preflight, and link the new asset to its PDF page/region provenance.
+- [x] Put user-selected PDF text or region metadata into the next `Ask Nora` prompt context. Pass a selected crop to Pi as image content through the SDK image-preprocessing path while preserving the original PDF and crop assets plus their provenance in `.nora`.
+- [x] Keep original PDFs byte-exact in `assets/<sha256>`; rendered pages/crops never replace originals.
+- [x] Keep Markdown/image URLs within VS Code webview/resource CSP and preserve lightbox/selection behavior.
+- [x] Test exact 100 MiB acceptance and one-byte oversize rejection without allocating giant fixture buffers, total-limit preflight, hash dedupe, MIME/name handling, lazy materialization, PDF text/image context, crop provenance, Photon WASM loading, malformed PDF, webview reload, and no native canvas dependency.
+- [x] Run `node --test test/contracts/attachment-boundaries.test.mjs test/integration/pdf-webview.test.mjs test/unit/pdf-selection.test.mjs test/unit/pdf-provenance.test.mjs`, `npm run build`, `node scripts/check-pi-runtime-assets.mjs`, and `npm run check:native`.
 
 ### Task 12: Adapt snapshots, synthesis, and Markdown export
 

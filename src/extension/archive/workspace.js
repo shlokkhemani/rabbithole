@@ -6,6 +6,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { ASSET_BYTES_LIMIT, NORA_TEMP_PREFIX } from "./constants.js";
 import { sha256Bytes } from "./hash.js";
+import { canonicalJsonBytes } from "./manifest.js";
 
 export class NoraArchiveWorkspace {
   /** @param {string} rootDir @param {string} tempDir */
@@ -75,8 +76,7 @@ export class NoraArchiveWorkspace {
   /** @param {string} runId @param {Record<string, unknown>} record */
   async appendRunRecord(runId, record) {
     const filePath = path.join(this.runsDir, `${safeRunId(runId)}.jsonl`);
-    const line = `${JSON.stringify(record)}\n`;
-    await fs.appendFile(filePath, line, { mode: 0o600 });
+    await fs.appendFile(filePath, canonicalJsonBytes(record), { mode: 0o600 });
     const stat = await fs.stat(filePath);
     const entry = { runId, filePath, bytes: stat.size };
     this.runs.set(runId, entry);

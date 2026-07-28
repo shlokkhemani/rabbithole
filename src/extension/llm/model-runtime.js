@@ -1,3 +1,4 @@
+import { ModelRuntime as PiModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_OPENAI_COMPATIBLE_API,
   getProfileById,
@@ -103,11 +104,11 @@ export async function createModelRuntimeForProfile(profile, secretStorage, optio
 export async function createUncheckedModelRuntimeForProfile(profile, secretStorage, options = {}) {
   const runtimeProviderId = profileRuntimeProviderId(profile);
   const credentialStore = options.credentialStore ?? new ProfileCredentialStore(secretStorage, profile.id, runtimeProviderId);
-  const ModelRuntime = options.ModelRuntime ?? await loadModelRuntimeConstructor();
+  const ModelRuntime = options.ModelRuntime ?? PiModelRuntime;
   const modelRuntime = await ModelRuntime.create({
     credentials: credentialStore,
     modelsPath: null,
-    modelsStore: options.modelsStore ?? new InMemoryModelsStore(),
+    modelsStore: /** @type {any} */ (options.modelsStore ?? new InMemoryModelsStore()),
     allowModelNetwork: false,
     modelRefreshTimeoutMs: 0,
   });
@@ -170,12 +171,6 @@ export function runProvenanceForProfile(profile, model) {
     model: String(model.id ?? profile.model),
     endpoint: profileEndpoint(profile) ?? (typeof model.baseUrl === "string" ? model.baseUrl : null),
   };
-}
-
-async function loadModelRuntimeConstructor() {
-  const dynamicImport = Function("specifier", "return import(specifier)");
-  const pi = await dynamicImport("@earendil-works/pi-coding-agent");
-  return pi.ModelRuntime;
 }
 
 /** @param {unknown} value */

@@ -3,6 +3,7 @@ import { createNoraWebviewHtml, createNonce } from "./webview-html.js";
 import { serializeExtensionMessage, validateWebviewMessage } from "./protocol.js";
 import { NoraDocument, requireFilePath, titleForUri } from "./nora-document.js";
 import { resolveWorkspaceScope } from "./workspace-scope.js";
+import { NoraRunController } from "./agent/run-controller.js";
 
 export const VIEW_TYPE = "nora.research";
 
@@ -11,10 +12,15 @@ export class NoraEditorProvider {
   /**
    * @param {vscode.ExtensionContext} context
    * @param {import("./document-registry.js").DocumentRegistry} registry
+   * @param {{ runController?: NoraRunController }} [options]
    */
-  constructor(context, registry) {
+  constructor(context, registry, options = {}) {
     this.context = context;
     this.registry = registry;
+    this.runController = options.runController ?? new NoraRunController({
+      vscode,
+      secretStorage: context.secrets,
+    });
     this.changeEmitter = new vscode.EventEmitter();
     this.onDidChangeCustomDocument = this.changeEmitter.event;
     /** @type {WeakMap<NoraDocument, Set<vscode.WebviewPanel>>} */
@@ -96,7 +102,12 @@ export class NoraEditorProvider {
         await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
         return;
       }
-      if (message.event.type === "nora_ask") {
+      if (message.event.type === "nora_ask" || message.event.type === "branch_request") {
+        try {
+          await this.runController.startFromWebviewEvent(noraDocument, message.event);
+        } catch (error) {
+          await postError(panel, error);
+        }
         return;
       }
       try {

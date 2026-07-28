@@ -122,6 +122,8 @@ export function reduceDocumentEvent(state, event, options = {}) {
       return commitCandidate(state, { ...state, selectedProfileId: nullableString(/** @type {any} */ (event).profile_id ?? /** @type {any} */ (event).profileId) });
     case "node_state":
       return reduceNodeState(state, /** @type {any} */ (event));
+    case "node_run":
+      return reduceNodeRun(state, /** @type {any} */ (event));
     case "source_record":
       return upsertCollection(state, "sources", /** @type {any} */ (event).source, "source_id");
     case "evidence_record":
@@ -143,6 +145,22 @@ export function reduceDocumentEvent(state, event, options = {}) {
 function nullableString(value) {
   if (value == null) return null;
   return String(value);
+}
+
+/** @param {NoraDocumentState} state @param {any} event */
+function reduceNodeRun(state, event) {
+  const nodeId = String(event.node_id ?? event.nodeId ?? "");
+  const node = state.nodes.get(nodeId);
+  if (!node) return { state, effects: {} };
+  const runId = nullableString(event.run_id ?? event.runId);
+  if (runId && !state.runs.has(runId)) throw new Error(`node_run run ${runId} is not present in the document`);
+  const nodes = new Map(state.nodes);
+  nodes.set(nodeId, {
+    ...node,
+    runId,
+    updatedAt: event.updated_at ?? event.updatedAt ?? node.updatedAt,
+  });
+  return commitCandidate(state, { ...state, nodes }, { node_id: nodeId, run_id: runId });
 }
 
 /** @param {NoraDocumentState} state @param {any} event */

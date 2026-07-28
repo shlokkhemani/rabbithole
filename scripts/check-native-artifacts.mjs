@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const forbiddenBinary = /\.(?:node|so|dylib|dll)$/i;
 const forbiddenPath = /(?:^|\/)(?:@napi-rs\/canvas|@mariozechner\/clipboard[^/]*)\//;
+const optionalInventoryNames = await readOptionalInventoryNames();
 const failures = [];
 
 await scanDirectory(path.join(rootDir, "out"), "out");
@@ -67,11 +68,32 @@ function walkDependencyTree(node, ancestry) {
   const pathName = [...ancestry, name].filter(Boolean).join("/");
   const installed = !!(node?.version || node?.resolved || node?.path);
   if (installed && (name === "@napi-rs/canvas" || name.startsWith("@mariozechner/clipboard"))) {
-    failures.push(`production dependency: ${pathName || name}`);
+    if (!optionalInventoryNames.has(name)) failures.push(`production dependency: ${pathName || name}`);
   }
   for (const [dependencyName, dependency] of Object.entries(node?.dependencies || {})) {
     walkDependencyTree({ name: dependencyName, ...dependency }, [...ancestry, name].filter(Boolean));
   }
+}
+
+async function readOptionalInventoryNames() {
+  const lockPath = path.join(rootDir, "package-lock.json");
+  const lock = JSON.parse(await fs.readFile(lockPath, "utf8").catch(() => "{}"));
+  const names = new Set();
+  for (const [packagePath, entry] of Object.entries(lock.packages ?? {})) {
+    if (!entry?.optional) continue;
+    const name = packageNameFromLockPath(packagePath);
+    if (name) names.add(name);
+  }
+  return names;
+}
+
+/** @param {string} packagePath */
+function packageNameFromLockPath(packagePath) {
+  const parts = packagePath.split("node_modules/");
+  const last = parts[parts.length - 1];
+  if (!last) return "";
+  const segments = last.split("/");
+  return last.startsWith("@") ? `${segments[0]}/${segments[1]}` : segments[0];
 }
 
 /** @param {string} value */

@@ -102,6 +102,7 @@ export type NoraDocumentEvent =
   | { type: "document_title"; title?: unknown }
   | { type: "selected_profile"; profileId?: unknown; profile_id?: unknown }
   | { type: "node_state"; nodeId?: unknown; node_id?: unknown; state?: unknown; updatedAt?: unknown; updated_at?: unknown }
+  | { type: "node_run"; nodeId?: unknown; node_id?: unknown; runId?: unknown; run_id?: unknown; updatedAt?: unknown; updated_at?: unknown }
   | { type: "source_record"; source: SourceRecord }
   | { type: "evidence_record"; evidence: EvidenceRecord }
   | { type: "attachment_record"; attachment: NoraAttachment }

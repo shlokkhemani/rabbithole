@@ -14,6 +14,7 @@ import { readNoraArchive } from "./archive/reader.js";
 import { writeNoraArchive, writeNoraArchiveToPath } from "./archive/writer.js";
 import { createNoraArchiveWorkspace } from "./archive/workspace.js";
 import { DocumentMutationQueue } from "./document-mutation-queue.js";
+import { runTerminalRecord } from "./agent/transcript.js";
 
 /** @typedef {import("../core/contracts/document.js").NoraDocument} PersistedNoraDocument */
 /** @typedef {import("../core/contracts/document.js").NoraDocumentState} NoraDocumentState */
@@ -69,6 +70,11 @@ export class NoraDocument {
     this.redoStack = [];
     /** @type {{ runId: string, before: MemorySnapshot, after: MemorySnapshot, abort: () => unknown | Promise<unknown> } | null} */
     this.activeRun = null;
+    /** @type {Map<string, Record<string, unknown>[]>} */
+    this.runRecords = new Map();
+    for (const [runId, records] of this.previousArchive?.runs ?? []) {
+      this.runRecords.set(runId, cloneJson(records));
+    }
     this.disposed = false;
     this.changeEmitter = new SimpleEmitter();
     this.disposeEmitter = new SimpleEmitter();
@@ -207,6 +213,45 @@ export class NoraDocument {
   commitRunEvent(event) {
     if (!this.activeRun) return Promise.reject(new Error("No Nora run is active for this document"));
     return this.commitEvent(event, { history: false, runMutation: true });
+  }
+
+  /**
+   * Append one complete transcript record, publish its byte cutoff, and apply
+   * matching document events as one observable Nora revision.
+   * @param {string} runId
+   * @param {Record<string, unknown>} record
+   * @param {unknown[]} [events]
+   */
+  async publishRunRecord(runId, record, events = []) {
+    return this.queue.enqueue(async () => {
+      this.#assertOpen();
+      if (!this.activeRun || this.activeRun.runId !== runId) throw new Error(`No active Nora run ${runId}`);
+      const beforeRevision = this.revision;
+      let nextState = this.state;
+      /** @type {Record<string, unknown>} */
+      const effects = {};
+      for (const event of events) {
+        const reduced = reduceDocumentEvent(nextState, /** @type {any} */ (event));
+        nextState = reduced.state;
+        Object.assign(effects, reduced.effects);
+      }
+      const cutoff = await this.archiveWorkspace.appendRunRecord(runId, record);
+      const nextCutoffs = normalizeCutoffs({ ...this.runByteCutoffs, [runId]: cutoff });
+      if (nextState.revision === beforeRevision) nextState = { ...nextState, revision: beforeRevision + 1 };
+      this.state = nextState;
+      this.runByteCutoffs = nextCutoffs;
+      const records = this.runRecords.get(runId) ?? [];
+      records.push(cloneJson(record));
+      this.runRecords.set(runId, records);
+      this.activeRun.after = this.#memorySnapshot();
+      this.#publishChanged();
+      return { cutoff, effects };
+    });
+  }
+
+  /** @param {string} runId */
+  getRunTranscriptRecords(runId) {
+    return cloneJson(this.runRecords.get(runId) ?? []);
   }
 
   /** @param {string | null} profileId */
@@ -429,7 +474,19 @@ export class NoraDocument {
     const active = this.activeRun;
     if (!active) return;
     await Promise.resolve(active.abort()).catch(() => {});
-    const cancelledAfter = terminalizeRunSnapshot(active.after, active.runId, "cancelled");
+    let cancelledAfter = active.after;
+    try {
+      const terminalRecord = runTerminalRecord(active.runId, "cancelled");
+      const cutoff = await this.archiveWorkspace.appendRunRecord(active.runId, terminalRecord);
+      const records = this.runRecords.get(active.runId) ?? [];
+      records.push(terminalRecord);
+      this.runRecords.set(active.runId, records);
+      cancelledAfter = {
+        documentState: active.after.documentState,
+        runByteCutoffs: normalizeCutoffs({ ...active.after.runByteCutoffs, [active.runId]: cutoff }),
+      };
+    } catch {}
+    cancelledAfter = terminalizeRunSnapshot(cancelledAfter, active.runId, "cancelled");
     this.activeRun = null;
     this.#restoreSnapshot(active.before);
     this.redoStack.push({

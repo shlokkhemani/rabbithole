@@ -16,7 +16,7 @@ const KATEX_FONT_SRC =
 await fs.rm(outdir, { recursive: true, force: true });
 await fs.mkdir(webviewDir, { recursive: true });
 
-await esbuild.build({
+const extensionBuild = await esbuild.build({
   entryPoints: [path.join(rootDir, "src/extension/extension.js")],
   outfile: path.join(outdir, "extension.cjs"),
   bundle: true,
@@ -27,8 +27,10 @@ await esbuild.build({
   minify: true,
   sourcemap: false,
   legalComments: "linked",
+  metafile: true,
   logLevel: "silent",
 });
+await fs.writeFile(path.join(outdir, "extension.metafile.json"), JSON.stringify(extensionBuild.metafile, null, 2), "utf8");
 await ensureLegalFile(path.join(outdir, "extension.cjs.LEGAL.txt"));
 
 await esbuild.build({
@@ -66,6 +68,7 @@ await fs.writeFile(path.join(webviewDir, "katex.css"), await buildKatexCss(), "u
 await fs.writeFile(path.join(webviewDir, "dompurify.js"), await readPackageFile("dompurify/dist/purify.min.js"), "utf8");
 await fs.writeFile(path.join(webviewDir, "mermaid.js"), await readPackageFile("@mermaid-js/tiny/dist/mermaid.tiny.js"), "utf8");
 await copyPdfAssets(webviewDir);
+await copyPhotonRuntime(outdir);
 
 async function buildKatexCss() {
   const cssPath = require.resolve("katex/dist/katex.css");
@@ -94,6 +97,16 @@ async function copyPdfAssets(targetDir) {
   await fs.copyFile(path.join(packageRoot, "build/pdf.worker.min.mjs"), path.join(targetDir, "pdf.worker.mjs"));
   await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(targetDir, "standard_fonts"), { recursive: true });
   await copyPackedCMaps(path.join(packageRoot, "cmaps"), path.join(targetDir, "cmaps"));
+}
+
+async function copyPhotonRuntime(targetDir) {
+  const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+  const piRoot = path.dirname(path.dirname(piEntry));
+  const photonRoot = path.join(piRoot, "node_modules", "@silvia-odwyer", "photon-node");
+  const runtimeDir = path.join(targetDir, "runtime", "photon");
+  await fs.mkdir(runtimeDir, { recursive: true });
+  await fs.copyFile(path.join(photonRoot, "photon_rs_bg.wasm"), path.join(runtimeDir, "photon_rs_bg.wasm"));
+  await fs.copyFile(path.join(photonRoot, "LICENSE.md"), path.join(runtimeDir, "LICENSE.photon-node.md"));
 }
 
 async function copyPackedCMaps(sourceDir, targetDir) {

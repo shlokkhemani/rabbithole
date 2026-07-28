@@ -283,17 +283,17 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `src/ui/composition.js`
 - Modify: `test/unit/pdf-provenance.test.mjs`
 
-- [ ] Define schema version `1` for `NoraDocument` with stable document/node IDs, title, canvas/view state, nodes/edges, selection/origin metadata, checks, source records, evidence records, attachment metadata, run summaries, and selected LLM profile ID.
-- [ ] Define `SourceRecord`, `EvidenceRecord`, and `AgentRunSummary` contracts. Evidence must include source type, stable locator, title, excerpt, revision/commit when present, immutable permalink when present, and capture time.
-- [ ] Implement Nora-neutral `createDocumentState`, `documentStateToPersisted`, `documentStateToHydrationNodes`, and `reduceDocumentEvent` in `src/core/document-state.js`, side by side with the old reducer until cutover.
-- [ ] Preserve renderer-facing Markdown, block IDs, branch ordering, streaming, canvas geometry, collapsed state, Reader state, checks, and origin navigation.
-- [ ] Add explicit `pending`, `running`, `complete`, `cancelled`, and `failed` run/node states; interrupted state is valid persisted data.
-- [ ] Validate all persisted fields and extension bags before state construction. Reject unknown future schema versions with a clear non-lossy error.
-- [ ] Ensure document events are immutable and failed validation does not increment the revision.
-- [ ] Add small Nora document-state fixtures that exercise Unicode, RTL, deep/wide branches, math, code, Mermaid, checks, assets, evidence, and interrupted runs. ZIP round trips are covered in Task 3.
-- [ ] Port the old reducer golden cases into `test/unit/document-state.test.mjs` so the retained behavior is explicit, but keep `src/core/reducer.js`, `src/core/generation-run.js`, `src/core/hole-host.js`, `src/core/schema.js`, `src/core/model.js`, their current callers, and legacy fixtures/tests until Task 16.
-- [ ] Keep shared renderer/assets/projection changes backward-compatible with the old host during migration. Update `src/ui/composition.js` only where it can accept the Nora adapter without breaking current callers; postpone visual/product copy changes until Task 5.
-- [ ] Run `node --test test/unit/document-state.test.mjs test/unit/reducer.test.mjs test/unit/content-blocks.test.mjs test/unit/markdown-renderer.test.mjs`, `npm run check:types`, the existing contract suite, and `npm run check:dist`.
+- [x] Define schema version `1` for `NoraDocument` with stable document/node IDs, title, canvas/view state, nodes/edges, selection/origin metadata, checks, source records, evidence records, attachment metadata, run summaries, and selected LLM profile ID.
+- [x] Define `SourceRecord`, `EvidenceRecord`, and `AgentRunSummary` contracts. Evidence must include source type, stable locator, title, excerpt, revision/commit when present, immutable permalink when present, and capture time.
+- [x] Implement Nora-neutral `createDocumentState`, `documentStateToPersisted`, `documentStateToHydrationNodes`, and `reduceDocumentEvent` in `src/core/document-state.js`, side by side with the old reducer until cutover.
+- [x] Preserve renderer-facing Markdown, block IDs, branch ordering, streaming, canvas geometry, collapsed state, Reader state, checks, and origin navigation.
+- [x] Add explicit `pending`, `running`, `complete`, `cancelled`, and `failed` run/node states; interrupted state is valid persisted data.
+- [x] Validate all persisted fields and extension bags before state construction. Reject unknown future schema versions with a clear non-lossy error.
+- [x] Ensure document events are immutable and failed validation does not increment the revision.
+- [x] Add small Nora document-state fixtures that exercise Unicode, RTL, deep/wide branches, math, code, Mermaid, checks, assets, evidence, and interrupted runs. ZIP round trips are covered in Task 3.
+- [x] Port the old reducer golden cases into `test/unit/document-state.test.mjs` so the retained behavior is explicit, but keep `src/core/reducer.js`, `src/core/generation-run.js`, `src/core/hole-host.js`, `src/core/schema.js`, `src/core/model.js`, their current callers, and legacy fixtures/tests until Task 16.
+- [x] Keep shared renderer/assets/projection changes backward-compatible with the old host during migration. Update `src/ui/composition.js` only where it can accept the Nora adapter without breaking current callers; postpone visual/product copy changes until Task 5.
+- [x] Run `node --test test/unit/document-state.test.mjs test/unit/reducer.test.mjs test/unit/content-blocks.test.mjs test/unit/markdown-renderer.test.mjs`, `npm run check:types`, the existing contract suite, and `npm run check:dist`.
 
 ### Task 3: Implement the streaming `.nora` ZIP format
 

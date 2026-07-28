@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildPdfDocument, normalizePdfExtension } from "../../src/core/pdf-shared.js";
+import { createDocumentState, documentStateToPersisted, reduceDocumentEvent } from "../../src/core/document-state.js";
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../src/core/reducer.js";
 import { parsePersistedHole, toPersistedHole } from "../../src/core/schema.js";
 
@@ -58,5 +59,17 @@ const child = persisted.nodes.find((node) => node.id === "clip-child");
 assert.deepEqual(child.origin.anchor.pdf, pdfAnchor);
 assert.equal(child.origin.crop_asset, undefined, "PDF-space provenance replaces durable crop images");
 assert.equal(child.markdown, "");
+
+const noraBranch = reduceDocumentEvent(createDocumentState({
+  documentId: "nora-pdf-roundtrip", title: "PDF", rootNodeId: "root",
+  nodes: [{ id: "root", parentId: null, title: "Root", markdown: "Body", extensions: {} }],
+}), {
+  type: "branch_request", parent_id: "root", node_id: "clip-child", question: "What is this?",
+  selected_text: "selected text", anchor: { offset_start: 0, offset_end: 0, pdf: pdfAnchor },
+}, { now: "2026-07-13T00:00:00.000Z" });
+const noraPersisted = documentStateToPersisted(noraBranch.state);
+const noraChild = noraPersisted.nodes.find((node) => node.id === "clip-child");
+assert.deepEqual(noraChild.origin.anchor.pdf, pdfAnchor);
+assert.equal(noraChild.origin.crop_asset, undefined, "Nora document state preserves PDF-space provenance without crop assets");
 
 console.log("ok PDF v2 provenance: original source, visible boxes, and PDF-space quads round-trip");

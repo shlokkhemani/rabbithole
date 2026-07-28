@@ -7,9 +7,11 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const uiDir = path.join(rootDir, "src/ui");
 const coreDir = path.join(rootDir, "src/core");
 const nodeDir = path.join(rootDir, "src/node");
+const removedWebDir = path.join(rootDir, "src/web");
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
 const failures = [];
 
+await checkRemovedWebSource();
 for (const file of await listJs(uiDir)) {
   await checkUiFile(file);
 }
@@ -66,6 +68,12 @@ async function checkCoreFile(file) {
   }
 }
 
+async function checkRemovedWebSource() {
+  if (await pathExists(removedWebDir)) {
+    failures.push("src/web must stay deleted; standalone web-app code was removed from the Nora runtime");
+  }
+}
+
 async function listJs(dir) {
   const out = [];
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -74,6 +82,16 @@ async function listJs(dir) {
     else if (entry.isFile() && entry.name.endsWith(".js")) out.push(file);
   }
   return out.sort();
+}
+
+async function pathExists(file) {
+  try {
+    await fs.access(file);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function importSpecifiers(source) {

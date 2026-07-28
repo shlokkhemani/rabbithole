@@ -739,9 +739,9 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package-lock.json`
 - Modify: `scripts/check-ui-purity.mjs`
 
-- [ ] First remove the static web-app branch from `build.mjs` and prove the temporary legacy build still produces the committed `dist/` bundles. Then remove IndexedDB persistence, standalone routing/ingestion, browser provider settings, OpenRouter/Ollama setup, and direct-host transport after their Nora replacements pass.
-- [ ] Remove `fake-indexeddb` and provider-only packages after import review; keep shared UI, renderer, PDF.js, snapshot, sanitization, and Chromium primitive coverage.
-- [ ] Run `npm run build`, `npm run check:purity`, all retained unit/contract/integration tests, and the webview Chromium E2E suite.
+- [x] First remove the static web-app branch from `build.mjs` and prove the temporary legacy build still produces the committed `dist/` bundles. Then remove IndexedDB persistence, standalone routing/ingestion, browser provider settings, OpenRouter/Ollama setup, and direct-host transport after their Nora replacements pass.
+- [x] Remove `fake-indexeddb` and provider-only packages after import review; keep shared UI, renderer, PDF.js, snapshot, sanitization, and Chromium primitive coverage.
+- [x] Run `npm run build`, `npm run check:purity`, all retained unit/contract/integration tests, and the webview Chromium E2E suite.
 
 ### Task 15: Remove the website, fetch proxy, and Cloudflare deployment
 

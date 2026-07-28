@@ -11,6 +11,7 @@ import {
 } from "./transcript.js";
 import { createModelRuntimeForSelectedDocument } from "../llm/model-runtime.js";
 import { NoraResourceLoaderProvider } from "./resource-loader.js";
+import { McpSupervisor } from "../mcp/supervisor.js";
 
 const CHECKPOINT_INTERVAL_MS = 100;
 const CHECKPOINT_BYTES = 4 * 1024;
@@ -26,6 +27,7 @@ export class NoraRunController {
    *   idFactory?: () => string,
    *   now?: () => string,
    *   estimateTokens?: (text: string) => number,
+   *   mcpSupervisor?: McpSupervisor,
    *   pi?: Record<string, unknown>
    * }} [options]
    */
@@ -40,6 +42,7 @@ export class NoraRunController {
     this.idFactory = options.idFactory ?? randomUUID;
     this.now = options.now ?? (() => new Date().toISOString());
     this.estimateTokens = options.estimateTokens ?? estimateNoraTokens;
+    this.mcpSupervisor = options.mcpSupervisor ?? new McpSupervisor();
     this.pi = options.pi;
     /** @type {WeakMap<import("../nora-document.js").NoraDocument, NoraResourceLoaderProvider>} */
     this.resourceLoaders = new WeakMap();
@@ -61,6 +64,7 @@ export class NoraRunController {
       model: modelRuntimeBundle.model,
       estimateTokens: this.estimateTokens,
     });
+    const workspaceFolderPath = workspaceFolderPathFor(this.vscode, document);
     const resourceLoader = await this.#resourceLoader(document).createForNextRun();
     const runId = this.idFactory();
     const startedAt = this.now();
@@ -70,7 +74,10 @@ export class NoraRunController {
       modelRuntimeBundle,
       resourceLoader,
       transcriptRecords: this.#ancestorTranscriptRecords(document, context.parentRunId),
-      cwd: workspaceFolderPathFor(this.vscode, document) ?? process.cwd(),
+      cwd: workspaceFolderPath ?? process.cwd(),
+      workspaceFolderPath,
+      vscode: this.vscode,
+      mcpSupervisor: this.mcpSupervisor,
       runId,
       pi: /** @type {any} */ (this.pi),
     });
@@ -83,6 +90,7 @@ export class NoraRunController {
       context,
       provenance: modelRuntimeBundle.provenance,
       session: piSession.session,
+      disposeSessionResources: piSession.dispose,
       now: this.now,
     });
     await document.beginRun(runId, { abort: () => active.cancel({ publish: false }) });
@@ -181,6 +189,7 @@ class ActiveNoraRun {
    *   context: import("./context-builder.js").NoraRunContext,
    *   provenance: { profileId?: string | null, provider?: string | null, model?: string | null, endpoint?: string | null },
    *   session: { subscribe(listener: (event: any) => unknown): (() => void), prompt(text: string, options?: Record<string, unknown>): Promise<void>, waitForIdle?: () => Promise<void>, abort?: () => Promise<void>, dispose?: () => void },
+   *   disposeSessionResources?: () => unknown | Promise<unknown>,
    *   now: () => string
    * }} options
    */
@@ -193,6 +202,7 @@ class ActiveNoraRun {
     this.context = options.context;
     this.provenance = options.provenance;
     this.session = options.session;
+    this.disposeSessionResources = options.disposeSessionResources ?? (() => undefined);
     this.now = options.now;
     this.cancelled = false;
     this.terminal = false;
@@ -261,6 +271,7 @@ class ActiveNoraRun {
     this.cancelled = true;
     await Promise.resolve(this.session.abort?.()).catch(() => {});
     if (options.publish !== false) await this.#terminalize("cancelled");
+    else await this.#disposeRunResources();
   }
 
   /** @param {any} event */
@@ -389,7 +400,12 @@ class ActiveNoraRun {
     } finally {
       this.unsubscribe?.();
       this.session.dispose?.();
+      await this.#disposeRunResources();
     }
+  }
+
+  async #disposeRunResources() {
+    await Promise.resolve(this.disposeSessionResources()).catch(() => {});
   }
 
   /** @param {"running" | "complete" | "cancelled" | "failed"} status @param {Record<string, unknown>} [overrides] */

@@ -6,6 +6,7 @@ import {
 import { createCanvasTools } from "./canvas-tools.js";
 import { createCodeTools } from "./code-tools.js";
 import { createSkillReadTool } from "./skill-tools.js";
+import { createMcpToolBundle } from "../mcp/pi-tool.js";
 import { replayRecordsToSessionManager } from "./transcript.js";
 
 /**
@@ -16,6 +17,9 @@ import { replayRecordsToSessionManager } from "./transcript.js";
  *   transcriptRecords?: Record<string, unknown>[],
  *   cwd?: string,
  *   runId?: string,
+ *   workspaceFolderPath?: string | null,
+ *   vscode?: typeof import("vscode"),
+ *   mcpSupervisor?: import("../mcp/supervisor.js").McpSupervisor,
  *   pi?: {
  *     createAgentSession?: typeof createAgentSession,
  *     SessionManager?: typeof SessionManager,
@@ -31,11 +35,15 @@ export async function createNoraPiSession(options) {
   const cwd = options.cwd ?? process.cwd();
   const sessionManager = SessionManagerCtor.inMemory(cwd);
   replayRecordsToSessionManager(options.transcriptRecords ?? [], sessionManager);
-  const customTools = createNoraCustomTools({
+  const customToolBundle = createNoraCustomToolBundle({
     document: options.document,
     skillBaseDirs: options.resourceLoader.skillBaseDirs ?? [],
     runId: options.runId,
+    workspaceFolderPath: options.workspaceFolderPath,
+    vscode: options.vscode,
+    mcpSupervisor: options.mcpSupervisor,
   });
+  const customTools = customToolBundle.tools;
   const toolNames = customTools.map((tool) => tool.name);
   const settingsManager = SettingsManagerCtor.inMemory({
     compaction: { enabled: false },
@@ -62,22 +70,50 @@ export async function createNoraPiSession(options) {
     sessionManager,
     settingsManager,
   }));
-  return { session, sessionManager, customTools, toolNames };
+  return { session, sessionManager, customTools, toolNames, dispose: customToolBundle.dispose };
 }
 
 /**
  * @param {{
  *   document: import("../nora-document.js").NoraDocument,
  *   skillBaseDirs: string[],
- *   runId?: string
+ *   runId?: string,
+ *   workspaceFolderPath?: string | null,
+ *   vscode?: typeof import("vscode"),
+ *   mcpSupervisor?: import("../mcp/supervisor.js").McpSupervisor
  * }} options
  */
 export function createNoraCustomTools(options) {
-  return [
-    ...createCodeTools({ document: options.document }),
-    createSkillReadTool({ roots: options.skillBaseDirs }),
-    ...createCanvasTools({ document: options.document, owner: options.runId ? `agent:${options.runId}` : "agent" }),
-  ];
+  return createNoraCustomToolBundle(options).tools;
+}
+
+/**
+ * @param {{
+ *   document: import("../nora-document.js").NoraDocument,
+ *   skillBaseDirs: string[],
+ *   runId?: string,
+ *   workspaceFolderPath?: string | null,
+ *   vscode?: typeof import("vscode"),
+ *   mcpSupervisor?: import("../mcp/supervisor.js").McpSupervisor
+ * }} options
+ */
+export function createNoraCustomToolBundle(options) {
+  const mcpBundle = options.mcpSupervisor || options.workspaceFolderPath || options.vscode
+    ? createMcpToolBundle({
+        workspaceFolderPath: options.workspaceFolderPath,
+        vscode: options.vscode,
+        supervisor: options.mcpSupervisor,
+      })
+    : { tools: [], dispose: async () => {} };
+  return {
+    tools: [
+      ...createCodeTools({ document: options.document }),
+      createSkillReadTool({ roots: options.skillBaseDirs }),
+      ...createCanvasTools({ document: options.document, owner: options.runId ? `agent:${options.runId}` : "agent" }),
+      ...mcpBundle.tools,
+    ],
+    dispose: mcpBundle.dispose,
+  };
 }
 
 /** @param {string} text */

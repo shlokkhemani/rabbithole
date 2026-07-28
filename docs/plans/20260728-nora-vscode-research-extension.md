@@ -589,21 +589,21 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
-- [ ] Parse `<workspace>/.vscode/mcp.json` as JSONC with `jsonc-parser` and validate top-level `servers` plus optional `inputs`.
-- [ ] Support stdio `{type:"stdio", command, args, cwd, env, envFile}` and Streamable HTTP `{type:"http", url, headers}` using official `StdioClientTransport` and `StreamableHTTPClientTransport`.
-- [ ] Resolve `${workspaceFolder}`, `${workspaceFolderBasename}`, `${userHome}`, `${env:NAME}`, and `${input:id}`. Use `dotenv` for `envFile`.
-- [ ] Resolve `promptString` and `pickString` inputs with VS Code UI and `command` inputs through `vscode.commands.executeCommand`. Keep resolved input values only in the connection's memory and discard them on disconnect.
-- [ ] Reject legacy SSE, OAuth automation, sandbox, development-server fields, unresolved variables, invalid headers/env, and unsupported transport fields with server-specific diagnostics.
-- [ ] Key shared connections by workspace folder, server name, and normalized non-secret configuration hash. Reference-count them across documents and start a server only on the first actual tool/resource request.
-- [ ] Refresh tool/resource lists when MCP list-change notifications arrive. On config change, let in-flight calls finish, then recreate the connection on the next call.
-- [ ] Apply a two-minute call timeout, cancellation propagation, at most two reconnect attempts, and clean stdio child shutdown when the last reference releases.
-- [ ] Bound each model-facing MCP result to 256 KiB UTF-8 and 2,000 text lines with an explicit truncation record. The transcript stores exactly that bounded result.
-- [ ] Expose one `mcp` Pi tool with `search`, `describe`, `call`, `list_resources`, and `read_resource` operations. Register direct tools only for exact `server/tool` names in global `nora.mcp.directTools`.
-- [ ] Use stable direct tool names `mcp__<sanitized-server>__<sanitized-tool>` and preserve original server/tool names in arguments and transcript metadata.
-- [ ] Do not implement approval prompts, side-effect filtering, `readOnlyHint` enforcement, MCP OAuth, MCP credential storage, sampling, elicitation, prompts, or imports from Pi/Codex/Claude configs.
-- [ ] Log only server ID, operation, status, duration, and bounded error class in the Nora OutputChannel. Never log URLs, env/header values, tool arguments, tool results, or resolved inputs.
-- [ ] Test JSONC, variables, envFile, each input type, unsupported fields, lazy shared stdio lifecycle, Streamable HTTP, tools/resources, direct allowlist, list changes, timeout, cancellation, reconnect limit, config rotation, output truncation, and diagnostic redaction.
-- [ ] Run `node --test test/unit/mcp-config.test.mjs test/unit/mcp-output.test.mjs test/integration/mcp-bridge.test.mjs` and `npm run check:types`.
+- [x] Parse `<workspace>/.vscode/mcp.json` as JSONC with `jsonc-parser` and validate top-level `servers` plus optional `inputs`.
+- [x] Support stdio `{type:"stdio", command, args, cwd, env, envFile}` and Streamable HTTP `{type:"http", url, headers}` using official `StdioClientTransport` and `StreamableHTTPClientTransport`.
+- [x] Resolve `${workspaceFolder}`, `${workspaceFolderBasename}`, `${userHome}`, `${env:NAME}`, and `${input:id}`. Use `dotenv` for `envFile`.
+- [x] Resolve `promptString` and `pickString` inputs with VS Code UI and `command` inputs through `vscode.commands.executeCommand`. Keep resolved input values only in the connection's memory and discard them on disconnect.
+- [x] Reject legacy SSE, OAuth automation, sandbox, development-server fields, unresolved variables, invalid headers/env, and unsupported transport fields with server-specific diagnostics.
+- [x] Key shared connections by workspace folder, server name, and normalized non-secret configuration hash. Reference-count them across documents and start a server only on the first actual tool/resource request.
+- [x] Refresh tool/resource lists when MCP list-change notifications arrive. On config change, let in-flight calls finish, then recreate the connection on the next call.
+- [x] Apply a two-minute call timeout, cancellation propagation, at most two reconnect attempts, and clean stdio child shutdown when the last reference releases.
+- [x] Bound each model-facing MCP result to 256 KiB UTF-8 and 2,000 text lines with an explicit truncation record. The transcript stores exactly that bounded result.
+- [x] Expose one `mcp` Pi tool with `search`, `describe`, `call`, `list_resources`, and `read_resource` operations. Register direct tools only for exact `server/tool` names in global `nora.mcp.directTools`.
+- [x] Use stable direct tool names `mcp__<sanitized-server>__<sanitized-tool>` and preserve original server/tool names in arguments and transcript metadata.
+- [x] Do not implement approval prompts, side-effect filtering, `readOnlyHint` enforcement, MCP OAuth, MCP credential storage, sampling, elicitation, prompts, or imports from Pi/Codex/Claude configs.
+- [x] Log only server ID, operation, status, duration, and bounded error class in the Nora OutputChannel. Never log URLs, env/header values, tool arguments, tool results, or resolved inputs.
+- [x] Test JSONC, variables, envFile, each input type, unsupported fields, lazy shared stdio lifecycle, Streamable HTTP, tools/resources, direct allowlist, list changes, timeout, cancellation, reconnect limit, config rotation, output truncation, and diagnostic redaction.
+- [x] Run `node --test test/unit/mcp-config.test.mjs test/unit/mcp-output.test.mjs test/integration/mcp-bridge.test.mjs` and `npm run check:types`.
 
 ### Task 11: Port attachment and PDF workflows into the webview
 

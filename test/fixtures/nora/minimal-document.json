@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "documentId": "fixture-minimal",
+  "title": "Fixture Minimal",
+  "rootNodeId": "root",
+  "createdAt": "2026-07-28T00:00:00.000Z",
+  "updatedAt": "2026-07-28T00:00:00.000Z",
+  "viewState": {
+    "mode": "reader",
+    "node_id": "root",
+    "scroll": 0
+  },
+  "selection": null,
+  "selectedProfileId": null,
+  "nodes": [
+    {
+      "id": "root",
+      "parentId": null,
+      "title": "Root",
+      "markdown": "Minimal Nora document.",
+      "baseUrl": null,
+      "baseUrlSource": null,
+      "origin": null,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "size": null,
+      "fontScale": 1,
+      "collapsed": false,
+      "state": "complete",
+      "read": true,
+      "createdAt": "2026-07-28T00:00:00.000Z",
+      "updatedAt": "2026-07-28T00:00:00.000Z",
+      "sourceIds": [],
+      "evidenceIds": [],
+      "attachmentIds": [],
+      "runId": null,
+      "extensions": {}
+    }
+  ],
+  "edges": [],
+  "sources": [],
+  "evidence": [],
+  "attachments": [],
+  "runs": [],
+  "checks": [],
+  "extensions": {}
+}

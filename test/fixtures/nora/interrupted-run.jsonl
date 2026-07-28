@@ -1,0 +1,3 @@
+{"kind":"message","messageId":"msg-user","role":"user","content":"summarize"}
+{"kind":"checkpoint","messageId":"msg-assistant","content":"partial answer"}
+{"kind":"terminal","status":"interrupted","reason":"extension shutdown"}

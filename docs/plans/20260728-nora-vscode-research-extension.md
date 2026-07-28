@@ -316,21 +316,21 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
-- [ ] Use `yauzl` in lazy-entry mode and `yazl` in streaming mode; do not buffer a whole archive or 100 MiB attachment in memory.
-- [ ] Define `manifest.json` as `{format:"nora", formatVersion:1, documentId, createdAt, updatedAt, entries:[{path, mediaType, bytes, sha256}]}`. The entry list covers every entry except the manifest itself and is sorted by path.
-- [ ] Store canonical UTF-8/LF `document.json`, one JSON object per LF-terminated line in `runs/<run-id>.jsonl`, and raw bytes in `assets/<lowercase-sha256>`.
-- [ ] Validate entry paths, duplicate names, case collisions, unsupported encryption, CRC errors, declared and streamed sizes, manifest coverage, hashes, asset-name hashes, JSON/JSONL shapes, and aggregate size before exposing a document.
-- [ ] Enforce `100 * 1024 * 1024` raw bytes per asset, at most `1024 * 1024 * 1024` total uncompressed entry bytes, and at most `1024 * 1024 * 1024` bytes for the final ZIP file. Include ZIP metadata overhead conservatively in the preflight estimate.
-- [ ] Stage changed structured entries and newly added assets in a per-open-document temporary directory. Clean normal and stale Nora temp directories without deleting unrelated paths.
-- [ ] Write saves to an explicit sibling temporary file, fsync the file, rename atomically over the target, and fsync the parent directory on local filesystems. A failure must retain the previous target and in-memory revision.
-- [ ] In the Windows `EPERM`/`EEXIST` replacement path, rename the old target to a sibling backup, move the fsynced temporary file into place, restore the backup if the second rename fails, and delete the backup only after success. Cover this branch with injected filesystem-operation tests even though CI remains Linux-only.
-- [ ] Preserve unchanged asset bytes exactly. Content-address identical additions to the existing entry without duplication.
-- [ ] Let the archive writer accept an immutable per-run byte cutoff, read only complete JSONL records at or before that cutoff, and ignore later staged bytes that belong to a newer document revision.
-- [ ] Write entries in sorted path order with ZIP timestamp `1980-01-01T00:00:00Z` and regular-file mode `0o100600`; deflate JSON/JSONL at level 9 and store content-addressed assets without recompression so identical logical inputs build byte-identical archives.
-- [ ] Change `updatedAt` only when the logical document revision changes, not on a no-op save, so repeated saves of the same revision are deterministic.
-- [ ] Accept only format version 1. Report newer versions without attempting partial reconstruction. Do not add `.rabbithole` import.
-- [ ] Test empty/minimal documents, multiple runs, immutable byte cutoffs, trailing partial/unpublished JSONL bytes, binary byte equality, duplicate assets, exact size boundaries, oversize preflight, traversal, duplicate/case-colliding names, corrupt CRC/hash, undeclared entries, truncated JSONL, future format/schema, interrupted write, and deterministic output.
-- [ ] Run `node --test test/contracts/nora-archive.test.mjs test/contracts/nora-archive-security.test.mjs` and `npm run check:types`.
+- [x] Use `yauzl` in lazy-entry mode and `yazl` in streaming mode; do not buffer a whole archive or 100 MiB attachment in memory.
+- [x] Define `manifest.json` as `{format:"nora", formatVersion:1, documentId, createdAt, updatedAt, entries:[{path, mediaType, bytes, sha256}]}`. The entry list covers every entry except the manifest itself and is sorted by path.
+- [x] Store canonical UTF-8/LF `document.json`, one JSON object per LF-terminated line in `runs/<run-id>.jsonl`, and raw bytes in `assets/<lowercase-sha256>`.
+- [x] Validate entry paths, duplicate names, case collisions, unsupported encryption, CRC errors, declared and streamed sizes, manifest coverage, hashes, asset-name hashes, JSON/JSONL shapes, and aggregate size before exposing a document.
+- [x] Enforce `100 * 1024 * 1024` raw bytes per asset, at most `1024 * 1024 * 1024` total uncompressed entry bytes, and at most `1024 * 1024 * 1024` bytes for the final ZIP file. Include ZIP metadata overhead conservatively in the preflight estimate.
+- [x] Stage changed structured entries and newly added assets in a per-open-document temporary directory. Clean normal and stale Nora temp directories without deleting unrelated paths.
+- [x] Write saves to an explicit sibling temporary file, fsync the file, rename atomically over the target, and fsync the parent directory on local filesystems. A failure must retain the previous target and in-memory revision.
+- [x] In the Windows `EPERM`/`EEXIST` replacement path, rename the old target to a sibling backup, move the fsynced temporary file into place, restore the backup if the second rename fails, and delete the backup only after success. Cover this branch with injected filesystem-operation tests even though CI remains Linux-only.
+- [x] Preserve unchanged asset bytes exactly. Content-address identical additions to the existing entry without duplication.
+- [x] Let the archive writer accept an immutable per-run byte cutoff, read only complete JSONL records at or before that cutoff, and ignore later staged bytes that belong to a newer document revision.
+- [x] Write entries in sorted path order with ZIP timestamp `1980-01-01T00:00:00Z` and regular-file mode `0o100600`; deflate JSON/JSONL at level 9 and store content-addressed assets without recompression so identical logical inputs build byte-identical archives.
+- [x] Change `updatedAt` only when the logical document revision changes, not on a no-op save, so repeated saves of the same revision are deterministic.
+- [x] Accept only format version 1. Report newer versions without attempting partial reconstruction. Do not add `.rabbithole` import.
+- [x] Test empty/minimal documents, multiple runs, immutable byte cutoffs, trailing partial/unpublished JSONL bytes, binary byte equality, duplicate assets, exact size boundaries, oversize preflight, traversal, duplicate/case-colliding names, corrupt CRC/hash, undeclared entries, truncated JSONL, future format/schema, interrupted write, and deterministic output.
+- [x] Run `node --test test/contracts/nora-archive.test.mjs test/contracts/nora-archive-security.test.mjs` and `npm run check:types`.
 
 ### Task 4: Implement the VS Code custom document lifecycle
 

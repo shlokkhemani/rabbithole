@@ -20,6 +20,8 @@
     "src/core/contracts/document.d.ts",
     "src/core/contracts/evidence.d.ts",
     "src/core/contracts/agent-run.d.ts",
+    "src/core/contracts/archive.d.ts",
+    "src/extension/archive/zip-libs.d.ts",
     "test/fixtures/contracts/artifact-fixture.js",
     "test/fixtures/contracts/store-fixture.js",
     "test/fixtures/contracts/engine-fixture.js",

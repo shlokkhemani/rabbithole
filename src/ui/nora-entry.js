@@ -237,7 +237,7 @@ function loadMermaidRuntime() {
   if (!mermaidPromise) {
     mermaidPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = new URL("mermaid.js", document.baseURI).href;
+      script.src = new URL("mermaid.js", import.meta.url).href;
       script.async = true;
       const nonce = document.querySelector("script[nonce]")?.nonce;
       if (nonce) script.nonce = nonce;

@@ -1,28 +1,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { chromium } from "playwright";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
-import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
-import { validatePortableProjection } from "../../src/core/portable-projection.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
+import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
+import { createNoraSnapshotProjection } from "../../src/core/snapshot-projection.js";
 import { CANVAS_STYLES } from "../../src/core/html/styles.js";
-import { addAssetsToHole, defaultFsStore } from "../../src/node/fs-store.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
+import { baseHydration, bootNoraWebview } from "../support/webview-harness.mjs";
+import { createTestNoraWebviewHtml, readWebviewAsset } from "../support/nora-webview-assets.mjs";
 
-process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-image-experience-"));
+const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+const LARGE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAUAAAAC0CAYAAADl5PURAAAE0ElEQVR4nO3UMXIQMRBEUW7HQTg4KbeAwoETu7CNpO3d6Re8fFSt+t9+/vr9G6DRt/QBACkCCNQSQKCWAAK1BBCoJYBALQEEagkgUEsAgVoCCNQSQKCWAAK1BBCoJYBALQEEagkgUEsAgVoCCNQSQKCWAAK1BBCoJYBALQEEagkgUEsAgVoCCNQSQKCWAAK1BBCoJYBALQEEagkgUEsAgVoCSNT3H/kb6CWAHPM3bruk38JMAsg2O4MniFxBAFlyZfTEkN0EkC9LB08M2UUA+bR03ISQ3QSQD6VjJoScIoD8UzpgIshJAsi70tESQq4ggLyRDpUIchUB5FU6TkLI1QSQF+kgiSAJAkg8RCJIigCWSwfoDtIbkCOAxdLhuZP0FmQIYKl0cO4ovQnXE8BC6dDcWXobriWAZdKBeYL0RlxHAIukw/Ik6a24hgCWSAflidKbcZ4AlkjH5InSm3GeABZIh+TJ0ttxlgAOlw7IBOkNOUcAh0vHY4L0hpwjgIOlwzFJekvOEMCh0sGYKL0p+wngUOlYTJTelP0EcKB0KCZLb8teAjhQOhKTpbdlLwEcJh2IBumN2UcAh0nHoUF6Y/YRwGHScWiQ3ph9BHCQdBiapLdmDwEcJB2FJumt2UMAB0lHoUl6a/YQwCHSQWiU3px1AjhEOgaN0puzTgCHSMegUXpz1gngEOkYNEpvzjoBHCAdgmbp7VkjgAOkI9AsvT1rBHCAdASapbdnjQAOkI5As/T2rBHAAdIRaJbenjUCOEA6As3S27NGAAdIR6BZenvWCOAA6Qg0S2/PGgEcIB2BZuntWSOAD5cOAPk/wP8TwAHSAWiW3p41AjhAOgLN0tuzRgAHSEegWXp71gjgAOkINEtvzxoBHCAdgWbp7VkjgAOkI9AsvT1rBHCAdASapbdnjQAOkI5As/T2rBHAAdIRaJbenjUCOEQ6BI3Sm7NOAIdIx6BRenPWCeAQ6Rg0Sm/OOgEcIh2DRunNWSeAg6SD0CS9NXsI4CDpKDRJb80eAjhIOgpN0luzhwAOkw5Dg/TG7COAw6Tj0CC9MfsI4DDpODRIb8w+AjhQOhCTpbdlLwEcKB2JydLbspcADpUOxUTpTdlPAIdKx2Ki9KbsJ4CDpYMxSXpLzhDA4dLhmCC9IecI4HDpeEyQ3pBzBLBAOiBPlt6OswSwRDokT5TejPMEsEQ6Jk+U3ozzBLBIOihPkt6KawhgmXRYniC9EdcRwELpwNxZehuuJYCl0qG5o/QmXE8Ai6WDcyfpLcgQwHLp8NxBegNyBJB4gMSPFAHkRTpE4keCAPIqHSTx42oCyBvpOAkfVxFA3pUOlfhxBQHkn9LREj5OEkA+lA6Y+HGKAPJp6ZgJH7sJIF+WjpvwsYsAsiQdPNFjhQCyjejxNALIMYLH3QkgUeJGkgACtQQQqCWAQC0BBGoJIFBLAIFaAgjUEkCglgACtQQQqCWAQC0BBGoJIFBLAIFaAgjUEkCglgACtQQQqCWAQC0BBGoJIFBLAIFaAgjUEkCglgACtQQQqCWAQC0BBGoJIFBLAIFaAgjUEkCglgACtf4A65r2uDsnOqsAAAAASUVORK5CYII=";
 
 function assertIncludes(haystack, needle, message) {
   assert(haystack.includes(needle), message || `expected to include ${needle}`);
-}
-
-function extractScript(html) {
-  const match = html.match(/<script>\n([\s\S]*)\n<\/script>/);
-  assert(match, "assembled HTML should contain one inline script");
-  return match[1];
 }
 
 async function runMarkdownSmoke() {
@@ -39,118 +29,48 @@ async function runMarkdownSmoke() {
 }
 
 async function runPageFixtures() {
-  const markdown = [
-    "Root image:",
-    "",
-    "![diagram](asset:diagram-1.png)",
-    "",
-    "```show",
-    '<img src="https://example.com/in-show.png">',
-    "```",
-  ].join("\n");
-  const root = {
-    id: "root",
-    parent_id: null,
-    title: "Root",
-    markdown,
-    origin: null,
-    position: { x: 0, y: 0 },
-    size: null,
-    font_scale: 1,
-    collapsed: false,
-    status: "answered",
-    read: true,
-    created_at: new Date().toISOString(),
-  };
+  const liveHtml = await createTestNoraWebviewHtml();
+  const canvasCss = await readWebviewAsset("canvas.css");
+  const noraEntry = await readWebviewAsset("nora-entry.js");
+  const frozenClient = await readWebviewAsset("frozen-client.js");
+  const imageUxSource = await fs.readFile(path.resolve("src/ui/image-ux.js"), "utf8");
+  const lightboxSource = await fs.readFile(path.resolve("src/ui/lightbox.js"), "utf8");
 
-  const session = await createSession({
-    holeId: "image-experience",
-    title: "Image Experience",
-    rootId: "root",
-    nodes: [root],
-    assetNames: new Set(["diagram-1.png"]),
-    isResume: false,
-    renderPage: (hydration) => buildCanvasHtml(hydration),
-  });
-
-  try {
-    const live = await fetch(session.url);
-    assert.equal(live.status, 200);
-    const liveHtml = await live.text();
-    const script = extractScript(liveHtml);
-    const imageUxSource = await fs.readFile(path.resolve("src/ui/image-ux.js"), "utf8");
-    const lightboxSource = await fs.readFile(path.resolve("src/ui/lightbox.js"), "utf8");
-
-    assertIncludes(imageUxSource, "function mountDocImages", "image UX should mount markdown image wrappers");
-    assertIncludes(imageUxSource, "function openImageLightbox", "image UX should include the lightbox");
-    assertIncludes(imageUxSource, "function beginImageResize", "image UX should include resize handler code");
-    assertIncludes(imageUxSource, "function nearestImageScrollContainer", "resize should discover the actual scroll container");
-    assertIncludes(imageUxSource, "function keepImageHandleAnchored", "resize should compensate scroll while image height changes");
-    assertIncludes(imageUxSource, "afterRect.bottom - beforeRect.bottom", "resize should anchor the handle by the frame-bottom delta");
-    assertIncludes(imageUxSource, "scroller.scrollTop += delta / imageScrollScale(scroller)", "resize should adjust scrollTop in scroller-local pixels");
-    assertIncludes(lightboxSource, "LIGHTBOX_MAX_ZOOM = 6", "shared lightbox zoom should clamp at the requested upper bound");
-    assertIncludes(imageUxSource, "openLightbox({", "image UX should delegate previews to the shared lightbox");
-    assertIncludes(imageUxSource, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
-    assertIncludes(liveHtml, 'html[data-theme="dark"] .md .rh-img-frame', "served page should include dark-mode image matte CSS");
-    assertIncludes(liveHtml, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
-    assert(!CANVAS_STYLES.includes('html[data-theme="dark"] .md img'), "matte selector should not target every .md img directly");
-
-    const scriptPath = path.join(process.env.RABBITHOLE_DIR, "image-client.js");
-    await fs.writeFile(scriptPath, script, "utf8");
-    const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
-    assert.equal(check.status, 0, check.stderr || check.stdout);
-
-    const exported = await fetch(`${session.url}/export`);
-    assert.equal(exported.status, 200);
-    const exportHtml = await exported.text();
-    assertIncludes(exportHtml, 'html[data-theme="dark"] .md .rh-img-frame', "export should retain dark-mode image matte CSS");
-    console.log("ok image ux: served client, matte CSS, export CSS");
-  } finally {
-    await closeAllSessions("image_experience_test_complete");
-  }
+  assertIncludes(imageUxSource, "function mountDocImages", "image UX should mount markdown image wrappers");
+  assertIncludes(imageUxSource, "function openImageLightbox", "image UX should include the lightbox");
+  assertIncludes(imageUxSource, "function beginImageResize", "image UX should include resize handler code");
+  assertIncludes(imageUxSource, "function nearestImageScrollContainer", "resize should discover the actual scroll container");
+  assertIncludes(imageUxSource, "function keepImageHandleAnchored", "resize should compensate scroll while image height changes");
+  assertIncludes(imageUxSource, "afterRect.bottom - beforeRect.bottom", "resize should anchor the handle by the frame-bottom delta");
+  assertIncludes(imageUxSource, "scroller.scrollTop += delta / imageScrollScale(scroller)", "resize should adjust scrollTop in scroller-local pixels");
+  assertIncludes(lightboxSource, "LIGHTBOX_MAX_ZOOM = 6", "shared lightbox zoom should clamp at the requested upper bound");
+  assertIncludes(imageUxSource, "openLightbox({", "image UX should delegate previews to the shared lightbox");
+  assertIncludes(imageUxSource, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
+  assertIncludes(canvasCss, 'html[data-theme="dark"] .md .rh-img-frame', "Nora webview CSS should include dark-mode image matte CSS");
+  assertIncludes(canvasCss, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
+  assert(!CANVAS_STYLES.includes('html[data-theme="dark"] .md img'), "matte selector should not target every .md img directly");
+  assertIncludes(liveHtml, 'src="vscode-resource:/out/webview/nora-entry.js"', "Nora webview should load the browser entry asset");
+  assertIncludes(noraEntry, "mountDocImages", "Nora webview bundle should include image UX");
+  assertIncludes(frozenClient, "mountDocImages", "Nora frozen client should retain image UX");
+  console.log("ok image ux: Nora webview assets, matte CSS, and frozen CSS");
 }
 
-async function runLiveSnapshotDownload() {
-  const referencedBytes = Buffer.from("referenced snapshot asset");
-  const unreferencedBytes = Buffer.from("unreferenced snapshot asset");
-  const referencedPath = path.join(process.env.RABBITHOLE_DIR, "diagram.png");
-  const unreferencedPath = path.join(process.env.RABBITHOLE_DIR, "unused.png");
-  await fs.writeFile(referencedPath, referencedBytes);
-  await fs.writeFile(unreferencedPath, unreferencedBytes);
-  await addAssetsToHole("image-live-snapshot", [
-    { name: "diagram.png", file_path: referencedPath },
-    { name: "unused.png", file_path: unreferencedPath },
-  ]);
-
-  const now = new Date().toISOString();
-  const session = await createSession({
-    holeId: "image-live-snapshot",
-    title: "Image Live Snapshot",
-    rootId: "root",
-    nodes: [
-      {
-        id: "root", parent_id: null, title: "Root",
-        markdown: "Referenced asset ![diagram](asset:diagram.png)",
-        origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1,
-        collapsed: false, status: "answered", read: true, created_at: now,
-      },
-      {
-        id: "pending", parent_id: "root", title: "Pending",
-        markdown: "half-streamed markdown must not escape", question: "Finish this answer",
-        origin: null, position: { x: 420, y: 0 }, size: null, font_scale: 1,
-        collapsed: false, status: "pending", read: false, created_at: now,
-      },
-    ],
-    assetNames: new Set(await defaultFsStore.listAssets("image-live-snapshot")),
-    isResume: false,
-    renderPage: (hydration) => buildCanvasHtml(hydration),
-  });
-
-  const browser = await chromium.launch({ headless: true });
+async function runLiveWebviewImages() {
+  const app = await bootNoraWebview();
+  const { page } = app;
+  const assetName = "image-diagram.png";
   try {
-    const page = await browser.newPage({ acceptDownloads: true });
-    await page.goto(session.url);
-    await page.waitForSelector("#t-share");
+    await app.hydrate(baseHydration({
+      title: "Image Live Webview",
+      nodes: [{
+        ...baseHydration().nodes[0],
+        title: "Root",
+        markdown: `Referenced asset ![diagram](asset:${assetName})`,
+      }],
+      asset_data: {
+        [assetName]: `data:image/png;base64,${LARGE_PNG_BASE64}`,
+      },
+    }));
     await page.waitForSelector(".rh-img-frame .rh-img-handle");
     const sourceImage = page.locator(".rh-img-frame img").first();
     await sourceImage.click();
@@ -171,33 +91,123 @@ async function runLiveSnapshotDownload() {
     await page.click('.rh-lightbox-close[aria-label="Close"]');
     await page.waitForSelector(".rh-lightbox", { state: "detached" });
     assert.equal(await sourceImage.evaluate((img) => img === img.getRootNode().activeElement), true, "image close button should restore source focus");
-    const liveStyles = await page.locator("head style:first-of-type").textContent();
-
-    await page.click("#t-share");
-    await page.waitForSelector("#sharemenu.visible");
-    const downloadPromise = page.waitForEvent("download");
-    await page.click("#sm-export");
-    const download = await downloadPromise;
-    const downloadPath = await download.path();
-    assert(downloadPath, "snapshot download should expose artifact bytes");
-    const snapshotHtml = await fs.readFile(downloadPath, "utf8");
-
-    const payloadText = extractSnapshotPayload(snapshotHtml);
-    const projection = validatePortableProjection(JSON.parse(payloadText));
-    assert.equal(snapshotHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "snapshot should contain exactly one inert payload");
-    assertIncludes(snapshotHtml, `<style>\n${liveStyles}\n</style>`, "snapshot should embed the canonical served stylesheet");
-    assertIncludes(snapshotHtml, "RabbitholeFrozenClient.startPortableSnapshot", "snapshot should use derived portable hydration");
-    assert.deepEqual(Object.keys(projection.assets), ["diagram.png"], "snapshot should embed referenced assets only");
-    assert.equal(projection.assets["diagram.png"], referencedBytes.toString("base64"));
-    assert.equal(projection.hole.nodes.find((node) => node.id === "pending")?.markdown, "", "snapshot endpoint should apply persisted pending-node policy");
-    console.log("ok image ux: live MCP share snapshot download is canonical and portable");
+    console.log("ok image ux: Nora webview markdown image lightbox and focus behavior");
   } finally {
-    await browser.close();
-    await closeAllSessions("image_snapshot_test_complete");
+    await app.close();
   }
+}
+
+async function runNoraSnapshotProjection() {
+  const assetName = "image-diagram.png";
+  const projection = createNoraSnapshotProjection(noraImageDocument(assetName), { mode: "reader", node_id: "root", scroll: 0 }, {
+    [assetName]: PNG_BASE64,
+    "unused.png": Buffer.from("unused image").toString("base64"),
+  });
+  const snapshotHtml = buildSnapshotHtml({
+    title: "Image Live Snapshot",
+    stylesheetText: await readWebviewAsset("canvas.css"),
+    dompurifySource: "globalThis.DOMPurify={sanitize:function(value){return value},addHook:function(){}};",
+    frozenClientSource: "globalThis.NoraFrozenClient={startPortableSnapshot:function(){}};",
+    snapshotProjection: projection,
+  });
+
+  const payloadText = extractNoraSnapshotPayload(snapshotHtml);
+  const parsed = JSON.parse(payloadText);
+  assert.equal(snapshotHtml.split('<script type="application/vnd.nora+json" id="nora-snapshot">').length - 1, 1, "snapshot should contain exactly one inert Nora payload");
+  assertIncludes(snapshotHtml, "<style>\n", "snapshot should embed stylesheet text");
+  assertIncludes(snapshotHtml, "NoraFrozenClient", "snapshot should use Nora frozen hydration");
+  assert.deepEqual(Object.keys(parsed.assets), [assetName], "snapshot should embed referenced assets only");
+  assert.equal(parsed.assets[assetName], PNG_BASE64);
+  assert.equal(parsed.document.nodes.find((node) => node.id === "pending")?.state, "running", "snapshot should retain interrupted Nora node state");
+  console.log("ok image ux: Nora snapshot projection is canonical and referenced-asset only");
+}
+
+function noraImageDocument(assetName) {
+  const now = "2026-01-01T00:00:00.000Z";
+  return {
+    schemaVersion: 1,
+    documentId: "image-live-snapshot",
+    title: "Image Live Snapshot",
+    rootNodeId: "root",
+    createdAt: now,
+    updatedAt: now,
+    viewState: { mode: "reader", node_id: "root", scroll: 0 },
+    selection: null,
+    selectedProfileId: null,
+    nodes: [
+      {
+        id: "root",
+        parentId: null,
+        title: "Root",
+        markdown: `Referenced asset ![diagram](asset:${assetName})`,
+        baseUrl: null,
+        baseUrlSource: null,
+        origin: null,
+        position: { x: 0, y: 0 },
+        size: null,
+        fontScale: 1,
+        collapsed: false,
+        state: "complete",
+        read: true,
+        createdAt: now,
+        updatedAt: now,
+        sourceIds: [],
+        evidenceIds: [],
+        attachmentIds: [],
+        runId: null,
+        extensions: {},
+      },
+      {
+        id: "pending",
+        parentId: "root",
+        title: "Pending",
+        markdown: "half-streamed markdown remains visible in Nora snapshots",
+        baseUrl: null,
+        baseUrlSource: null,
+        origin: null,
+        position: { x: 420, y: 0 },
+        size: null,
+        fontScale: 1,
+        collapsed: false,
+        state: "running",
+        read: false,
+        createdAt: now,
+        updatedAt: now,
+        sourceIds: [],
+        evidenceIds: [],
+        attachmentIds: [],
+        runId: null,
+        extensions: {},
+      },
+    ],
+    edges: [{
+      id: "edge:root:pending",
+      fromNodeId: "root",
+      toNodeId: "pending",
+      kind: "branch",
+      createdAt: now,
+      extensions: {},
+    }],
+    sources: [],
+    evidence: [],
+    attachments: [],
+    runs: [],
+    checks: [],
+    extensions: {},
+  };
+}
+
+function extractNoraSnapshotPayload(html) {
+  const open = '<script type="application/vnd.nora+json" id="nora-snapshot">';
+  const start = html.indexOf(open);
+  assert.notEqual(start, -1, "Nora snapshot payload should be present");
+  const end = html.indexOf("</script>", start + open.length);
+  assert.notEqual(end, -1, "Nora snapshot payload should be closed");
+  return html.slice(start + open.length, end);
 }
 
 await runMarkdownSmoke();
 await runPageFixtures();
-await runLiveSnapshotDownload();
+await runLiveWebviewImages();
+await runNoraSnapshotProjection();
 console.log("image experience verification passed");

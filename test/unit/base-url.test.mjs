@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import {
   deriveNodeBaseUrl,
   inferBaseUrlFromFrontmatter,
   normalizeBaseUrl,
 } from "../../src/core/base-url.js";
-import { RabbitHoleSession } from "../../src/node/transport/session.js";
-import { toolDefinitions } from "../../src/node/tools/manifest.js";
-
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-base-url-"));
+import {
+  createDocumentState,
+  reduceDocumentEvent,
+} from "../../src/core/document-state.js";
 
 function assertIncludes(haystack, needle, message) {
   assert(haystack.includes(needle), message || `expected to include ${needle}`);
@@ -159,103 +156,71 @@ function runFrontmatterAndPrecedenceFixtures() {
   console.log("ok base urls: frontmatter inference and precedence");
 }
 
-async function runSessionLifecycleFixture() {
-  const root = {
-    id: "root",
-    parent_id: null,
-    title: "Root",
-    markdown: "Root",
-    base_url: "https://example.com/docs/root.md",
-    base_url_source: "explicit",
-    origin: null,
-    position: { x: 0, y: 0 },
-    size: null,
-    font_scale: 1,
-    collapsed: false,
-    status: "answered",
-    read: true,
-    created_at: new Date().toISOString(),
-  };
-  const session = new RabbitHoleSession({
-    holeId: "base-url-session",
-    title: "Base URL Session",
-    rootId: "root",
-    nodes: [root],
-    isResume: false,
-    renderPage: () => "",
-  });
+async function runDocumentLifecycleFixture() {
+  let state = createBaseUrlDocumentState();
 
-  try {
-    const partialAsk = session.handleBranchRequest({
-      parent_id: "root",
-      request_id: "req-partial",
-      node_id: "child-partial",
-      question: "Explain",
-    });
-    session.queue.length = 0;
-    let partialNode = session.nodes.get(partialAsk.node_id);
-    assert.equal(partialNode.base_url, root.base_url);
-    assert.equal(partialNode.base_url_source, "inherited");
-    await session.answerBranch({
-      requestId: partialAsk.request_id,
-      content: "![partial](img.png)",
-      partial: true,
-    });
-    partialNode = session.nodes.get(partialAsk.node_id);
-    const partialHtml = await renderMarkdownToHtml(partialNode.markdown, { baseUrl: partialNode.base_url });
-    assertIncludes(
-      partialHtml,
-      'src="https://example.com/docs/img.png"',
-      "streaming partial markdown should render with the inherited base"
-    );
-    const progress = session.outboundEvents.at(-1).data;
-    assert.equal(progress.type, "node_progress");
-    assert.equal(progress.markdown, "![partial](img.png)");
-    assert.equal(Object.hasOwn(progress, "contentHtml"), false);
+  state = reduceDocumentEvent(state, {
+    type: "branch_request",
+    parent_id: "root",
+    request_id: "req-partial",
+    node_id: "child-partial",
+    question: "Explain",
+  }).state;
+  let partialNode = state.nodes.get("child-partial");
+  assert(partialNode);
+  assert.equal(partialNode.baseUrl, "https://example.com/docs/root.md");
+  assert.equal(partialNode.baseUrlSource, "inherited");
 
-    const upgradeAsk = session.handleBranchRequest({
-      parent_id: "root",
-      request_id: "req-upgrade",
-      node_id: "child-upgrade",
-      question: "Open fetched child",
-    });
-    session.queue.length = 0;
-    let upgradeNode = session.nodes.get(upgradeAsk.node_id);
-    session.pushEvent({ status: "session_closed", session_id: session.id });
-    const next = await session.answerBranch({
-      requestId: upgradeAsk.request_id,
-      title: "Fetched Child",
-      content: ["---", "source: https://other.example/articles/page.md", "---", "![own](img.png)"].join("\n"),
-    });
-    upgradeNode = session.nodes.get(upgradeAsk.node_id);
-    assert.equal(next.status, "session_closed");
-    assert.equal(upgradeNode.base_url, "https://other.example/articles/page.md");
-    assert.equal(upgradeNode.base_url_source, "frontmatter");
-    const upgradeHtml = await renderMarkdownToHtml(upgradeNode.markdown, { baseUrl: upgradeNode.base_url });
-    assertIncludes(
-      upgradeHtml,
-      'src="https://other.example/articles/img.png"',
-      "finalized inherited nodes should upgrade to their own frontmatter base"
-    );
-  } finally {
-    session.close("base_url_test_complete");
-    await session.savingChain;
-  }
+  state = reduceDocumentEvent(state, {
+    type: "node_progress",
+    node_id: "child-partial",
+    markdown: "![partial](img.png)",
+  }).state;
+  partialNode = state.nodes.get("child-partial");
+  assert(partialNode);
+  const partialHtml = await renderMarkdownToHtml(partialNode.markdown, { baseUrl: partialNode.baseUrl });
+  assertIncludes(
+    partialHtml,
+    'src="https://example.com/docs/img.png"',
+    "streaming partial markdown should render with the inherited base"
+  );
+  assert.equal(Object.hasOwn(partialNode, "contentHtml"), false, "Nora persisted nodes should not carry server-rendered HTML");
 
-  console.log("ok base urls: child inheritance, streaming fallback, frontmatter upgrade");
+  state = reduceDocumentEvent(state, {
+    type: "branch_request",
+    parent_id: "root",
+    request_id: "req-upgrade",
+    node_id: "child-upgrade",
+    question: "Open fetched child",
+  }).state;
+  state = reduceDocumentEvent(state, {
+    type: "node_answered",
+    node_id: "child-upgrade",
+    parent_id: "root",
+    title: "Fetched Child",
+    markdown: ["---", "source: https://other.example/articles/page.md", "---", "![own](img.png)"].join("\n"),
+  }).state;
+  const upgradeNode = state.nodes.get("child-upgrade");
+  assert(upgradeNode);
+  assert.equal(upgradeNode.baseUrl, "https://other.example/articles/page.md");
+  assert.equal(upgradeNode.baseUrlSource, "frontmatter");
+  const upgradeHtml = await renderMarkdownToHtml(upgradeNode.markdown, { baseUrl: upgradeNode.baseUrl });
+  assertIncludes(
+    upgradeHtml,
+    'src="https://other.example/articles/img.png"',
+    "finalized inherited nodes should upgrade to their own frontmatter base"
+  );
+
+  console.log("ok base urls: Nora child inheritance, streaming fallback, frontmatter upgrade");
 }
 
-function runToolValidationFixture() {
-  const open = toolDefinitions.find((tool) => tool.name === "open_rabbithole");
-  const answer = toolDefinitions.find((tool) => tool.name === "answer_branch");
-  assert(open);
-  assert(answer);
+function runValidationFixture() {
   assert.throws(
-    () => open.validateInput({ title: "Doc", content: "Body", base_url: "ftp://example.com/doc.md" }),
+    () => normalizeBaseUrl("ftp://example.com/doc.md"),
     /base_url must be an absolute http: or https: URL/
   );
   assert.throws(
-    () => answer.validateInput({ session_id: "s", request_id: "r", content: "Body", base_url: "/relative.md" }),
+    () => normalizeBaseUrl("/relative.md"),
     /base_url must be an absolute http: or https: URL/
   );
   assert.throws(
@@ -263,16 +228,60 @@ function runToolValidationFixture() {
     /base_url must not include credentials/
   );
   assert.throws(
-    () => open.validateInput({ title: "Doc", content: "Body", base_url: "https://:secret@good.example/x" }),
+    () => normalizeBaseUrl("https://:secret@good.example/x"),
     /base_url must not include credentials/
   );
 
-  console.log("ok base urls: tool validation rejects invalid base_url");
+  console.log("ok base urls: core validation rejects invalid base_url");
+}
+
+function createBaseUrlDocumentState() {
+  const now = "2026-01-01T00:00:00.000Z";
+  return createDocumentState({
+    schemaVersion: 1,
+    documentId: "base-url-document",
+    title: "Base URL Document",
+    rootNodeId: "root",
+    createdAt: now,
+    updatedAt: now,
+    viewState: { mode: "reader", node_id: "root", scroll: 0 },
+    selection: null,
+    selectedProfileId: null,
+    nodes: [{
+      id: "root",
+      parentId: null,
+      title: "Root",
+      markdown: "Root",
+      baseUrl: "https://example.com/docs/root.md",
+      baseUrlSource: "explicit",
+      origin: null,
+      position: { x: 0, y: 0 },
+      size: null,
+      fontScale: 1,
+      collapsed: false,
+      state: "complete",
+      read: true,
+      createdAt: now,
+      updatedAt: now,
+      sourceIds: [],
+      evidenceIds: [],
+      attachmentIds: [],
+      runId: null,
+      extensions: {},
+    }],
+    edges: [],
+    sources: [],
+    evidence: [],
+    attachments: [],
+    runs: [],
+    checks: [],
+    extensions: {},
+  });
 }
 
 await runMarkdownResolutionFixtures();
 await runGithubImageRewriteFixture();
 runFrontmatterAndPrecedenceFixtures();
-await runSessionLifecycleFixture();
-runToolValidationFixture();
+await runDocumentLifecycleFixture();
+runValidationFixture();
 console.log("base URL verification passed");

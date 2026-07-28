@@ -835,6 +835,8 @@ async function verifyCanvasBranching() {
   assert(Math.abs(canvasReturnPosition.offset - readerReturnPosition.offset) < 0.2, `reader-to-canvas should preserve the position within the visible block: ${JSON.stringify({ readerReturnPosition, canvasReturnPosition })}`);
   await page.focus("#t-new");
   await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-ask");
+  await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-reader");
   const canvasFocusRing = await page.evaluate(() => getComputedStyle(document.getElementById("t-reader")).outlineStyle);
   assert.notEqual(canvasFocusRing, "none", "keyboard focus should show the canvas-toolbar focus-visible ring");

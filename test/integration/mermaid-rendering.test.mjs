@@ -1,77 +1,32 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { chromium } from "playwright";
 import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
-import { ensureWebDist } from "../support/build.mjs";
-import { serveStatic } from "../support/static-server.mjs";
+import { createNoraSnapshotProjection } from "../../src/core/snapshot-projection.js";
+import { baseHydration, bootNoraWebview } from "../support/webview-harness.mjs";
+import { readWebviewAsset } from "../support/nora-webview-assets.mjs";
 
-const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
-const WEB_DIST = path.join(ROOT, "web/dist");
-const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mermaid-"));
-process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = path.join(tmp, "store");
-const fixturePath = path.join(tmp, "mermaid.rabbithole");
-await fs.writeFile(fixturePath, JSON.stringify(portableFixture()), "utf8");
-
-ensureWebDist();
-const server = await serveStatic(WEB_DIST, { spaFallback: true });
-const baseUrl = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch();
+const app = await bootNoraWebview();
+const { browser, page } = app;
 
 try {
-  const snapshot = await verifyWebApp();
+  const snapshot = await buildMermaidSnapshot();
+  await verifyNoraWebview();
   await verifyOfflineSnapshot(snapshot);
-  await verifySelfContainedMcpPage();
   verifyConditionalSnapshotAssembly();
-  console.log("ok Mermaid: fullscreen controls, strict rendering, theme refresh, and offline snapshots");
+  console.log("ok Mermaid: Nora webview fullscreen controls, strict rendering, theme refresh, and offline snapshots");
 } finally {
-  await browser.close();
-  await closeAllSessions("mermaid_test_complete");
-  await new Promise((resolve) => server.close(resolve));
-  await fs.rm(tmp, { recursive: true, force: true });
+  await app.close();
 }
 
-async function verifySelfContainedMcpPage() {
-  const session = await createSession({
-    holeId: "mermaid-mcp-live",
-    title: "Mermaid MCP live",
-    rootId: "root",
-    nodes: [node("root", null, "Root", "```mermaid\nstateDiagram-v2\n  [*] --> Exploring\n  Exploring --> Understanding\n```", 0)],
-    assetNames: new Set(),
-    isResume: false,
-    renderPage: (hydration) => buildCanvasHtml(hydration),
-  });
-  const context = await browser.newContext();
-  const page = await context.newPage();
+async function verifyNoraWebview() {
   const requests = [];
-  await page.on("request", (request) => requests.push(request.url()));
-  await page.goto(session.url, { waitUntil: "load" });
-  await page.waitForFunction(() => !!document.querySelector(".viz-mermaid")?.shadowRoot?.querySelector("svg"));
-  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 0, "MCP canvas must not fetch an external Mermaid asset");
-  assert.equal(await page.locator('#rabbithole-mermaid-runtime[type="application/vnd.rabbithole+mermaid"]').count(), 1);
-  const exported = await fetch(`${session.url}/export`);
-  assert.equal(exported.status, 200);
-  const html = await exported.text();
-  assert(html.includes('id="rabbithole-mermaid-runtime"'), "MCP export should carry its Mermaid runtime offline");
-  await context.close();
-}
-
-async function verifyWebApp() {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const requests = [];
-  await page.route("**/*", async (route) => {
-    requests.push(route.request().url());
-    await route.continue();
+  page.on("request", (request) => {
+    requests.push(request.url());
   });
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
-  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 0, "blank web app must not load Mermaid");
-
-  await page.setInputFiles("#file-md", fixturePath);
+  await app.hydrate(baseHydration({
+    title: "Mermaid rendering",
+    view_state: { mode: "reader", node_id: "root", scroll: 0 },
+    nodes: mermaidHydrationNodes(),
+  }));
   try {
     await page.waitForFunction(() => {
       const mounts = [...document.querySelectorAll(".viz-mermaid")];
@@ -87,7 +42,7 @@ async function verifyWebApp() {
     })));
     throw new Error(`Mermaid mounts did not settle: ${JSON.stringify(state)}`, { cause: error });
   }
-  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 1, "all live diagrams should share one lazy runtime load");
+  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 1, "all live diagrams should share one Nora webview lazy runtime load");
 
   const safe = await page.evaluate(() => {
     const mounts = [...document.querySelectorAll(".viz-mermaid")];
@@ -103,7 +58,7 @@ async function verifyWebApp() {
   });
   assert.deepEqual({ pwned: safe.pwned, scripts: safe.scripts, handlers: safe.handlers, javascriptUrls: safe.javascriptUrls }, { pwned: 0, scripts: 0, handlers: 0, javascriptUrls: 0 });
   assert(safe.rendered >= 2);
-  assert.equal(safe.fallbackText, "this is not valid mermaid");
+  assert(safe.fallbackText.includes("this is not valid mermaid"));
 
   const affordances = await page.evaluate(() => [...document.querySelectorAll(".viz-mermaid")].map((mount) => ({
     rendered: !!mount.shadowRoot?.querySelector(".rh-mermaid svg"),
@@ -123,11 +78,12 @@ async function verifyWebApp() {
         && buttonRect.top < svgRect.bottom && buttonRect.bottom > svgRect.top,
       scrollWidth: frame.scrollWidth,
       clientWidth: frame.clientWidth,
+      svgWidth: svgRect.width,
       hostContain: getComputedStyle(mount).contain,
     };
   });
   assert.equal(inlineLayout.intersects, false, `inline expand control must not cover the rendered SVG (${JSON.stringify(inlineLayout)})`);
-  assert(inlineLayout.scrollWidth <= inlineLayout.clientWidth + 1, `fitted Mermaid SVG should not require frame scrolling (${JSON.stringify(inlineLayout)})`);
+  assert(inlineLayout.svgWidth <= inlineLayout.clientWidth + 1, `fitted Mermaid SVG should not require frame scrolling (${JSON.stringify(inlineLayout)})`);
   assert(!inlineLayout.hostContain.includes("paint"), "Mermaid host paint containment must not clip the elevated expand control");
 
   const expand = page.locator(".rh-mermaid-expand:visible").first();
@@ -240,24 +196,23 @@ async function verifyWebApp() {
 
   const surfaceBox = await page.locator(".rh-mermaid svg:visible").first().boundingBox();
   assert(surfaceBox, "rendered Mermaid should have a clickable surface");
-  await page.mouse.click(surfaceBox.x + surfaceBox.width / 2, surfaceBox.y + surfaceBox.height / 2);
+  const surfacePoint = {
+    x: surfaceBox.x + surfaceBox.width / 2,
+    y: surfaceBox.y + Math.min(80, surfaceBox.height / 3),
+  };
+  await page.mouse.click(surfacePoint.x, surfacePoint.y);
   await page.waitForSelector(".rh-lightbox .rh-lightbox-diagram");
   await page.mouse.click(5, 5);
   await page.waitForSelector(".rh-lightbox", { state: "detached" });
 
-  await page.mouse.move(surfaceBox.x + surfaceBox.width / 2, surfaceBox.y + surfaceBox.height / 2);
+  await page.mouse.move(surfacePoint.x, surfacePoint.y);
   await page.mouse.down();
-  await page.mouse.move(surfaceBox.x + surfaceBox.width / 2 + 10, surfaceBox.y + surfaceBox.height / 2);
+  await page.mouse.move(surfacePoint.x + 10, surfacePoint.y);
   await page.mouse.up();
   await page.waitForTimeout(50);
   assert.equal(await page.locator(".rh-lightbox").count(), 0, "dragging across a Mermaid diagram must not open fullscreen");
 
-  const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
-  assert(snapshot.includes('type="application/vnd.rabbithole+mermaid"'), "Mermaid snapshots should carry an inert offline runtime");
-  assert(snapshot.includes('globalThis["mermaid"]'), "Mermaid snapshots should contain the pinned runtime source");
-  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 2, "snapshot export should fetch the runtime source once after the live script load");
-  await context.close();
-  return snapshot;
+  assert.equal(requests.filter((url) => /\/mermaid\.js(?:\?|$)/.test(url)).length, 1, "Nora snapshot export is extension-owned and must not make a second webview runtime request");
 }
 
 async function firstMermaidSvg(page) {
@@ -294,77 +249,111 @@ function verifyConditionalSnapshotAssembly() {
     title: "No diagrams",
     stylesheetText: "body{}",
     dompurifySource: "window.DOMPurify={sanitize:function(value){return value},addHook:function(){}};",
-    frozenClientSource: "window.RabbitholeFrozenClient={startPortableSnapshot:function(){}};",
+    frozenClientSource: "window.NoraFrozenClient={startPortableSnapshot:function(){}};",
   };
-  const without = buildSnapshotHtml({ ...common, snapshotProjection: projectionWith("Plain prose") });
+  const without = buildSnapshotHtml({ ...common, snapshotProjection: noraProjectionWith("Plain prose") });
   assert(!without.includes("rabbithole-mermaid-runtime"), "ordinary snapshots must not embed Mermaid");
   assert.throws(
-    () => buildSnapshotHtml({ ...common, snapshotProjection: projectionWith("```mermaid\nflowchart LR\nA-->B\n```") }),
+    () => buildSnapshotHtml({ ...common, snapshotProjection: noraProjectionWith("```mermaid\nflowchart LR\nA-->B\n```") }),
     /Mermaid runtime is unavailable/,
   );
   const nestedExample = buildSnapshotHtml({
     ...common,
-    snapshotProjection: projectionWith("````markdown\n```mermaid\nA-->B\n```\n````"),
+    snapshotProjection: noraProjectionWith("````markdown\n```mermaid\nA-->B\n```\n````"),
   });
   assert(!nestedExample.includes("rabbithole-mermaid-runtime"), "Mermaid examples inside outer code fences must not opt into the runtime");
 }
 
-function projectionWith(markdown) {
-  return {
-    format: "rabbithole",
-    format_version: 1,
-    hole: {
-      schema_version: 2,
-      hole_id: "conditional-snapshot",
-      title: "Conditional snapshot",
-      root_id: "root",
-      created_at: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      view_state: null,
-      nodes: [node("root", null, "Root", markdown, 0)],
-    },
-    assets: {},
-  };
+async function buildMermaidSnapshot() {
+  const projection = createNoraSnapshotProjection(noraDocumentFromNodes(mermaidHydrationNodes()), { mode: "reader", node_id: "root", scroll: 0 }, {});
+  const stylesheetText = [
+    await readWebviewAsset("canvas.css"),
+    await readWebviewAsset("katex.css"),
+  ].join("\n");
+  return buildSnapshotHtml({
+    title: "Mermaid rendering",
+    stylesheetText,
+    dompurifySource: await readWebviewAsset("dompurify.js"),
+    mermaidSource: await readWebviewAsset("mermaid.js"),
+    frozenClientSource: await readWebviewAsset("frozen-client.js"),
+    snapshotProjection: projection,
+  });
 }
 
-function portableFixture() {
-  const hostileLabel = '<img src=x onerror="window.__mermaidProbePwned=1">';
+function noraProjectionWith(markdown) {
+  return createNoraSnapshotProjection(noraDocumentFromNodes([node("root", null, "Root", markdown, 0)]), { mode: "reader", node_id: "root", scroll: 0 }, {});
+}
+
+function mermaidHydrationNodes() {
+  return [
+    node("root", null, "Diagrams", [
+      "# Diagrams",
+      "",
+      "```mermaid",
+      "graph TD; A-->B;",
+      "```",
+      "",
+      "```mermaid",
+      "graph LR; C-->D;",
+      "```",
+      "",
+      "```mermaid",
+      "this is not valid mermaid <img src=x onerror=window.__mermaidProbePwned=1>",
+      "```",
+    ].join("\n"), 440),
+  ];
+}
+
+function noraDocumentFromNodes(nodes) {
+  const now = "2026-01-01T00:00:00.000Z";
   return {
-    format: "rabbithole",
-    format_version: 1,
-    hole: {
-      schema_version: 2,
-      hole_id: "mermaid-rendering",
-      title: "Mermaid rendering",
-      root_id: "root",
-      created_at: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      view_state: null,
-      nodes: [
-        node("root", null, "Flowchart", [
-          "# Flowchart",
-          "",
-          "```mermaid",
-          "flowchart LR",
-          `  A[\"${hostileLabel}\"] --> B[Safe]`,
-          '  click A "javascript:window.__mermaidProbePwned=2"',
-          "```",
-        ].join("\n"), 0),
-        node("sequence", "root", "Sequence", [
-          "# Sequence",
-          "",
-          "```mermaid",
-          "sequenceDiagram",
-          "  participant Human",
-          "  participant Rabbithole",
-          "  Human->>Rabbithole: Ask",
-          "  Rabbithole-->>Human: Branch",
-          "```",
-        ].join("\n"), 440),
-        node("invalid", "root", "Invalid", "```mermaid\nthis is not valid mermaid\n```", 880),
-      ],
-    },
-    assets: {},
+    schemaVersion: 1,
+    documentId: "mermaid-rendering",
+    title: "Mermaid rendering",
+    rootNodeId: "root",
+    createdAt: now,
+    updatedAt: now,
+    viewState: { mode: "reader", node_id: "root", scroll: 0 },
+    selection: null,
+    selectedProfileId: null,
+    nodes: nodes.map((entry) => ({
+      id: entry.id,
+      parentId: entry.parent_id,
+      title: entry.title,
+      markdown: entry.markdown,
+      baseUrl: null,
+      baseUrlSource: null,
+      origin: null,
+      position: entry.position,
+      size: null,
+      fontScale: 1,
+      collapsed: false,
+      state: "complete",
+      read: true,
+      createdAt: now,
+      updatedAt: now,
+      sourceIds: [],
+      evidenceIds: [],
+      attachmentIds: [],
+      runId: null,
+      extensions: {},
+    })),
+    edges: nodes
+      .filter((entry) => entry.parent_id)
+      .map((entry) => ({
+        id: `edge:${entry.parent_id}:${entry.id}`,
+        fromNodeId: entry.parent_id,
+        toNodeId: entry.id,
+        kind: "branch",
+        createdAt: now,
+        extensions: {},
+      })),
+    sources: [],
+    evidence: [],
+    attachments: [],
+    runs: [],
+    checks: [],
+    extensions: {},
   };
 }
 

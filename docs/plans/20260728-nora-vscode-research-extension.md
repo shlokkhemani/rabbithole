@@ -699,11 +699,11 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package-lock.json`
 - Modify: `tsconfig.json`
 
-- [ ] Before deletion, use import search and the replacement matrix to confirm each old test is obsolete or covered by the named Nora archive, document, Pi, MCP, or PDF test. Port retained renderer, Mermaid, base-URL, and content tests from Node-host HTML/session helpers to the Nora build and webview/archive fixtures; confirm Task 12 already removed Node-host imports from retained snapshot/image tests.
-- [ ] Remove the package `bin`/CLI metadata, browser launching, local HTTP/SSE transport, filesystem `.rabbithole` sessions, native PDF ingestion/crop path, and the npm MCP install smoke.
-- [ ] Remove deleted legacy fixtures/tests from `tsconfig.json` and package scripts in the same change so `npm run check:types` and each retained suite remain runnable.
-- [ ] Remove `@napi-rs/canvas` and Node-host-only dependencies after `npm ls` and import review.
-- [ ] Run the Nora archive/custom-editor/Pi/MCP/PDF suites plus retained reducer, renderer, snapshot, and Chromium tests; run `npm ls --all` and resolve invalid production dependencies before proceeding.
+- [x] Before deletion, use import search and the replacement matrix to confirm each old test is obsolete or covered by the named Nora archive, document, Pi, MCP, or PDF test. Port retained renderer, Mermaid, base-URL, and content tests from Node-host HTML/session helpers to the Nora build and webview/archive fixtures; confirm Task 12 already removed Node-host imports from retained snapshot/image tests.
+- [x] Remove the package `bin`/CLI metadata, browser launching, local HTTP/SSE transport, filesystem `.rabbithole` sessions, native PDF ingestion/crop path, and the npm MCP install smoke.
+- [x] Remove deleted legacy fixtures/tests from `tsconfig.json` and package scripts in the same change so `npm run check:types` and each retained suite remain runnable.
+- [x] Remove `@napi-rs/canvas` and Node-host-only dependencies after `npm ls` and import review.
+- [x] Run the Nora archive/custom-editor/Pi/MCP/PDF suites plus retained reducer, renderer, snapshot, and Chromium tests; run `npm ls --all` and resolve invalid production dependencies before proceeding.
 
 ### Task 14: Remove the standalone web/IndexedDB/provider product
 

@@ -1,7 +1,7 @@
 import type { PersistedHole } from "./artifact.js";
 
 /**
- * Storage port implemented by `FsStore` and `IdbStore`.
+ * Storage port retained for the temporary standalone browser host.
  *
  * Runtime authority: {@link ../store.js} (`RABBITHOLE_STORE_METHODS` and
  * `assertRabbitholeStore`). The assertion checks capabilities by method
@@ -41,9 +41,9 @@ export interface RabbitholeStore {
   deleteHole(holeId: string): Promise<void>;
   listAssets(holeId: string): Promise<string[]>;
   /**
-   * Implementations expose their native binary type: `FsStore` returns a Node
-   * `Buffer`, while `IdbStore` returns a browser `Blob`. Portable projection
-   * normalizes either representation at its boundary.
+   * Implementations expose their native binary type. The remaining browser
+   * store returns a `Blob`; portable projection normalizes accepted binary
+   * representations at its boundary.
    */
   getAsset(holeId: string, name: string): Promise<Buffer | Blob | null>;
   putAsset(holeId: string, name: string, bytes: AssetBytes): Promise<void>;

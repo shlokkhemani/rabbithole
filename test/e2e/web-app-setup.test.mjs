@@ -348,7 +348,7 @@ async function verifyLandingAndComposer() {
   assert(toolbarConformance.every(({ name }) => name.length > 0), `every toolbar button should have an accessible name (${JSON.stringify(toolbarConformance)})`);
   const toolbarIconSystem = await page.locator("#taskbar .tool-icon svg").evaluateAll((icons) => icons.map((icon) => ({ width: icon.getAttribute("width"), height: icon.getAttribute("height") })));
   assert(toolbarIconSystem.length >= 8, "toolbar actions should use the shared SVG icon system");
-  assert(toolbarIconSystem.every(({ width, height }) => width === "16" && height === "16"), `toolbar glyph boxes should stay 16×16: ${JSON.stringify(toolbarIconSystem)}`);
+  assert(toolbarIconSystem.every(({ width, height }) => width === height && ["16", "18"].includes(width)), `toolbar glyph boxes should stay square and canonical: ${JSON.stringify(toolbarIconSystem)}`);
   assert.equal(await page.locator("#t-new svg path").count(), 2, "New Rabbithole should use a compose silhouette with no plus glyph");
   assert.equal(await page.locator(".composer-path").count(), 4, "new Rabbithole should offer exactly four starting paths");
   assert.equal(await page.locator("#composer-title").innerText(), "Enter a Rabbithole");

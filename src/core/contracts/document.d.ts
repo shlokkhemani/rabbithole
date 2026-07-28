@@ -106,7 +106,20 @@ export type NoraDocumentEvent =
   | { type: "evidence_record"; evidence: EvidenceRecord }
   | { type: "attachment_record"; attachment: NoraAttachment }
   | { type: "run_summary"; run: AgentRunSummary }
-  | { type: "check_record"; check: NoraCheckRecord };
+  | { type: "check_record"; check: NoraCheckRecord }
+  | {
+      type: "node_references";
+      nodeId?: unknown;
+      node_id?: unknown;
+      sourceIds?: unknown;
+      source_ids?: unknown;
+      evidenceIds?: unknown;
+      evidence_ids?: unknown;
+      attachmentIds?: unknown;
+      attachment_ids?: unknown;
+      updatedAt?: unknown;
+      updated_at?: unknown;
+    };
 
 export declare function createDocumentState(input?: Partial<NoraDocument> & { revision?: number }): NoraDocumentState;
 export declare function documentStateToPersisted(state: NoraDocumentState): NoraDocument;

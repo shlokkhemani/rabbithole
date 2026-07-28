@@ -506,19 +506,19 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `src/extension/workspace-scope.js`
 - Modify: `src/extension/nora-document.js`
 
-- [ ] Expose custom Pi tools for repository listing, directory listing, file finding, text search, bounded file reads, and evidence capture. Every request carries a repository ID and a relative path.
-- [ ] Resolve paths with realpath containment under the acquired immutable worktree; reject absolute paths, traversal, symlink escapes, device files, and oversized reads.
-- [ ] Register a standard-name `read` tool for skill resources that accepts only absolute realpaths inside the merged workspace/global skill base directories. This lets Pi load `SKILL.md` references while refusing arbitrary filesystem reads.
-- [ ] Implement search through fixed `git grep` argument construction, not a shell string. Cap results and return an explicit truncation marker.
-- [ ] Expose only minimal canvas tools to create a node, update an agent-created node, and attach evidence. Validate ownership and document revision before mutation.
-- [ ] Do not register Pi's bash, edit, write, unrestricted filesystem, package-manager, clipboard, or image-conversion tools.
-- [ ] Load exactly `<workspace>/.agents/skills` and `~/.agents/skills` with Pi's skill parser. Do not call default discovery that reads `.pi`, ancestor repositories, extensions, prompts, themes, or unrelated agent config.
-- [ ] Merge skills by name with workspace precedence. Keep shadow/malformed-skill diagnostics in the loader and emit a visible diagnostic naming both paths when a workspace skill shadows a global skill.
-- [ ] Implement Pi's `ResourceLoader` interface with the merged skill list, Nora's system prompt, and empty extensions/prompts/themes/agent-files. Skill content remains at its source path and is read on invocation.
-- [ ] Watch both skill directories and rebuild the resource loader for the next run after changes; do not mutate a running AgentSession's resources.
-- [ ] In the system prompt, state that code is immutable, repository IDs are required, evidence must be captured for code claims, MCP may have side effects, and canvas mutations must use Nora tools.
-- [ ] Test repository containment, skill-resource containment, relative skill references, symlink escape, binary/large file handling, bounded search, evidence construction, exact discovery paths, shadow warnings, malformed skill diagnostics, `.pi/skills` exclusion, and no mutation tool registration.
-- [ ] Run `node --test test/unit/code-tools.test.mjs test/unit/skills-loader.test.mjs test/integration/skills-resource-loader.test.mjs` and `npm run check:types`.
+- [x] Expose custom Pi tools for repository listing, directory listing, file finding, text search, bounded file reads, and evidence capture. Every request carries a repository ID and a relative path.
+- [x] Resolve paths with realpath containment under the acquired immutable worktree; reject absolute paths, traversal, symlink escapes, device files, and oversized reads.
+- [x] Register a standard-name `read` tool for skill resources that accepts only absolute realpaths inside the merged workspace/global skill base directories. This lets Pi load `SKILL.md` references while refusing arbitrary filesystem reads.
+- [x] Implement search through fixed `git grep` argument construction, not a shell string. Cap results and return an explicit truncation marker.
+- [x] Expose only minimal canvas tools to create a node, update an agent-created node, and attach evidence. Validate ownership and document revision before mutation.
+- [x] Do not register Pi's bash, edit, write, unrestricted filesystem, package-manager, clipboard, or image-conversion tools.
+- [x] Load exactly `<workspace>/.agents/skills` and `~/.agents/skills` with Pi's skill parser. Do not call default discovery that reads `.pi`, ancestor repositories, extensions, prompts, themes, or unrelated agent config.
+- [x] Merge skills by name with workspace precedence. Keep shadow/malformed-skill diagnostics in the loader and emit a visible diagnostic naming both paths when a workspace skill shadows a global skill.
+- [x] Implement Pi's `ResourceLoader` interface with the merged skill list, Nora's system prompt, and empty extensions/prompts/themes/agent-files. Skill content remains at its source path and is read on invocation.
+- [x] Watch both skill directories and rebuild the resource loader for the next run after changes; do not mutate a running AgentSession's resources.
+- [x] In the system prompt, state that code is immutable, repository IDs are required, evidence must be captured for code claims, MCP may have side effects, and canvas mutations must use Nora tools.
+- [x] Test repository containment, skill-resource containment, relative skill references, symlink escape, binary/large file handling, bounded search, evidence construction, exact discovery paths, shadow warnings, malformed skill diagnostics, `.pi/skills` exclusion, and no mutation tool registration.
+- [x] Run `node --test test/unit/code-tools.test.mjs test/unit/skills-loader.test.mjs test/integration/skills-resource-loader.test.mjs` and `npm run check:types`.
 
 ### Task 9: Embed Pi AgentSession and persist canvas-anchored runs
 

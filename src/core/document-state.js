@@ -132,6 +132,8 @@ export function reduceDocumentEvent(state, event, options = {}) {
       return upsertCollection(state, "runs", /** @type {any} */ (event).run, "run_id");
     case "check_record":
       return upsertCollection(state, "checks", /** @type {any} */ (event).check, "check_id");
+    case "node_references":
+      return reduceNodeReferences(state, /** @type {any} */ (event));
     default:
       return reduceWithLegacyReducer(state, /** @type {LegacyDocEvent} */ (event), options);
   }
@@ -170,6 +172,35 @@ function upsertCollection(state, key, value, effectKey) {
   const collection = new Map(/** @type {Map<string, any>} */ (state[key]));
   collection.set(id, cloneJson(value));
   return commitCandidate(state, { ...state, [key]: collection }, { [effectKey]: id });
+}
+
+/** @param {NoraDocumentState} state @param {any} event */
+function reduceNodeReferences(state, event) {
+  const nodeId = String(event.node_id ?? event.nodeId ?? "");
+  const node = state.nodes.get(nodeId);
+  if (!node) return { state, effects: {} };
+  const nodes = new Map(state.nodes);
+  nodes.set(nodeId, {
+    ...node,
+    sourceIds: mergeStringList(node.sourceIds, event.source_ids ?? event.sourceIds, "source"),
+    evidenceIds: mergeStringList(node.evidenceIds, event.evidence_ids ?? event.evidenceIds, "evidence"),
+    attachmentIds: mergeStringList(node.attachmentIds, event.attachment_ids ?? event.attachmentIds, "attachment"),
+    updatedAt: event.updated_at ?? event.updatedAt ?? node.updatedAt,
+  });
+  return commitCandidate(state, { ...state, nodes }, { node_id: nodeId });
+}
+
+/** @param {string[]} current @param {unknown} added @param {string} label */
+function mergeStringList(current, added, label) {
+  if (added == null) return [...current];
+  if (!Array.isArray(added)) throw new Error(`node_references ${label} ids must be an array`);
+  const next = new Set(current);
+  for (const value of added) {
+    const id = String(value ?? "");
+    if (!id) throw new Error(`node_references ${label} id must be non-empty`);
+    next.add(id);
+  }
+  return [...next];
 }
 
 /**

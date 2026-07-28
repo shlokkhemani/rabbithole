@@ -73,7 +73,7 @@ export class NoraDocument {
     this.changeEmitter = new SimpleEmitter();
     this.disposeEmitter = new SimpleEmitter();
     this.requestSaveEmitter = new SimpleEmitter();
-    /** @type {Map<string, { release: () => unknown | Promise<unknown> }>} */
+    /** @type {Map<string, { repository: import("./git/cache.js").AcquiredRepository, release: () => unknown | Promise<unknown> }>} */
     this.repositoryHandles = new Map();
     if (options.onRequestSave) this.onDidRequestSave(options.onRequestSave);
   }
@@ -335,13 +335,27 @@ export class NoraDocument {
 
   /**
    * @param {string} key
-   * @param {{ release: () => unknown | Promise<unknown> }} handle
+   * @param {{ repository: import("./git/cache.js").AcquiredRepository, release: () => unknown | Promise<unknown> }} handle
    */
   retainRepositoryWorktree(key, handle) {
     const previous = this.repositoryHandles.get(key);
     if (previous === handle) return;
     this.repositoryHandles.set(key, handle);
     if (previous) void Promise.resolve(previous.release()).catch(() => {});
+  }
+
+  listAcquiredRepositories() {
+    return [...this.repositoryHandles.values()]
+      .map((handle) => handle.repository)
+      .sort((left, right) => `${left.id}:${left.sha}`.localeCompare(`${right.id}:${right.sha}`));
+  }
+
+  /** @param {string} repositoryId */
+  getAcquiredRepository(repositoryId) {
+    const matches = this.listAcquiredRepositories().filter((repository) => repository.id === repositoryId);
+    if (matches.length === 0) return null;
+    if (matches.length > 1) throw new Error(`Repository ${repositoryId} has multiple acquired revisions; refresh the run context before reading it.`);
+    return matches[0];
   }
 
   toHydration() {

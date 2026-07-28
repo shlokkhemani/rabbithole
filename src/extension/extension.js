@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { registerDocumentCommands } from "./commands/document-commands.js";
 import { registerLlmCommands } from "./commands/llm-commands.js";
+import { registerRepositoryCommands } from "./commands/repository-commands.js";
 import { DocumentRegistry } from "./document-registry.js";
 import { NoraEditorProvider, VIEW_TYPE } from "./nora-editor-provider.js";
 
@@ -19,6 +20,7 @@ export function activate(context) {
     ),
     ...registerDocumentCommands(context, registry, provider),
     ...registerLlmCommands(context, registry, { vscode }),
+    ...registerRepositoryCommands(context, registry, { vscode }),
   );
 }
 

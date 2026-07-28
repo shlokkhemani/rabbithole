@@ -3,7 +3,6 @@ import { writeMinimalNoraArchive, titleForUri, requireFilePath } from "../nora-d
 
 const VIEW_TYPE = "nora.research";
 const DEFERRED_COMMANDS = [
-  "nora.addRepository",
   "nora.addAttachment",
   "nora.exportMarkdown",
   "nora.exportSnapshot",

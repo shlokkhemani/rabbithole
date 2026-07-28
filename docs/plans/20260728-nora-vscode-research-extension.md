@@ -468,26 +468,26 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `src/extension/extension.js`
 - Modify: `src/extension/nora-document.js`
 
-- [ ] Wrap system Git with `spawn("git", args, {shell:false})`, cancellation, bounded stdout/stderr, and diagnostics that omit credential-bearing URLs.
-- [ ] Place shared cache data under `<ExtensionContext.globalStorageUri>/git`: bare clones under `bare/<sha256-acquisition-url>` and detached worktrees under `worktrees/<repository-id>/<commit-sha>`.
-- [ ] For a remote acquisition URL, clone/fetch the bare repository and create a detached worktree for the requested revision or fetched default branch.
-- [ ] Reject HTTP(S) acquisition URLs containing passwords/tokens in URL userinfo or credential query parameters. Store and hash only the sanitized acquisition URL; Git authentication must come from the system credential helper, SSH agent, or environment.
-- [ ] For a local repository, mirror/fetch it into the same cache so research sees committed bytes at exact HEAD rather than mutable/uncommitted working-tree content.
-- [ ] Resolve local-repository remote by current branch upstream, then `origin`, then an explicit user choice. Remember the acquisition URL separately from the permalink remote.
-- [ ] Before minting a forge permalink for a local repository, fetch the selected remote and prove the selected commit is reachable from one of its remote-tracking refs with `git for-each-ref --contains <sha> refs/remotes`. If it is not published, ask the user to select a fetched upstream revision or push it; never emit a broken permalink for an unpushed commit.
-- [ ] Normalize HTTPS, SSH URL, and SCP-style remotes without embedding user info, tokens, or query credentials.
-- [ ] Detect github.com, gitlab.com, and bitbucket.org automatically. For unknown hosts, ask the user to choose GitHub Enterprise, GitLab self-managed, or Bitbucket Data Center and store that forge type with the source.
-- [ ] Implement immutable URL adapters:
+- [x] Wrap system Git with `spawn("git", args, {shell:false})`, cancellation, bounded stdout/stderr, and diagnostics that omit credential-bearing URLs.
+- [x] Place shared cache data under `<ExtensionContext.globalStorageUri>/git`: bare clones under `bare/<sha256-acquisition-url>` and detached worktrees under `worktrees/<repository-id>/<commit-sha>`.
+- [x] For a remote acquisition URL, clone/fetch the bare repository and create a detached worktree for the requested revision or fetched default branch.
+- [x] Reject HTTP(S) acquisition URLs containing passwords/tokens in URL userinfo or credential query parameters. Store and hash only the sanitized acquisition URL; Git authentication must come from the system credential helper, SSH agent, or environment.
+- [x] For a local repository, mirror/fetch it into the same cache so research sees committed bytes at exact HEAD rather than mutable/uncommitted working-tree content.
+- [x] Resolve local-repository remote by current branch upstream, then `origin`, then an explicit user choice. Remember the acquisition URL separately from the permalink remote.
+- [x] Before minting a forge permalink for a local repository, fetch the selected remote and prove the selected commit is reachable from one of its remote-tracking refs with `git for-each-ref --contains <sha> refs/remotes`. If it is not published, ask the user to select a fetched upstream revision or push it; never emit a broken permalink for an unpushed commit.
+- [x] Normalize HTTPS, SSH URL, and SCP-style remotes without embedding user info, tokens, or query credentials.
+- [x] Detect github.com, gitlab.com, and bitbucket.org automatically. For unknown hosts, ask the user to choose GitHub Enterprise, GitLab self-managed, or Bitbucket Data Center and store that forge type with the source.
+- [x] Implement immutable URL adapters:
   - GitHub: `/<owner>/<repo>/blob/<sha>/<path>#L<start>-L<end>`
   - GitLab: `/<namespace>/<repo>/-/blob/<sha>/<path>#L<start>-<end>`
   - Bitbucket Cloud: `/<workspace>/<repo>/src/<sha>/<path>#<filename>-<start>`; retain the end line in the evidence record because the verified Cloud permalink shape guarantees the start anchor
   - Bitbucket Data Center: `/projects/<project>/repos/<repo>/browse/<path>?at=<sha>`; retain start/end lines and excerpt in evidence because Data Center anchor syntax varies by supported server release
-- [ ] Percent-encode path/query components without encoding `/` path separators; validate line ranges and repository containment.
-- [ ] Store repository ID, sanitized remote, acquisition URL, forge type/base URL, exact SHA, relative path, lines, excerpt, and permalink in evidence.
-- [ ] Make refresh fetch/create a new revision record and worktree. Never rewrite evidence already pinned to an older SHA.
-- [ ] Reference-count open-document worktrees and prune only unreferenced worktrees; never delete bare caches during normal document disposal.
-- [ ] Test remote precedence, URL normalization, self-hosted classification, path encoding, line anchors, SHA pinning, refusal of unpushed local HEAD, selection of a reachable remote revision, local dirty-tree exclusion, cache reuse, concurrent acquisition, cancellation, missing Git/credentials, and refresh immutability using temporary local repositories.
-- [ ] Run `node --test test/unit/git-remote.test.mjs test/unit/git-permalink.test.mjs test/integration/repository-cache.test.mjs` and `npm run check:types`.
+- [x] Percent-encode path/query components without encoding `/` path separators; validate line ranges and repository containment.
+- [x] Store repository ID, sanitized remote, acquisition URL, forge type/base URL, exact SHA, relative path, lines, excerpt, and permalink in evidence.
+- [x] Make refresh fetch/create a new revision record and worktree. Never rewrite evidence already pinned to an older SHA.
+- [x] Reference-count open-document worktrees and prune only unreferenced worktrees; never delete bare caches during normal document disposal.
+- [x] Test remote precedence, URL normalization, self-hosted classification, path encoding, line anchors, SHA pinning, refusal of unpushed local HEAD, selection of a reachable remote revision, local dirty-tree exclusion, cache reuse, concurrent acquisition, cancellation, missing Git/credentials, and refresh immutability using temporary local repositories.
+- [x] Run `node --test test/unit/git-remote.test.mjs test/unit/git-permalink.test.mjs test/integration/repository-cache.test.mjs` and `npm run check:types`.
 
 ### Task 8: Add Nora-owned read-only code tools and skills
 

@@ -73,6 +73,8 @@ export class NoraDocument {
     this.changeEmitter = new SimpleEmitter();
     this.disposeEmitter = new SimpleEmitter();
     this.requestSaveEmitter = new SimpleEmitter();
+    /** @type {Map<string, { release: () => unknown | Promise<unknown> }>} */
+    this.repositoryHandles = new Map();
     if (options.onRequestSave) this.onDidRequestSave(options.onRequestSave);
   }
 
@@ -320,11 +322,26 @@ export class NoraDocument {
       await Promise.resolve(this.activeRun.abort()).catch(() => {});
       this.activeRun = null;
     }
+    for (const handle of this.repositoryHandles.values()) {
+      await Promise.resolve(handle.release()).catch(() => {});
+    }
+    this.repositoryHandles.clear();
     await this.archiveWorkspace.dispose();
     this.disposeEmitter.fire(undefined);
     this.changeEmitter.clear();
     this.disposeEmitter.clear();
     this.requestSaveEmitter.clear();
+  }
+
+  /**
+   * @param {string} key
+   * @param {{ release: () => unknown | Promise<unknown> }} handle
+   */
+  retainRepositoryWorktree(key, handle) {
+    const previous = this.repositoryHandles.get(key);
+    if (previous === handle) return;
+    this.repositoryHandles.set(key, handle);
+    if (previous) void Promise.resolve(previous.release()).catch(() => {});
   }
 
   toHydration() {

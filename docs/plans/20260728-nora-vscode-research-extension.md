@@ -400,17 +400,17 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `test/e2e/ui-primitives-browsers.test.mjs`
 - Modify: `test/e2e/reducer-browser-parity.test.mjs`
 
-- [ ] Rename user-facing product copy and UI globals from Rabbithole to Nora while keeping `src/core/html/icons.js` as the only product icon source.
-- [ ] Replace SSE/HTTP/direct-host assumptions with the validated `acquireVsCodeApi().postMessage` protocol and initial-state hydration from `NoraDocument`.
-- [ ] Preserve Reader and Canvas switching, pan/zoom, drag/resize/collapse/layout, edges anchored to selected text, branch sidebar, breadcrumbs/origin navigation, Markdown/math/code/Mermaid/`show`, checks, selection marks, search, and keyboard navigation.
-- [ ] Make `Ask Nora` a transient popup. Selected-node asks carry that node ID; no selection carries an explicit whole-canvas scope.
-- [ ] Keep follow-up composers on result nodes and remove any UI that presents a separate persistent conversation list.
-- [ ] Add a Run Details view reached from a result node. It renders persisted messages/tool activity as technical trace but does not become a second chat composer.
-- [ ] Render `running`, `cancelled`, and `failed` state accessibly and keep partial content selectable and exportable.
-- [ ] Use VS Code theme variables while retaining the product layout and ensure all dialogs/popovers restore focus and support keyboard-only use.
-- [ ] Change the UI primitives E2E matrix to Chromium only.
-- [ ] Test initial hydration, selection ask, whole-canvas ask, follow-up, streaming, cancellation/failure display, run details, Reader/Canvas parity, keyboard search/navigation, checks, hostile Markdown, and webview reload.
-- [ ] Run `npm run build`, `node --test test/e2e/webview-research.test.mjs test/e2e/ui-primitives-browsers.test.mjs`, and `npm run check:purity`.
+- [x] Rename user-facing product copy and UI globals from Rabbithole to Nora while keeping `src/core/html/icons.js` as the only product icon source.
+- [x] Replace SSE/HTTP/direct-host assumptions with the validated `acquireVsCodeApi().postMessage` protocol and initial-state hydration from `NoraDocument`.
+- [x] Preserve Reader and Canvas switching, pan/zoom, drag/resize/collapse/layout, edges anchored to selected text, branch sidebar, breadcrumbs/origin navigation, Markdown/math/code/Mermaid/`show`, checks, selection marks, search, and keyboard navigation.
+- [x] Make `Ask Nora` a transient popup. Selected-node asks carry that node ID; no selection carries an explicit whole-canvas scope.
+- [x] Keep follow-up composers on result nodes and remove any UI that presents a separate persistent conversation list.
+- [x] Add a Run Details view reached from a result node. It renders persisted messages/tool activity as technical trace but does not become a second chat composer.
+- [x] Render `running`, `cancelled`, and `failed` state accessibly and keep partial content selectable and exportable.
+- [x] Use VS Code theme variables while retaining the product layout and ensure all dialogs/popovers restore focus and support keyboard-only use.
+- [x] Change the UI primitives E2E matrix to Chromium only.
+- [x] Test initial hydration, selection ask, whole-canvas ask, follow-up, streaming, cancellation/failure display, run details, Reader/Canvas parity, keyboard search/navigation, checks, hostile Markdown, and webview reload.
+- [x] Run `npm run build`, `node --test test/e2e/webview-research.test.mjs test/e2e/ui-primitives-browsers.test.mjs`, and `npm run check:purity`.
 
 ### Task 6: Implement global LLM profiles and SecretStorage credentials
 

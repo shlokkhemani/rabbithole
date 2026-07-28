@@ -336,6 +336,7 @@ export class NoraDocument {
         revision: this.state.revision,
         selectedProfileId: this.state.selectedProfileId,
         runByteCutoffs: normalizeCutoffs(this.runByteCutoffs),
+        runs: [...this.state.runs.values()].map((run) => cloneJson(run)),
       },
     };
   }

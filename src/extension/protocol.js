@@ -1,9 +1,9 @@
 const WEBVIEW_MESSAGE_TYPES = new Set(["ready", "uiEvent"]);
-const EXTENSION_MESSAGE_TYPES = new Set(["hydrate", "error"]);
+const EXTENSION_MESSAGE_TYPES = new Set(["hydrate", "error", "command"]);
 
 /**
  * @typedef {{ type: "ready" } | { type: "uiEvent", event: Record<string, unknown> }} WebviewToExtensionMessage
- * @typedef {{ type: "hydrate", hydration: Record<string, unknown>, readonly: boolean } | { type: "error", message: string }} ExtensionToWebviewMessage
+ * @typedef {{ type: "hydrate", hydration: Record<string, unknown>, readonly: boolean } | { type: "error", message: string } | { type: "command", command: "ask" }} ExtensionToWebviewMessage
  */
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
@@ -52,6 +52,12 @@ export function validateExtensionMessage(raw) {
   if (type === "error") {
     requireOnlyKeys(message, ["type", "message"], "extension error message");
     return { type, message: requireString(message.message, "extension error message") };
+  }
+  if (type === "command") {
+    requireOnlyKeys(message, ["type", "command"], "extension command message");
+    const command = requireString(message.command, "extension command");
+    if (command !== "ask") throw new TypeError(`Unsupported extension command: ${command}`);
+    return { type, command };
   }
   if (type !== "hydrate" || !EXTENSION_MESSAGE_TYPES.has(type)) throw new TypeError(`Unsupported extension message: ${type}`);
   requireOnlyKeys(message, ["type", "hydration", "readonly"], "extension hydrate message");

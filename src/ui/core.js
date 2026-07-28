@@ -11,6 +11,7 @@ import { escapeHtml } from "../core/utils.js";
 import { BUNNY_MARK_SVG } from "../core/html/icons.js";
 import { createCleanupScope } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
+import { buildRunStateNotice, isLiveRunState, isTerminalRunState } from "./run-status.js";
 import {
   DEFAULT_CHILD,
   DEFAULT_ROOT,
@@ -293,6 +294,15 @@ export function sessionPhase(){
     if (connLost || !agentAttached) return "away";
     return "live";
   }
+export function isNoraRuntime(){
+    return !!document.documentElement?.classList?.contains("nora-webview");
+  }
+export function productName(){
+    return isNoraRuntime() ? "Nora" : "Rabbithole";
+  }
+export function documentKindLabel(){
+    return isNoraRuntime() ? "Nora document" : "Rabbithole";
+  }
   var reduceMotion = false, reduceMotionMql = null;
   function setReduceMotion(e){ reduceMotion = !!(e && e.matches); }
 function initReduceMotion(scope){
@@ -383,7 +393,7 @@ export function buildLoading(node){
     st.innerHTML = LOADING_BUNNY_HTML +
       '<span class="shimmer-text ll-live">Thinking</span>' +
       '<span class="ll-stalled">Saved — waiting for the agent</span>' +
-      '<span class="ll-closed">Saved — answered when you reopen this hole</span>' +
+      '<span class="ll-closed">Saved — answered when you reopen this ' + (isNoraRuntime() ? "document" : "hole") + '</span>' +
       '<span class="ll-frozen">Unanswered when this snapshot was exported</span>' +
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
     loadingTimers.add(st.querySelector(".loading-time"));
@@ -436,7 +446,7 @@ export function fillStreaming(dc, node, surfaceKey){
     st.className = "stream-status";
     st.innerHTML = '<span class="shimmer-text ll-live">Writing</span>' +
       '<span class="ll-stalled">Paused — waiting for the agent</span>' +
-      '<span class="ll-closed">Saved — answered in full when you reopen this hole</span>' +
+      '<span class="ll-closed">Saved — answered in full when you reopen this ' + (isNoraRuntime() ? "document" : "hole") + '</span>' +
       '<span class="ll-frozen">Unfinished when this snapshot was exported</span>' +
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
     loadingTimers.add(st.querySelector(".loading-time"));
@@ -474,7 +484,7 @@ export function buildDocContent(node, base){
     dc.dataset.nodeId = node.id;
     dc.dataset.surface = base === CANVAS_BASE ? "canvas" : "reader";
     dc.style.fontSize = fontPx(node, base) + "px";
-    if (node.status === "pending"){
+    if (node.status === "pending" || isLiveRunState(node)){
       if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
       else dc.appendChild(buildLoading(node));
     }
@@ -486,7 +496,11 @@ export function buildDocContent(node, base){
         node._contentDisposers.add(dispose);
         dc._rhDispose = dispose;
       } else {
-        dc.innerHTML = node.html || "";
+        if (isTerminalRunState(node)){
+          var runNotice = buildRunStateNotice(node);
+          if (runNotice) dc.appendChild(runNotice);
+        }
+        dc.insertAdjacentHTML("beforeend", node.html || "");
         var pdfExt = node.extensions && node.extensions.pdf;
         if (pdfExt && pdfExt.converting){
           // Until the first converted chunk lands the body is still the raw
@@ -505,7 +519,7 @@ export function toggleTheme(){
   var cur = document.documentElement.getAttribute("data-theme");
   var next = cur === "dark" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", next);
-  try { localStorage.setItem("rh-theme", next); } catch(e){}
+  try { localStorage.setItem(isNoraRuntime() ? "nora-theme" : "rh-theme", next); } catch(e){}
 }
 
 export function flashHint(msg){

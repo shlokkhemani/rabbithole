@@ -96,6 +96,9 @@ export class NoraEditorProvider {
         await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
         return;
       }
+      if (message.event.type === "nora_ask") {
+        return;
+      }
       try {
         await noraDocument.commitWebviewEvent(message.event);
       } catch (error) {
@@ -152,6 +155,18 @@ export class NoraEditorProvider {
     for (const panel of this.panels.get(document) ?? []) {
       void postHydration(panel, document);
     }
+  }
+
+  /**
+   * @param {NoraDocument | null | undefined} document
+   * @param {"ask"} command
+   */
+  async postCommandToDocument(document, command) {
+    if (!document) return false;
+    const panels = this.panels.get(document);
+    if (!panels || panels.size === 0) return false;
+    await Promise.all([...panels].map((panel) => panel.webview.postMessage(serializeExtensionMessage({ type: "command", command }))));
+    return true;
   }
 }
 

@@ -24,6 +24,10 @@ assert.deepEqual(
   validateExtensionMessage({ type: "error", message: "Nope" }),
   { type: "error", message: "Nope" },
 );
+assert.deepEqual(
+  validateExtensionMessage({ type: "command", command: "ask" }),
+  { type: "command", command: "ask" },
+);
 
 for (const message of [
   null,
@@ -39,6 +43,7 @@ for (const message of [
   null,
   { type: "wat" },
   { type: "error", message: "" },
+  { type: "command", command: "delete" },
   { type: "hydrate", hydration: {} },
   { type: "hydrate", hydration: { ...hydration, nodes: {} } },
 ]) {

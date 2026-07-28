@@ -3,7 +3,6 @@ import { writeMinimalNoraArchive, titleForUri, requireFilePath } from "../nora-d
 
 const VIEW_TYPE = "nora.research";
 const DEFERRED_COMMANDS = [
-  "nora.ask",
   "nora.selectProfile",
   "nora.setCredential",
   "nora.signIn",
@@ -17,12 +16,18 @@ const DEFERRED_COMMANDS = [
 /**
  * @param {vscode.ExtensionContext} context
  * @param {import("../document-registry.js").DocumentRegistry} registry
+ * @param {import("../nora-editor-provider.js").NoraEditorProvider} provider
  */
-export function registerDocumentCommands(context, registry) {
+export function registerDocumentCommands(context, registry, provider) {
   return [
     vscode.commands.registerCommand("nora.newResearch", () => newResearch(context)),
     vscode.commands.registerCommand("nora.undo", () => registry.activeDocument?.undo()),
     vscode.commands.registerCommand("nora.redo", () => registry.activeDocument?.redo()),
+    vscode.commands.registerCommand("nora.ask", async () => {
+      if (!await provider.postCommandToDocument(registry.activeDocument, "ask")) {
+        await vscode.window.showInformationMessage("Open a Nora document before asking.");
+      }
+    }),
     ...DEFERRED_COMMANDS.map((command) => vscode.commands.registerCommand(command, () => showDeferredCommand(command))),
   ];
 }

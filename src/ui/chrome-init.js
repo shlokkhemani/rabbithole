@@ -1,6 +1,7 @@
 import {
   currentNodeId,
   flashHint,
+  isNoraRuntime,
   mode,
   nodes,
 } from "./core.js";
@@ -64,7 +65,7 @@ function onGlobalKeydown(e){
   // A saved choice wins; otherwise the page follows the system preference.
 function applyInitialTheme(){
   try {
-    var savedTheme = localStorage.getItem("rh-theme");
+    var savedTheme = localStorage.getItem(isNoraRuntime() ? "nora-theme" : "rh-theme");
     if (!savedTheme && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) savedTheme = "dark";
     if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
   } catch(e){}

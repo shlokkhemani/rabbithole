@@ -1,9 +1,12 @@
-import { createRabbitholeUi } from "./composition.js";
+import { createNoraUi } from "./composition.js";
 import { mountPdfView } from "./pdf-view.js";
+import { showWholeCanvasAsk } from "./ask-followups.js";
 
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
 let runtime = null;
 let mermaidPromise = null;
+let lastHydration = null;
+let startChain = Promise.resolve();
 
 window.addEventListener("message", (event) => {
   let message;
@@ -13,18 +16,22 @@ window.addEventListener("message", (event) => {
     showBootError(error);
     return;
   }
-  if (message.type === "hydrate") startNora(message.hydration);
+  if (message.type === "hydrate") {
+    startChain = startChain.then(() => startNora(message.hydration)).catch((error) => { showBootError(error); });
+  }
+  else if (message.type === "command") handleCommand(message.command);
   else if (message.type === "error") showBootError(new Error(message.message));
 });
 
 postToExtension({ type: "ready" });
 
 /** @param {Record<string, unknown>} hydration */
-function startNora(hydration) {
+async function startNora(hydration) {
   document.documentElement.classList.add("nora-webview");
+  lastHydration = hydration;
   applyNoraChromeLabels();
-  if (runtime && !runtime.disposed) void runtime.dispose();
-  runtime = createRabbitholeUi({
+  if (runtime && !runtime.disposed) await runtime.dispose();
+  runtime = createNoraUi({
     hydration,
     host: {
       post: (event) => {
@@ -43,6 +50,7 @@ function startNora(hydration) {
       exportPortable: null,
     },
   });
+  exposeTestApi();
 }
 
 /** @param {{ type: "ready" } | { type: "uiEvent", event: Record<string, unknown> }} message */
@@ -64,6 +72,8 @@ function loadMermaidRuntime() {
       const script = document.createElement("script");
       script.src = new URL("mermaid.js", document.baseURI).href;
       script.async = true;
+      const nonce = document.querySelector("script[nonce]")?.nonce;
+      if (nonce) script.nonce = nonce;
       script.addEventListener("load", () => globalThis.mermaid ? resolve(globalThis.mermaid) : reject(new Error("Mermaid runtime did not initialize")), { once: true });
       script.addEventListener("error", () => reject(new Error("Unable to load Mermaid")), { once: true });
       document.head.appendChild(script);
@@ -78,12 +88,22 @@ function loadMermaidRuntime() {
 function applyNoraChromeLabels() {
   setLabel("t-rail", "Toggle branches");
   setLabel("t-new", "New Nora research");
+  setLabel("t-ask", "Ask Nora");
   setLabel("t-share", "Export");
   setLabel("t-settings", "Profiles");
+  setLabel("tb-done", "Close Nora document");
   const search = document.getElementById("pal-text");
-  if (search) search.setAttribute("placeholder", "Search this Nora document...");
+  if (search) {
+    search.setAttribute("placeholder", "Search this Nora document...");
+    search.setAttribute("aria-label", "Search this Nora document");
+  }
   const portable = document.getElementById("sm-portable");
   if (portable) portable.textContent = "Export Nora archive";
+}
+
+/** @param {string} command */
+function handleCommand(command) {
+  if (command === "ask") showWholeCanvasAsk(null, "command");
 }
 
 /** @param {unknown} raw */
@@ -91,6 +111,7 @@ function validateIncomingMessage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new TypeError("message must be an object");
   const message = /** @type {Record<string, unknown>} */ (raw);
   if (message.type === "error" && typeof message.message === "string") return { type: "error", message: message.message };
+  if (message.type === "command" && typeof message.command === "string") return { type: "command", command: message.command };
   if (message.type !== "hydrate" || !message.hydration || typeof message.hydration !== "object" || Array.isArray(message.hydration)) {
     throw new TypeError("unsupported Nora message");
   }
@@ -109,4 +130,13 @@ function setLabel(id, label) {
 function showBootError(error) {
   const message = error instanceof Error ? error.message : String(error);
   document.body.textContent = `Nora could not open this document: ${message}`;
+}
+
+function exposeTestApi() {
+  if (!location.href.includes("__noraTest=1")) return;
+  window.__noraTest = {
+    hydration: () => lastHydration,
+    ask: () => showWholeCanvasAsk(null, "test"),
+    dispose: () => runtime?.dispose(),
+  };
 }

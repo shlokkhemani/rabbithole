@@ -1,5 +1,5 @@
 /**
- * Canonical Rabbithole icon repository.
+ * Canonical product icon repository.
  *
  * Keep product-owned SVG geometry here. Consumers choose an icon by name and
  * may only override its rendered size; the viewBox and drawing attributes stay
@@ -50,7 +50,7 @@ const ICON_DEFINITIONS = Object.freeze({
 /** @param {keyof typeof ICON_DEFINITIONS} name @param {{ size?: number }=} options */
 export function iconSvg(name, options = {}) {
   const definition = ICON_DEFINITIONS[name];
-  if (!definition) throw new Error(`Unknown Rabbithole icon: ${name}`);
+  if (!definition) throw new Error(`Unknown product icon: ${name}`);
   const size = options.size ?? definition.size;
   if (size !== null && (!Number.isFinite(size) || size <= 0)) throw new Error("Icon size must be a positive number");
   const dimensions = size === null ? "" : ` width="${size}" height="${size}"`;

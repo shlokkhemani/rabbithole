@@ -6,16 +6,17 @@ import { NoraEditorProvider, VIEW_TYPE } from "./nora-editor-provider.js";
 /** @param {vscode.ExtensionContext} context */
 export function activate(context) {
   const registry = new DocumentRegistry();
+  const provider = new NoraEditorProvider(context, registry);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       VIEW_TYPE,
-      new NoraEditorProvider(context, registry),
+      provider,
       {
         supportsMultipleEditorsPerDocument: false,
         webviewOptions: { retainContextWhenHidden: true },
       },
     ),
-    ...registerDocumentCommands(context, registry),
+    ...registerDocumentCommands(context, registry, provider),
   );
 }
 

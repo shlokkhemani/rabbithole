@@ -15,6 +15,7 @@ import {
   childrenOf,
   closed,
   currentNodeId,
+  documentKindLabel,
   edgesSvg,
   fontPx,
   flashHint,
@@ -53,6 +54,7 @@ import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
 import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
+import { buildRunDetailsButton } from "./run-status.js";
 
 function defaultCanvasHooks(){
   return {
@@ -115,6 +117,7 @@ function cleanupCanvasView(resetHooks){
   }
   filmCameraHandle = null;
   if (edgesSvg) while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
+  if (world) Array.from(world.children).forEach(function(child){ if (child !== edgesSvg) child.remove(); });
   edgeEls = {};
   edgeGeometry = {};
   edgeHl = {};
@@ -195,7 +198,7 @@ export function createNodeEl(node, enter){
     head.className = "node-head";
     if (node.id === rootId){
       var badge = document.createElement("span"); badge.className = "node-badge"; badge.innerHTML = BUNNY_MARK_SVG;
-      badge.title = "Where this Rabbithole begins";
+      badge.title = "Where this " + documentKindLabel() + " begins";
       head.appendChild(badge);
     }
     var titleEl = document.createElement("span"); titleEl.className = "node-title"; titleEl.textContent = node.title || "…";
@@ -212,6 +215,8 @@ export function createNodeEl(node, enter){
       delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasLifecycle.hooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
+    var runDetails = buildRunDetailsButton(node, { className: "node-btn run-details-button card-run-details" });
+    if (runDetails) acts.appendChild(runDetails);
     acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
     head.appendChild(titleEl); head.appendChild(acts);
 
@@ -333,7 +338,7 @@ export function updateCardComposer(node){
     );
   }
   function submitCardFollowup(node, source){
-    if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal to continue."); return; }
+    if (closed){ flashHint("Session ended — reopen this " + documentKindLabel() + " to continue."); return; }
     if (node.status === "pending" || node.extensions?.pdf?.converting) return;
     var question = node.ncText.value.trim();
     if (!question) return;
@@ -394,7 +399,7 @@ export function fillBody(node){
     body.classList.remove("pdf-body");
     body.innerHTML = "";
     if (node.origin && node.origin.synthesis){
-      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";
+      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this " + documentKindLabel();
       body.appendChild(sq);
     } else if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";

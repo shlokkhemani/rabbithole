@@ -2,10 +2,6 @@ import * as vscode from "vscode";
 import { writeMinimalNoraArchive, titleForUri, requireFilePath } from "../nora-document.js";
 
 const VIEW_TYPE = "nora.research";
-const DEFERRED_COMMANDS = [
-  "nora.exportMarkdown",
-  "nora.exportSnapshot",
-];
 
 /**
  * @param {vscode.ExtensionContext} context
@@ -22,7 +18,6 @@ export function registerDocumentCommands(context, registry, provider) {
         await vscode.window.showInformationMessage("Open a Nora document before asking.");
       }
     }),
-    ...DEFERRED_COMMANDS.map((command) => vscode.commands.registerCommand(command, () => showDeferredCommand(command))),
   ];
 }
 
@@ -36,10 +31,4 @@ export async function newResearch(context) {
   const filePath = requireFilePath(uri, "new research");
   await writeMinimalNoraArchive(filePath, titleForUri(uri));
   await vscode.commands.executeCommand("vscode.openWith", uri, VIEW_TYPE);
-}
-
-/** @param {string} command */
-function showDeferredCommand(command) {
-  const label = command.slice("nora.".length).replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
-  return vscode.window.showInformationMessage(`Nora ${label} is not available in this migration slice.`);
 }

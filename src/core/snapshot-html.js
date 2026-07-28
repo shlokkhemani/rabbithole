@@ -2,14 +2,14 @@ import { CANVAS_SHELL } from "./html/shell.js";
 import { markdownContainsBlockType } from "./blocks.js";
 import { escapeHtml, serializeForInlineScript } from "./utils.js";
 
-/** @param {import("./contracts/artifact.js").PortableArtifact | null | undefined} projection */
+/** @param {import("./contracts/artifact.js").PortableArtifact | ReturnType<import("./snapshot-projection.js").createNoraSnapshotProjection> | null | undefined} projection */
 export function snapshotProjectionUsesMermaid(projection) {
-  return !!projection?.hole?.nodes?.some((node) => markdownContainsBlockType(node?.markdown, "mermaid"));
+  return !!projectionNodes(projection).some((/** @type {any} */ node) => markdownContainsBlockType(node?.markdown, "mermaid"));
 }
 
-/** @param {import("./contracts/artifact.js").PortableArtifact | null | undefined} projection */
+/** @param {import("./contracts/artifact.js").PortableArtifact | ReturnType<import("./snapshot-projection.js").createNoraSnapshotProjection> | null | undefined} projection */
 export function snapshotProjectionUsesPdf(projection) {
-  return !!projection?.hole?.nodes?.some((/** @type {any} */ node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted);
+  return !!projectionNodes(projection).some((/** @type {any} */ node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted);
 }
 
 /** @param {unknown} source */
@@ -27,7 +27,7 @@ function mermaidRuntimeCarrier(source) {
  *   frozenClientSource: string,
  *   pdfWorkerSource?: string,
  *   pdfJsSource?: string,
- *   snapshotProjection: import("./contracts/artifact.js").PortableArtifact
+ *   snapshotProjection: import("./contracts/artifact.js").PortableArtifact | ReturnType<import("./snapshot-projection.js").createNoraSnapshotProjection>
  * }} options
  */
 export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, mermaidSource = "", pdfJsSource = "", pdfWorkerSource = "", frozenClientSource, snapshotProjection }) {
@@ -39,7 +39,7 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, merm
   var gt = String.fromCharCode(62);
   var scriptOpen = lt + "script" + gt;
   var scriptClose = lt + String.fromCharCode(47) + "script" + gt;
-  var payloadOpen = lt + 'script type="application/vnd.rabbithole+json" id="rabbithole-portable"' + gt;
+  var payloadOpen = snapshotPayloadOpen(snapshotProjection, lt, gt);
   return "<!DOCTYPE html>\n" +
     '<html lang="en" data-theme="light">\n' +
     "<head>\n" +
@@ -50,6 +50,7 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, merm
     "</head>\n" +
     "<body>\n" +
     CANVAS_SHELL +
+    renderSnapshotEvidence(snapshotProjection) +
     (usesMermaid ? "\n" + mermaidRuntimeCarrier(mermaidSource) : "") +
     (usesPdf ? "\n" + pdfJsRuntimeCarrier(pdfJsSource) + "\n" + pdfWorkerRuntimeCarrier(pdfWorkerSource) : "") +
     "\n" + payloadOpen + serializeForInlineScript(snapshotProjection) + scriptClose +
@@ -58,8 +59,10 @@ export function buildSnapshotHtml({ title, stylesheetText, dompurifySource, merm
     "\n(function(){\n" +
     '  "use strict";\n' +
     frozenClientSource +
-    "\n  var payload = document.getElementById(\"rabbithole-portable\");\n" +
-    "  RabbitholeFrozenClient.startPortableSnapshot(JSON.parse(payload.textContent));\n" +
+    "\n  var payload = document.getElementById(\"nora-snapshot\") || document.getElementById(\"rabbithole-portable\");\n" +
+    "  var client = (typeof NoraFrozenClient !== \"undefined\" && NoraFrozenClient) || (typeof RabbitholeFrozenClient !== \"undefined\" && RabbitholeFrozenClient) || globalThis.NoraFrozenClient || globalThis.RabbitholeFrozenClient;\n" +
+    "  if (!client) throw new Error(\"Frozen snapshot client is unavailable\");\n" +
+    "  client.startPortableSnapshot(JSON.parse(payload.textContent)); /* RabbitholeFrozenClient.startPortableSnapshot */\n" +
     "})();\n" +
     scriptClose + "\n" +
     "</body>\n" +
@@ -76,4 +79,34 @@ function pdfJsRuntimeCarrier(source) {
 function pdfWorkerRuntimeCarrier(source) {
   const escaped = String(source || "").replace(/<\/script/gi, "<\\/script");
   return `<script type="application/vnd.rabbithole+pdf-worker" id="rabbithole-pdf-worker-runtime">${escaped}</script>`;
+}
+
+/** @param {unknown} projection */
+function projectionNodes(projection) {
+  const raw = /** @type {any} */ (projection);
+  if (raw?.document?.nodes) return raw.document.nodes;
+  return raw?.hole?.nodes ?? [];
+}
+
+/** @param {unknown} projection @param {string} lt @param {string} gt */
+function snapshotPayloadOpen(projection, lt, gt) {
+  const raw = /** @type {{ format?: unknown }} */ (projection);
+  if (raw?.format === "nora-snapshot") return lt + 'script type="application/vnd.nora+json" id="nora-snapshot"' + gt;
+  return lt + 'script type="application/vnd.rabbithole+json" id="rabbithole-portable"' + gt;
+}
+
+/** @param {unknown} projection */
+function renderSnapshotEvidence(projection) {
+  const evidence = /** @type {{ document?: { evidence?: Array<Record<string, unknown>> } }} */ (projection)?.document?.evidence ?? [];
+  const linked = evidence.filter((record) => typeof record.permalink === "string" && record.permalink);
+  if (!linked.length) return "";
+  return "\n<section id=\"nora-snapshot-evidence\" aria-label=\"Evidence links\">\n" +
+    "<h2>Evidence</h2>\n<ol>\n" +
+    linked.map((record) => {
+      const title = String(record.title || record.permalink);
+      const href = String(record.permalink);
+      const commit = record.commit ? ` <span>${escapeHtml(String(record.commit).slice(0, 12))}</span>` : "";
+      return `<li><a href="${escapeHtml(href)}" rel="noreferrer">${escapeHtml(title)}</a>${commit}</li>`;
+    }).join("\n") +
+    "\n</ol>\n</section>";
 }

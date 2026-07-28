@@ -434,7 +434,7 @@ export function sendFollowup(parent, question, lens, synthesis){
     if (currentNodeId === parent.id && mode === "reader") renderMarginNotes();
     var payload = { type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: "", question: question, lens: lens, anchor: null,
-           scope: { type: "node", node_id: parent.id },
+           scope: synthesis ? { type: "whole_canvas" } : { type: "node", node_id: parent.id },
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;

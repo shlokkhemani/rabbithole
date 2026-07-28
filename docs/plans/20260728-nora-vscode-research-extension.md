@@ -658,14 +658,14 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `test/integration/pdf-snapshot.test.mjs`
 - Modify: `test/integration/image-experience.test.mjs`
 
-- [ ] Keep snapshots self-contained, inert, read-only HTML with the frozen client, visible canvas/Reader state, cited evidence, and only referenced asset bytes.
-- [ ] Exclude selected profile IDs, run transcripts, tool arguments/results, MCP configuration, local cache/worktree paths, and all Nora-managed connection credentials from snapshots and Markdown. Visible research nodes remain user-authored/source data and are exported verbatim after normal content sanitization.
-- [ ] Add evidence footnotes to Markdown export and stable source links to snapshots.
-- [ ] Preserve math, code highlighting, Mermaid, `show`, checks in clean initial state, PDF/image presentation, origin navigation, and hostile-content sanitization.
-- [ ] Implement synthesis as a normal whole-canvas `Ask Nora` run whose result is a canvas node, not a separate export-time model path.
-- [ ] Use VS Code save dialogs for `.md` and `.html` targets and report write failures without mutating the `.nora` document.
-- [ ] Test offline snapshot loading, referenced-only assets, script-breakout resistance, evidence links, Markdown ordering, interrupted nodes, exclusion of known credential sentinels from non-visible run/config fields, preservation of visible research text, and failed destination writes.
-- [ ] Run `node --test test/contracts/export-security.test.mjs test/integration/nora-export.test.mjs test/integration/pdf-snapshot.test.mjs test/integration/image-experience.test.mjs` and `npm run build`.
+- [x] Keep snapshots self-contained, inert, read-only HTML with the frozen client, visible canvas/Reader state, cited evidence, and only referenced asset bytes.
+- [x] Exclude selected profile IDs, run transcripts, tool arguments/results, MCP configuration, local cache/worktree paths, and all Nora-managed connection credentials from snapshots and Markdown. Visible research nodes remain user-authored/source data and are exported verbatim after normal content sanitization.
+- [x] Add evidence footnotes to Markdown export and stable source links to snapshots.
+- [x] Preserve math, code highlighting, Mermaid, `show`, checks in clean initial state, PDF/image presentation, origin navigation, and hostile-content sanitization.
+- [x] Implement synthesis as a normal whole-canvas `Ask Nora` run whose result is a canvas node, not a separate export-time model path.
+- [x] Use VS Code save dialogs for `.md` and `.html` targets and report write failures without mutating the `.nora` document.
+- [x] Test offline snapshot loading, referenced-only assets, script-breakout resistance, evidence links, Markdown ordering, interrupted nodes, exclusion of known credential sentinels from non-visible run/config fields, preservation of visible research text, and failed destination writes.
+- [x] Run `node --test test/contracts/export-security.test.mjs test/integration/nora-export.test.mjs test/integration/pdf-snapshot.test.mjs test/integration/image-experience.test.mjs` and `npm run build`.
 
 ### Task 13: Remove the external Node/MCP host and filesystem product
 

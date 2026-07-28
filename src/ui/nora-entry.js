@@ -11,6 +11,17 @@ import {
   resolvePagesToProcess,
 } from "../core/pdf-shared.js";
 import { showWholeCanvasAsk } from "./ask-followups.js";
+import {
+  disposeTransportStatus,
+  flushPendingSaves,
+  initTransportStatus,
+  persistNode,
+  persistNodesBulk,
+  post,
+  refreshStatus,
+  scheduleViewSave,
+  setTransportAdapter
+} from "./transport-status.js";
 
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
 let runtime = null;
@@ -41,23 +52,29 @@ async function startNora(hydration) {
   lastHydration = hydration;
   applyNoraChromeLabels();
   if (runtime && !runtime.disposed) await runtime.dispose();
+  setTransportAdapter({
+    post: async (event) => {
+      const prepared = await prepareOutgoingEvent(event);
+      postToExtension({ type: "uiEvent", event: prepared.event });
+      return { ok: true, crop_asset: prepared.cropAsset ?? null };
+    },
+  });
   runtime = createNoraUi({
     hydration,
     host: {
-      post: async (event) => {
-        const prepared = await prepareOutgoingEvent(event);
-        postToExtension({ type: "uiEvent", event: prepared.event });
-        return { ok: true, crop_asset: prepared.cropAsset ?? null };
-      },
-      refreshStatus: () => {},
-      start: () => {},
-      flush: () => Promise.resolve(),
-      dispose: () => {},
+      post,
+      refreshStatus,
+      persistNode,
+      persistNodesBulk,
+      scheduleViewSave,
+      start: initTransportStatus,
+      flush: flushPendingSaves,
+      dispose: disposeTransportStatus,
     },
     capabilities: {
       mountPdfView,
       loadMermaid: loadMermaidRuntime,
-      exportSnapshot: null,
+      exportSnapshot: requestSnapshotExport,
       exportPortable: null,
     },
   });
@@ -254,6 +271,11 @@ function applyNoraChromeLabels() {
 /** @param {string} command */
 function handleCommand(command) {
   if (command === "ask") showWholeCanvasAsk(null, "command");
+}
+
+async function requestSnapshotExport() {
+  await flushPendingSaves();
+  postToExtension({ type: "uiEvent", event: { type: "export_snapshot" } });
 }
 
 /** @param {unknown} raw */

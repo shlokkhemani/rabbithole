@@ -6,6 +6,7 @@ import { resolveWorkspaceScope } from "./workspace-scope.js";
 import { NoraRunController } from "./agent/run-controller.js";
 import { addWebviewCropAttachment } from "./attachments.js";
 import { normalizePdfExtension } from "../core/pdf-shared.js";
+import { exportSnapshotDocument } from "./commands/export-commands.js";
 
 export const VIEW_TYPE = "nora.research";
 
@@ -115,6 +116,14 @@ export class NoraEditorProvider {
       if (message.event.type === "convert_pdf") {
         try {
           await handleConvertPdf(noraDocument, message.event);
+        } catch (error) {
+          await postError(panel, error);
+        }
+        return;
+      }
+      if (message.event.type === "export_snapshot") {
+        try {
+          await exportSnapshotDocument(this.context, vscode, noraDocument);
         } catch (error) {
           await postError(panel, error);
         }

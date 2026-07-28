@@ -1,12 +1,34 @@
 import assert from "node:assert/strict";
-import { fetchOpenAICompatibleModels, isHttpUrl } from "../../src/web/brain/model-endpoint.js";
+import { addressSpaceOf, fetchOpenAICompatibleModels, isHttpUrl } from "../../src/web/brain/model-endpoint.js";
 import { discoverLocalModels } from "../../src/web/brain/local-model-catalog.js";
+import { streamOpenAICompatible } from "../../src/web/brain/openai-compatible.js";
 
 assert.equal(isHttpUrl("https://api.example.com/v1"), true);
 assert.equal(isHttpUrl("http://localhost:11434/v1"), true);
 assert.equal(isHttpUrl("api.example.com/v1"), false, "a bare host would resolve against the app origin");
 assert.equal(isHttpUrl("file:///etc/passwd"), false);
 assert.equal(isHttpUrl(""), false);
+
+/*
+ * Chrome fails a request that claims the local network but resolves somewhere public, so
+ * the classifier has to be exact in both directions: claim every address that can only be
+ * on this network, and stay silent about everything that might not be.
+ */
+for (const url of ["http://localhost:11434/v1", "http://127.0.0.1:11434/v1", "http://127.1.2.3/v1", "http://[::1]:11434/v1"]) {
+  assert.equal(addressSpaceOf(url), "loopback", `${url} is this machine`);
+}
+for (const url of [
+  "http://10.0.0.4:11434/v1", "http://172.16.0.1/v1", "http://172.31.255.254/v1", "http://192.168.0.198:11434/v1",
+  "http://169.254.1.1/v1", "http://mac-mini.local:11434/v1", "http://[fd12::1]/v1", "http://[fe80::1]/v1",
+]) {
+  assert.equal(addressSpaceOf(url), "local", `${url} can only be on this network`);
+}
+for (const url of [
+  "https://api.example.com/v1", "http://172.15.0.1/v1", "http://172.32.0.1/v1", "http://193.168.0.1/v1",
+  "http://100.64.0.1/v1", "http://999.1.1.1/v1", "http://ollama.example.com/v1", "http://[2001:db8::1]/v1", "not a url",
+]) {
+  assert.equal(addressSpaceOf(url), "", `${url} might resolve to the public internet`);
+}
 
 const originalFetch = globalThis.fetch;
 let calls = [];
@@ -32,6 +54,10 @@ try {
   models = await fetchOpenAICompatibleModels("http://localhost:11434/v1");
   assert.equal("Authorization" in calls[0].options.headers, false, "no key means no Authorization header");
   assert.equal(calls[0].options.targetAddressSpace, "loopback", "loopback endpoints need the private network hint");
+
+  stubFetch(() => json({ data: [{ id: "llama3.2" }] }));
+  await fetchOpenAICompatibleModels("http://192.168.0.198:11434/v1");
+  assert.equal(calls[0].options.targetAddressSpace, "local", "an endpoint on the LAN must ask for local network access");
 
   // Ollama marshals an empty model list as `"data": null`, not `[]`.
   stubFetch(() => json({ data: null }));
@@ -67,6 +93,13 @@ try {
   const local = await discoverLocalModels("http://localhost:11434/v1");
   assert.deepEqual(local.map((model) => [model.id, model.vision]), [["llama3.2", false], ["llava", true]]);
   assert.equal(calls.some((call) => "Authorization" in call.options.headers), false, "Local never sends a key");
+  assert.equal(calls.every((call) => call.options.targetAddressSpace === "loopback"), true, "the Ollama vision probe is a loopback request too");
+
+  /* Discovery reaching an endpoint is useless if generation cannot follow it there. */
+  stubFetch(() => new Response("data: [DONE]\n\n", { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+  const stream = streamOpenAICompatible({ url: "http://192.168.0.198:11434/v1/chat/completions", body: { model: "llama3.2" } });
+  for await (const _ of stream) { /* drain */ }
+  assert.equal(calls[0].options.targetAddressSpace, "local", "generation must declare the same address space discovery used");
 } finally {
   globalThis.fetch = originalFetch;
 }

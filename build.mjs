@@ -204,9 +204,12 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
     "blob:",
     // A custom endpoint is any host the person running this owns, so it cannot be
     // enumerated here. script-src stays locked to 'self', which is what keeps an
-    // injection from using this. Plain-http endpoints stay limited to loopback:
-    // the browser blocks mixed content from an https page regardless of policy.
+    // injection from using this. http: cannot be narrowed to the private ranges — CSP
+    // has no pattern for them — but it widens little: from an https page the browser
+    // blocks plain http anyway, except on this machine and, behind a permission prompt,
+    // the local network. Those two are exactly the endpoints worth reaching.
     "https:",
+    "http:",
     "https://openrouter.ai",
     "https://api.github.com",
     "https://arxiv.org",

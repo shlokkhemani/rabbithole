@@ -1,4 +1,4 @@
-import { fetchOpenAICompatibleModels, loopbackFetchHint } from "./model-endpoint.js";
+import { addressSpaceHint, fetchOpenAICompatibleModels } from "./model-endpoint.js";
 
 export async function discoverLocalModels(baseUrl, { signal } = {}) {
   const base = String(baseUrl || "http://localhost:11434/v1").replace(/\/+$/, "");
@@ -11,7 +11,7 @@ export async function discoverLocalModels(baseUrl, { signal } = {}) {
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({ model: model.id }),
         signal,
-        ...loopbackFetchHint(showUrl),
+        ...addressSpaceHint(showUrl),
       });
       if (!detail.ok) return { ...model, capabilities: null, vision: null };
       const payload = await detail.json();

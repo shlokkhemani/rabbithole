@@ -139,8 +139,8 @@ Existing suites must pass unchanged except the two `.provider-choice` assertions
 
 - **CSP had to change.** `connect-src` was an allowlist of known hosts, so an arbitrary
   endpoint was blocked before any of this could run. `build.mjs` now includes `https:`.
-  `script-src` stays pinned to `'self'`, which is what keeps that safe; plain http remains
-  loopback-only, and the browser blocks mixed content from an https page anyway.
+  `script-src` stays pinned to `'self'`, which is what keeps that safe. (Section 10 revises
+  the plain-http half of this.)
 - **Relative URLs are refused before the fetch.** `api.example.com/v1` would resolve against
   this origin and probe the app itself, so `isHttpUrl` gates both the probe and brain
   creation: "Enter a full URL, like https://api.example.com/v1."
@@ -155,3 +155,28 @@ Existing suites must pass unchanged except the two `.provider-choice` assertions
 - **Regression caught by the new tests:** the shared-fetch refactor had dropped
   `loopbackFetchHint` from `local-model-catalog.js`, which silently broke Ollama's `/api/show`
   vision probe. Fixed by exporting it from `model-endpoint.js`.
+
+## 10. Follow-up: a model on the local network (issue #16)
+
+The issue author's actual case was a phone on rabbithole.ing pointed at Ollama on a LAN IP.
+Section 9 assumed mixed content made that impossible. Measured in Chrome 149, it doesn't:
+
+- Mixed content is only a **warning** for a local-network request, not a block. The block is
+  Chrome's Local Network Access permission (shipped in 142) — "Access other devices on your
+  local network", Block/Allow. Denied, the fetch fails as `TypeError: Failed to fetch`, which
+  is indistinguishable from an unreachable host.
+- `Access-Control-Allow-Private-Network` is **not** required. The permission replaced it, so
+  Ollama needs nothing beyond `OLLAMA_HOST=0.0.0.0` and `OLLAMA_ORIGINS`. Verified against a
+  server sending exactly Ollama's headers and no more.
+- Therefore `connect-src` needs `http:`. The private ranges have no CSP pattern, and the
+  widening is small: from an https page the browser blocks plain http anyway except on this
+  machine and, behind that prompt, the local network.
+- `loopbackFetchHint` became `addressSpaceHint`, which also claims `"local"` for RFC 1918,
+  link-local, IPv6 ULA, and `.local`. It stays silent about anything that might resolve to
+  the public internet, including CGNAT (100.64/10, where Tailscale lives) — Chrome fails a
+  request whose declared address space doesn't match the one it resolves to.
+- `streamOpenAICompatible` never sent the hint at all, so generation would have failed at an
+  address discovery had just reached. Fixed, and pinned by a test.
+
+Not covered: Safari, which has no equivalent. On iOS the answer is to serve the build from
+the same machine, so page and endpoint are both plain http.

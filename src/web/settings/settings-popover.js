@@ -4,7 +4,7 @@ import { getApiKey } from "./credential-store.js";
 import { getGenerationSetupStatus, markGenerationSetupComplete } from "./setup-readiness.js";
 import { loadModelCatalog, searchModels, formatModelPrice, prettyModelId, SUGGESTED_MODEL_IDS, RECOMMENDED_MODEL_ID } from "../brain/model-catalog.js";
 import { discoverLocalModels } from "../brain/local-model-catalog.js";
-import { fetchOpenAICompatibleModels, isHttpUrl } from "../brain/model-endpoint.js";
+import { addressSpaceOf, fetchOpenAICompatibleModels, isHttpUrl } from "../brain/model-endpoint.js";
 import { PDF_TRANSCRIPTION_HELP, localVisionModels, pdfTranscriptionCapability } from "../brain/pdf-transcription.js";
 import { escapeHtml } from "../../core/utils.js";
 import { openPopover } from "../../ui/primitives/popover.js";
@@ -191,6 +191,11 @@ export function createSettingsPopover(options) {
     const status = Number(error?.status) || 0;
     if (status === 401 || status === 403) return hasKey ? "This endpoint rejected the key." : "This endpoint needs an API key.";
     if (status) return `Endpoint returned HTTP ${status}.`;
+    // A blocked local-network prompt fails exactly like an unreachable host, so the one
+    // line has to name the cause the user can actually act on first.
+    if (addressSpaceOf(baseUrl) === "local") {
+      return `Couldn't reach ${endpointHost(baseUrl)}. Allow local network access if your browser asked, and check that the server accepts requests from this page.`;
+    }
     return `Couldn't reach ${endpointHost(baseUrl)}. Check the URL, and that the server allows requests from this page.`;
   }
 

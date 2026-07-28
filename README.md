@@ -40,6 +40,27 @@ Keys never leave the browser: they're stored locally (or session-only, your
 choice) and sent exclusively to the provider origin you configure. Exports
 scrub anything credential-shaped.
 
+#### Pointing a phone at a model on your network
+
+The model doesn't have to run on the device you're reading on. Serve Ollama
+from a machine on your network and point **Custom** at it:
+
+```bash
+OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=https://rabbithole.ing ollama serve
+```
+
+Then open [rabbithole.ing](https://rabbithole.ing) on the phone and set the
+endpoint to `http://<that-machine's-lan-ip>:11434/v1` — for example
+`http://192.168.0.198:11434/v1`. The browser asks once whether the page may
+reach other devices on your local network; allow it. `OLLAMA_HOST=0.0.0.0` is
+what makes Ollama listen beyond its own machine, and `OLLAMA_ORIGINS` is what
+lets the page talk to it.
+
+This needs a browser that implements Local Network Access — Chrome 142 or
+newer, on desktop and Android. Safari has no equivalent, so on iOS run the
+browser version from that same machine over plain http instead (below), which
+sidesteps the question entirely.
+
 ### Run the browser version locally
 
 Requires Node 18+:
@@ -53,7 +74,9 @@ npx -y serve web/dist
 ```
 
 Open **[http://localhost:3000](http://localhost:3000)** (or the URL printed by
-`serve`). The local browser build has the same OpenRouter and
+`serve`). `serve` also prints a network URL — open that one from a phone or
+tablet on the same network and both the page and your model are plain http, so
+nothing has to be allowed or tunneled. The local browser build has the same OpenRouter and
 OpenAI-compatible local-model options as [rabbithole.ing](https://rabbithole.ing),
 and its documents and provider settings stay in that browser's local storage.
 

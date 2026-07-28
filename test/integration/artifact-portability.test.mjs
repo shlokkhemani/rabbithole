@@ -254,10 +254,9 @@ async function verifyPublishOutput() {
   assert.equal(headers.includes("/chunks/*"), false, "a chunk-free application must not publish dead chunk caching policy");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
-  assert(html.includes("connect-src 'self' blob: https: https://openrouter.ai https://api.github.com"), "web CSP should allow source-PDF blobs, any custom https endpoint, and the public GitHub star-count request");
+  assert(html.includes("connect-src 'self' blob: https: http: https://openrouter.ai https://api.github.com"), "web CSP should allow source-PDF blobs, any custom endpoint including one on the local network, and the public GitHub star-count request");
   assert(/script-src 'self' 'sha256-[^']+'/.test(html), "a broad connect-src is only safe while script-src stays locked to this origin");
   assert(html.includes("http://localhost:*") && html.includes("http://127.0.0.1:*"), "local endpoints stay reachable over plain http");
-  assert.equal(/connect-src[^;]*\bhttp:(?!\/\/(localhost|127\.0\.0\.1))/.test(html), false, "plain-http hosts beyond loopback must stay blocked");
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
   const entryVersions = [...html.matchAll(/(?:favicon\.svg|styles\.css|dompurify\.js|frozen-source\.js|app\.js)\?v=([a-f0-9]{12})/g)].map((match) => match[1]);
   assert.equal(entryVersions.length, 5, "every mutable browser entry asset should carry a content-derived version");

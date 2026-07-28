@@ -1,5 +1,6 @@
 import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages, buildTranscribeMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
+import { addressSpaceHint } from "./model-endpoint.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class OpenAICompatibleBrain {
@@ -85,7 +86,9 @@ export async function* streamOpenAICompatible({ url, apiKey, body, signal, extra
       headers["HTTP-Referer"] = globalThis.location?.origin || "https://rabbithole.ing";
       headers["X-Title"] = title;
     }
-    response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });
+    // Discovery reached this endpoint the same way; generation has to declare the same
+    // address space or the model list would load and every answer would fail.
+    response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal, ...addressSpaceHint(url) });
   } catch (err) {
     throw normalizeProviderError(err);
   }

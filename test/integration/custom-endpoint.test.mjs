@@ -109,6 +109,12 @@ async function verifyConnectStatesAndAuth() {
     await fillEndpoint(page, "https://nothing-here.example/v1");
     await waitForEndpointStatus(page, "Couldn't reach nothing-here.example. Check the URL, and that the server allows requests from this page.");
 
+    /* A denied local-network prompt fails identically to an unreachable host, and it is the
+       far likelier cause when the endpoint is a machine on the same network. */
+    await page.route("http://192.168.0.198:11434/v1/models", (route) => route.abort("failed"));
+    await fillEndpoint(page, "http://192.168.0.198:11434/v1");
+    await waitForEndpointStatus(page, "Couldn't reach 192.168.0.198:11434. Allow local network access if your browser asked, and check that the server accepts requests from this page.");
+
     await fillEndpoint(page, ENDPOINT);
     await waitForEndpointStatus(page, "This endpoint needs an API key.");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "api-key", "a 401 with no key should land the cursor in the key field");

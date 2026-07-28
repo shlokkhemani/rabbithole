@@ -27,3 +27,4 @@ scratchpad/
 # Nora extension build and package output
 out/
 artifacts/
+.vscode-test/

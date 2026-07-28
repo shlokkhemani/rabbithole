@@ -799,13 +799,13 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `test/support/budget-measurements.mjs`
 - Modify: `.gitignore`
 
-- [ ] Read all remaining imports before deletion. Port only still-used generic helpers from the old reducer/contracts into the Nora document or focused shared modules; retain `src/core/model.js` only for genuinely host-independent helpers and remove its old contract imports.
-- [ ] Delete tests only when the capability is obsolete or covered by a named Nora replacement. Retain renderer, document reducer, blocks, base URL, icons, PDF UI, snapshots, sanitization, performance, and Chromium primitive coverage.
-- [ ] Make `build` invoke only `scripts/build-nora.mjs`, remove `build:legacy`/`check:dist`, and keep `out/` and `artifacts/` ignored.
-- [ ] Delete old `.rabbithole` fixtures and compatibility assertions; retain no importer or hidden fallback.
-- [ ] Make `scripts/check-legacy-surfaces.mjs` fail when runtime/package/workflow code contains `.rabbithole`, `rabbithole`, old MCP tool names, `IndexedDB`, the fetch proxy, `RABBITHOLE_*`, `@napi-rs/canvas`, or website/deploy entries. Allow historical mentions only in `LICENSE`, `docs/SPEC.md`, ADRs, and this plan.
-- [ ] Update `tsconfig.json` to check all retained `src/**/*.js`, contract fixtures, and test support types without pointing at deleted paths.
-- [ ] Run `npm prune --omit=optional`, `npm run build`, `npm run check`, `npm test`, and `npm ls --all`; resolve missing, extraneous, or invalid production dependencies.
+- [x] Read all remaining imports before deletion. Port only still-used generic helpers from the old reducer/contracts into the Nora document or focused shared modules; retain `src/core/model.js` only for genuinely host-independent helpers and remove its old contract imports.
+- [x] Delete tests only when the capability is obsolete or covered by a named Nora replacement. Retain renderer, document reducer, blocks, base URL, icons, PDF UI, snapshots, sanitization, performance, and Chromium primitive coverage.
+- [x] Make `build` invoke only `scripts/build-nora.mjs`, remove `build:legacy`/`check:dist`, and keep `out/` and `artifacts/` ignored.
+- [x] Delete old `.rabbithole` fixtures and compatibility assertions; retain no importer or hidden fallback.
+- [x] Make `scripts/check-legacy-surfaces.mjs` fail when runtime/package/workflow code contains `.rabbithole`, `rabbithole`, old MCP tool names, `IndexedDB`, the fetch proxy, `RABBITHOLE_*`, `@napi-rs/canvas`, or website/deploy entries. Allow historical mentions only in `LICENSE`, `docs/SPEC.md`, ADRs, and this plan.
+- [x] Update `tsconfig.json` to check all retained `src/**/*.js`, contract fixtures, and test support types without pointing at deleted paths.
+- [x] Run `npm prune --omit=optional`, `npm run build`, `npm run check`, `npm test`, and `npm ls --all`; resolve missing, extraneous, or invalid production dependencies.
 
 ### Task 17: Replace CI and add single-artifact release publishing
 

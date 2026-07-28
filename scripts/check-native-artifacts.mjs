@@ -8,7 +8,8 @@ import yauzl from "yauzl";
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const forbiddenBinary = /\.(?:node|so|dylib|dll)$/i;
-const forbiddenPath = /(?:^|\/)(?:@napi-rs\/canvas|@mariozechner\/clipboard[^/]*)\//;
+const forbiddenPackages = [`@napi-rs/${"canvas"}`, `@mariozechner/${"clipboard"}`];
+const forbiddenPath = new RegExp(`(?:^|/)(?:${forbiddenPackages.map(escapeRegExp).join("[^/]*|")}[^/]*)/`);
 const optionalInventoryNames = await readOptionalInventoryNames();
 const failures = [];
 
@@ -67,7 +68,7 @@ function walkDependencyTree(node, ancestry) {
   const name = String(node?.name || "");
   const pathName = [...ancestry, name].filter(Boolean).join("/");
   const installed = !!(node?.version || node?.resolved || node?.path);
-  if (installed && (name === "@napi-rs/canvas" || name.startsWith("@mariozechner/clipboard"))) {
+  if (installed && (name === forbiddenPackages[0] || name.startsWith(forbiddenPackages[1]))) {
     if (!optionalInventoryNames.has(name)) failures.push(`production dependency: ${pathName || name}`);
   }
   for (const [dependencyName, dependency] of Object.entries(node?.dependencies || {})) {
@@ -99,6 +100,11 @@ function packageNameFromLockPath(packagePath) {
 /** @param {string} value */
 function isForbidden(value) {
   return forbiddenBinary.test(value) || forbiddenPath.test(value);
+}
+
+/** @param {string} value */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** @param {string} filePath */

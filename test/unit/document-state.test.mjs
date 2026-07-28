@@ -12,7 +12,6 @@ import {
   NEWER_NORA_DOCUMENT_MESSAGE,
   validateNoraDocument,
 } from "../../src/core/document-schema.js";
-import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../src/core/reducer.js";
 import { agentRunSummaryFixture } from "../fixtures/contracts/agent-run-fixture.js";
 import { noraDocumentFixture } from "../fixtures/contracts/document-fixture.js";
 import { evidenceRecordFixture, sourceRecordFixture } from "../fixtures/contracts/evidence-fixture.js";
@@ -173,20 +172,9 @@ function assertExpectedHydrationSubset(testCase, actualState) {
 
 for (let index = 0; index < legacyCases.length; index += 1) {
   const testCase = legacyCases[index];
-  let oldState = createHoleState(testCase.initial);
   let noraState = legacyInitialToNora(testCase.initial, index);
-  let oldEffects = {};
   let noraEffects = {};
-  let oldError = null;
   let noraError = null;
-  try {
-    for (const step of testCase.events) {
-      deepFreeze(oldState);
-      ({ state: oldState, effects: oldEffects } = reduceHoleEvent(oldState, step.event, step.options));
-    }
-  } catch (error) {
-    oldError = error;
-  }
   try {
     for (const step of testCase.events) {
       deepFreeze(noraState);
@@ -198,15 +186,12 @@ for (let index = 0; index < legacyCases.length; index += 1) {
   }
 
   if (testCase.expected_error) {
-    assert.equal(oldError?.message, testCase.expected_error, `${testCase.name}: old corpus sanity check`);
     assert.equal(noraError?.message, testCase.expected_error, `${testCase.name}: Nora adapter preserves expected error`);
     continue;
   }
-  assert.equal(oldError, null, `${testCase.name}: old reducer must not fail`);
   assert.equal(noraError, null, `${testCase.name}: Nora reducer must not fail`);
   assertExpectedHydrationSubset(testCase, noraState);
   assert.deepEqual(summarizeEffects(noraEffects), summarizeEffects(testCase.expected_effects), `${testCase.name}: effects`);
   assert.equal(validateNoraDocument(documentStateToPersisted(noraState)), true, `${testCase.name}: Nora state stays valid`);
-  assert.deepEqual(holeStateToHole(oldState), testCase.expected, `${testCase.name}: old corpus sanity fixed point`);
 }
-console.log(`ok document state: ${legacyCases.length} legacy reducer goldens are pinned through the Nora adapter`);
+console.log(`ok document state: ${legacyCases.length} renderer-event goldens are pinned through the Nora reducer adapter`);

@@ -9,8 +9,8 @@ import { iconSvg } from "./icons.js";
 export const CANVAS_SHELL = `
 <div id="taskbar">
   <div class="tb-pill" id="tb-tools">
-    ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes · S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
-    ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole · N", ariaLabel: "New Rabbithole", svgIconHtml: iconSvg("new") })}
+    ${iconButtonMarkup({ id: "t-rail", title: "Branches · S", ariaLabel: "Toggle branches", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
+    ${iconButtonMarkup({ id: "t-new", title: "New Nora document · N", ariaLabel: "New Nora document", svgIconHtml: iconSvg("new") })}
     <span class="sep" id="app-sep"></span>
     ${iconButtonMarkup({ id: "t-ask", title: "Ask", ariaLabel: "Ask", svgIconHtml: iconSvg("question") })}
     <span class="sep"></span>
@@ -81,7 +81,7 @@ export const CANVAS_SHELL = `
 <div id="palette" hidden><div id="palette-panel">
   <div class="pal-input">
     ${iconSvg("search")}
-    <input id="pal-text" placeholder="Search this Rabbithole…" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
+    <input id="pal-text" placeholder="Search this Nora document…" aria-label="Search this Nora document" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
     <kbd>esc</kbd>
   </div>
   <div id="pal-results" role="listbox" aria-label="Search results"></div>
@@ -92,7 +92,7 @@ export const CANVAS_SHELL = `
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-doc", role: "menuitem", tabIndex: -1, label: "Copy document as Markdown", svgIconHtml: '<span class="sm-ic">⧉</span>' })}
   <div class="sm-sep"></div>
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-export", role: "menuitem", tabIndex: -1, label: "Download snapshot (.html)", svgIconHtml: '<span class="sm-ic">⇩</span>' })}
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Rabbithole (.rabbithole)", svgIconHtml: '<span class="sm-ic">⇣</span>' })}
+  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Nora archive", svgIconHtml: '<span class="sm-ic">⇣</span>' })}
   <div class="sm-sep" id="sm-sep2"></div>
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-synth", role: "menuitem", tabIndex: -1, label: "Synthesize this journey", svgIconHtml: '<span class="sm-ic">✦</span>' })}
 </div>

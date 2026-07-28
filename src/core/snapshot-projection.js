@@ -1,33 +1,13 @@
 import { getAssetContentType } from "./assets.js";
 import { documentStateToHydrationNodes } from "./document-state.js";
 import { normalizeNoraNodeState, noraStateToRendererStatus, toPersistedNoraDocument } from "./document-schema.js";
-import { createPortableProjection } from "./portable-projection.js";
 import { extractNodeAssetRefs } from "./assets.js";
 
-/** @typedef {import("./contracts/artifact.js").PersistedHole} PersistedHole */
-/** @typedef {import("./contracts/artifact.js").PortableArtifact} PortableArtifact */
 /** @typedef {import("./contracts/document.js").NoraDocument} NoraDocument */
 /** @typedef {import("./contracts/document.js").NoraNode} NoraNode */
 
 const NORA_SNAPSHOT_FORMAT = "nora-snapshot";
 const NORA_SNAPSHOT_FORMAT_VERSION = 1;
-
-/**
- * @param {PersistedHole} hole
- * @param {PersistedHole["view_state"]} viewState
- * @param {Record<string, string>} assets
- * @returns {PortableArtifact}
- */
-export function createSnapshotProjection(hole, viewState, assets) {
-  const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
-  // Shares exclude personal extension state. Native PDF provenance is document
-  // content, not a preference, and is required to render the embedded source.
-  projection.hole = {
-    ...projection.hole,
-    nodes: projection.hole.nodes.map((node) => ({ ...node, extensions: node.extensions?.pdf ? { pdf: node.extensions.pdf } : {} })),
-  };
-  return projection;
-}
 
 /**
  * @param {NoraDocument} document
@@ -61,28 +41,10 @@ export function collectNoraSnapshotAssetNames(document) {
   return [...names].sort();
 }
 
-/** @param {PortableArtifact | ReturnType<typeof createNoraSnapshotProjection>} projection */
+/** @param {ReturnType<typeof createNoraSnapshotProjection>} projection */
 export function snapshotProjectionToFrozenHydration(projection) {
-  if (projection?.format === NORA_SNAPSHOT_FORMAT) return noraSnapshotProjectionToFrozenHydration(projection);
-  const portableProjection = /** @type {PortableArtifact} */ (projection);
-  const hole = portableProjection.hole;
-  /** @type {Record<string, string>} */
-  const assetData = {};
-  for (const [name, encoded] of Object.entries(portableProjection.assets)) {
-    assetData[name] = `data:${getAssetContentType(name)};base64,${encoded}`;
-  }
-  return {
-    session_id: `snapshot-${hole.hole_id}`,
-    hole_id: hole.hole_id,
-    title: hole.title,
-    root_id: hole.root_id,
-    last_event_id: 0,
-    agent_attached: false,
-    view_state: hole.view_state,
-    frozen: true,
-    asset_data: assetData,
-    nodes: hole.nodes,
-  };
+  if (projection?.format !== NORA_SNAPSHOT_FORMAT) throw new Error("Snapshot projection must use the Nora snapshot format");
+  return noraSnapshotProjectionToFrozenHydration(projection);
 }
 
 /** @param {ReturnType<typeof createNoraSnapshotProjection>} projection */

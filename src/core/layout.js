@@ -1,6 +1,6 @@
 import { BRANCH_FOLLOWUP, BRANCH_SELECTION, branchTypeOfNode } from "./model.js";
 
-/** @typedef {Omit<import("./contracts/engine.js").HoleNode, "origin"> & { origin?: { branch_type?: unknown, selected_text?: unknown } | null } & Record<string, any>} LayoutNode */
+/** @typedef {{ id: string, parent_id?: string | null, origin?: { branch_type?: unknown, selected_text?: unknown } | null, position?: { x?: unknown, y?: unknown }, size?: { w?: unknown, h?: unknown }, collapsed?: boolean } & Record<string, any>} LayoutNode */
 /** @typedef {{ minX: number, minY: number, maxX: number, maxY: number }} Bounds */
 /** @typedef {(nodeId: string) => LayoutNode[]} ChildrenOf */
 /** @typedef {(node: LayoutNode) => number} EffectiveHeight */

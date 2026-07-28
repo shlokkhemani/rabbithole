@@ -1,6 +1,6 @@
 import { normalizeBaseUrl, normalizeStoredBaseUrlFields } from "./base-url.js";
 import { normalizePosition, normalizeSize, normalizeViewState } from "./model.js";
-import { cloneJson } from "./schema.js";
+import { cloneJson } from "./utils.js";
 
 export const NORA_DOCUMENT_SCHEMA_VERSION = 1;
 export const NEWER_NORA_DOCUMENT_MESSAGE = "This Nora document was saved by a newer version of Nora -- update to open it.";

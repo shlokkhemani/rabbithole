@@ -252,7 +252,7 @@ function verifyConditionalSnapshotAssembly() {
     frozenClientSource: "window.NoraFrozenClient={startPortableSnapshot:function(){}};",
   };
   const without = buildSnapshotHtml({ ...common, snapshotProjection: noraProjectionWith("Plain prose") });
-  assert(!without.includes("rabbithole-mermaid-runtime"), "ordinary snapshots must not embed Mermaid");
+  assert(!without.includes("nora-mermaid-runtime"), "ordinary snapshots must not embed Mermaid");
   assert.throws(
     () => buildSnapshotHtml({ ...common, snapshotProjection: noraProjectionWith("```mermaid\nflowchart LR\nA-->B\n```") }),
     /Mermaid runtime is unavailable/,
@@ -261,7 +261,7 @@ function verifyConditionalSnapshotAssembly() {
     ...common,
     snapshotProjection: noraProjectionWith("````markdown\n```mermaid\nA-->B\n```\n````"),
   });
-  assert(!nestedExample.includes("rabbithole-mermaid-runtime"), "Mermaid examples inside outer code fences must not opt into the runtime");
+  assert(!nestedExample.includes("nora-mermaid-runtime"), "Mermaid examples inside outer code fences must not opt into the runtime");
 }
 
 async function buildMermaidSnapshot() {

@@ -64,8 +64,8 @@ const projection = JSON.parse(extractNoraSnapshotPayload(html));
 const root = projection.document.nodes.find((node) => node.id === projection.document.rootNodeId);
 const sourceAsset = root.extensions.pdf.source.asset;
 assert.equal(Buffer.from(projection.assets[sourceAsset], "base64").equals(sourceBytes), true, "snapshot must embed the original PDF byte-for-byte");
-assert.match(html, /id="rabbithole-pdfjs-runtime"/);
-assert.match(html, /id="rabbithole-pdf-worker-runtime"/);
+assert.match(html, /id="nora-pdfjs-runtime"/);
+assert.match(html, /id="nora-pdf-worker-runtime"/);
 
 const browser = await chromium.launch();
 try {

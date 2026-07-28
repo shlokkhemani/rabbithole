@@ -17,9 +17,8 @@ read-only frozen snapshots.
   and `asset:` URL resolution.
 - Nora documents are versioned in `src/core/document-schema.js` and persisted
   as `.nora` ZIP archives by `src/extension/archive/`.
-- Node-tree mutations shared by hosts live in `src/core/document-state.js`; it
-  delegates legacy-compatible renderer events to `src/core/reducer.js` during
-  the migration.
+- Node-tree mutations shared by hosts live in `src/core/document-state.js`;
+  renderer-style webview events are adapted there into Nora document state.
 - The VS Code webview posts validated messages through the extension protocol
   instead of HTTP/SSE.
 - Streaming uses full-markdown-so-far `node_progress.markdown` payloads. The

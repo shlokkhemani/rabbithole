@@ -4,7 +4,7 @@ const BASE_URL_KEYS = ["base_url", "canonical", "canonical_url", "source_url", "
 const VALID_BASE_SOURCES = new Set(["explicit", "frontmatter", "inherited"]);
 const SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 
-/** @typedef {{ base_url: string | null, base_url_source: import("./contracts/artifact.js").BaseUrlSource | null }} BaseFields */
+/** @typedef {{ base_url: string | null, base_url_source: import("./contracts/document.js").BaseUrlSource | null }} BaseFields */
 /** @typedef {Record<string, any>} LooseObject */
 
 /** @param {unknown} value @param {string} [paramName] */
@@ -107,7 +107,7 @@ export function inheritedNodeBaseUrl(parent) {
 
 /** @param {LooseObject | null | undefined} node @returns {BaseFields} */
 export function normalizeStoredBaseUrlFields(node) {
-  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? /** @type {import("./contracts/artifact.js").BaseUrlSource} */ (node?.base_url_source) : null;
+  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? /** @type {import("./contracts/document.js").BaseUrlSource} */ (node?.base_url_source) : null;
   const baseUrl = parseHttpBaseUrl(node?.base_url);
   return {
     base_url: source && baseUrl ? baseUrl : null,

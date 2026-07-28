@@ -27,7 +27,7 @@ export const AUTHORING_VOCABULARY_V1 = [
 ].join("\n");
 
 const AUTHORING_SYSTEM_PROMPT_V1 = [
-  "You are the document authoring Brain for Rabbithole, a branching-document canvas.",
+  "You are the document authoring agent for Nora, a branching-document canvas.",
   "Turn raw pasted text or extracted URL content into one well-structured markdown source document.",
   "",
   "Return markdown only. Do not wrap the document in a code fence and do not emit a TITLE sentinel.",
@@ -74,7 +74,7 @@ export function buildAuthorMessages(source = {}) {
         "Source content:",
         content || "(empty)",
         "",
-        "Author this source into a standalone Rabbithole markdown document.",
+        "Author this source into a standalone Nora markdown document.",
       ].join("\n"),
     },
   ];

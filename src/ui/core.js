@@ -298,10 +298,10 @@ export function isNoraRuntime(){
     return !!document.documentElement?.classList?.contains("nora-webview");
   }
 export function productName(){
-    return isNoraRuntime() ? "Nora" : "Rabbithole";
+    return "Nora";
   }
 export function documentKindLabel(){
-    return isNoraRuntime() ? "Nora document" : "Rabbithole";
+    return "Nora document";
   }
   var reduceMotion = false, reduceMotionMql = null;
   function setReduceMotion(e){ reduceMotion = !!(e && e.matches); }

@@ -35,7 +35,7 @@ var activeRuntime = null;
 function noop() {}
 function resolved() { return Promise.resolve({ ok: true }); }
 
-export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
+export function createNoraUi({ hydration, host, capabilities } = {}) {
   if (activeRuntime && !activeRuntime.disposed) {
     throw new Error("Dispose the active research UI before starting another one");
   }
@@ -145,5 +145,3 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     if (errors.length) throw new AggregateError(errors, "Research UI cleanup failed");
   }
 }
-
-export const createNoraUi = createRabbitholeUi;

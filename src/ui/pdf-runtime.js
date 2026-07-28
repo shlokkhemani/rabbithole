@@ -8,8 +8,8 @@ let pdfjsNetworkAttempts = 0;
 export async function loadPdfJsModule() {
   if (pdfjs) return pdfjs;
   if (!pdfjsPromise) {
-    const carrier = typeof document !== "undefined" && document.getElementById("rabbithole-pdfjs-runtime");
-    const source = globalThis.__RABBITHOLE_PDFJS_SOURCE__ || carrier?.textContent || "";
+    const carrier = typeof document !== "undefined" && document.getElementById("nora-pdfjs-runtime");
+    const source = globalThis.__NORA_PDFJS_SOURCE__ || carrier?.textContent || "";
     if (source && typeof Blob === "function" && globalThis.URL?.createObjectURL) {
       const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
       pdfjsPromise = import(url)
@@ -35,8 +35,8 @@ export async function loadPdfJsModule() {
 function configurePdfJs() {
   if (configured || !pdfjs) return;
   configured = true;
-  const carrier = typeof document !== "undefined" && document.getElementById("rabbithole-pdf-worker-runtime");
-  const source = globalThis.__RABBITHOLE_PDF_WORKER_SOURCE__ || carrier?.textContent || "";
+  const carrier = typeof document !== "undefined" && document.getElementById("nora-pdf-worker-runtime");
+  const source = globalThis.__NORA_PDF_WORKER_SOURCE__ || carrier?.textContent || "";
   if (source && typeof Blob === "function" && globalThis.URL?.createObjectURL) {
     workerObjectUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     pdfjs.GlobalWorkerOptions.workerSrc = workerObjectUrl;

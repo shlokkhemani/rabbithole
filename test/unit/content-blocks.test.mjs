@@ -475,7 +475,7 @@ async function assertPageAssembly() {
   assert(purify.includes("DOMPurify"), "built webview assets should include DOMPurify");
   assert(mermaid.includes("mermaid"), "built webview assets should include the lazy Mermaid runtime");
   assert(noraEntry.includes("mermaid.js"), "Nora entry should lazy-load Mermaid from the webview asset root");
-  assert(!html.includes('id="rabbithole-mermaid-runtime"'), "live Nora webviews should not embed the old inert Mermaid carrier");
+  assert(!html.includes('id="nora-mermaid-runtime"'), "live Nora webviews should not embed the inert Mermaid carrier");
 
   console.log("ok page assembly: DOMPurify and Nora webview assets are wired once");
 }

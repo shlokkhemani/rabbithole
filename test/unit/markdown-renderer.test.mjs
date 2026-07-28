@@ -172,7 +172,7 @@ async function assertPageAssembly() {
   assert(html.includes('href="vscode-resource:/out/webview/katex.css"'), "webview HTML should link the KaTeX stylesheet");
   assert(html.includes('src="vscode-resource:/out/webview/dompurify.js"'), "webview HTML should load DOMPurify through the CSP nonce");
   assert(html.includes('type="module" src="vscode-resource:/out/webview/nora-entry.js"'), "webview HTML should load the Nora entry module");
-  assert(noraEntry.includes("rabbithole-shared-markdown-renderer-v1"), "Nora webview bundle should include the shared renderer");
+  assert(noraEntry.includes("nora-shared-markdown-renderer-v1"), "Nora webview bundle should include the shared renderer");
   assert(frozenClient.includes("startPortableSnapshot"), "frozen snapshot client should expose snapshot hydration");
   assert(!noraEntry.includes("new EventSource"), "Nora webview bundle must not include the old SSE transport");
   assert(!noraEntry.includes("/sse"), "Nora webview bundle must not include the old SSE route");

@@ -4,12 +4,35 @@
  * Runtime authority: ../document-schema.js and ../document-state.js.
  */
 
-import type { BaseUrlSource, NodeSize, PersistedViewState, Position } from "./artifact.js";
 import type { AgentRunSummary } from "./agent-run.js";
 import type { EvidenceRecord, SourceRecord } from "./evidence.js";
 
 export type NoraDocumentSchemaVersion = 1;
 export type NoraNodeState = "pending" | "running" | "complete" | "cancelled" | "failed" | "interrupted";
+export type BaseUrlSource = "explicit" | "frontmatter" | "inherited";
+
+export interface Position {
+  x: number;
+  y: number;
+}
+
+export interface NodeSize {
+  w: number;
+  h: number;
+}
+
+export interface CanvasView {
+  x: number;
+  y: number;
+  scale: number;
+}
+
+export interface PersistedViewState {
+  mode: "canvas" | "reader";
+  node_id: string | null;
+  scroll: number;
+  view?: CanvasView;
+}
 
 export interface NoraNode {
   id: string;

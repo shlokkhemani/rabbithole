@@ -754,13 +754,14 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Delete: `scripts/build-publish.mjs`
 - Delete: `.github/workflows/deploy-pages.yml`
 - Delete: `test/contracts/fetch-proxy-worker.test.mjs`
+- Delete: `test/integration/artifact-portability.test.mjs`
 - Delete: `test/support/static-server.mjs`
 - Modify: `package.json`
 - Modify: `package-lock.json`
 - Modify: `.github/workflows/ci.yml`
 
-- [ ] Remove the fetch proxy, static-site build scripts, Pages/Cloudflare deployment, and their package scripts/dependencies.
-- [ ] Confirm CI no longer expects website artifacts, then run `npm run build`, `npm run check`, `npm test`, and `git diff --check`.
+- [x] Remove the fetch proxy, static-site build scripts, Pages/Cloudflare deployment, and their package scripts/dependencies.
+- [x] Confirm CI no longer expects website artifacts, then run `npm run build`, `npm run check`, `npm test`, and `git diff --check`.
 
 ### Task 16: Remove final legacy contracts/build scaffolding and enforce the Nora boundary
 

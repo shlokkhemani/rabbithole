@@ -432,19 +432,19 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
-- [ ] Validate global `nora.llm.profiles` entries with stable `id`, `label`, `provider`, `model`, optional `baseUrl`, optional Pi API type, and optional custom-model metadata. Reject duplicate IDs and secret-looking fields.
-- [ ] Reject profile `baseUrl` values containing URL userinfo or credential-bearing query parameters; the corporate endpoint is non-secret configuration and its token belongs only in SecretStorage.
-- [ ] Use SecretStorage keys `nora.llm.credential.<profile-id>` and store the Pi `Credential` JSON required for API-key or OAuth refresh. Never copy credentials into VS Code settings or `.nora`.
-- [ ] Implement a `ProfileCredentialStore(profileId, runtimeProviderId)` adapter for Pi's provider-keyed `CredentialStore` interface. Map `read`, `list`, serialized `modify`, and `delete` only for that runtime provider to `nora.llm.credential.<profile-id>` and reject other provider IDs; this keeps two profiles for the same provider isolated.
-- [ ] Build one `ModelRuntime` per active profile with `modelsPath: null`, `modelsStore: new InMemoryModelsStore()`, and model-catalog network refresh disabled. Register custom OpenAI-compatible profiles against the configured `baseUrl`, model, and selected `openai-completions` or `openai-responses` API; use `openai-completions` as the LiteLLM default.
-- [ ] Resolve built-in Anthropic and other Pi provider profiles from the Pi model catalog. Resolve `openai-codex` through Pi's provider-owned OAuth login and refresh.
-- [ ] Adapt Pi `AuthInteraction` to VS Code input boxes, quick picks, progress notifications, external authorization URLs, device codes, and cancellation.
-- [ ] Implement set credential, sign in, sign out, and select profile commands. Store only the selected profile ID in the document.
-- [ ] Refuse a run before constructing the runtime when the selected profile is missing, invalid, has no SecretStorage credential, or cannot resolve its exact model. Prompt for an explicit replacement; never silently fall back to `~/.pi/agent/models.json`, Pi credential files, or ambient provider environment variables.
-- [ ] At run start, copy non-secret provider, model, endpoint, and profile ID into immutable run provenance.
-- [ ] Ensure OutputChannel messages, thrown errors, snapshots, Markdown export, webview messages, and archive fixtures never contain Nora-managed API keys, access tokens, refresh tokens, or authorization headers.
-- [ ] Test profile validation, LiteLLM mapping, credential serialization, concurrent OAuth refresh mutation, Codex login interaction with fake provider flow, concurrent same-provider profile isolation, missing-profile refusal, and secret scans over exported artifacts/log messages. In a temporary home, create `.pi/agent/models.json` and Pi credential files and set provider API-key environment variables; prove all are ignored.
-- [ ] Run `node --test test/unit/llm-profiles.test.mjs test/contracts/llm-secret-boundary.test.mjs test/integration/llm-auth.test.mjs` and `npm run check:types`.
+- [x] Validate global `nora.llm.profiles` entries with stable `id`, `label`, `provider`, `model`, optional `baseUrl`, optional Pi API type, and optional custom-model metadata. Reject duplicate IDs and secret-looking fields.
+- [x] Reject profile `baseUrl` values containing URL userinfo or credential-bearing query parameters; the corporate endpoint is non-secret configuration and its token belongs only in SecretStorage.
+- [x] Use SecretStorage keys `nora.llm.credential.<profile-id>` and store the Pi `Credential` JSON required for API-key or OAuth refresh. Never copy credentials into VS Code settings or `.nora`.
+- [x] Implement a `ProfileCredentialStore(profileId, runtimeProviderId)` adapter for Pi's provider-keyed `CredentialStore` interface. Map `read`, `list`, serialized `modify`, and `delete` only for that runtime provider to `nora.llm.credential.<profile-id>` and reject other provider IDs; this keeps two profiles for the same provider isolated.
+- [x] Build one `ModelRuntime` per active profile with `modelsPath: null`, `modelsStore: new InMemoryModelsStore()`, and model-catalog network refresh disabled. Register custom OpenAI-compatible profiles against the configured `baseUrl`, model, and selected `openai-completions` or `openai-responses` API; use `openai-completions` as the LiteLLM default.
+- [x] Resolve built-in Anthropic and other Pi provider profiles from the Pi model catalog. Resolve `openai-codex` through Pi's provider-owned OAuth login and refresh.
+- [x] Adapt Pi `AuthInteraction` to VS Code input boxes, quick picks, progress notifications, external authorization URLs, device codes, and cancellation.
+- [x] Implement set credential, sign in, sign out, and select profile commands. Store only the selected profile ID in the document.
+- [x] Refuse a run before constructing the runtime when the selected profile is missing, invalid, has no SecretStorage credential, or cannot resolve its exact model. Prompt for an explicit replacement; never silently fall back to `~/.pi/agent/models.json`, Pi credential files, or ambient provider environment variables.
+- [x] At run start, copy non-secret provider, model, endpoint, and profile ID into immutable run provenance.
+- [x] Ensure OutputChannel messages, thrown errors, snapshots, Markdown export, webview messages, and archive fixtures never contain Nora-managed API keys, access tokens, refresh tokens, or authorization headers.
+- [x] Test profile validation, LiteLLM mapping, credential serialization, concurrent OAuth refresh mutation, Codex login interaction with fake provider flow, concurrent same-provider profile isolation, missing-profile refusal, and secret scans over exported artifacts/log messages. In a temporary home, create `.pi/agent/models.json` and Pi credential files and set provider API-key environment variables; prove all are ignored.
+- [x] Run `node --test test/unit/llm-profiles.test.mjs test/contracts/llm-secret-boundary.test.mjs test/integration/llm-auth.test.mjs` and `npm run check:types`.
 
 ### Task 7: Acquire immutable Git worktrees and generate forge permalinks
 

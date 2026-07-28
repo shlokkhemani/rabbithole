@@ -207,6 +207,11 @@ export class NoraDocument {
     return this.commitEvent(event, { history: false, runMutation: true });
   }
 
+  /** @param {string | null} profileId */
+  async selectProfile(profileId) {
+    await this.commitEvent({ type: "selected_profile", profile_id: profileId });
+  }
+
   async finishActiveRun() {
     await this.queue.enqueue(() => {
       if (!this.activeRun) return;

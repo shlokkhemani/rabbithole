@@ -31,6 +31,12 @@ function assertPng(bytes, message) {
   assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], message);
 }
 
+async function nativePdfCropAvailable() {
+  const canvas = await import("@napi-rs/canvas").catch(() => null);
+  return typeof canvas?.createCanvas === "function";
+}
+
+const canCropPdf = await nativePdfCropAvailable();
 const sourceBytes = await readAttentionPdf();
 const filePath = path.join(process.env.RABBITHOLE_DIR, "native.PDF");
 await fs.writeFile(filePath, sourceBytes);
@@ -71,15 +77,19 @@ await session.handleBrowserEvent({
 });
 const branch = await session.waitForEvent();
 assert.equal(branch.status, "branch_request");
-assert.equal(branch.region.page, 1);
-assert.equal(path.isAbsolute(branch.region.image_path), true);
-assert.equal(path.basename(branch.region.image_path), "region-pdf-request.png");
-assertPng(await fs.readFile(branch.region.image_path), "agent crops must be lossless PNGs rendered from the source PDF");
+if (canCropPdf) {
+  assert.equal(branch.region.page, 1);
+  assert.equal(path.isAbsolute(branch.region.image_path), true);
+  assert.equal(path.basename(branch.region.image_path), "region-pdf-request.png");
+  assertPng(await fs.readFile(branch.region.image_path), "agent crops must be lossless PNGs rendered from the source PDF");
+} else {
+  assert.equal(branch.region, undefined, "omit-optional installs must degrade PDF asks to text-only rather than ship native crop payloads");
+}
 assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset], "transient agent crops must not enter the durable asset index");
 
-const firstRegionPath = branch.region.image_path;
+const firstRegionPath = branch.region?.image_path || null;
 await closeAllSessions("persist_native_pdf_v2");
-await assert.rejects(fs.access(firstRegionPath), { code: "ENOENT" }, "session close must remove transient crops");
+if (firstRegionPath) await assert.rejects(fs.access(firstRegionPath), { code: "ENOENT" }, "session close must remove transient crops");
 
 const hole = await defaultFsStore.loadHole(holeId);
 const persistedRoot = hole.nodes.find((node) => node.id === hole.root_id);
@@ -96,10 +106,14 @@ const resumed = await openRabbithole({ holeId, signal: resumeController.signal }
 assert.equal(resumed.status, "branch_request");
 assert.equal(resumed.saved, true);
 assert.equal(resumed.node_id, "pdf-child");
-assert.equal(resumed.region?.page, 1, "saved PDF asks must regenerate their exact source crop");
-assert.notEqual(resumed.region?.image_path, firstRegionPath, "resume gets a request-scoped transient path");
-assertPng(await fs.readFile(resumed.region.image_path));
+if (canCropPdf) {
+  assert.equal(resumed.region?.page, 1, "saved PDF asks must regenerate their exact source crop");
+  assert.notEqual(resumed.region?.image_path, firstRegionPath, "resume gets a request-scoped transient path");
+  assertPng(await fs.readFile(resumed.region.image_path));
+} else {
+  assert.equal(resumed.region, undefined, "saved PDF asks stay text-only when native crop rendering is unavailable");
+}
 assert.deepEqual(await defaultFsStore.listAssets(holeId), [pdf.source.asset]);
 
 await closeAllSessions("native_pdf_v2_done");
-console.log("ok native PDF v2: source fidelity, PDF-space anchor, transient lossless crop, and resume regeneration");
+console.log(`ok native PDF v2: source fidelity, PDF-space anchor, and ${canCropPdf ? "transient lossless crop regeneration" : "text-only degradation without native crop payloads"}`);

@@ -98,7 +98,7 @@ async function waitForInitialize(child) {
   for (const line of outputLines) assert.doesNotThrow(() => JSON.parse(line));
 }
 
-const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-packaging-"));
+const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "nora-packaging-"));
 let child;
 try {
   const packDir = path.join(temporaryRoot, "pack");
@@ -109,6 +109,8 @@ try {
     fs.mkdir(projectDir),
     fs.mkdir(dataDir),
   ]);
+
+  await execFileAsync("npm", ["run", "build:nora"], { cwd: ROOT, maxBuffer: 20 * 1024 * 1024 });
 
   const { stdout: packOutput } = await execFileAsync(
     "npm",
@@ -121,6 +123,7 @@ try {
   const permittedPathPatterns = [
     /^bin\//,
     /^dist\//,
+    /^out\//,
     /^src\//,
     /^README\.md$/,
     /^LICENSE$/,
@@ -135,9 +138,16 @@ try {
     "README.md",
     "LICENSE",
     "bin/mcp-server.js",
+    "out/extension.cjs",
+    "out/extension.cjs.LEGAL.txt",
+    "out/webview/nora-entry.js",
+    "out/webview/nora-entry.js.LEGAL.txt",
+    "out/webview/frozen-client.js",
+    "out/webview/frozen-client.js.LEGAL.txt",
     ...(await filesBelow("src/node")),
     ...(await filesBelow("src/core")),
     ...(await filesBelow("dist")),
+    ...(await filesBelow("out/webview")),
   ];
   for (const requiredPath of requiredPaths) {
     assert.ok(packedPaths.has(requiredPath), `tarball is missing ${requiredPath}`);
@@ -145,7 +155,7 @@ try {
 
   await fs.writeFile(
     path.join(projectDir, "package.json"),
-    `${JSON.stringify({ name: "rabbithole-packaging-smoke", private: true }, null, 2)}\n`
+    `${JSON.stringify({ name: "nora-packaging-smoke", private: true }, null, 2)}\n`
   );
   const tarball = path.join(packDir, packResult.filename);
   await execFileAsync(
@@ -178,7 +188,7 @@ try {
   await waitForInitialize(child);
   child = undefined;
 
-  console.log(`ok packaging: asserted ${requiredPaths.length} paths and initialized installed rabbithole-mcp`);
+  console.log(`ok packaging: asserted ${requiredPaths.length} paths and initialized installed legacy rabbithole-mcp`);
 } finally {
   if (child && child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");

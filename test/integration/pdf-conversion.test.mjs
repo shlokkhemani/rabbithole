@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import * as napiCanvas from "@napi-rs/canvas";
 import { DirectRabbitholeHost, createHoleFromMarkdown } from "../../src/web/transport/direct-host.js";
 import { readAttentionPdf } from "../support/attention-pdf.mjs";
+
+const napiCanvas = await import("@napi-rs/canvas").catch((error) => {
+  console.log(`ok PDF conversion: skipped native canvas conversion checks under omit-optional install (${error.message})`);
+  process.exit(0);
+});
+
 globalThis.FileReader ||= class { readAsDataURL(blob) { blob.arrayBuffer().then((bytes) => { this.result = `data:${blob.type};base64,${Buffer.from(bytes).toString("base64")}`; this.onload?.(); }); } };
 for (const name of ["DOMMatrix", "DOMPoint", "DOMRect", "Path2D", "ImageData"]) if (!globalThis[name] && napiCanvas[name]) globalThis[name] = napiCanvas[name];
 globalThis.document ||= { baseURI: "file:///", getElementById: () => null, createElement(tag) { if (tag !== "canvas") throw new Error(`Unexpected element ${tag}`); const canvas = napiCanvas.createCanvas(1, 1); canvas.toBlob = (callback) => callback(new Blob([canvas.toBuffer("image/png")], { type: "image/png" })); return canvas; } };

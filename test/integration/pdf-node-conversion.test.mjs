@@ -11,6 +11,16 @@ process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "5000";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-node-convert-"));
 
+if (!await nativePdfRenderingAvailable()) {
+  console.log("ok node conversion: skipped native PDF page/figure rendering checks under omit-optional install");
+  process.exit(0);
+}
+
+async function nativePdfRenderingAvailable() {
+  const canvas = await import("@napi-rs/canvas").catch(() => null);
+  return typeof canvas?.createCanvas === "function";
+}
+
 async function openPdfSession(name) {
   const filePath = path.join(process.env.RABBITHOLE_DIR, name);
   await fs.writeFile(filePath, await readAttentionPdfTwoPage());

@@ -240,25 +240,25 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `.github/workflows/ci.yml`
 - Modify: `test/packaging/install-smoke.test.mjs`
 
-- [ ] First update `AGENTS.md` with transitional guidance: all new product code and copy use Nora/`.nora`; legacy Rabbithole hosts and compatibility rules remain only until their named removal tasks and do not apply to new Nora contracts.
-- [ ] Change package identity to `name: "nora"`, `displayName: "Nora"`, `publisher: "r13v"`, repository `https://github.com/r13v/Nora`, and `engines.vscode: "^1.130.0"` while retaining MIT licensing and upstream attribution.
-- [ ] Add `main: "./out/extension.cjs"`, `extensionKind: ["ui"]`, `capabilities.virtualWorkspaces.supported: false`, `capabilities.untrustedWorkspaces.supported: true`, and no `browser` entry. The untrusted-workspace declaration is intentional because Nora adds no Workspace Trust policy around user-selected MCP servers or skills.
-- [ ] Contribute custom editor view type `nora.research` for `*.nora`, commands `nora.newResearch`, `nora.undo`, `nora.redo`, `nora.ask`, `nora.selectProfile`, `nora.setCredential`, `nora.signIn`, `nora.signOut`, `nora.addRepository`, `nora.addAttachment`, `nora.exportMarkdown`, and `nora.exportSnapshot`.
-- [ ] Add global configuration `nora.llm.profiles` and `nora.mcp.directTools`. Keep secrets out of the configuration schema.
-- [ ] Implement `scripts/build-nora.mjs --outdir` to bundle `src/extension/extension.js` to CommonJS with `vscode` external, bundle `src/ui/nora-entry.js` and `src/ui/frozen-entry.js` for browsers, and copy only required CSS, PDF.js, Mermaid, DOMPurify, and KaTeX assets.
-- [ ] Emit and package esbuild `.LEGAL.txt` files for bundled third-party license comments; retain the repository `LICENSE` and do not strip required attribution from the VSIX.
-- [ ] Make `out/` and `artifacts/` generated and ignored. Preserve the existing `build.mjs`, committed `dist/`, static build, and `check:dist` during the vertical-slice migration; remove the static web branch with `src/web/` in Task 14 and the remaining legacy build/dist scaffolding in Task 16. Nora bundles must not be added to Git or packaged with old hosts.
-- [ ] Use `npm ci --omit=optional` as the documented install and release path. Configure bundling/ignore rules so Pi clipboard packages cannot enter the VSIX.
-- [ ] During migration, keep `build:legacy` for the existing root build, add `build:nora`, and make `build` run both. Add `check`, `check:types`, `check:purity`, `check:build`, `check:native`, `test:unit`, `test:contracts`, `test:integration`, `test:e2e`, `test:vscode`, `package:vsix`, `test:vsix`, and `test` without dropping legacy suites that still protect reused code.
-- [ ] Make `package:vsix` always write `artifacts/nora.vsix`; the extension version remains inside the manifest and is checked against a release tag.
-- [ ] Make `scripts/check-build.mjs` run `scripts/build-nora.mjs` twice into two temporary directories and compare sorted relative paths and SHA-256 hashes.
-- [ ] Make `scripts/check-native-artifacts.mjs` fail on `.node`, `.so`, `.dylib`, or `.dll` files and on `@napi-rs/canvas` or `@mariozechner/clipboard` paths in `out/`, the staged VSIX contents, or production dependency inventory.
-- [ ] Define a discriminated, runtime-validated extension↔webview message protocol in `src/extension/protocol.js`; reject unknown message types and malformed payloads.
-- [ ] Generate webview HTML with a nonce CSP, `localResourceRoots`, VS Code theme variables, and `webview.asWebviewUri`; do not enable arbitrary network access or inline executable script.
-- [ ] Adapt the temporary npm install smoke just enough for Nora package metadata and `out/` while it still initializes the legacy MCP entry; delete that old smoke only with the external-host removal in Task 13.
-- [ ] Move current CI to Linux/Node.js 24 and `npm ci --omit=optional`, but retain the old-host and browser coverage needed by the still-present migration code.
-- [ ] Add contract tests for valid/invalid protocol messages and package-content tests for the activation entry, webview assets, absence of sources/secrets/old host files, and forbidden native artifacts.
-- [ ] Run `npm install --omit=optional`, the existing full deterministic tests and packaging smoke, `npm run build`, `npm run check:types`, `npm run check:build`, and `node --test test/contracts/webview-protocol.test.mjs test/packaging/vsix-contents.test.mjs`.
+- [x] First update `AGENTS.md` with transitional guidance: all new product code and copy use Nora/`.nora`; legacy Rabbithole hosts and compatibility rules remain only until their named removal tasks and do not apply to new Nora contracts.
+- [x] Change package identity to `name: "nora"`, `displayName: "Nora"`, `publisher: "r13v"`, repository `https://github.com/r13v/Nora`, and `engines.vscode: "^1.130.0"` while retaining MIT licensing and upstream attribution.
+- [x] Add `main: "./out/extension.cjs"`, `extensionKind: ["ui"]`, `capabilities.virtualWorkspaces.supported: false`, `capabilities.untrustedWorkspaces.supported: true`, and no `browser` entry. The untrusted-workspace declaration is intentional because Nora adds no Workspace Trust policy around user-selected MCP servers or skills.
+- [x] Contribute custom editor view type `nora.research` for `*.nora`, commands `nora.newResearch`, `nora.undo`, `nora.redo`, `nora.ask`, `nora.selectProfile`, `nora.setCredential`, `nora.signIn`, `nora.signOut`, `nora.addRepository`, `nora.addAttachment`, `nora.exportMarkdown`, and `nora.exportSnapshot`.
+- [x] Add global configuration `nora.llm.profiles` and `nora.mcp.directTools`. Keep secrets out of the configuration schema.
+- [x] Implement `scripts/build-nora.mjs --outdir` to bundle `src/extension/extension.js` to CommonJS with `vscode` external, bundle `src/ui/nora-entry.js` and `src/ui/frozen-entry.js` for browsers, and copy only required CSS, PDF.js, Mermaid, DOMPurify, and KaTeX assets.
+- [x] Emit and package esbuild `.LEGAL.txt` files for bundled third-party license comments; retain the repository `LICENSE` and do not strip required attribution from the VSIX.
+- [x] Make `out/` and `artifacts/` generated and ignored. Preserve the existing `build.mjs`, committed `dist/`, static build, and `check:dist` during the vertical-slice migration; remove the static web branch with `src/web/` in Task 14 and the remaining legacy build/dist scaffolding in Task 16. Nora bundles must not be added to Git or packaged with old hosts.
+- [x] Use `npm ci --omit=optional` as the documented install and release path. Configure bundling/ignore rules so Pi clipboard packages cannot enter the VSIX.
+- [x] During migration, keep `build:legacy` for the existing root build, add `build:nora`, and make `build` run both. Add `check`, `check:types`, `check:purity`, `check:build`, `check:native`, `test:unit`, `test:contracts`, `test:integration`, `test:e2e`, `test:vscode`, `package:vsix`, `test:vsix`, and `test` without dropping legacy suites that still protect reused code.
+- [x] Make `package:vsix` always write `artifacts/nora.vsix`; the extension version remains inside the manifest and is checked against a release tag.
+- [x] Make `scripts/check-build.mjs` run `scripts/build-nora.mjs` twice into two temporary directories and compare sorted relative paths and SHA-256 hashes.
+- [x] Make `scripts/check-native-artifacts.mjs` fail on `.node`, `.so`, `.dylib`, or `.dll` files and on `@napi-rs/canvas` or `@mariozechner/clipboard` paths in `out/`, the staged VSIX contents, or production dependency inventory.
+- [x] Define a discriminated, runtime-validated extension↔webview message protocol in `src/extension/protocol.js`; reject unknown message types and malformed payloads.
+- [x] Generate webview HTML with a nonce CSP, `localResourceRoots`, VS Code theme variables, and `webview.asWebviewUri`; do not enable arbitrary network access or inline executable script.
+- [x] Adapt the temporary npm install smoke just enough for Nora package metadata and `out/` while it still initializes the legacy MCP entry; delete that old smoke only with the external-host removal in Task 13.
+- [x] Move current CI to Linux/Node.js 24 and `npm ci --omit=optional`, but retain the old-host and browser coverage needed by the still-present migration code.
+- [x] Add contract tests for valid/invalid protocol messages and package-content tests for the activation entry, webview assets, absence of sources/secrets/old host files, and forbidden native artifacts.
+- [x] Run `npm install --omit=optional`, the existing full deterministic tests and packaging smoke, `npm run build`, `npm run check:types`, `npm run check:build`, and `node --test test/contracts/webview-protocol.test.mjs test/packaging/vsix-contents.test.mjs`.
 
 ### Task 2: Replace Rabbithole persistence vocabulary with Nora document contracts
 

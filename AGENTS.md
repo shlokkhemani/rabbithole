@@ -5,6 +5,14 @@ need to clone or build anything. Follow the Quick start in [README.md](./README.
 (one `claude mcp add` / `codex mcp add` line). This file is for agents
 **developing** the repo.
 
+## Nora migration guidance
+
+All new product code and copy use **Nora** and `.nora`. Legacy Rabbithole hosts,
+storage, and `.rabbithole` compatibility rules remain only until their named
+removal tasks in `docs/plans/20260728-nora-vscode-research-extension.md`; do
+not apply those legacy contracts to new Nora extension, archive, or webview
+boundaries.
+
 ## What this is
 
 An MCP server (stdio) that opens a branching-document canvas in the browser.

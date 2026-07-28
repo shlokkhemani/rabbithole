@@ -1,28 +1,177 @@
 {
-  "name": "rabbithole",
+  "name": "nora",
   "version": "0.1.0",
   "type": "module",
-  "description": "An infinite canvas for learning. Start from a document, select text, ask, and the answer branches out as a child document. Recurse forever.",
+  "description": "A VS Code research canvas for .nora documents.",
   "license": "MIT",
   "author": "Shlok Khemani",
-  "homepage": "https://rabbithole.ing",
+  "homepage": "https://github.com/r13v/Nora#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shlokkhemani/rabbithole.git"
+    "url": "https://github.com/r13v/Nora"
+  },
+  "displayName": "Nora",
+  "publisher": "r13v",
+  "main": "./out/extension.cjs",
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onCustomEditor:nora.research",
+    "onCommand:nora.newResearch",
+    "onCommand:nora.undo",
+    "onCommand:nora.redo",
+    "onCommand:nora.ask",
+    "onCommand:nora.selectProfile",
+    "onCommand:nora.setCredential",
+    "onCommand:nora.signIn",
+    "onCommand:nora.signOut",
+    "onCommand:nora.addRepository",
+    "onCommand:nora.addAttachment",
+    "onCommand:nora.exportMarkdown",
+    "onCommand:nora.exportSnapshot"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false
+    },
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "nora.research",
+        "displayName": "Nora Research Canvas",
+        "selector": [
+          {
+            "filenamePattern": "*.nora"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "nora.newResearch",
+        "title": "New Research",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.undo",
+        "title": "Undo",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.redo",
+        "title": "Redo",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.ask",
+        "title": "Ask Nora",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.selectProfile",
+        "title": "Select Profile",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.setCredential",
+        "title": "Set Credential",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.signIn",
+        "title": "Sign In",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.signOut",
+        "title": "Sign Out",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.addRepository",
+        "title": "Add Repository",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.addAttachment",
+        "title": "Add Attachment",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.exportMarkdown",
+        "title": "Export Markdown",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.exportSnapshot",
+        "title": "Export Snapshot",
+        "category": "Nora"
+      }
+    ],
+    "configuration": {
+      "title": "Nora",
+      "properties": {
+        "nora.llm.profiles": {
+          "type": "array",
+          "default": [],
+          "description": "Named Nora LLM profiles. Credentials are stored separately in VS Code SecretStorage.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "endpoint": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "nora.mcp.directTools": {
+          "type": "array",
+          "default": [],
+          "description": "Nora MCP tool names that may be called directly.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
   },
   "scripts": {
-    "build": "node build.mjs",
+    "build": "npm run build:legacy && npm run build:nora",
+    "build:legacy": "node build.mjs",
+    "build:nora": "node scripts/build-nora.mjs --outdir out",
     "build:publish": "node scripts/build-publish.mjs",
+    "check": "npm run check:types && npm run check:purity && npm run check:build && npm run check:native && npm run check:dist",
     "check:dist": "node scripts/check-dist.mjs",
+    "check:build": "node scripts/check-build.mjs",
+    "check:native": "node scripts/check-native-artifacts.mjs",
     "check:purity": "node scripts/check-ui-purity.mjs",
     "check:types": "tsc --noEmit",
-    "test": "npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e && npm run test:performance && npm run test:packaging",
+    "test": "npm run build && npm run check && npm run test:unit && npm run test:contracts && npm run test:integration && npm run test:e2e && npm run test:performance && npm run test:packaging",
     "test:unit": "node test/unit/hole-id.test.mjs && node test/unit/markdown-renderer.test.mjs && node test/unit/content-blocks.test.mjs && node test/unit/base-url.test.mjs && node test/unit/icons.test.mjs && node test/unit/pdf-provenance.test.mjs && node test/unit/pdf-selection.test.mjs && node test/unit/pdf-ingest-staging.test.mjs && node test/unit/pdf-import-error.test.mjs && node test/unit/pdf-transcription-capability.test.mjs && node test/unit/provider-registry.test.mjs && node test/unit/preferences-store.test.mjs && node test/unit/model-endpoint.test.mjs && node test/unit/ollama-diagnostics.test.mjs && node test/unit/reducer.test.mjs && node test/unit/lifecycle.test.mjs",
-    "test:contracts": "node test/contracts/prompts.test.mjs && node test/contracts/assets.test.mjs && node test/contracts/mcp-markdown-wire.test.mjs && node test/contracts/filesystem-store.test.mjs && node test/contracts/indexeddb-store.test.mjs && node test/contracts/data-boundaries.test.mjs && node test/contracts/artifact-roundtrip.test.mjs && node test/contracts/compatibility-security.test.mjs && node test/contracts/fetch-proxy-worker.test.mjs && node test/contracts/ui-bundle-boundaries.test.mjs",
+    "test:contracts": "node test/contracts/prompts.test.mjs && node test/contracts/assets.test.mjs && node test/contracts/mcp-markdown-wire.test.mjs && node test/contracts/filesystem-store.test.mjs && node test/contracts/indexeddb-store.test.mjs && node test/contracts/data-boundaries.test.mjs && node test/contracts/artifact-roundtrip.test.mjs && node test/contracts/compatibility-security.test.mjs && node test/contracts/fetch-proxy-worker.test.mjs && node test/contracts/ui-bundle-boundaries.test.mjs && node test/contracts/webview-protocol.test.mjs",
     "test:integration": "node test/integration/pdf-ingestion.test.mjs && node test/integration/pdf-conversion.test.mjs && node test/integration/pdf-node-conversion.test.mjs && node test/integration/pdf-portability-caps.test.mjs && node test/integration/pdf-gc.test.mjs && node test/integration/pdf-precision.test.mjs && node test/integration/pdf-snapshot.test.mjs && node test/integration/image-experience.test.mjs && node test/integration/mermaid-rendering.test.mjs && node test/integration/mcp-rearm.test.mjs && node test/integration/web-ingestion.test.mjs && node test/integration/custom-endpoint.test.mjs && node test/integration/artifact-portability.test.mjs && node test/integration/generation-lifecycle.test.mjs",
     "test:e2e": "node test/e2e/web-app-setup.test.mjs && node test/e2e/enter-composition.test.mjs && node test/e2e/web-app-learning.test.mjs && node test/e2e/web-app-canvas-sharing.test.mjs && node test/e2e/ui-primitives-browsers.test.mjs && node test/e2e/cross-host-journey.test.mjs && node test/e2e/reducer-browser-parity.test.mjs",
+    "test:vscode": "node -e \"console.log('test:vscode deferred until Task 4')\"",
+    "package:vsix": "npm run build:nora && node -e \"require('node:fs').mkdirSync('artifacts',{recursive:true})\" && vsce package --no-dependencies --out artifacts/nora.vsix && npm run check:native",
+    "test:vsix": "node -e \"console.log('test:vsix deferred until Task 17')\"",
     "test:performance": "node test/performance/budgets.test.mjs",
-    "test:packaging": "node test/packaging/install-smoke.test.mjs",
+    "test:packaging": "node test/packaging/install-smoke.test.mjs && node test/packaging/vsix-contents.test.mjs",
     "calibrate:budgets": "node test/support/calibrate-budgets.mjs",
     "eval": "node test/evals/run-eval.mjs"
   },
@@ -38,33 +187,36 @@
   "bin": {
     "rabbithole-mcp": "./bin/mcp-server.js"
   },
-  "files": [
-    "bin",
-    "dist",
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.82.1",
     "@mermaid-js/tiny": "11.16.0",
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dotenv": "17.4.2",
     "dompurify": "^3.4.11",
     "highlight.js": "^11.11.1",
+    "jsonc-parser": "3.3.1",
     "katex": "^0.17.0",
     "marked": "^15.0.7",
     "pdfjs-dist": "^4.0.379",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1",
     "zod": "^3.24.2"
   },
   "engines": {
-    "node": ">=18"
-  },
-  "optionalDependencies": {
-    "@napi-rs/canvas": "^1.0.2"
+    "node": ">=24",
+    "vscode": "^1.130.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.2",
+    "@types/vscode": "1.125.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "3.9.2",
+    "actionlint": "2.0.6",
     "esbuild": "0.28.1",
     "fake-indexeddb": "^6.2.5",
-    "playwright": "^1.61.1",
+    "mocha": "11.7.6",
+    "ovsx": "1.0.2",
+    "playwright": "1.62.0",
     "typescript": "5.9.3"
   }
 }

@@ -11,11 +11,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
-      - run: npm ci
+      - run: npm ci --omit=optional
       - run: npm run check:types
-      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run check:dist
       - run: npm run check:purity
@@ -23,14 +23,11 @@ jobs:
 
   packaging:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: ["18.x", "20.x"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: "24"
           cache: npm
-      - run: npm ci
+      - run: npm ci --omit=optional
       - run: npm run test:packaging

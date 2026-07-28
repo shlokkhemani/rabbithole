@@ -23,3 +23,7 @@ website/next-env.d.ts
 web/dist/
 publish/
 scratchpad/
+
+# Nora extension build and package output
+out/
+artifacts/

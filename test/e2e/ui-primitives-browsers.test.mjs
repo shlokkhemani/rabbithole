@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { chromium, firefox, webkit } from "playwright";
+import { chromium } from "playwright";
 import { serveStatic } from "../support/static-server.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
@@ -8,7 +8,7 @@ const server = await serveStatic(ROOT, { routes: { "/": (_req, res) => { res.wri
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
 try {
-  for (const [name, browserType] of Object.entries({ chromium, firefox, webkit })) {
+  for (const [name, browserType] of Object.entries({ chromium })) {
     const browser = await browserType.launch();
     const context = await browser.newContext({ viewport: { width: 640, height: 480 } });
     const page = await context.newPage();

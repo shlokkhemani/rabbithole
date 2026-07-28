@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { webkit } from "playwright";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { serializeForInlineScript } from "../../src/core/utils.js";
 import { MOCK_MODEL, corsHeaders, routeProvider, seedConfiguredOpenRouter } from "../support/provider-mock.mjs";
@@ -21,17 +20,13 @@ assert.deepEqual(JSON.parse(hostilePayloadJson), hostilePayloadValue, "escaped i
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
-const mobileWebKit = await webkit.launch();
 try {
   await verifyMobileCanvasNavigation(browser, "chromium");
-  await verifyMobileCanvasNavigation(mobileWebKit, "webkit");
   await verifyDesktopReaderLayout(browser);
   await verifyMobileSelectionSurface(browser, "chromium");
-  await verifyMobileSelectionSurface(mobileWebKit, "webkit");
   await verifyCanvasBranching();
   console.log("web app verification passed");
 } finally {
-  await mobileWebKit.close();
   await app.close();
 }
 

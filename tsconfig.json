@@ -11,6 +11,7 @@
   },
   "include": [
     "src/core/**/*.js",
+    "src/extension/**/*.js",
     "src/core/contracts/artifact.d.ts",
     "src/core/contracts/store.d.ts",
     "src/core/contracts/engine.d.ts",

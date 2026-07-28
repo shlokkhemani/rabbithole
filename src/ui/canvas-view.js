@@ -229,7 +229,7 @@ export function createNodeEl(node, enter){
 
     enableDrag(node, head);
     enableResize(node, resize);
-    head.addEventListener("dblclick", function(){ openNode(node.id); });
+    head.addEventListener("dblclick", function(e){ if (onCardControl(e)) return; openNode(node.id); });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });
@@ -464,10 +464,14 @@ function layoutNode(node){
     if (scope) scope.listen(handle, "pointerdown", pointerDown);
     else handle.addEventListener("pointerdown", pointerDown);
   }
+  // The head carries the card's own gestures — drag it, double-click to open — but it also
+  // holds the controls, and a pointer that lands on one of those is operating the control,
+  // not the card. Every head gesture owes that distinction the same answer.
+  function onCardControl(e){ return !!e.target.closest(".node-btn"); }
   function enableDrag(node, handle){
     var sx, sy, ox, oy;
     onPointerGesture(handle,
-      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
+      function(e){ if (e.button !== 0 || onCardControl(e)) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
       function(ev){ node.x = ox + (ev.clientX - sx) / view.scale; node.y = oy + (ev.clientY - sy) / view.scale; layoutNode(node); scheduleEdges(); },
       function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
   }

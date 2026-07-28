@@ -903,6 +903,15 @@ async function verifyAskKeyUxAndRail() {
   const mutationPortable = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
   assert.equal(mutationPortable.hole.nodes.find((node) => node.id === rootIdWhileLoading)?.font_scale, 1.1,
     `immediate portable export must flush the canonical document mutation (root=${rootIdWhileLoading}, nodes=${JSON.stringify(mutationPortable.hole.nodes)})`);
+  /* A second quick click on a card control also emits a dblclick, which the head reads as
+     "open this document" — so the fast way to nudge type size must not eject you to Reader. */
+  await page.dblclick('.node-btn[aria-label="Larger text"]');
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true,
+    "double-clicking a card control must stay on the canvas");
+  const doubleClickedFontScale = (await page.evaluate(() => window.__rabbitholeTest.exportPortable()))
+    .hole.nodes.find((node) => node.id === rootIdWhileLoading)?.font_scale;
+  assert.equal(Number(doubleClickedFontScale.toFixed(2)), 1.3,
+    `both clicks of a double-click must still reach the control (got ${doubleClickedFontScale})`);
   const persistedViewBeforeLiveChange = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).view_state);
   await page.dblclick(`.node[data-id="${rootIdWhileLoading}"] .node-head`);
   await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));

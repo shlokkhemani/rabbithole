@@ -195,7 +195,7 @@
     "package:vsix": "npm run build:nora && node -e \"require('node:fs').mkdirSync('artifacts',{recursive:true})\" && vsce package --no-dependencies --out artifacts/nora.vsix && npm run check:native",
     "test:vsix": "node test/packaging/vsix-install-smoke.test.mjs",
     "test:performance": "node test/performance/budgets.test.mjs",
-    "test:packaging": "node test/packaging/vsix-contents.test.mjs",
+    "test:packaging": "node test/packaging/vsix-contents.test.mjs && node test/packaging/package-boundaries.test.mjs",
     "calibrate:budgets": "node test/support/calibrate-budgets.mjs"
   },
   "keywords": [

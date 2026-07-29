@@ -852,24 +852,24 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `test/performance/budgets.test.mjs`
 - Modify: `test/budgets.json`
 
-- [ ] Run the packaged journey: create `.nora`, select an LLM profile, attach a PDF, add two local Git repositories, ask from a selected node through a fake Pi model, invoke a fake MCP resource/tool, capture code evidence, follow up, cancel a second run, save, close, reopen, export Markdown/snapshot, and verify all retained state.
-- [ ] Prove two documents can run concurrently while one document rejects a second simultaneous run.
-- [ ] Prove a malicious/corrupt archive, webview message, Markdown payload, repo path, and MCP result cannot escape its validation/sanitization boundary.
-- [ ] With fake providers/MCP/Git and network interception enabled, prove Nora makes no telemetry, crash-report, update-check, or unrelated catalog request.
-- [ ] Scan unpacked VSIX contents for secrets, old hosts, native binaries, source maps with local paths, uncommitted generated files, and files outside the package allowlist.
-- [ ] Rebaseline performance budgets only for meaningful Nora measures: extension activation, minimal/representative archive open/save, webview hydration, streaming batching, snapshot size, and VSIX size. Record rationale and baseline commit.
-- [ ] Run `npm ci --omit=optional`.
-- [ ] Run `npm run build`.
-- [ ] Run `npm run check`.
-- [ ] Run `npm run test:unit`.
-- [ ] Run `npm run test:contracts`.
-- [ ] Run `npm run test:integration`.
-- [ ] Run `npm run test:e2e`.
-- [ ] Run `xvfb-run -a npm run test:vscode`.
-- [ ] Run `npm run package:vsix`.
-- [ ] Run `xvfb-run -a npm run test:vsix`.
-- [ ] Run `node scripts/check-pi-runtime-assets.mjs` and `npm run check:native`.
-- [ ] Run `git diff --check` and confirm `git status --short` contains no generated `out/`, `artifacts/`, `dist/`, or `web/dist` file.
+- [x] Run the packaged journey: create `.nora`, select an LLM profile, attach a PDF, add two local Git repositories, ask from a selected node through a fake Pi model, invoke a fake MCP resource/tool, capture code evidence, follow up, cancel a second run, save, close, reopen, export Markdown/snapshot, and verify all retained state.
+- [x] Prove two documents can run concurrently while one document rejects a second simultaneous run.
+- [x] Prove a malicious/corrupt archive, webview message, Markdown payload, repo path, and MCP result cannot escape its validation/sanitization boundary.
+- [x] With fake providers/MCP/Git and network interception enabled, prove Nora makes no telemetry, crash-report, update-check, or unrelated catalog request.
+- [x] Scan unpacked VSIX contents for secrets, old hosts, native binaries, source maps with local paths, uncommitted generated files, and files outside the package allowlist.
+- [x] Rebaseline performance budgets only for meaningful Nora measures: extension activation, minimal/representative archive open/save, webview hydration, streaming batching, snapshot size, and VSIX size. Record rationale and baseline commit.
+- [x] Run `npm ci --omit=optional`.
+- [x] Run `npm run build`.
+- [x] Run `npm run check`.
+- [x] Run `npm run test:unit`.
+- [x] Run `npm run test:contracts`.
+- [x] Run `npm run test:integration`.
+- [x] Run `npm run test:e2e`.
+- [x] Run `xvfb-run -a npm run test:vscode` (local note: `xvfb-run` is unavailable on this macOS environment, so the VS Code suite was validated with `npm run test:vscode` directly).
+- [x] Run `npm run package:vsix`.
+- [x] Run `xvfb-run -a npm run test:vsix` (local note: `xvfb-run` is unavailable on this macOS environment, so the installed VSIX smoke was validated with `npm run test:vsix` directly).
+- [x] Run `node scripts/check-pi-runtime-assets.mjs` and `npm run check:native`.
+- [x] Run `git diff --check` and confirm `git status --short` contains no generated `out/`, `artifacts/`, `dist/`, or `web/dist` file.
 
 ### Task 19: Finalize product and contributor documentation
 

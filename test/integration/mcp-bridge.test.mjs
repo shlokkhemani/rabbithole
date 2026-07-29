@@ -203,6 +203,59 @@ test("MCP bridge propagates cancellation and enforces reconnect and config-rotat
   await assert.rejects(() => connection.callTool("echo", {}), /transport failed/);
   assert.equal(attempts.filter((entry) => entry === "connect").length, 3);
 
+  const staleAttempts = [];
+  const connectResolvers = [];
+  let clientSeq = 0;
+  class SlowClient {
+    constructor() {
+      this.id = ++clientSeq;
+    }
+    async connect() {
+      staleAttempts.push(`connect-${this.id}`);
+      await new Promise((resolve) => connectResolvers.push(resolve));
+    }
+    async listTools() {
+      staleAttempts.push(`list-${this.id}`);
+      return { tools: [{ name: `tool-${this.id}` }] };
+    }
+    async close() {
+      staleAttempts.push(`client-close-${this.id}`);
+    }
+  }
+  class SlowTransport {
+    constructor() {
+      this.id = clientSeq + 1;
+    }
+    async close() {
+      staleAttempts.push(`transport-close-${this.id}`);
+    }
+  }
+  const staleConnection = new NoraMcpConnection({
+    server: {
+      name: "stale",
+      type: "stdio",
+      command: "node",
+      args: [],
+      cwd: undefined,
+      env: {},
+      fingerprint: "stale",
+    },
+    ClientCtor: SlowClient,
+    StdioClientTransportCtor: SlowTransport,
+    maxReconnectAttempts: 1,
+    callTimeoutMs: 100,
+  });
+  const listedTools = staleConnection.listTools();
+  await waitFor(() => connectResolvers.length === 1);
+  staleConnection.markStale();
+  connectResolvers[0]();
+  await waitFor(() => connectResolvers.length === 2);
+  connectResolvers[1]();
+  assert.deepEqual(await listedTools, [{ name: "tool-2" }]);
+  assert.deepEqual(staleAttempts.filter((entry) => entry.startsWith("list-")), ["list-2"]);
+  assert(staleAttempts.includes("client-close-1"), "stale startup client is closed instead of reused");
+  await staleConnection.close();
+
   const fakeConnection = {
     stale: false,
     closed: 0,

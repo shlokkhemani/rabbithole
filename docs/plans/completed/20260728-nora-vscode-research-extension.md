@@ -142,7 +142,7 @@ Task 1 establishes the script names and source suites. `test:vscode` becomes run
 - Testing choice: regular implementation with tests in the same task, not strict test-first development.
 - Assumption: Marketplace/Open VSX identity is `r13v.nora`, derived from the repository owner. `package.json` uses publisher `r13v` and extension name `nora`.
 - Assumption: architecture-neutral WebAssembly is compatible with “universal VSIX without native runtime dependencies”; platform-specific native binaries are not.
-- Accepted boundary: `capabilities.untrustedWorkspaces.supported: true` is deliberate. Nora does not add a Workspace Trust gate around user-selected skills or MCP servers; the user owns that security decision.
+- Review update: `capabilities.untrustedWorkspaces.supported: false` because Nora can start workspace-defined MCP stdio servers and skills. Nora still adds no separate MCP approval or side-effect policy once the workspace is trusted.
 - Assumption: only local `file:` documents are supported in v1 because Remote SSH, Dev Containers, Codespaces, virtual workspaces, and web extensions are non-goals.
 - Assumption: for a `.nora` file outside all workspace folders, one workspace folder is used automatically when exactly one exists; in a multi-root workspace Nora asks which folder supplies `.vscode/mcp.json` and `.agents/skills` for the active VS Code session. That choice is not persisted as an absolute path in `.nora`.
 - MCP configuration boundary: Nora supports stdio and Streamable HTTP `servers`, `envFile`, headers, standard workspace/env/home/input substitution, and prompt/select/command inputs held only in memory. It clearly rejects legacy SSE, VS Code `sandbox`, development-server configuration, and automated OAuth flows. Authenticated HTTP remains possible through user-supplied headers, environment values, and inputs; Nora does not persist them.
@@ -172,7 +172,7 @@ The isolated review on 2026-07-28 was applied before implementation:
 - legacy deletion is split into four bounded, testable cutovers and the static build stops consuming `src/web/` before that source tree is deleted;
 - `npm test`, VS Code integration, and installed-VSIX smoke have executable ordering.
 
-The reviewer’s suggestion to disable untrusted workspaces was not applied because the accepted product decision explicitly leaves MCP/skill trust to the user and adds no Nora Workspace Trust gate.
+The later code review changed the workspace-trust boundary: Nora now disables untrusted workspaces because workspace MCP and skills may execute local commands. The MCP approval and side-effect boundary remains unchanged after the workspace is trusted.
 
 ## Development Approach
 
@@ -242,7 +242,7 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 
 - [x] First update `AGENTS.md` with transitional guidance: all new product code and copy use Nora/`.nora`; legacy Rabbithole hosts and compatibility rules remain only until their named removal tasks and do not apply to new Nora contracts.
 - [x] Change package identity to `name: "nora"`, `displayName: "Nora"`, `publisher: "r13v"`, repository `https://github.com/r13v/Nora`, and `engines.vscode: "^1.130.0"` while retaining MIT licensing and upstream attribution.
-- [x] Add `main: "./out/extension.cjs"`, `extensionKind: ["ui"]`, `capabilities.virtualWorkspaces.supported: false`, `capabilities.untrustedWorkspaces.supported: true`, and no `browser` entry. The untrusted-workspace declaration is intentional because Nora adds no Workspace Trust policy around user-selected MCP servers or skills.
+- [x] Add `main: "./out/extension.cjs"`, `extensionKind: ["ui"]`, `capabilities.virtualWorkspaces.supported: false`, `capabilities.untrustedWorkspaces.supported: false`, and no `browser` entry. Nora relies on VS Code Workspace Trust before workspace MCP servers, skills, or repositories are used.
 - [x] Contribute custom editor view type `nora.research` for `*.nora`, commands `nora.newResearch`, `nora.undo`, `nora.redo`, `nora.ask`, `nora.selectProfile`, `nora.setCredential`, `nora.signIn`, `nora.signOut`, `nora.addRepository`, `nora.addAttachment`, `nora.exportMarkdown`, and `nora.exportSnapshot`.
 - [x] Add global configuration `nora.llm.profiles` and `nora.mcp.directTools`. Keep secrets out of the configuration schema.
 - [x] Implement `scripts/build-nora.mjs --outdir` to bundle `src/extension/extension.js` to CommonJS with `vscode` external, bundle `src/ui/nora-entry.js` and `src/ui/frozen-entry.js` for browsers, and copy only required CSS, PDF.js, Mermaid, DOMPurify, and KaTeX assets.

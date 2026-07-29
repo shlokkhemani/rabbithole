@@ -27,6 +27,21 @@ test("MCP result bounding serializes structured tool output without exceeding mo
   assert(result.text.includes("Nora MCP result truncated"));
 });
 
+test("MCP result bounding stops walking structured output after the model limit", () => {
+  const hostile = { content: [{ type: "text", text: "x".repeat(300000) }] };
+  Object.defineProperty(hostile, "late", {
+    enumerable: true,
+    get() {
+      assert.fail("bounded MCP serialization should not read fields after the byte limit is reached");
+    },
+  });
+
+  const result = boundMcpModelResult(hostile, { maxBytes: 1024, maxLines: 2000 });
+  assert.equal(result.truncated, true);
+  assert(result.bytes <= 1024);
+  assert(result.text.includes("byte limit 1024"));
+});
+
 test("MCP diagnostics log only non-secret operation metadata", () => {
   const lines = [];
   const outputChannel = { appendLine: (line) => lines.push(line) };

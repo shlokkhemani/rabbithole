@@ -8,6 +8,8 @@ export const NORA_NODE_STATES = Object.freeze(["pending", "running", "complete",
 
 const NORA_NODE_STATE_SET = new Set(NORA_NODE_STATES);
 const HEX_SHA256_RE = /^[a-f0-9]{64}$/;
+const NORA_NODE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const NORA_RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /** @typedef {import("./contracts/document.js").NoraDocument} NoraDocument */
 /** @typedef {import("./contracts/document.js").NoraNode} NoraNode */
@@ -32,6 +34,20 @@ function requireRecord(value, path) {
 function requireString(value, path) {
   if (typeof value !== "string" || !value) throw new Error(`${path} must be a non-empty string`);
   return value;
+}
+
+/** @param {unknown} value @param {string} [path] @returns {string} */
+export function normalizeRunId(value, path = "run id") {
+  const runId = requireString(value, path);
+  if (!NORA_RUN_ID_RE.test(runId)) throw new Error(`${path} must be a single filename-safe Nora run id`);
+  return runId;
+}
+
+/** @param {unknown} value @param {string} [path] @returns {string} */
+export function normalizeNodeId(value, path = "node id") {
+  const nodeId = requireString(value, path);
+  if (!NORA_NODE_ID_RE.test(nodeId)) throw new Error(`${path} must be a selector-safe Nora node id`);
+  return nodeId;
 }
 
 /** @param {unknown} value @param {string} path @returns {string | null} */
@@ -147,7 +163,7 @@ function toPersistedNode(node, index) {
       base.base_url_source = null;
     } catch {}
   }
-  const id = requireString(node.id, `nodes[${index}].id`);
+  const id = normalizeNodeId(node.id, `nodes[${index}].id`);
   return {
     id,
     parentId: nullableString(node.parentId ?? node.parent_id, `nodes[${index}].parentId`),
@@ -268,7 +284,7 @@ function toPersistedAttachment(attachment, index) {
 function toPersistedRun(run, index) {
   const status = normalizeNoraNodeState(run.status ?? "pending", `runs[${index}].status`);
   return {
-    id: requireString(run.id, `runs[${index}].id`),
+    id: normalizeRunId(run.id, `runs[${index}].id`),
     parentRunId: nullableString(run.parentRunId ?? run.parent_run_id, `runs[${index}].parentRunId`),
     targetNodeId: nullableString(run.targetNodeId ?? run.target_node_id, `runs[${index}].targetNodeId`),
     status,
@@ -372,13 +388,13 @@ export function validateNoraDocument(raw) {
   for (const [index, source] of document.sources.entries()) validateSource(source, index);
   const evidenceIds = uniqueIds(document.evidence, "evidence");
   for (const [index, evidence] of document.evidence.entries()) validateEvidence(evidence, index, sourceIds);
-  uniqueIds(document.attachments, "attachments");
+  const attachmentIds = uniqueIds(document.attachments, "attachments");
   for (const [index, attachment] of document.attachments.entries()) validateAttachment(attachment, index, sourceIds, evidenceIds);
   uniqueIds(document.runs, "runs");
   for (const [index, run] of document.runs.entries()) validateRun(run, index, nodeIds);
   uniqueIds(document.checks, "checks");
   for (const [index, check] of document.checks.entries()) validateCheck(check, index, nodeIds);
-  for (const [index, node] of document.nodes.entries()) validateNodeReferences(node, index, sourceIds, evidenceIds);
+  for (const [index, node] of document.nodes.entries()) validateNodeReferences(node, index, sourceIds, evidenceIds, attachmentIds);
   return true;
 }
 
@@ -400,14 +416,14 @@ function uniqueIds(entries, path) {
 
 /** @param {any} node @param {number} index @param {Set<string>} nodeIds */
 function validateNode(node, index, nodeIds) {
-  requireString(node.id, `nodes[${index}].id`);
+  normalizeNodeId(node.id, `nodes[${index}].id`);
   if (node.parentId !== null && !nodeIds.has(node.parentId)) throw new Error(`nodes[${index}].parentId must reference an existing node`);
   if (typeof node.title !== "string") throw new Error(`nodes[${index}].title must be a string`);
   if (typeof node.markdown !== "string") throw new Error(`nodes[${index}].markdown must be a string`);
   normalizeStoredBaseUrlFields({ base_url: node.baseUrl, base_url_source: node.baseUrlSource });
   if (node.origin !== null) assertJsonValue(node.origin, `nodes[${index}].origin`);
-  normalizePosition(node.position);
-  normalizeSize(node.size);
+  validatePosition(node.position, `nodes[${index}].position`);
+  validateSize(node.size, `nodes[${index}].size`);
   if (!Number.isFinite(node.fontScale)) throw new Error(`nodes[${index}].fontScale must be finite`);
   if (typeof node.collapsed !== "boolean") throw new Error(`nodes[${index}].collapsed must be a boolean`);
   normalizeNoraNodeState(node.state, `nodes[${index}].state`);
@@ -421,13 +437,31 @@ function validateNode(node, index, nodeIds) {
   jsonObject(node.extensions, `nodes[${index}].extensions`);
 }
 
-/** @param {any} node @param {number} index @param {Set<string>} sourceIds @param {Set<string>} evidenceIds */
-function validateNodeReferences(node, index, sourceIds, evidenceIds) {
+/** @param {unknown} value @param {string} path */
+function validatePosition(value, path) {
+  const record = requireRecord(value, path);
+  if (typeof record.x !== "number" || !Number.isFinite(record.x)) throw new Error(`${path}.x must be a finite number`);
+  if (typeof record.y !== "number" || !Number.isFinite(record.y)) throw new Error(`${path}.y must be a finite number`);
+}
+
+/** @param {unknown} value @param {string} path */
+function validateSize(value, path) {
+  if (value === null) return;
+  const record = requireRecord(value, path);
+  if (typeof record.w !== "number" || !Number.isFinite(record.w) || record.w <= 0) throw new Error(`${path}.w must be a positive finite number`);
+  if (typeof record.h !== "number" || !Number.isFinite(record.h) || record.h <= 0) throw new Error(`${path}.h must be a positive finite number`);
+}
+
+/** @param {any} node @param {number} index @param {Set<string>} sourceIds @param {Set<string>} evidenceIds @param {Set<string>} attachmentIds */
+function validateNodeReferences(node, index, sourceIds, evidenceIds, attachmentIds) {
   for (const sourceId of node.sourceIds) {
     if (!sourceIds.has(sourceId)) throw new Error(`nodes[${index}].sourceIds references missing source ${sourceId}`);
   }
   for (const evidenceId of node.evidenceIds) {
     if (!evidenceIds.has(evidenceId)) throw new Error(`nodes[${index}].evidenceIds references missing evidence ${evidenceId}`);
+  }
+  for (const attachmentId of node.attachmentIds) {
+    if (!attachmentIds.has(attachmentId)) throw new Error(`nodes[${index}].attachmentIds references missing attachment ${attachmentId}`);
   }
 }
 
@@ -498,6 +532,7 @@ function validateAttachment(attachment, index, sourceIds, evidenceIds) {
 
 /** @param {any} run @param {number} index @param {Set<string>} nodeIds */
 function validateRun(run, index, nodeIds) {
+  normalizeRunId(run.id, `runs[${index}].id`);
   nullableString(run.parentRunId, `runs[${index}].parentRunId`);
   if (run.targetNodeId !== null && !nodeIds.has(run.targetNodeId)) throw new Error(`runs[${index}].targetNodeId must reference an existing node`);
   normalizeNoraNodeState(run.status, `runs[${index}].status`);

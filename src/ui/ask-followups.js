@@ -211,8 +211,9 @@ export function showWholeCanvasAsk(anchor, source){
       return false;
     }
     if (ask.classList.contains("visible")) hideAsk();
+    var scopedNodeId = source === "command" && currentNodeId && nodes[currentNodeId] ? currentNodeId : null;
     pendingAsk = { parentId: null, container: readerMain, selectedText: "", startOff: 0, endOff: 0,
-      range: null, scope: { type: "whole_canvas" }, source: source || "command" };
+      range: null, scope: scopedNodeId ? { type: "node", node_id: scopedNodeId } : { type: "whole_canvas" }, source: source || "command" };
     askText.value = "";
     askText.placeholder = "Ask Nora…";
     ask.classList.add("visible");

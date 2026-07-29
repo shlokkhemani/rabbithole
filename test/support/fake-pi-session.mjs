@@ -4,6 +4,7 @@ export class FakePiSession {
     this.options = options;
     this.listeners = new Set();
     this.promptText = null;
+    this.promptOptions = null;
     this.aborted = false;
     this.disposed = false;
     this.release = null;
@@ -16,10 +17,12 @@ export class FakePiSession {
     return () => this.listeners.delete(listener);
   }
 
-  async prompt(text) {
+  async prompt(text, options = {}) {
     this.promptText = text;
+    this.promptOptions = options;
     this.started = true;
-    this.emit({ type: "message_end", message: { role: "user", content: text, timestamp: 1 } });
+    const content = options.images?.length ? [{ type: "text", text }, ...options.images] : text;
+    this.emit({ type: "message_end", message: { role: "user", content, timestamp: 1 } });
     for (const event of this.events) {
       if (this.aborted) break;
       if (event === "hold") await this.done;

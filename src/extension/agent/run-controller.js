@@ -38,6 +38,7 @@ export class NoraRunController {
     this.createPiSession = options.createPiSession ?? createNoraPiSession;
     this.resourceLoaderProviderFactory = options.resourceLoaderProviderFactory ?? ((document) => new NoraResourceLoaderProvider({
       workspaceFolderPath: workspaceFolderPathFor(this.vscode, document),
+      vscode: this.vscode,
     }));
     this.idFactory = options.idFactory ?? randomUUID;
     this.now = options.now ?? (() => new Date().toISOString());
@@ -51,8 +52,12 @@ export class NoraRunController {
   /**
    * @param {import("../nora-document.js").NoraDocument} document
    * @param {Record<string, unknown>} event
+   * @param {{
+   *   promptImages?: Array<{ type: "image", data: string, mimeType: string }>,
+   *   startMutations?: (started: { runId: string, targetNodeId: string }) => unknown | Promise<unknown>
+   * }} [options]
    */
-  async startFromWebviewEvent(document, event) {
+  async startFromWebviewEvent(document, event, options = {}) {
     if (event.type !== "branch_request" && event.type !== "nora_ask") {
       throw new TypeError(`Unsupported Nora run event: ${String(event.type)}`);
     }
@@ -87,15 +92,25 @@ export class NoraRunController {
       targetNodeId: prepared.targetNodeId,
       prompt: prepared.prompt,
       agentPrompt,
+      promptImages: options.promptImages ?? [],
       context,
       provenance: modelRuntimeBundle.provenance,
       session: piSession.session,
       disposeSessionResources: piSession.dispose,
       now: this.now,
     });
-    await document.beginRun(runId, { abort: () => active.cancel({ publish: false }) });
-    await active.publishStart(prepared.branchEvent, startedAt);
-    active.start();
+    let beganRun = false;
+    try {
+      await document.beginRun(runId, { abort: () => active.cancel({ publish: false }) });
+      beganRun = true;
+      await active.publishStart(prepared.branchEvent, startedAt);
+      await options.startMutations?.({ runId, targetNodeId: prepared.targetNodeId });
+      active.start();
+    } catch (error) {
+      await active.cancel({ publish: false });
+      if (beganRun) await document.finishActiveRun();
+      throw error;
+    }
     return { runId, targetNodeId: prepared.targetNodeId };
   }
 
@@ -115,23 +130,25 @@ export class NoraRunController {
     const prompt = String(event.prompt ?? "").trim();
     if (!prompt) throw new TypeError("Ask Nora prompt is required");
     const targetNodeId = String(event.request_id ?? this.idFactory());
-    const root = document.state.nodes.get(document.state.rootNodeId);
+    const scope = event.scope ?? { type: "whole_canvas" };
+    const parentNodeId = parentNodeIdForAskScope(document, scope);
+    const parent = document.state.nodes.get(parentNodeId);
     const branchEvent = {
       type: "branch_request",
       request_id: targetNodeId,
       node_id: targetNodeId,
-      parent_id: document.state.rootNodeId,
+      parent_id: parentNodeId,
       question: prompt,
       lens: event.lens ?? null,
       selected_text: "",
       anchor: null,
-      scope: { type: "whole_canvas" },
+      scope,
       branch_type: "followup",
-      position: { x: Number(root?.position?.x ?? 0) + 360, y: Number(root?.position?.y ?? 0) },
+      position: { x: Number(parent?.position?.x ?? 0) + 360, y: Number(parent?.position?.y ?? 0) },
       size: { w: 320, h: 220 },
       created_at: this.now(),
     };
-    return { prompt, contextPrompt: prompt, scope: { type: "whole_canvas" }, targetNodeId, branchEvent };
+    return { prompt, contextPrompt: prompt, scope, targetNodeId, branchEvent };
   }
 
   /** @param {import("../nora-document.js").NoraDocument} document */
@@ -209,6 +226,7 @@ class ActiveNoraRun {
    *   targetNodeId: string,
    *   prompt: string,
    *   agentPrompt: string,
+   *   promptImages?: Array<{ type: "image", data: string, mimeType: string }>,
    *   context: import("./context-builder.js").NoraRunContext,
    *   provenance: { profileId?: string | null, provider?: string | null, model?: string | null, endpoint?: string | null },
    *   session: { subscribe(listener: (event: any) => unknown): (() => void), prompt(text: string, options?: Record<string, unknown>): Promise<void>, waitForIdle?: () => Promise<void>, abort?: () => Promise<void>, dispose?: () => void },
@@ -222,6 +240,7 @@ class ActiveNoraRun {
     this.targetNodeId = options.targetNodeId;
     this.prompt = options.prompt;
     this.agentPrompt = options.agentPrompt;
+    this.promptImages = [...(options.promptImages ?? [])];
     this.context = options.context;
     this.provenance = options.provenance;
     this.session = options.session;
@@ -247,7 +266,9 @@ class ActiveNoraRun {
   async publishStart(branchEvent, startedAt) {
     const userMessage = {
       role: "user",
-      content: this.agentPrompt,
+      content: this.promptImages.length
+        ? [{ type: "text", text: this.agentPrompt }, ...this.promptImages]
+        : this.agentPrompt,
       timestamp: Date.parse(startedAt) || Date.now(),
     };
     const [record] = committedMessageRecords(this.runId, userMessage, {
@@ -272,6 +293,7 @@ class ActiveNoraRun {
       branchEvent,
       { type: "run_summary", run },
       { type: "node_run", node_id: this.targetNodeId, run_id: this.runId, updated_at: startedAt },
+      { type: "node_extensions_patch", node_id: this.targetNodeId, namespace: "nora", value: { createdBy: `agent:${this.runId}`, updatedBy: `agent:${this.runId}` } },
       { type: "node_state", node_id: this.targetNodeId, state: "running", updated_at: startedAt },
     ]);
   }
@@ -279,14 +301,18 @@ class ActiveNoraRun {
   start() {
     this.unsubscribe = this.session.subscribe((/** @type {any} */ event) => {
       this.eventTail = this.eventTail.then(() => this.#handleSessionEvent(event)).catch((error) => {
-        void this.#terminalize("failed", error);
+        void this.#terminalize("failed", error).catch(() => {});
       });
     });
-    void this.session.prompt(this.agentPrompt, { source: "extension" })
+    const promptOptions = this.promptImages.length
+      ? { source: "extension", images: this.promptImages }
+      : { source: "extension" };
+    void this.session.prompt(this.agentPrompt, promptOptions)
       .then(() => this.session.waitForIdle?.())
       .then(() => this.eventTail)
       .then(() => this.#terminalize(this.cancelled ? "cancelled" : "complete"))
-      .catch((/** @type {unknown} */ error) => this.#terminalize(this.cancelled ? "cancelled" : "failed", error));
+      .catch((/** @type {unknown} */ error) => this.#terminalize(this.cancelled ? "cancelled" : "failed", error))
+      .catch(() => {});
   }
 
   /** @param {{ publish?: boolean }} [options] */
@@ -294,7 +320,12 @@ class ActiveNoraRun {
     this.cancelled = true;
     await Promise.resolve(this.session.abort?.()).catch(() => {});
     if (options.publish !== false) await this.#terminalize("cancelled");
-    else await this.#disposeRunResources();
+    else {
+      this.terminal = true;
+      this.unsubscribe?.();
+      this.session.dispose?.();
+      await this.#disposeRunResources();
+    }
   }
 
   /** @param {any} event */
@@ -318,7 +349,7 @@ class ActiveNoraRun {
     }
     if (event?.type !== "message_end") return;
     const message = event.message;
-    if (message?.role === "user" && !this.initialUserSeen && message.content === this.agentPrompt) {
+    if (message?.role === "user" && !this.initialUserSeen && userMessageMatchesPrompt(message, this.agentPrompt)) {
       this.initialUserSeen = true;
       return;
     }
@@ -417,14 +448,20 @@ class ActiveNoraRun {
         extensions: { trace: traceEntriesFromRecords(records), context: this.#contextSummary() },
       }),
     });
+    let publishError = null;
     try {
       await this.document.publishRunRecord(this.runId, terminalRecord, events);
+    } catch (error) {
+      publishError = error;
+    }
+    try {
       await this.document.finishActiveRun();
     } finally {
       this.unsubscribe?.();
       this.session.dispose?.();
       await this.#disposeRunResources();
     }
+    if (publishError) throw publishError;
   }
 
   async #disposeRunResources() {
@@ -470,12 +507,23 @@ class ActiveNoraRun {
 
 /** @param {import("vscode") | undefined} vscode @param {import("../nora-document.js").NoraDocument} document */
 function workspaceFolderPathFor(vscode, document) {
+  if (document.workspaceFolderPath) return document.workspaceFolderPath;
   const uri = /** @type {import("vscode").Uri | null} */ (document.uri ?? null);
   if (!vscode?.workspace || !uri) return null;
   const folder = vscode.workspace.getWorkspaceFolder?.(uri);
   if (folder?.uri?.fsPath) return folder.uri.fsPath;
   const folders = vscode.workspace.workspaceFolders ?? [];
   return folders.length === 1 ? folders[0].uri.fsPath : null;
+}
+
+/** @param {import("../nora-document.js").NoraDocument} document @param {unknown} scope */
+function parentNodeIdForAskScope(document, scope) {
+  const raw = /** @type {Record<string, unknown> | null} */ (scope && typeof scope === "object" && !Array.isArray(scope) ? scope : null);
+  if (raw?.type !== "node") return document.state.rootNodeId;
+  const nodeId = String(raw.node_id ?? raw.nodeId ?? "");
+  if (!nodeId) throw new TypeError("node scope requires node_id");
+  if (!document.state.nodes.has(nodeId)) throw new TypeError(`Selected Nora node ${nodeId} does not exist`);
+  return nodeId;
 }
 
 /** @param {import("./context-builder.js").NoraRunContext} context */
@@ -486,6 +534,15 @@ function renderAgentPrompt(context) {
     "User prompt:",
     context.prompt,
   ].join("\n");
+}
+
+/** @param {unknown} message @param {string} prompt */
+function userMessageMatchesPrompt(message, prompt) {
+  const raw = /** @type {Record<string, any>} */ (message && typeof message === "object" ? message : {});
+  if (raw.content === prompt) return true;
+  if (!Array.isArray(raw.content)) return false;
+  const first = raw.content[0];
+  return !!first && typeof first === "object" && first.type === "text" && first.text === prompt;
 }
 
 /** @param {unknown} value */

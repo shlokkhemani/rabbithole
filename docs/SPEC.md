@@ -61,7 +61,7 @@ Nora is not a general-purpose vector or diagram editor. The draw.io comparison a
 - Support MCP tools and resources.
 - Read standard workspace MCP configuration from `.vscode/mcp.json`.
 - Do not import unrelated Pi, Codex, Claude, or other host-specific MCP configuration files.
-- Nora adds no separate Workspace Trust, command-fingerprint approval, or read-only policy around configured MCP servers. Selecting and securing those servers is the user's responsibility.
+- Nora relies on VS Code Workspace Trust before workspace MCP servers, skills, or repository sources run. It adds no separate command-fingerprint approval or read-only policy around configured MCP servers. Selecting and securing those servers is the user's responsibility.
 - Nora does not authenticate third-party research sources.
 - Authentication for Confluence, Jira, and other external sources belongs to the connected MCP servers or skills.
 - External-source credentials must not be stored in `.nora` or VS Code SecretStorage by Nora.
@@ -265,7 +265,7 @@ Treat complete Git clones as derived cache, not portable research data:
 - use the system Git executable, SSH agent, and credential helpers instead of implementing forge authentication in Nora;
 - store the normalized remote, exact commit SHA, cited path/lines, and evidence excerpt inside `.nora`;
 - remember the acquisition URL for cloned repositories;
-- for an existing local repository, select the current branch's upstream remote, then `origin`, and ask if neither exists;
+- for an existing local repository, select the current branch's upstream remote, then `origin`, and reject the repository if neither exists;
 - preserve existing evidence at its original SHA; a refresh creates a new evidence revision rather than rewriting the old one.
 
 This keeps `.nora` portable and self-explanatory without embedding entire repositories.

@@ -42,12 +42,14 @@ export class NoraMcpConnection {
     this.resourcesCache = null;
     this.closed = false;
     this.stale = false;
+    this.generation = 0;
     this.activeCalls = 0;
   }
 
   markStale() {
+    this.generation += 1;
     this.stale = true;
-    if (this.activeCalls === 0) void this.#closeClient();
+    if (this.activeCalls === 0 && !this.connecting) void this.#closeClient();
   }
 
   async close() {
@@ -184,14 +186,15 @@ export class NoraMcpConnection {
     if (this.stale && this.activeCalls === 0) await this.#closeClient();
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
-    this.connecting = this.#connect(signal).finally(() => {
+    const generation = this.generation;
+    this.connecting = this.#connect(signal, generation).finally(() => {
       this.connecting = null;
     });
     return this.connecting;
   }
 
-  /** @param {AbortSignal | undefined} signal */
-  async #connect(signal) {
+  /** @param {AbortSignal | undefined} signal @param {number} generation */
+  async #connect(signal, generation) {
     const client = new this.ClientCtor(
       { name: "nora", version: "0.1.0" },
       {
@@ -212,7 +215,16 @@ export class NoraMcpConnection {
       },
     );
     const transport = this.#createTransport();
-    await client.connect(transport, { timeout: this.callTimeoutMs, signal });
+    try {
+      await client.connect(transport, { timeout: this.callTimeoutMs, signal });
+    } catch (error) {
+      await closeClientTransport(client, transport);
+      throw error;
+    }
+    if (this.closed || generation !== this.generation) {
+      await closeClientTransport(client, transport);
+      throw new Error(`MCP connection for ${this.server.name} became stale while connecting`);
+    }
     this.client = client;
     this.transport = transport;
     this.stale = false;
@@ -247,11 +259,16 @@ export class NoraMcpConnection {
     this.transport = null;
     this.toolsCache = null;
     this.resourcesCache = null;
-    await Promise.all([
-      Promise.resolve(client?.close?.()).catch(() => {}),
-      Promise.resolve(transport?.close?.()).catch(() => {}),
-    ]);
+    await closeClientTransport(client, transport);
   }
+}
+
+/** @param {any | null} client @param {any | null} transport */
+async function closeClientTransport(client, transport) {
+  await Promise.all([
+    Promise.resolve(client?.close?.()).catch(() => {}),
+    Promise.resolve(transport?.close?.()).catch(() => {}),
+  ]);
 }
 
 /** @param {unknown} tool */

@@ -12,6 +12,10 @@ Research happens inside desktop VS Code and is saved to local `.nora` files.
 - Desktop VS Code `1.130.0` or newer.
 - Local `file:` documents. VS Code Remote, virtual workspaces, Codespaces, and
   web extensions are not supported in v1.
+- A trusted VS Code workspace when Nora reads workspace repositories, skills, or
+  `.vscode/mcp.json`.
+- System Git for repository evidence. Nora uses the user's normal SSH agent,
+  credential helper, proxy, and certificate configuration.
 - Node.js 24 only for developing or packaging Nora from source.
 
 ## Install
@@ -81,6 +85,7 @@ credential-bearing query parameters.
 
 Use `Nora: Set Credential` to enter a LiteLLM or API provider token. Use
 `Nora: Sign In` for profiles that rely on Pi's provider-owned OAuth flow.
+Use `Nora: Sign Out` to delete the stored credential for a profile.
 Credentials never enter settings, `.nora`, snapshots, Markdown exports, or logs.
 
 See `docs/llm-profiles.md` for the full profile and credential boundary.
@@ -124,6 +129,11 @@ Skills are loaded from `<workspace>/.agents/skills` and `~/.agents/skills`.
 Workspace skills win over global skills with the same name and Nora reports the
 shadowing diagnostic. `.pi/skills` is not read.
 
+The global `nora.mcp.directTools` setting takes exact `server/tool` names from
+the active `.vscode/mcp.json`. A listed tool such as `jira/search` is exposed to
+Pi as `mcp__jira__search`; other MCP tools remain available through the compact
+`mcp` bridge.
+
 Nora does not authenticate corporate sources, approve MCP tool calls, classify
 MCP side effects, or enforce a read-only MCP policy. Users are responsible for
 the servers, skills, headers, tokens, and data they expose. Model-facing MCP
@@ -139,7 +149,10 @@ system Git and the user's normal SSH agent, credential helper, proxy, and
 certificate configuration. It does not store Git credentials.
 
 Repositories are acquired into a shared cache under VS Code global storage.
-Research tools read immutable detached worktrees at exact commits. Evidence
+Research tools read immutable detached worktrees at exact commits, so dirty
+working-tree changes are not included. Local repositories must have an upstream
+or `origin` remote, and Nora uses a committed revision reachable from that
+remote before creating durable evidence. Evidence
 records store sanitized remote metadata, commit SHA, path, line range, excerpt,
 and an immutable GitHub, GitLab, Bitbucket Cloud, or Bitbucket Data Center
 permalink when Nora can construct one.
@@ -152,6 +165,18 @@ permalink forms.
 PDFs, images, and other attachments are stored byte-exact in the `.nora` archive
 as content-addressed assets. PDFs render in the webview with bundled PDF.js.
 Crops and selected PDF context become normal attachments and evidence.
+One attachment may be at most 100 MiB, and one `.nora` archive may be at most
+1 GiB.
+
+## Editing and Runs
+
+Nora owns semantic undo and redo for `.nora` documents. Canvas edits, attachment
+commits, and run updates are undoable through `Nora: Undo`, `Nora: Redo`, and the
+standard desktop keybindings while a Nora editor is active.
+
+An entire Agent Run is one undo entry, even though streamed checkpoints update
+the editor while the run is active. Undoing an active run cancels it, records the
+cancelled partial state for redo, and restores the pre-run canvas.
 
 Markdown export contains visible research nodes and evidence footnotes.
 Snapshot export writes a self-contained, inert HTML document with the referenced

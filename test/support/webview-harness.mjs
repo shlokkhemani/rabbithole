@@ -25,7 +25,7 @@ export async function bootNoraWebview() {
           dompurifyUri: `${baseUrl}/out/webview/dompurify.js`,
         }).replace(
           "<script nonce=\"nora-test-nonce\" src=",
-          "<script nonce=\"nora-test-nonce\">window.acquireVsCodeApi=function(){return{postMessage:function(message){window.__noraHarnessPostMessage(message)}}};</script><script nonce=\"nora-test-nonce\" src=",
+          "<script nonce=\"nora-test-nonce\">window.acquireVsCodeApi=function(){return{postMessage:function(message){window.__noraHarnessPostMessage(message);if(message&&message.type==='uiEvent'&&message.message_id){setTimeout(function(){window.postMessage({type:'uiAck',message_id:message.message_id,ok:true},'*')},0)}}}};</script><script nonce=\"nora-test-nonce\" src=",
         );
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);

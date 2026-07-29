@@ -1,7 +1,7 @@
 import { createNoraUi } from "./composition.js";
 import { mountPdfView } from "./pdf-view.js";
 import { cropPdfSourceToBlob } from "./pdf-crop.js";
-import { loadPdfJsModule } from "./pdf-runtime.js";
+import { acquirePdfDocument, loadPdfJsModule } from "./pdf-runtime.js";
 import {
   buildPdfDocument,
   extractPdfPageLines,
@@ -28,6 +28,8 @@ let runtime = null;
 let mermaidPromise = null;
 let lastHydration = null;
 let startChain = Promise.resolve();
+let nextMessageId = 0;
+const pendingAcks = new Map();
 
 window.addEventListener("message", (event) => {
   let message;
@@ -41,6 +43,7 @@ window.addEventListener("message", (event) => {
     startChain = startChain.then(() => startNora(message.hydration)).catch((error) => { showBootError(error); });
   }
   else if (message.type === "command") handleCommand(message.command);
+  else if (message.type === "uiAck") handleUiAck(message);
   else if (message.type === "error") showBootError(new Error(message.message));
 });
 
@@ -55,10 +58,11 @@ async function startNora(hydration) {
   setTransportAdapter({
     post: async (event) => {
       const prepared = await prepareOutgoingEvent(event);
-      postToExtension({ type: "uiEvent", event: prepared.event });
-      return { ok: true, crop_asset: prepared.cropAsset ?? null };
+      const ack = await postUiEventToExtension(prepared.event);
+      return { ...ack, crop_asset: prepared.cropAsset ?? null };
     },
   });
+  await preparePendingPdfNodes(hydration);
   runtime = createNoraUi({
     hydration,
     host: {
@@ -92,6 +96,73 @@ async function prepareOutgoingEvent(event) {
     return { event: { ...event, conversion }, cropAsset: null };
   }
   return { event, cropAsset: null };
+}
+
+/** @param {Record<string, unknown>} hydration */
+async function preparePendingPdfNodes(hydration) {
+  const hydratedNodes = Array.isArray(hydration.nodes) ? hydration.nodes : [];
+  for (const node of hydratedNodes) {
+    await preparePendingPdfNode(/** @type {Record<string, unknown>} */ (node)).catch(() => {});
+  }
+}
+
+/** @param {Record<string, unknown>} node */
+async function preparePendingPdfNode(node) {
+  const nodeId = String(node.id ?? "");
+  const extensions = node.extensions && typeof node.extensions === "object" && !Array.isArray(node.extensions)
+    ? /** @type {Record<string, unknown>} */ (node.extensions)
+    : null;
+  const rawPdf = extensions?.pdf && typeof extensions.pdf === "object" && !Array.isArray(extensions.pdf)
+    ? /** @type {Record<string, unknown>} */ (extensions.pdf)
+    : null;
+  if (!nodeId || rawPdf?.needs_webview_prepare !== true) return;
+  const pdf = normalizePdfExtension(node);
+  if (!pdf || pdf.pages.length) return;
+  const pdfExtension = await preparePdfRenderExtension(pdf, rawPdf);
+  node.extensions = { ...(extensions ?? {}), pdf: pdfExtension };
+  await postUiEventToExtension({
+    type: "node_extensions_patch",
+    node_id: nodeId,
+    namespace: "pdf",
+    value: pdfExtension,
+  }).catch(() => null);
+}
+
+/**
+ * @param {ReturnType<typeof normalizePdfExtension>} pdf
+ * @param {Record<string, unknown>} rawPdf
+ */
+async function preparePdfRenderExtension(pdf, rawPdf) {
+  const notes = Array.isArray(pdf.notes) ? [...pdf.notes] : [];
+  const blob = await fetchPdfBlob(pdf.source);
+  const lease = await acquirePdfDocument({ key: pdf.source.sha256, blob });
+  try {
+    const processedPages = resolvePagesToProcess(lease.document.numPages, null, notes);
+    const pages = [];
+    for (const pageNumber of processedPages) {
+      const page = await lease.document.getPage(pageNumber);
+      try {
+        pages.push(pdfPageMetadata(page, pageNumber));
+      } finally {
+        page.cleanup?.();
+      }
+    }
+    return {
+      ...rawPdf,
+      version: 2,
+      source: pdf.source,
+      page_count: lease.document.numPages,
+      pages,
+      lines: pdf.lines,
+      notes,
+      converting: false,
+      converted: false,
+      original_markdown: rawPdf.original_markdown ?? null,
+      needs_webview_prepare: false,
+    };
+  } finally {
+    lease.release();
+  }
 }
 
 /** @param {Record<string, unknown>} event */
@@ -220,7 +291,7 @@ function base64Bytes(bytes) {
   return btoa(chunks.join(""));
 }
 
-/** @param {{ type: "ready" } | { type: "uiEvent", event: Record<string, unknown> }} message */
+/** @param {{ type: "ready" } | { type: "uiEvent", event: Record<string, unknown>, message_id?: string }} message */
 function postToExtension(message) {
   if (!vscode) return;
   if (message.type === "ready") {
@@ -228,8 +299,26 @@ function postToExtension(message) {
     return;
   }
   if (message.type === "uiEvent" && message.event && typeof message.event.type === "string") {
-    vscode.postMessage({ type: "uiEvent", event: message.event });
+    vscode.postMessage({ type: "uiEvent", event: message.event, message_id: message.message_id });
   }
+}
+
+/** @param {Record<string, unknown>} event */
+function postUiEventToExtension(event) {
+  if (!vscode) return Promise.resolve({ ok: true });
+  const messageId = `ui-${++nextMessageId}`;
+  return new Promise((resolve) => {
+    pendingAcks.set(messageId, resolve);
+    postToExtension({ type: "uiEvent", event, message_id: messageId });
+  });
+}
+
+/** @param {{ messageId: string, ok: boolean, message?: string }} ack */
+function handleUiAck(ack) {
+  const resolve = pendingAcks.get(ack.messageId);
+  if (!resolve) return;
+  pendingAcks.delete(ack.messageId);
+  resolve({ ok: ack.ok, message: ack.message ?? null });
 }
 
 function loadMermaidRuntime() {
@@ -284,6 +373,14 @@ function validateIncomingMessage(raw) {
   const message = /** @type {Record<string, unknown>} */ (raw);
   if (message.type === "error" && typeof message.message === "string") return { type: "error", message: message.message };
   if (message.type === "command" && typeof message.command === "string") return { type: "command", command: message.command };
+  if (message.type === "uiAck" && typeof (message.message_id ?? message.messageId) === "string" && typeof message.ok === "boolean") {
+    return {
+      type: "uiAck",
+      messageId: String(message.message_id ?? message.messageId),
+      ok: message.ok,
+      message: typeof message.message === "string" ? message.message : undefined,
+    };
+  }
   if (message.type !== "hydrate" || !message.hydration || typeof message.hydration !== "object" || Array.isArray(message.hydration)) {
     throw new TypeError("unsupported Nora message");
   }

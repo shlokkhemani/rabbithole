@@ -27,8 +27,8 @@ test("builds immutable forge permalinks with provider-specific anchors", () => {
     `https://bitbucket.org/team/r/src/${sha}/src/main.js#main.js-11`,
   );
   assert.equal(
-    bitbucketDataCenterPermalink({ baseUrl: "https://bb.example.test", project: "PROJ", repo: "r", sha, relativePath: "src/main.js" }),
-    `https://bb.example.test/projects/PROJ/repos/r/browse/src/main.js?at=${sha}`,
+    bitbucketDataCenterPermalink({ baseUrl: "https://bb.example.test", project: "PROJ", repo: "r", sha, relativePath: "src/main.js", startLine: 13, endLine: 15 }),
+    `https://bb.example.test/projects/PROJ/repos/r/browse/src/main.js?at=${sha}#13-15`,
   );
 });
 

@@ -36,7 +36,7 @@
       "supported": false
     },
     "untrustedWorkspaces": {
-      "supported": true
+      "supported": false
     }
   },
   "contributes": {

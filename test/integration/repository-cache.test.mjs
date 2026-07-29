@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { GitRepositoryCache } from "../../src/extension/git/cache.js";
-import { codeEvidenceRecord } from "../../src/extension/git/evidence.js";
+import { codeEvidenceRecord, repositorySourceRecord } from "../../src/extension/git/evidence.js";
 import { runGit } from "../../src/extension/git/process.js";
 import {
   acquireRepository,
@@ -38,8 +38,13 @@ test("repository cache mirrors committed bytes, reuses worktrees, enforces publi
       excerpt: "one",
       capturedAt: "2026-07-29T00:00:00.000Z",
     });
+    const sourceRecord = repositorySourceRecord(firstHandle.repository, { capturedAt: "2026-07-29T00:00:00.000Z" });
     assert.equal(evidence.commit, firstSha);
     assert.equal(evidence.permalink, undefined, "local test remotes do not invent forge permalinks");
+    assert(!JSON.stringify(sourceRecord).includes(work), "source records do not persist local acquisition paths");
+    assert(!JSON.stringify(evidence).includes(work), "code evidence records do not persist local acquisition paths");
+    assert.equal(sourceRecord.extensions.nora.acquisitionUrl, undefined);
+    assert.equal(evidence.extensions.nora.acquisitionUrl, undefined);
     assert.equal(await resolveRepositoryFilePath(firstHandle.repository, "README.md"), await fs.realpath(path.join(firstHandle.worktreePath, "README.md")));
     await assert.rejects(() => resolveRepositoryFilePath(firstHandle.repository, "../README.md"), /inside/);
 
@@ -101,6 +106,25 @@ test("repository cache surfaces missing Git and cancellation failures", async ()
     aborted.abort();
     const cache = new GitRepositoryCache({ rootDir: path.join(dir, "cancel-cache") });
     await assert.rejects(cache.acquireLocal(work, { signal: aborted.signal }), /aborted/);
+  });
+});
+
+test("local repository acquisition rejects repositories without a permalink remote", async () => {
+  await withTempDir(async (dir) => {
+    const work = path.join(dir, "no-remote");
+    const cache = new GitRepositoryCache({ rootDir: path.join(dir, "cache-no-remote") });
+    await fs.mkdir(work, { recursive: true });
+    await git(work, ["init"]);
+    await git(work, ["config", "user.email", "nora@example.test"]);
+    await git(work, ["config", "user.name", "Nora Test"]);
+    await fs.writeFile(path.join(work, "README.md"), "local only\n");
+    await git(work, ["add", "README.md"]);
+    await git(work, ["commit", "-m", "first"]);
+    await assert.rejects(
+      acquireRepository(cache, work),
+      /no usable remote/,
+      "local repositories need a remote before Nora can create durable code evidence",
+    );
   });
 });
 

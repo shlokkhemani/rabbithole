@@ -78,6 +78,133 @@ test("oversized run preflight rejects before branch mutation", async () => {
   });
 });
 
+test("nora_ask honors selected node scope and marks the target answer node as run-owned", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "ask.nora")), {
+      tempRoot: dir,
+      title: "Ask",
+      idFactory: () => "doc-ask",
+    });
+    const controller = new NoraRunController({
+      createPiSession: fakePiSessionFactory([assistantEnd("Scoped answer")]),
+      idFactory: () => "run-ask",
+      now: fixedNow(),
+      estimateTokens: () => 20,
+    });
+
+    await controller.startFromWebviewEvent(document, {
+      type: "nora_ask",
+      request_id: "ask-child",
+      prompt: "Explain current node",
+      scope: { type: "node", node_id: "root" },
+    });
+    await waitFor(() => document.state.runs.get("run-ask")?.status === "complete");
+
+    const child = document.state.nodes.get("ask-child");
+    assert.equal(child?.parentId, "root");
+    assert.equal(child?.markdown, "Scoped answer");
+    assert.equal(child?.extensions?.nora?.createdBy, "agent:run-ask");
+    assert.deepEqual(document.state.runs.get("run-ask")?.extensions?.context?.scope, { type: "node", node_id: "root" });
+    await document.dispose();
+  });
+});
+
+test("PDF crop asks send image content to Pi and persist model-facing image history", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "crop-image.nora")), {
+      tempRoot: dir,
+      title: "Crop Image",
+      idFactory: () => "doc-crop-image",
+    });
+    const sink = {};
+    const promptImage = { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" };
+    const controller = new NoraRunController({
+      createPiSession: fakePiSessionFactory([assistantEnd("Visual answer")], sink),
+      idFactory: () => "run-crop-image",
+      now: fixedNow(),
+      estimateTokens: () => 20,
+    });
+
+    await controller.startFromWebviewEvent(document, branchEvent("crop-child", "Describe this region"), { promptImages: [promptImage] });
+    await waitFor(() => document.state.runs.get("run-crop-image")?.status === "complete");
+
+    assert.deepEqual(sink.session?.promptOptions?.images, [promptImage]);
+    const records = document.getRunTranscriptRecords("run-crop-image");
+    assert.deepEqual(records.map((record) => record.kind), ["user_message", "assistant_message", "run_terminal"]);
+    assert.deepEqual(records[0].message.content, [
+      { type: "text", text: sink.session?.promptText },
+      promptImage,
+    ]);
+    await document.dispose();
+  });
+});
+
+test("run start mutations publish before a fast Pi session can terminalize", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "start-mutations.nora")), {
+      tempRoot: dir,
+      title: "Start Mutations",
+      idFactory: () => "doc-start-mutations",
+    });
+    const sink = {};
+    const controller = new NoraRunController({
+      createPiSession: fakePiSessionFactory([assistantEnd("Done")], sink),
+      idFactory: () => "run-start-mutations",
+      now: fixedNow(),
+      estimateTokens: () => 20,
+    });
+
+    await controller.startFromWebviewEvent(document, branchEvent("mutated-child", "Explain"), {
+      startMutations: async (started) => {
+        assert.equal(sink.session?.started, false, "start mutations must run before session.prompt()");
+        await document.commitRunEvent({
+          type: "node_extensions_patch",
+          node_id: started.targetNodeId,
+          namespace: "test",
+          value: { startMutation: true },
+        });
+      },
+    });
+    await waitFor(() => document.state.runs.get("run-start-mutations")?.status === "complete");
+
+    assert.deepEqual(document.state.nodes.get("mutated-child")?.extensions?.test, { startMutation: true });
+    assert.deepEqual(
+      document.getRunTranscriptRecords("run-start-mutations").map((record) => record.kind),
+      ["user_message", "nora_mutation", "assistant_message", "run_terminal"],
+    );
+    await document.dispose();
+  });
+});
+
+test("selected workspace scope is passed to Pi sessions even when the document is outside a workspace folder", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "workspace-scope.nora")), {
+      tempRoot: dir,
+      title: "Workspace Scope",
+      idFactory: () => "doc-workspace-scope",
+    });
+    const selectedWorkspace = path.join(dir, "selected-workspace");
+    document.setWorkspaceFolderPath(selectedWorkspace);
+    const seen = {};
+    const controller = new NoraRunController({
+      createPiSession: async (options) => {
+        seen.cwd = options.cwd;
+        seen.workspaceFolderPath = options.workspaceFolderPath;
+        return fakePiSessionFactory([assistantEnd("Scoped")])();
+      },
+      idFactory: () => "run-workspace-scope",
+      now: fixedNow(),
+      estimateTokens: () => 20,
+    });
+
+    await controller.startFromWebviewEvent(document, branchEvent("workspace-child", "Explain"));
+    await waitFor(() => document.state.runs.get("run-workspace-scope")?.status === "complete");
+    assert.equal(seen.cwd, selectedWorkspace);
+    assert.equal(seen.workspaceFolderPath, selectedWorkspace);
+    await document.dispose();
+  });
+});
+
 test("backup during streaming captures a consistent document revision and complete JSONL prefix", async () => {
   await withTempDir(async (dir) => {
     const sink = {};
@@ -135,6 +262,71 @@ test("one-run lock is per document while different documents run independently",
     await second.undo();
     await first.dispose();
     await second.dispose();
+  });
+});
+
+test("failed run startup disposes the unused Pi session and keeps the existing active run", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "startup-cleanup.nora")), {
+      tempRoot: dir,
+      title: "Startup Cleanup",
+      idFactory: () => "doc-startup-cleanup",
+    });
+    await document.beginRun("existing-run", { abort: () => {} });
+    const sink = {};
+    const controller = new NoraRunController({
+      createPiSession: async () => {
+        const session = new FakePiSession([]);
+        sink.session = session;
+        return {
+          session,
+          sessionManager: {},
+          customTools: [],
+          toolNames: [],
+          dispose: () => { sink.resourcesDisposed = true; },
+        };
+      },
+      idFactory: () => "blocked-run",
+      estimateTokens: () => 20,
+    });
+
+    await assert.rejects(
+      () => controller.startFromWebviewEvent(document, branchEvent("blocked-child", "Explain")),
+      /already active/,
+    );
+    assert.equal(sink.session.aborted, true);
+    assert.equal(sink.session.disposed, true);
+    assert.equal(sink.resourcesDisposed, true);
+    assert.equal(document.activeRun?.runId, "existing-run");
+    await document.finishActiveRun();
+    await document.dispose();
+  });
+});
+
+test("terminal publish failures still clear active runs and dispose Pi sessions", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "terminal-cleanup.nora")), {
+      tempRoot: dir,
+      title: "Terminal Cleanup",
+      idFactory: () => "doc-terminal-cleanup",
+    });
+    const sink = {};
+    const controller = new NoraRunController({
+      createPiSession: fakePiSessionFactory([assistantEnd("Done")], sink),
+      idFactory: () => "run-terminal-cleanup",
+      now: fixedNow(),
+      estimateTokens: () => 20,
+    });
+    const publishRunRecord = document.publishRunRecord.bind(document);
+    document.publishRunRecord = async (runId, record, events = []) => {
+      if (record.kind === "run_terminal") throw new Error("terminal publish failed");
+      return publishRunRecord(runId, record, events);
+    };
+
+    await controller.startFromWebviewEvent(document, branchEvent("terminal-child", "Explain"));
+    await waitFor(() => document.activeRun === null);
+    assert.equal(sink.session.disposed, true);
+    await document.dispose();
   });
 });
 

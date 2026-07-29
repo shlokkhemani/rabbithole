@@ -103,9 +103,21 @@ function renderSnapshotEvidence(projection) {
     "<h2>Evidence</h2>\n<ol>\n" +
     linked.map((record) => {
       const title = String(record.title || record.permalink);
-      const href = String(record.permalink);
+      const href = safeEvidenceHref(record.permalink);
       const commit = record.commit ? ` <span>${escapeHtml(String(record.commit).slice(0, 12))}</span>` : "";
-      return `<li><a href="${escapeHtml(href)}" rel="noreferrer">${escapeHtml(title)}</a>${commit}</li>`;
+      return href
+        ? `<li><a href="${escapeHtml(href)}" rel="noreferrer">${escapeHtml(title)}</a>${commit}</li>`
+        : `<li>${escapeHtml(title)}${commit}</li>`;
     }).join("\n") +
     "\n</ol>\n</section>";
+}
+
+/** @param {unknown} value */
+function safeEvidenceHref(value) {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
 }

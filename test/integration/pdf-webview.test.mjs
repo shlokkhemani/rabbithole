@@ -8,7 +8,7 @@ import {
 } from "../support/attention-pdf.mjs";
 
 const app = await bootNoraWebview();
-const { page } = app;
+const { page, messages } = app;
 
 try {
   const origin = await page.evaluate(() => location.origin);
@@ -18,6 +18,7 @@ try {
     sha256: ATTENTION_PDF_SHA256,
     byte_length: (await fs.stat(ATTENTION_PDF_PATH)).size,
   };
+  messages.length = 0;
   const pdfNode = {
     ...baseHydration().nodes[0],
     title: "Attention PDF",
@@ -26,13 +27,14 @@ try {
       pdf: {
         version: 2,
         source,
-        page_count: 15,
-        pages: [{ n: 1, view: ATTENTION_PAGE_VIEW, rotate: 0, user_unit: 1 }],
+        page_count: 0,
+        pages: [],
         lines: [],
-        notes: [],
+        notes: ["PDF metadata will be prepared in the Nora webview."],
         converting: false,
         converted: false,
         original_markdown: null,
+        needs_webview_prepare: true,
       },
     },
   };
@@ -44,6 +46,13 @@ try {
   }));
 
   await page.locator(".rh-pdf-page").first().waitFor();
+  const prepareEvent = messages.find((message) => message.type === "uiEvent" && message.event?.type === "node_extensions_patch");
+  assert(prepareEvent, "pending PDF hydration prepares and persists render metadata");
+  assert.equal(prepareEvent.event.node_id, "root");
+  assert.equal(prepareEvent.event.namespace, "pdf");
+  assert.equal(prepareEvent.event.value.needs_webview_prepare, false);
+  assert.equal(prepareEvent.event.value.pages[0].n, 1);
+  assert.deepEqual(prepareEvent.event.value.pages[0].view, ATTENTION_PAGE_VIEW);
   await page.waitForFunction(() => document.querySelector(".rh-pdf-textlayer")?.textContent?.includes("Attention"));
 
   const preparedCrop = await page.evaluate(async () => window.__noraTest.prepareOutgoingEvent({

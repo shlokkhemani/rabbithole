@@ -49,7 +49,7 @@ export async function acquireRepository(cache, input, options = {}) {
         signal: options.signal,
       });
     }
-    return cache.acquireLocal(input, { revision: options.revision ?? "HEAD", signal: options.signal });
+    throw new Error("Local repository has no usable remote for Nora permalinks; add an upstream/origin remote before adding it to Nora.");
   }
 
   const initial = normalizeRemoteUrl(input, {

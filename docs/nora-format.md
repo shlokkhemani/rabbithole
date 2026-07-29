@@ -131,6 +131,8 @@ source ID, evidence IDs, creation time, and extension data.
 Limits:
 
 - One asset may be at most `100 * 1024 * 1024` raw bytes.
+- `document.json` may be at most `16 * 1024 * 1024` bytes.
+- One `runs/<run-id>.jsonl` transcript may be at most `64 * 1024 * 1024` bytes.
 - Total uncompressed archive entry bytes may be at most `1024 * 1024 * 1024`.
 - The final ZIP file may be at most `1024 * 1024 * 1024` bytes.
 

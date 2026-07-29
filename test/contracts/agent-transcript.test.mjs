@@ -5,6 +5,7 @@ import {
   committedMessageRecords,
   replayRecordsToSessionManager,
   replayableMessagesFromRecords,
+  runMutationRecord,
   runTerminalRecord,
   traceEntriesFromRecords,
   validateTranscriptRecord,
@@ -44,6 +45,12 @@ test("replay uses committed messages and folds only the last uncommitted checkpo
   assert.equal(replayed[1].content[0].text, "Draft");
   assert.equal(replayed[1].stopReason, "aborted");
 
+  const interrupted = [
+    assistantCheckpointRecord("run-i", "assistant-i", partial("Interrupted draft"), { sequence: 1 }),
+    runTerminalRecord("run-i", "interrupted"),
+  ];
+  assert.equal(replayableMessagesFromRecords(interrupted)[0].errorMessage, "interrupted");
+
   const committed = [
     ...committedMessageRecords("run-b", { role: "assistant", content: [{ type: "text", text: "Final" }], api: "fake", provider: "fake", model: "fake", usage: {}, stopReason: "stop", timestamp: 2 }, { messageId: "assistant-b" }),
     assistantCheckpointRecord("run-b", "assistant-b", partial("Draft"), { sequence: 1 }),
@@ -56,11 +63,13 @@ test("records replay through Pi SessionManager.appendMessage in model-facing ord
   const appended = [];
   const records = [
     ...committedMessageRecords("run-a", { role: "user", content: "Prompt", timestamp: 1 }, { messageId: "u" }),
+    runMutationRecord("run-a", { type: "node_state", node_id: "root", state: "running" }, { sequence: 1 }),
     ...committedMessageRecords("run-a", { role: "toolResult", toolCallId: "call-1", toolName: "nora_read_file", content: [{ type: "text", text: "bounded result" }], isError: false, timestamp: 2 }, { messageId: "t" }),
   ];
+  assert.equal(validateTranscriptRecord(records[1]), true);
   replayRecordsToSessionManager(records, { appendMessage: (message) => appended.push(message) });
   assert.deepEqual(appended.map((message) => message.role), ["user", "toolResult"]);
-  assert.deepEqual(traceEntriesFromRecords(records).map((entry) => entry.kind), ["user", "tool-result"]);
+  assert.deepEqual(traceEntriesFromRecords(records).map((entry) => entry.kind), ["user", "nora-mutation", "tool-result"]);
 });
 
 function partial(text) {

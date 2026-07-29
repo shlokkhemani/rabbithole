@@ -117,10 +117,8 @@ async function copyPhotonRuntime(targetDir) {
   const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
   const piRoot = path.dirname(path.dirname(piEntry));
   const photonRoot = path.join(piRoot, "node_modules", "@silvia-odwyer", "photon-node");
-  const runtimeDir = path.join(targetDir, "runtime", "photon");
-  await fs.mkdir(runtimeDir, { recursive: true });
-  await fs.copyFile(path.join(photonRoot, "photon_rs_bg.wasm"), path.join(runtimeDir, "photon_rs_bg.wasm"));
-  await fs.copyFile(path.join(photonRoot, "LICENSE.md"), path.join(runtimeDir, "LICENSE.photon-node.md"));
+  await fs.copyFile(path.join(photonRoot, "photon_rs_bg.wasm"), path.join(targetDir, "photon_rs_bg.wasm"));
+  await fs.copyFile(path.join(photonRoot, "LICENSE.md"), path.join(targetDir, "LICENSE.photon-node.md"));
 }
 
 async function copyPackedCMaps(sourceDir, targetDir) {

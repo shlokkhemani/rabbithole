@@ -9,8 +9,12 @@ import {
   ARCHIVE_ZIP_BYTES_LIMIT,
   ASSET_BYTES_LIMIT,
   ASSETS_PREFIX,
+  DOCUMENT_JSON_BYTES_LIMIT,
   DOCUMENT_PATH,
   MANIFEST_PATH,
+  MANIFEST_JSON_BYTES_LIMIT,
+  RUN_JSONL_BYTES_LIMIT,
+  RUNS_PREFIX,
 } from "./constants.js";
 import {
   archiveKind,
@@ -22,6 +26,7 @@ import {
   validateArchiveSizeBudget,
   normalizeArchivePath,
 } from "./manifest.js";
+import { normalizeRunId } from "../../core/document-schema.js";
 
 /** @typedef {import("../../core/contracts/archive.js").NoraArchiveReadResult} NoraArchiveReadResult */
 
@@ -207,7 +212,7 @@ async function validateReadEntries(archivePath, entries) {
       document = parseNoraDocument(parseStructuredJson(digest.buffer, manifestItem.path));
       assertCanonicalJson(digest.buffer, document, manifestItem.path);
     } else if (kind === "run") {
-      runs.set(runIdFromPath(manifestItem.path), parseJsonl(digest.buffer, manifestItem.path));
+      runs.set(normalizeRunId(runIdFromPath(manifestItem.path), "run transcript id"), parseJsonl(digest.buffer, manifestItem.path));
     } else if (kind === "asset") {
       const sha256 = assetShaFromPath(manifestItem.path);
       if (sha256 !== digest.sha256) throw new Error(`${manifestItem.path} name must match its SHA-256`);
@@ -223,6 +228,7 @@ async function validateReadEntries(archivePath, entries) {
   }
   if (!document) throw new Error("Nora archive is missing document.json");
   if (document.documentId !== manifest.documentId) throw new Error("manifest.documentId must match document.json");
+  validateDocumentPayloadReferences(document, runs, assets);
   return { archivePath, manifest, document, runs, assets };
 }
 
@@ -245,6 +251,10 @@ function validateDirectory(entries) {
     if (entry.path.startsWith(ASSETS_PREFIX) && entry.uncompressedSize > ASSET_BYTES_LIMIT) {
       throw new Error(`${entry.path} exceeds ${ASSET_BYTES_LIMIT} bytes`);
     }
+    const structuredLimit = structuredEntryLimit(entry.path);
+    if (structuredLimit !== null && entry.uncompressedSize > structuredLimit) {
+      throw new Error(`${entry.path} exceeds ${structuredLimit} bytes`);
+    }
   }
 }
 
@@ -266,7 +276,7 @@ function validateManifestCoverage(manifestEntries, zipEntries) {
 
 /** @param {{ zip: import("yauzl").ZipFile, entry: import("yauzl").Entry }} wrapped */
 function readSmallEntry(wrapped) {
-  return readEntryBuffer(wrapped, 16 * 1024 * 1024);
+  return readEntryBuffer(wrapped, MANIFEST_JSON_BYTES_LIMIT);
 }
 
 /**
@@ -274,9 +284,17 @@ function readSmallEntry(wrapped) {
  * @param {import("../../core/contracts/archive.js").NoraArchiveEntry} expected
  */
 async function hashEntry(wrapped, expected) {
-  const keepBuffer = expected.path === DOCUMENT_PATH || /^runs\/[^/]+\.jsonl$/.test(expected.path);
-  const limit = keepBuffer ? Math.max(expected.bytes, 1) : 0;
-  return hashEntryStream(wrapped, keepBuffer ? limit : null);
+  const limit = structuredEntryLimit(expected.path);
+  if (limit !== null && expected.bytes > limit) throw new Error(`${expected.path} exceeds ${limit} bytes`);
+  return hashEntryStream(wrapped, limit);
+}
+
+/** @param {string} entryPath */
+function structuredEntryLimit(entryPath) {
+  if (entryPath === MANIFEST_PATH) return MANIFEST_JSON_BYTES_LIMIT;
+  if (entryPath === DOCUMENT_PATH) return DOCUMENT_JSON_BYTES_LIMIT;
+  if (entryPath.startsWith(RUNS_PREFIX)) return RUN_JSONL_BYTES_LIMIT;
+  return null;
 }
 
 /**
@@ -366,4 +384,23 @@ function parseJsonl(bytes, entryPath) {
     }
     return parsed;
   });
+}
+
+/**
+ * @param {import("../../core/contracts/document.js").NoraDocument} document
+ * @param {Map<string, any[]>} runs
+ * @param {Map<string, { bytes: number, mediaType?: string }>} assets
+ */
+function validateDocumentPayloadReferences(document, runs, assets) {
+  for (const attachment of document.attachments) {
+    const asset = assets.get(attachment.sha256);
+    if (!asset) throw new Error(`document attachment ${attachment.id} references missing asset ${attachment.sha256}`);
+    if (asset.bytes !== attachment.bytes) throw new Error(`document attachment ${attachment.id} size does not match asset ${attachment.sha256}`);
+    if (asset.mediaType !== attachment.mediaType) throw new Error(`document attachment ${attachment.id} media type does not match asset ${attachment.sha256}`);
+  }
+  for (const run of document.runs) {
+    const expectedPath = `${RUNS_PREFIX}${run.id}.jsonl`;
+    if (run.transcriptPath !== expectedPath) throw new Error(`document run ${run.id} must reference ${expectedPath}`);
+    if (!runs.has(run.id)) throw new Error(`document run ${run.id} references missing transcript ${expectedPath}`);
+  }
 }

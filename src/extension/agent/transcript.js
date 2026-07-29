@@ -7,6 +7,7 @@ const RECORD_KINDS = new Set([
   "tool_call",
   "tool_result",
   "assistant_checkpoint",
+  "nora_mutation",
   "run_terminal",
 ]);
 
@@ -64,14 +65,30 @@ export function assistantCheckpointRecord(runId, messageId, partialMessage, opti
 
 /**
  * @param {string} runId
- * @param {"complete" | "cancelled" | "failed"} status
+ * @param {"complete" | "cancelled" | "failed" | "interrupted"} status
  * @param {{ error?: unknown, now?: string }} [options]
  */
 export function runTerminalRecord(runId, status, options = {}) {
-  if (!["complete", "cancelled", "failed"].includes(status)) throw new TypeError("terminal status is invalid");
+  if (!["complete", "cancelled", "failed", "interrupted"].includes(status)) throw new TypeError("terminal status is invalid");
   return baseRecord("run_terminal", runId, `${runId}:terminal`, options.now, {
     status,
     error: status === "failed" ? normalizeError(options.error) : null,
+  });
+}
+
+/**
+ * Record a Nora-owned document mutation that happened during a run. These
+ * records advance the JSONL cutoff with the document revision, but are not
+ * replayed into Pi as model-facing messages.
+ * @param {string} runId
+ * @param {unknown} event
+ * @param {{ sequence?: number, now?: string }} [options]
+ */
+export function runMutationRecord(runId, event, options = {}) {
+  const sequence = safeNonNegativeInteger(options.sequence ?? 0, "sequence");
+  return baseRecord("nora_mutation", runId, `${runId}:mutation:${sequence}`, options.now, {
+    sequence,
+    event: cloneJson(event),
   });
 }
 
@@ -100,7 +117,7 @@ export function replayableMessagesFromRecords(records) {
       messages.push({
         ...checkpointMessage,
         stopReason: interruptedTerminal.status === "cancelled" ? "aborted" : "error",
-        errorMessage: interruptedTerminal.status === "failed" ? "interrupted" : undefined,
+        errorMessage: interruptedTerminal.status === "failed" || interruptedTerminal.status === "interrupted" ? "interrupted" : undefined,
       });
     }
   }
@@ -124,6 +141,7 @@ export function traceEntriesFromRecords(records) {
     if (record.kind === "tool_call") return { kind: "tool-call", text: `${record.toolName} ${JSON.stringify(record.arguments ?? {})}` };
     if (record.kind === "tool_result") return { kind: "tool-result", text: messageText(record.message) };
     if (record.kind === "assistant_checkpoint") return { kind: "assistant-checkpoint", text: String(record.content ?? "") };
+    if (record.kind === "nora_mutation") return { kind: "nora-mutation", text: JSON.stringify(record.event ?? null) };
     if (record.kind === "run_terminal") return { kind: "terminal", text: String(record.status ?? "") };
     return { kind: String(record.kind), text: JSON.stringify(record) };
   });
@@ -142,11 +160,15 @@ export function validateTranscriptRecord(record) {
     safeNonNegativeInteger(raw.sequence, "sequence");
     if (typeof raw.content !== "string") throw new TypeError("checkpoint content must be a string");
   }
+  if (raw.kind === "nora_mutation") {
+    safeNonNegativeInteger(raw.sequence, "sequence");
+    assertJsonValue(raw.event, "mutation event");
+  }
   if (raw.kind === "tool_call") {
     requireString(raw.toolCallId, "toolCallId");
     requireString(raw.toolName, "toolName");
   }
-  if (raw.kind === "run_terminal" && !["complete", "cancelled", "failed"].includes(String(raw.status))) {
+  if (raw.kind === "run_terminal" && !["complete", "cancelled", "failed", "interrupted"].includes(String(raw.status))) {
     throw new TypeError("terminal status is invalid");
   }
   return true;
@@ -197,6 +219,30 @@ export function normalizeError(error) {
     });
   }
   return { message: String(error) };
+}
+
+/** @param {unknown} value @param {string} label @param {Set<unknown>} [seen] */
+function assertJsonValue(value, label, seen = new Set()) {
+  if (value == null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`${label} must be finite JSON data`);
+    return;
+  }
+  if (typeof value !== "object") throw new TypeError(`${label} must be JSON data`);
+  if (seen.has(value)) throw new TypeError(`${label} must not contain cycles`);
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertJsonValue(entry, `${label}[${index}]`, seen));
+    seen.delete(value);
+    return;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) throw new TypeError(`${label} must be plain JSON data`);
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) throw new TypeError(`${label}.${key} must be JSON data`);
+    assertJsonValue(entry, `${label}.${key}`, seen);
+  }
+  seen.delete(value);
 }
 
 /**

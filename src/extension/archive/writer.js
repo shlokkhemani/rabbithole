@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import yazl from "yazl";
-import { toPersistedNoraDocument } from "../../core/document-schema.js";
+import { normalizeRunId, toPersistedNoraDocument } from "../../core/document-schema.js";
 import {
   ARCHIVE_FILE_MODE,
   ARCHIVE_MTIME,
@@ -11,11 +11,13 @@ import {
   ASSET_BYTES_LIMIT,
   ASSET_MEDIA_TYPE,
   ASSETS_PREFIX,
+  DOCUMENT_JSON_BYTES_LIMIT,
   DOCUMENT_PATH,
   JSONL_MEDIA_TYPE,
   MANIFEST_PATH,
   NORA_ARCHIVE_FORMAT,
   NORA_ARCHIVE_FORMAT_VERSION,
+  RUN_JSONL_BYTES_LIMIT,
   RUNS_PREFIX,
   STRUCTURED_MEDIA_TYPE,
 } from "./constants.js";
@@ -87,6 +89,7 @@ export async function prepareArchiveEntries(snapshot) {
     : snapshot.updatedAt ?? snapshot.document.updatedAt ?? null;
   const document = toPersistedNoraDocument(snapshot.document, { updatedAt });
   const documentBytes = canonicalJsonBytes(document);
+  if (documentBytes.byteLength > DOCUMENT_JSON_BYTES_LIMIT) throw new Error(`${DOCUMENT_PATH} exceeds ${DOCUMENT_JSON_BYTES_LIMIT} bytes`);
   /** @type {Array<NoraArchiveEntry & { source: { kind: "buffer", bytes: Buffer } | { kind: "file", filePath: string, bytes: number } | { kind: "archive", archivePath: string, entryPath: string, bytes: number } }>} */
   const payloads = [{
     path: DOCUMENT_PATH,
@@ -96,7 +99,7 @@ export async function prepareArchiveEntries(snapshot) {
     source: { kind: "buffer", bytes: documentBytes },
   }];
 
-  for (const run of await prepareRunEntries(snapshot)) payloads.push(run);
+  for (const run of await prepareRunEntries(snapshot, document)) payloads.push(run);
   for (const asset of await prepareAssetEntries(snapshot)) payloads.push(asset);
 
   const entries = sortArchiveEntries(payloads);
@@ -145,23 +148,24 @@ function buildManifest(document, entries, previousManifest, snapshot) {
   };
 }
 
-/** @param {NoraArchiveWriteSnapshot} snapshot */
-async function prepareRunEntries(snapshot) {
-  const sourceByRunId = new Map((snapshot.runs ?? []).map((run) => [run.runId, run]));
+/** @param {NoraArchiveWriteSnapshot} snapshot @param {import("../../core/contracts/document.js").NoraDocument} document */
+async function prepareRunEntries(snapshot, document) {
+  const sourceByRunId = new Map((snapshot.runs ?? []).map((run) => [normalizeRunId(run.runId, "run source id"), run]));
   const previousByRunId = new Map();
   for (const [runId, records] of snapshot.previousArchive?.runs ?? []) {
-    previousByRunId.set(runId, records);
+    previousByRunId.set(normalizeRunId(runId, "previous run id"), records);
   }
   const runIds = new Set([
     ...sourceByRunId.keys(),
-    ...Object.keys(snapshot.runByteCutoffs ?? {}),
-    ...snapshot.document.runs.map((run) => run.id),
+    ...Object.keys(snapshot.runByteCutoffs ?? {}).map((runId) => normalizeRunId(runId, "run cutoff id")),
+    ...document.runs.map((run) => run.id),
   ]);
   /** @type {Array<any>} */
   const entries = [];
   for (const runId of [...runIds].sort()) {
+    const safeRunId = normalizeRunId(runId, "run id");
     const source = sourceByRunId.get(runId);
-    const pathName = `${RUNS_PREFIX}${runId}.jsonl`;
+    const pathName = `${RUNS_PREFIX}${safeRunId}.jsonl`;
     let bytes;
     if (source?.filePath) {
       bytes = await readCompleteJsonlPrefix(source.filePath, snapshot.runByteCutoffs?.[runId]);
@@ -172,6 +176,7 @@ async function prepareRunEntries(snapshot) {
     } else {
       bytes = Buffer.alloc(0);
     }
+    if (bytes.byteLength > RUN_JSONL_BYTES_LIMIT) throw new Error(`${pathName} exceeds ${RUN_JSONL_BYTES_LIMIT} bytes`);
     validateJsonlBytes(bytes, pathName);
     entries.push({
       path: pathName,
@@ -240,6 +245,7 @@ async function readCompleteJsonlPrefix(filePath, cutoff) {
   try {
     const stat = await file.stat();
     const max = Math.min(Number.isSafeInteger(cutoff) ? Number(cutoff) : stat.size, stat.size);
+    if (max > RUN_JSONL_BYTES_LIMIT) throw new Error(`${filePath} exceeds ${RUN_JSONL_BYTES_LIMIT} bytes`);
     const chunks = [];
     let remaining = max;
     let position = 0;

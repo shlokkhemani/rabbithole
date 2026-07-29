@@ -38,6 +38,7 @@ test("Nora exports include visible research and omit hidden run/profile/config f
   assert.deepEqual(projection.document.nodes[0].extensions, {}, "snapshot clears non-renderer check state");
   assert.deepEqual(projection.document.checks[0].state, {}, "Markdown/snapshot start checks clean");
   assert(html.includes("https://github.com/r13v/Nora/blob/"), "snapshot exposes stable evidence links");
+  assert(!html.includes('href="javascript:'), "snapshot does not render unsafe evidence link schemes as anchors");
   assert(!html.includes("</script><script>globalThis.__breakout"), "snapshot payload is inert text, not executable markup");
   assert(markdown.includes("[^evidence-code-nora]"), "Markdown emits evidence footnotes");
   assert(markdown.includes("commit 0123456789abcdef0123456789abcdef01234567"), "Markdown keeps source revision evidence");
@@ -57,6 +58,13 @@ function withExportSentinels() {
   document.nodes[0].extensions = { learn: { c8lb3: { attempts: 4, hidden: HIDDEN } } };
   document.sources[0].extensions = { localWorktreePath: `/tmp/${HIDDEN}` };
   document.evidence[0].extensions = { toolResult: HIDDEN };
+  document.evidence.push({
+    ...document.evidence[0],
+    id: "evidence-hostile-url",
+    permalink: "javascript:globalThis.__noraSnapshotPwned=true",
+    title: "Hostile evidence URL",
+  });
+  document.nodes[0].evidenceIds.push("evidence-hostile-url");
   document.runs[0] = {
     ...document.runs[0],
     prompt: HIDDEN,

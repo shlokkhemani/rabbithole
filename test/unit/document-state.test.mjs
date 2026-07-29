@@ -121,6 +121,66 @@ console.log("ok document state: Nora document events are immutable and revisione
 }
 console.log("ok document state: collection events validate against document references");
 
+{
+  const attachment = {
+    id: "attachment:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    mediaType: "image/png",
+    title: "Attached image",
+    filename: "image.png",
+    bytes: 10,
+    sourceId: null,
+    evidenceIds: [],
+    createdAt: "2026-07-28T11:00:00.000Z",
+    extensions: {},
+  };
+  const valid = createDocumentState(minimalDocument({
+    attachments: [attachment],
+    nodes: [{ id: "root", title: "Root", markdown: "Body", attachmentIds: [attachment.id] }],
+  }));
+  assert.equal(documentStateToPersisted(valid).nodes[0].attachmentIds[0], attachment.id);
+  assert.throws(
+    () => createDocumentState(minimalDocument({
+      nodes: [{ id: "root", title: "Root", markdown: "Body", attachmentIds: ["attachment:missing"] }],
+    })),
+    /attachmentIds references missing attachment/
+  );
+  assert.throws(
+    () => reduceDocumentEvent(createDocumentState(minimalDocument()), {
+      type: "node_references",
+      node_id: "root",
+      attachment_ids: ["attachment:missing"],
+    }),
+    /attachmentIds references missing attachment/
+  );
+}
+console.log("ok document state: node attachment references must resolve to persisted attachments");
+
+{
+  const state = createDocumentState(minimalDocument({
+    nodes: [
+      { id: "root", title: "Root", markdown: "Body" },
+      { id: "child", parentId: "root", title: "Child", markdown: "Answer" },
+    ],
+    runs: [{ ...agentRunSummaryFixture, id: "run-child", targetNodeId: "child", status: "complete" }],
+    checks: [{
+      id: "check-child",
+      nodeId: "child",
+      blockId: "block-a",
+      state: { ok: true },
+      createdAt: "2026-07-28T11:00:00.000Z",
+      updatedAt: "2026-07-28T11:00:00.000Z",
+      extensions: {},
+    }],
+  }));
+  const result = reduceDocumentEvent(state, { type: "delete_node", node_id: "child" });
+  assert.equal(result.state.nodes.has("child"), false);
+  assert.equal(result.state.runs.get("run-child").targetNodeId, null, "run history outlives deleted target nodes without dangling references");
+  assert.equal(result.state.checks.has("check-child"), false, "checks tied to deleted nodes are removed");
+  assert.equal(validateNoraDocument(documentStateToPersisted(result.state)), true);
+}
+console.log("ok document state: deleting nodes leaves run and check references valid");
+
 assert.throws(
   () => createDocumentState({ ...noraDocumentFixture, schemaVersion: 2 }),
   (error) => error?.message === NEWER_NORA_DOCUMENT_MESSAGE,
@@ -128,6 +188,20 @@ assert.throws(
 assert.throws(
   () => createDocumentState(minimalDocument({ nodes: [{ id: "root", extensions: { bad: undefined } }] })),
   /must be JSON data/,
+);
+assert.throws(
+  () => validateNoraDocument({
+    ...documentStateToPersisted(createDocumentState(minimalDocument())),
+    nodes: [{ ...documentStateToPersisted(createDocumentState(minimalDocument())).nodes[0], position: { x: "1", y: 0 } }],
+  }),
+  /finite number/,
+);
+assert.throws(
+  () => validateNoraDocument({
+    ...documentStateToPersisted(createDocumentState(minimalDocument())),
+    nodes: [{ ...documentStateToPersisted(createDocumentState(minimalDocument())).nodes[0], size: { w: -1, h: 100 } }],
+  }),
+  /positive finite number/,
 );
 {
   const state = createDocumentState(minimalDocument());

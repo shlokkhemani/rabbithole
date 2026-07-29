@@ -14,6 +14,7 @@ const IMAGE_EXTENSIONS = new Map([
   [".webp", "image/webp"],
   [".svg", "image/svg+xml"],
 ]);
+const MAX_BASE64_INPUT_CHARS = Math.ceil(ASSET_BYTES_LIMIT / 3) * 4 + 4096;
 
 /**
  * @typedef {{
@@ -23,7 +24,8 @@ const IMAGE_EXTENSIONS = new Map([
  *   assetName: string,
  *   sha256: string,
  *   bytes: number,
- *   mediaType: string
+ *   mediaType: string,
+ *   dataBase64?: string
  * }} PreparedAttachment
  */
 
@@ -139,19 +141,30 @@ export async function addBytesAttachmentToDocument(document, bytes, options = {}
  * @param {Record<string, unknown>} crop
  */
 export async function addWebviewCropAttachment(document, crop) {
-  const encoded = requireString(crop.bytes_base64, "crop.bytes_base64");
-  const bytes = Buffer.from(encoded, "base64");
-  if (!bytes.length || bytes.toString("base64") !== encoded.replace(/\s+/g, "")) {
-    throw new Error("crop.bytes_base64 must be valid base64 bytes");
-  }
+  const prepared = await prepareWebviewCropAttachment(document, crop);
+  await commitAttachmentRecords(document, prepared);
+  return prepared;
+}
+
+/**
+ * @param {import("./nora-document.js").NoraDocument} document
+ * @param {Record<string, unknown>} crop
+ */
+export async function prepareWebviewCropAttachment(document, crop) {
+  const bytes = decodeBoundedBase64(requireString(crop.bytes_base64, "crop.bytes_base64"), "crop.bytes_base64");
   const sha256 = sha256Bytes(bytes);
   const declared = crop.sha256 == null ? sha256 : normalizeSha256(crop.sha256);
   if (declared !== sha256) throw new Error("crop.sha256 does not match crop bytes");
   const assetName = assetNameFor({ sha256, mediaType: "image/png", filename: typeof crop.filename === "string" ? crop.filename : null });
-  return addBytesAttachmentToDocument(document, bytes, {
+  preflightAttachmentMetadata(document, [{ sha256, bytes: bytes.byteLength }]);
+  const staged = await document.archiveWorkspace.stageAssetBytes(bytes, { mediaType: "image/png" });
+  const prepared = prepareAttachmentRecord({
+    document,
+    sha256: staged.sha256,
+    bytes: staged.bytes,
+    mediaType: "image/png",
     title: typeof crop.title === "string" && crop.title ? crop.title : "PDF crop",
     filename: assetName,
-    mediaType: "image/png",
     sourceType: "pdf-region",
     stableLocator: {
       kind: "pdf-region",
@@ -170,6 +183,8 @@ export async function addWebviewCropAttachment(document, crop) {
       anchor: crop.anchor ?? null,
     },
   });
+  prepared.dataBase64 = bytes.toString("base64");
+  return prepared;
 }
 
 /**
@@ -177,11 +192,7 @@ export async function addWebviewCropAttachment(document, crop) {
  * @param {{ server: string, uri: string, content: Record<string, unknown> }} input
  */
 export async function addMcpResourceBlobAttachment(document, input) {
-  const blob = requireString(input.content.blob, "MCP resource blob");
-  const bytes = Buffer.from(blob, "base64");
-  if (!bytes.length || bytes.toString("base64") !== blob.replace(/\s+/g, "")) {
-    throw new Error("MCP resource blob must be base64");
-  }
+  const bytes = decodeBoundedBase64(requireString(input.content.blob, "MCP resource blob"), "MCP resource blob");
   const mediaType = typeof input.content.mimeType === "string" && input.content.mimeType
     ? input.content.mimeType
     : "application/octet-stream";
@@ -271,17 +282,21 @@ export function prepareAttachmentRecord(options) {
 /**
  * @param {import("./nora-document.js").NoraDocument} document
  * @param {PreparedAttachment} prepared
- * @param {{ nodeId?: string | null }} [options]
+ * @param {{ nodeId?: string | null, runMutation?: boolean }} [options]
  */
 export async function commitAttachmentRecords(document, prepared, options = {}) {
+  /** @param {unknown} event */
+  const commit = (event) => options.runMutation === true
+    ? document.commitRunEvent(event)
+    : document.commitEvent(event);
   const sourceExists = document.state.sources.has(prepared.source.id);
   const evidenceExists = document.state.evidence.has(prepared.evidence.id);
   const attachmentExists = document.state.attachments.has(prepared.attachment.id);
-  if (!sourceExists) await document.commitEvent({ type: "source_record", source: prepared.source });
-  if (!evidenceExists) await document.commitEvent({ type: "evidence_record", evidence: prepared.evidence });
-  if (!attachmentExists) await document.commitEvent({ type: "attachment_record", attachment: prepared.attachment });
+  if (!sourceExists) await commit({ type: "source_record", source: prepared.source });
+  if (!evidenceExists) await commit({ type: "evidence_record", evidence: prepared.evidence });
+  if (!attachmentExists) await commit({ type: "attachment_record", attachment: prepared.attachment });
   if (options.nodeId) {
-    await document.commitEvent({
+    await commit({
       type: "node_references",
       node_id: options.nodeId,
       source_ids: [prepared.source.id],
@@ -428,6 +443,23 @@ function safeByteLength(value, label) {
 function requireString(value, label) {
   if (typeof value !== "string" || !value) throw new Error(`${label} must be a non-empty string`);
   return value;
+}
+
+/** @param {string} encoded @param {string} label */
+function decodeBoundedBase64(encoded, label) {
+  if (encoded.length > MAX_BASE64_INPUT_CHARS) throw new Error(`${label} exceeds ${ASSET_BYTES_LIMIT} decoded bytes`);
+  const clean = encoded.replace(/\s+/g, "");
+  if (!clean) throw new Error(`${label} must be valid base64 bytes`);
+  if (clean.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(clean)) {
+    throw new Error(`${label} must be valid base64 bytes`);
+  }
+  const padding = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  const decodedBytes = (clean.length / 4) * 3 - padding;
+  if (decodedBytes <= 0) throw new Error(`${label} must be valid base64 bytes`);
+  if (decodedBytes > ASSET_BYTES_LIMIT) throw new Error(`${label} exceeds ${ASSET_BYTES_LIMIT} decoded bytes`);
+  const bytes = Buffer.from(clean, "base64");
+  if (bytes.toString("base64") !== clean) throw new Error(`${label} must be valid base64 bytes`);
+  return bytes;
 }
 
 /** @param {import("./nora-document.js").NoraDocument} document */

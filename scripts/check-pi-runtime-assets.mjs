@@ -5,10 +5,9 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(rootDir, "out");
 const metafilePath = path.join(outDir, "extension.metafile.json");
-const photonDir = path.join(outDir, "runtime", "photon");
-const requiredRuntimeFiles = new Set([
-  "runtime/photon/LICENSE.photon-node.md",
-  "runtime/photon/photon_rs_bg.wasm",
+const requiredPhotonFiles = new Set([
+  "LICENSE.photon-node.md",
+  "photon_rs_bg.wasm",
 ]);
 const forbiddenInput = /(?:@mariozechner\/clipboard|@napi-rs\/canvas|\.node$|\.so$|\.dylib$|\.dll$)/;
 
@@ -23,19 +22,15 @@ await assertRuntimeAllowlist();
 
 const referencesPhoton = inputs.some((input) => input.includes("@silvia-odwyer/photon-node") || input.includes("utils/photon"));
 if (referencesPhoton) {
-  await fs.access(path.join(photonDir, "photon_rs_bg.wasm"));
-  await fs.access(path.join(photonDir, "LICENSE.photon-node.md"));
+  for (const file of requiredPhotonFiles) await fs.access(path.join(outDir, file));
 }
 
-console.log("ok pi runtime assets: explicit Photon WASM allowlist is present and native optional packages are absent");
+console.log("ok pi runtime assets: explicit Photon WASM files are present and native optional packages are absent");
 
 async function assertRuntimeAllowlist() {
   const actual = new Set();
   await collect(path.join(outDir, "runtime"), actual);
-  for (const expected of requiredRuntimeFiles) {
-    if (!actual.has(expected)) throw new Error(`Missing required runtime asset: ${expected}`);
-  }
-  const unexpected = [...actual].filter((entry) => !requiredRuntimeFiles.has(entry));
+  const unexpected = [...actual];
   if (unexpected.length) throw new Error(`Unexpected runtime assets:\n${unexpected.join("\n")}`);
 }
 

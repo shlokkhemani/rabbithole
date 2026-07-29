@@ -231,6 +231,18 @@ function runValidationFixture() {
     () => normalizeBaseUrl("https://:secret@good.example/x"),
     /base_url must not include credentials/
   );
+  assert.throws(
+    () => normalizeBaseUrl("https://good.example/x?token=secret"),
+    /credential-bearing query parameter token/
+  );
+  assert.deepEqual(
+    deriveNodeBaseUrl({
+      markdown: "---\nbase_url: https://good.example/x?api_key=secret\n---\nBody",
+      inheritedBaseUrl: "https://parent.example/root.md",
+    }),
+    { base_url: "https://parent.example/root.md", base_url_source: "inherited" },
+    "credential-bearing frontmatter base URLs should fall through to inherited bases"
+  );
 
   console.log("ok base urls: core validation rejects invalid base_url");
 }

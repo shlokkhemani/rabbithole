@@ -4,7 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { ASSET_BYTES_LIMIT, NORA_TEMP_PREFIX } from "./constants.js";
+import { normalizeRunId } from "../../core/document-schema.js";
+import { ASSET_BYTES_LIMIT, NORA_TEMP_PREFIX, RUN_JSONL_BYTES_LIMIT } from "./constants.js";
 import { sha256Bytes } from "./hash.js";
 import { canonicalJsonBytes } from "./manifest.js";
 
@@ -75,21 +76,28 @@ export class NoraArchiveWorkspace {
 
   /** @param {string} runId @param {Record<string, unknown>} record */
   async appendRunRecord(runId, record) {
-    const filePath = path.join(this.runsDir, `${safeRunId(runId)}.jsonl`);
-    await fs.appendFile(filePath, canonicalJsonBytes(record), { mode: 0o600 });
+    const safeRunId = normalizeRunId(runId, "runId");
+    const filePath = path.join(this.runsDir, `${safeRunId}.jsonl`);
+    const bytes = canonicalJsonBytes(record);
+    const current = await fileSize(filePath);
+    if (current + bytes.byteLength > RUN_JSONL_BYTES_LIMIT) throw new Error(`Run transcript ${safeRunId} exceeds ${RUN_JSONL_BYTES_LIMIT} bytes`);
+    await fs.appendFile(filePath, bytes, { mode: 0o600 });
     const stat = await fs.stat(filePath);
-    const entry = { runId, filePath, bytes: stat.size };
-    this.runs.set(runId, entry);
+    const entry = { runId: safeRunId, filePath, bytes: stat.size };
+    this.runs.set(safeRunId, entry);
     return stat.size;
   }
 
   /** @param {string} runId @param {Buffer | Uint8Array | string} bytes */
   async stageRunBytes(runId, bytes) {
-    const filePath = path.join(this.runsDir, `${safeRunId(runId)}.jsonl`);
-    await fs.writeFile(filePath, bytes, { mode: 0o600 });
+    const safeRunId = normalizeRunId(runId, "runId");
+    const buffer = Buffer.from(bytes);
+    if (buffer.byteLength > RUN_JSONL_BYTES_LIMIT) throw new Error(`Run transcript ${safeRunId} exceeds ${RUN_JSONL_BYTES_LIMIT} bytes`);
+    const filePath = path.join(this.runsDir, `${safeRunId}.jsonl`);
+    await fs.writeFile(filePath, buffer, { mode: 0o600 });
     const stat = await fs.stat(filePath);
-    const entry = { runId, filePath, bytes: stat.size };
-    this.runs.set(runId, entry);
+    const entry = { runId: safeRunId, filePath, bytes: stat.size };
+    this.runs.set(safeRunId, entry);
     return entry;
   }
 
@@ -102,6 +110,16 @@ export class NoraArchiveWorkspace {
 
   async dispose() {
     await fs.rm(this.tempDir, { recursive: true, force: true });
+  }
+}
+
+/** @param {string} filePath */
+async function fileSize(filePath) {
+  try {
+    return (await fs.stat(filePath)).size;
+  } catch (error) {
+    if (/** @type {{ code?: unknown }} */ (error)?.code === "ENOENT") return 0;
+    throw error;
   }
 }
 
@@ -128,10 +146,4 @@ export async function cleanupStaleNoraArchiveWorkspaces(rootDir, options = {}) {
     removed.push(dirPath);
   }
   return removed;
-}
-
-/** @param {string} runId */
-function safeRunId(runId) {
-  if (!/^[A-Za-z0-9._-]+$/.test(runId)) throw new Error("runId must be safe for a Nora JSONL path");
-  return runId;
 }

@@ -106,6 +106,30 @@ console.log("ok nora archive: staged assets, duplicate content addresses, multip
 await withTempDir(async (dir) => {
   const workspace = await createNoraArchiveWorkspace({ rootDir: dir });
   try {
+    await assert.rejects(
+      workspace.stageRunBytes("../bad", jsonl([{ kind: "message" }])),
+      /filename-safe Nora run id/,
+      "run staging rejects ids before they can become filesystem paths",
+    );
+  } finally {
+    await workspace.dispose();
+  }
+
+  const document = {
+    ...await loadMinimalDocument(),
+    runs: [runSummary("bad/run")],
+  };
+  await assert.rejects(
+    writeNoraArchiveToPath(path.join(dir, "bad-run-id.nora"), { document }),
+    /filename-safe Nora run id/,
+    "archive writing rejects ids before constructing runs/<id>.jsonl",
+  );
+});
+console.log("ok nora archive: run ids are single safe filename segments before staging or writing");
+
+await withTempDir(async (dir) => {
+  const workspace = await createNoraArchiveWorkspace({ rootDir: dir });
+  try {
     await workspace.stageRunBytes("run-a", "{\"kind\":\"message\"}\n{\"kind\":");
     const document = {
       ...await loadMinimalDocument(),

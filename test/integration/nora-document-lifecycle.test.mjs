@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readNoraArchive } from "../../src/extension/archive/reader.js";
+import { DocumentRegistry } from "../../src/extension/document-registry.js";
 import {
   NoraDocument,
   SaveConflictError,
@@ -96,6 +97,14 @@ test("active and completed Agent Runs are one undo unit with cancelled partial r
     await document.commitRunEvent({ type: "run_summary", run });
     await document.commitRunEvent({ type: "node_state", node_id: "root", state: "running" });
     assert.equal(document.undoStack.length, 0, "active run does not push normal history entries");
+    const runArchivePath = path.join(dir, "run-active.nora");
+    await document.backupToPath(runArchivePath);
+    const activeBackup = await readNoraArchive(runArchivePath);
+    assert.deepEqual(
+      activeBackup.runs.get("run-a").map((record) => record.kind),
+      ["nora_mutation", "nora_mutation"],
+      "active run mutations advance the saved transcript cutoff with the document state",
+    );
 
     await document.undo();
     assert.equal(aborted, true);
@@ -112,6 +121,42 @@ test("active and completed Agent Runs are one undo unit with cancelled partial r
   });
 });
 
+test("active run undo fails instead of fabricating cancelled redo when terminal transcript append fails", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "undo-failure.nora")), {
+      tempRoot: dir,
+      title: "Undo Failure",
+    });
+    const run = {
+      id: "run-fail-append",
+      parentRunId: null,
+      targetNodeId: "root",
+      status: "running",
+      prompt: "Prompt",
+      profileId: null,
+      provider: "fake",
+      model: "fake",
+      endpoint: null,
+      startedAt: "2026-07-28T00:00:00.000Z",
+      endedAt: null,
+      error: null,
+      transcriptPath: "runs/run-fail-append.jsonl",
+      extensions: {},
+    };
+    await document.beginRun("run-fail-append", { abort: () => {} });
+    await document.commitRunEvent({ type: "run_summary", run });
+    const originalAppend = document.archiveWorkspace.appendRunRecord.bind(document.archiveWorkspace);
+    document.archiveWorkspace.appendRunRecord = async () => {
+      throw new Error("append failed");
+    };
+    await assert.rejects(() => document.undo(), /append failed/);
+    assert.equal(document.activeRun?.runId, "run-fail-append");
+    assert.equal(document.redoStack.length, 0);
+    document.archiveWorkspace.appendRunRecord = originalAppend;
+    await document.dispose();
+  });
+});
+
 test("save finalization rejects a retryable conflict when the document mutates during archive streaming", async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, "conflict.nora");
@@ -121,6 +166,7 @@ test("save finalization rejects a retryable conflict when the document mutates d
       now: "2026-07-28T00:00:00.000Z",
       idFactory: () => "conflict-doc",
     });
+    await document.saveToPath(filePath);
     await assert.rejects(
       document.saveToPath(filePath, {
         writeArchive: async (targetPath, snapshot) => {
@@ -135,6 +181,8 @@ test("save finalization rejects a retryable conflict when the document mutates d
       SaveConflictError,
     );
     assert.equal(document.isDirty, true);
+    const stillValid = await readNoraArchive(filePath);
+    assert.equal(stillValid.document.documentId, "conflict-doc", "save conflicts leave the previous archive readable");
     await document.dispose();
   });
 });
@@ -153,6 +201,9 @@ test("backup, backup recovery, save-as, revert, invalid archives, unsupported sc
     });
     const first = await NoraDocument.open(fileUri(firstPath), { tempRoot: dir });
     const second = await NoraDocument.open(fileUri(secondPath), { tempRoot: dir });
+    const registry = new DocumentRegistry();
+    const registryEntry = registry.add(first);
+    registry.setActive(first);
     await first.commitWebviewEvent({ type: "document_title", title: "Changed First" });
     assert.equal(second.state.title, "Second", "separate documents mutate independently");
 
@@ -164,6 +215,10 @@ test("backup, backup recovery, save-as, revert, invalid archives, unsupported sc
     const saveAsPath = path.join(dir, "saved-as.nora");
     await first.saveAs(fileUri(saveAsPath));
     assert.equal(first.filePath, saveAsPath);
+    registry.setActive(first);
+    assert.equal(registry.activeDocument, first, "save-as re-keys the active document registry to the destination URI");
+    assert.equal(registry.get(fileUri(saveAsPath)), first);
+    assert.equal(registry.get(fileUri(firstPath)), null);
     await first.commitWebviewEvent({ type: "document_title", title: "Dirty Again" });
     await first.revert();
     assert.equal(first.state.title, "Changed First");
@@ -174,12 +229,13 @@ test("backup, backup recovery, save-as, revert, invalid archives, unsupported sc
     await assert.rejects(first.saveAs({ scheme: "vscode-remote", fsPath: "/remote/out.nora", toString: () => "vscode-remote:/remote/out.nora" }), /supports only local file/);
 
     await first.dispose();
+    registryEntry.dispose();
     await second.dispose();
     await recovered.dispose();
   });
 });
 
-test("running runs recovered from a hot-exit backup are terminalized as interrupted failures", async () => {
+test("running runs recovered from a hot-exit backup are terminalized as interrupted runs with terminal transcript records", async () => {
   await withTempDir(async (dir) => {
     const base = createMinimalNoraDocument("Interrupted", {
       now: "2026-07-28T00:00:00.000Z",
@@ -209,9 +265,18 @@ test("running runs recovered from a hot-exit backup are terminalized as interrup
     await import("../../src/extension/archive/writer.js").then((mod) => mod.writeNoraArchive(archivePath, { document }));
 
     const opened = await NoraDocument.open(fileUri(archivePath), { tempRoot: dir, now: "2026-07-28T00:01:00.000Z" });
-    assert.equal(opened.state.runs.get("run-interrupted")?.status, "failed");
+    assert.equal(opened.state.runs.get("run-interrupted")?.status, "interrupted");
     assert.deepEqual(opened.state.runs.get("run-interrupted")?.error, { reason: "interrupted" });
-    assert.equal(opened.state.nodes.get("root")?.state, "failed");
+    assert.equal(opened.state.nodes.get("root")?.state, "interrupted");
+    assert.deepEqual(opened.getRunTranscriptRecords("run-interrupted").map((record) => record.kind), ["run_terminal"]);
+    assert.equal(opened.getRunTranscriptRecords("run-interrupted")[0].status, "interrupted");
+    await opened.commitWebviewEvent({ type: "document_title", title: "Dirty before revert" });
+    await opened.revert();
+    await opened.save();
+    const saved = await readNoraArchive(archivePath);
+    assert.equal(saved.document.runs[0].status, "interrupted");
+    assert.deepEqual(saved.runs.get("run-interrupted").map((record) => record.kind), ["run_terminal"]);
+    assert.equal(saved.runs.get("run-interrupted")[0].status, "interrupted");
     await opened.dispose();
   });
 });

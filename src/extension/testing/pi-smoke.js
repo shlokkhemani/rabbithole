@@ -219,21 +219,14 @@ function streamEvents(message) {
 
 /** @param {string} extensionPath */
 async function verifyPhotonWasm(extensionPath) {
-  const runtimeDir = path.join(extensionPath, "out", "runtime", "photon");
-  await fs.access(path.join(runtimeDir, "photon_rs_bg.wasm"));
-  const previousCwd = process.cwd();
-  try {
-    process.chdir(runtimeDir);
-    const resized = await resizeImage(Buffer.from(ONE_BY_ONE_PNG, "base64"), "image/png", {
-      maxWidth: 8,
-      maxHeight: 8,
-      maxBytes: 32 * 1024,
-    });
-    if (!resized || resized.mimeType !== "image/png" || resized.width !== 1 || resized.height !== 1) {
-      throw new Error("Photon WASM image preprocessing did not return the expected PNG result");
-    }
-    return { mimeType: resized.mimeType, width: resized.width, height: resized.height, wasResized: resized.wasResized };
-  } finally {
-    process.chdir(previousCwd);
+  await fs.access(path.join(extensionPath, "out", "photon_rs_bg.wasm"));
+  const resized = await resizeImage(Buffer.from(ONE_BY_ONE_PNG, "base64"), "image/png", {
+    maxWidth: 8,
+    maxHeight: 8,
+    maxBytes: 32 * 1024,
+  });
+  if (!resized || resized.mimeType !== "image/png" || resized.width !== 1 || resized.height !== 1) {
+    throw new Error("Photon WASM image preprocessing did not return the expected PNG result");
   }
+  return { mimeType: resized.mimeType, width: resized.width, height: resized.height, wasResized: resized.wasResized };
 }

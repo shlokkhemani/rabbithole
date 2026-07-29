@@ -7,7 +7,7 @@ const { page, messages } = app;
 try {
   await verifyInitialHydrationAndReaderCanvas();
   await verifySelectionAskAndFollowupScopes();
-  await verifyWholeCanvasAskCommand();
+  await verifyAskCommandAndToolbarScopes();
   await verifyRunStatesAndDetails();
   await verifySearchChecksHostileMarkdownAndReload();
   console.log("Nora webview research canvas verification passed");
@@ -48,15 +48,15 @@ async function verifySelectionAskAndFollowupScopes() {
   assert.equal(followupEvent.branch_type, "followup");
 }
 
-async function verifyWholeCanvasAskCommand() {
+async function verifyAskCommandAndToolbarScopes() {
   messages.length = 0;
   await app.command("ask");
   await page.waitForSelector("#ask.visible");
-  await page.fill("#ask-text", "Summarize the whole canvas");
+  await page.fill("#ask-text", "Summarize the current node");
   await page.keyboard.press("Enter");
   const askEvent = lastUiEvent("nora_ask");
-  assert.equal(askEvent.prompt, "Summarize the whole canvas");
-  assert.deepEqual(askEvent.scope, { type: "whole_canvas" });
+  assert.equal(askEvent.prompt, "Summarize the current node");
+  assert.deepEqual(askEvent.scope, { type: "node", node_id: "root" });
 
   messages.length = 0;
   await page.click("#t-ask");

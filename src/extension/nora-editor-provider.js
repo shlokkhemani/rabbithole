@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
+import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { createNoraWebviewHtml, createNonce } from "./webview-html.js";
 import { serializeExtensionMessage, validateWebviewMessage } from "./protocol.js";
 import { NoraDocument, requireFilePath, titleForUri } from "./nora-document.js";
-import { resolveWorkspaceScope } from "./workspace-scope.js";
+import { resolveWorkspaceScope, workspaceScopePath } from "./workspace-scope.js";
 import { NoraRunController } from "./agent/run-controller.js";
-import { addWebviewCropAttachment } from "./attachments.js";
+import { commitAttachmentRecords, prepareWebviewCropAttachment } from "./attachments.js";
 import { normalizePdfExtension } from "../core/pdf-shared.js";
 import { exportSnapshotDocument } from "./commands/export-commands.js";
 
@@ -61,7 +62,8 @@ export class NoraEditorProvider {
   async resolveCustomEditor(document, panel) {
     const noraDocument = asNoraDocument(document);
     if (noraDocument.uri && /** @type {vscode.Uri} */ (noraDocument.uri).scheme !== "untitled") {
-      await resolveWorkspaceScope(vscode, /** @type {vscode.Uri} */ (noraDocument.uri));
+      const workspaceFolder = await resolveWorkspaceScope(vscode, /** @type {vscode.Uri} */ (noraDocument.uri));
+      noraDocument.setWorkspaceFolderPath(workspaceScopePath(workspaceFolder));
     }
     const webview = panel.webview;
     const assetRoot = vscode.Uri.joinPath(this.context.extensionUri, "out", "webview");
@@ -98,41 +100,50 @@ export class NoraEditorProvider {
         return;
       }
       if (message.type === "ready") {
-        await postHydration(panel, noraDocument);
+        try {
+          await postHydration(panel, noraDocument);
+        } catch (error) {
+          await postError(panel, error);
+        }
         return;
       }
       if (message.event.type === "done") {
+        await postAck(panel, message, true);
         await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
         return;
       }
       if (message.event.type === "nora_ask" || message.event.type === "branch_request") {
         try {
           await this.#handleRunEvent(noraDocument, message.event);
+          await postAck(panel, message, true);
         } catch (error) {
-          await postError(panel, error);
+          await postAck(panel, message, false, error);
         }
         return;
       }
       if (message.event.type === "convert_pdf") {
         try {
           await handleConvertPdf(noraDocument, message.event);
+          await postAck(panel, message, true);
         } catch (error) {
-          await postError(panel, error);
+          await postAck(panel, message, false, error);
         }
         return;
       }
       if (message.event.type === "export_snapshot") {
         try {
           await exportSnapshotDocument(this.context, vscode, noraDocument);
+          await postAck(panel, message, true);
         } catch (error) {
-          await postError(panel, error);
+          await postAck(panel, message, false, error);
         }
         return;
       }
       try {
         await noraDocument.commitWebviewEvent(message.event);
+        await postAck(panel, message, true);
       } catch (error) {
-        await postError(panel, error);
+        await postAck(panel, message, false, error);
       }
     });
   }
@@ -205,25 +216,41 @@ export class NoraEditorProvider {
    */
   async #handleRunEvent(document, event) {
     const crop = event.type === "branch_request" && event.crop && typeof event.crop === "object" && !Array.isArray(event.crop)
-      ? await addWebviewCropAttachment(document, /** @type {Record<string, unknown>} */ (event.crop))
+      ? await prepareWebviewCropAttachment(document, /** @type {Record<string, unknown>} */ (event.crop))
       : null;
     const runEvent = crop ? {
       ...event,
       crop_asset: crop.assetName,
       crop_attachment_id: crop.attachment.id,
     } : event;
-    const started = await this.runController.startFromWebviewEvent(document, runEvent);
-    if (!crop) return started;
-    const nodeId = String(event.node_id ?? event.nodeId ?? started?.targetNodeId ?? "");
-    const events = [
-      { type: "node_references", node_id: nodeId, source_ids: [crop.source.id], evidence_ids: [crop.evidence.id], attachment_ids: [crop.attachment.id] },
-    ];
-    for (const mutation of events) {
-      if (document.activeRun) await document.commitRunEvent(mutation);
-      else await document.commitEvent(mutation);
-    }
-    return started;
+    const promptImages = crop ? [await promptImageForCrop(crop)] : [];
+    return this.runController.startFromWebviewEvent(document, runEvent, {
+      promptImages,
+      startMutations: crop ? async (started) => {
+        const nodeId = String(event.node_id ?? event.nodeId ?? started.targetNodeId ?? "");
+        await commitAttachmentRecords(document, crop, { runMutation: true });
+        await document.commitRunEvent({
+          type: "node_references",
+          node_id: nodeId,
+          source_ids: [crop.source.id],
+          evidence_ids: [crop.evidence.id],
+          attachment_ids: [crop.attachment.id],
+        });
+      } : undefined,
+    });
   }
+}
+
+/**
+ * @param {Awaited<ReturnType<typeof prepareWebviewCropAttachment>>} crop
+ * @returns {Promise<{ type: "image", data: string, mimeType: string }>}
+ */
+async function promptImageForCrop(crop) {
+  const data = crop.dataBase64;
+  if (!data) throw new Error("PDF crop bytes are unavailable for model input");
+  const resized = await resizeImage(Buffer.from(data, "base64"), crop.mediaType);
+  if (!resized) throw new Error("PDF crop could not be prepared for model input");
+  return { type: "image", data: resized.data, mimeType: resized.mimeType };
 }
 
 /** @param {vscode.CustomDocument} document @returns {NoraDocument} */
@@ -252,6 +279,25 @@ function postError(panel, error) {
 }
 
 /**
+ * @param {vscode.WebviewPanel} panel
+ * @param {{ messageId?: string }} message
+ * @param {boolean} ok
+ * @param {unknown} [error]
+ */
+function postAck(panel, message, ok, error = undefined) {
+  if (!message.messageId) {
+    if (ok) return Promise.resolve(true);
+    return postError(panel, error);
+  }
+  return panel.webview.postMessage(serializeExtensionMessage({
+    type: "uiAck",
+    messageId: message.messageId,
+    ok,
+    message: ok ? undefined : error instanceof Error ? error.message : String(error),
+  }));
+}
+
+/**
  * @param {vscode.Webview} webview
  * @param {NoraDocument} document
  */
@@ -259,12 +305,8 @@ async function buildAssetData(webview, document) {
   /** @type {Record<string, string>} */
   const assetData = {};
   for (const entry of document.getAssetNames()) {
-    try {
-      const filePath = await document.materializeAssetByName(entry.name);
-      assetData[entry.name] = String(webview.asWebviewUri(vscode.Uri.file(filePath)));
-    } catch {
-      assetData[entry.name] = "data:,";
-    }
+    const filePath = await document.materializeAssetByName(entry.name);
+    assetData[entry.name] = String(webview.asWebviewUri(vscode.Uri.file(filePath)));
   }
   return assetData;
 }

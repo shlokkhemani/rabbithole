@@ -54,13 +54,14 @@ export function runSummary(id, overrides = {}) {
 }
 
 export function documentWithAttachment(document, asset, overrides = {}) {
+  const attachmentId = `attachment-${asset.sha256.slice(0, 8)}`;
   return {
     ...document,
     nodes: document.nodes.map((node, index) => index === 0
-      ? { ...node, attachmentIds: [asset.sha256] }
+      ? { ...node, attachmentIds: [attachmentId] }
       : node),
     attachments: [{
-      id: `attachment-${asset.sha256.slice(0, 8)}`,
+      id: attachmentId,
       sha256: asset.sha256,
       mediaType: asset.mediaType || ASSET_MEDIA_TYPE,
       title: "Asset",

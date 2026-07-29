@@ -28,12 +28,13 @@ import { gitlabPermalink } from "./forge/gitlab.js";
  * @returns {import("../../core/contracts/evidence.js").SourceRecord}
  */
 export function repositorySourceRecord(repository, options = {}) {
+  const persistedRemote = persistedRepositoryRemote(repository);
   return {
     id: repositorySourceId(repository.id),
     type: "git-repository",
     stableLocator: {
       repositoryId: repository.id,
-      remote: repository.sanitizedRemote,
+      remote: persistedRemote,
       commit: repository.sha,
     },
     title: repository.title ?? repository.repo,
@@ -43,8 +44,7 @@ export function repositorySourceRecord(repository, options = {}) {
     extensions: {
       nora: {
         repositoryId: repository.id,
-        sanitizedRemote: repository.sanitizedRemote,
-        acquisitionUrl: repository.acquisitionUrl,
+        sanitizedRemote: persistedRemote,
         forgeType: repository.forgeType,
         forgeBaseUrl: repository.forgeBaseUrl,
       },
@@ -69,6 +69,7 @@ export function codeEvidenceRecord(repository, input) {
   const relativePath = normalizeRepositoryRelativePath(input.relativePath);
   const range = normalizeLineRange(input.startLine, input.endLine ?? input.startLine);
   const permalink = repository.forgeType ? forgePermalink(repository, relativePath, range) : undefined;
+  const persistedRemote = persistedRepositoryRemote(repository);
   return {
     id: input.id ?? codeEvidenceId(repository.id, repository.sha, relativePath, range.startLine, range.endLine),
     sourceId: repositorySourceId(repository.id),
@@ -90,8 +91,7 @@ export function codeEvidenceRecord(repository, input) {
     extensions: {
       nora: {
         repositoryId: repository.id,
-        sanitizedRemote: repository.sanitizedRemote,
-        acquisitionUrl: repository.acquisitionUrl,
+        sanitizedRemote: persistedRemote,
         forgeType: repository.forgeType,
         forgeBaseUrl: repository.forgeBaseUrl,
         relativePath,
@@ -114,6 +114,12 @@ export function repositorySourceId(repositoryId) {
  */
 export function codeEvidenceId(repositoryId, sha, relativePath, startLine, endLine) {
   return `code:${repositoryId}:${sha}:${relativePath}:${startLine}-${endLine}`;
+}
+
+/** @param {RepositoryDescriptor} repository */
+function persistedRepositoryRemote(repository) {
+  const remote = String(repository.sanitizedRemote ?? "");
+  return remote.startsWith("file:") ? `local:${repository.id}` : remote;
 }
 
 /** @param {string} relativePath */
@@ -178,6 +184,7 @@ export function forgePermalink(repository, relativePath, range) {
         repo: repository.repo,
         sha: repository.sha,
         relativePath,
+        ...range,
       });
     default:
       return undefined;

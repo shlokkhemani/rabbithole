@@ -2,9 +2,11 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import {
+  emitVisibleSkillDiagnostics,
   existingRealDirectories,
   loadNoraSkills,
   noraSkillDirectories,
+  visibleSkillDiagnosticMessages,
 } from "../skills/loader.js";
 
 export const NORA_SYSTEM_PROMPT = [
@@ -17,7 +19,7 @@ export const NORA_SYSTEM_PROMPT = [
 ].join("\n");
 
 /** @typedef {{ name: string, description: string, filePath: string, baseDir: string, sourceInfo: Record<string, unknown>, disableModelInvocation?: boolean }} Skill */
-/** @typedef {{ type: "warning" | "error" | "collision", message: string, path?: string, collision?: Record<string, unknown> }} ResourceDiagnostic */
+/** @typedef {import("../skills/loader.js").ResourceDiagnostic} ResourceDiagnostic */
 
 export class NoraResourceLoader {
   /**
@@ -83,7 +85,8 @@ export class NoraResourceLoaderProvider {
    *   workspaceFolderPath?: string | null,
    *   homeDir?: string,
    *   systemPrompt?: string,
-   *   appendSystemPrompt?: string[]
+   *   appendSystemPrompt?: string[],
+   *   vscode?: Pick<typeof import("vscode"), "window">
    * }} options
    */
   constructor(options = {}) {
@@ -91,6 +94,7 @@ export class NoraResourceLoaderProvider {
     this.cached = null;
     this.signature = "";
     this.dirty = true;
+    this.emittedDiagnosticMessages = new Set();
     /** @type {fs.FSWatcher[]} */
     this.watchers = [];
   }
@@ -103,6 +107,7 @@ export class NoraResourceLoaderProvider {
     this.signature = signature;
     this.dirty = false;
     this.#refreshWatchers(loaded.skillBaseDirs);
+    await this.#emitNewDiagnostics(loaded.diagnostics);
     return this.#loaderFromCached();
   }
 
@@ -124,6 +129,18 @@ export class NoraResourceLoaderProvider {
       systemPrompt: this.options.systemPrompt,
       appendSystemPrompt: this.options.appendSystemPrompt,
     });
+  }
+
+  /** @param {ResourceDiagnostic[]} diagnostics */
+  async #emitNewDiagnostics(diagnostics) {
+    if (!this.options.vscode) return;
+    const fresh = diagnostics.filter((diagnostic) => {
+      const [message] = visibleSkillDiagnosticMessages([diagnostic]);
+      if (!message || this.emittedDiagnosticMessages.has(message)) return false;
+      this.emittedDiagnosticMessages.add(message);
+      return true;
+    });
+    if (fresh.length) await emitVisibleSkillDiagnostics(this.options.vscode, fresh);
   }
 
   /** @param {string[]} skillBaseDirs */

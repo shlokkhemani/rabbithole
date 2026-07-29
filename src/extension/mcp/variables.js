@@ -5,6 +5,7 @@ import path from "node:path";
 import { parse as parseDotenv } from "dotenv";
 
 const VARIABLE_RE = /\$\{([^}]+)\}/g;
+const SECRET_QUERY_RE = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential|authorization|auth|key)$/i;
 
 /**
  * @typedef {import("./config.js").NoraMcpServerConfig} NoraMcpServerConfig
@@ -70,21 +71,24 @@ export function normalizedMcpServerFingerprint(unresolved, resolved = {}) {
   if (unresolved.type === "stdio") {
     const stdioResolved = /** @type {Partial<ResolvedNoraMcpStdioServer>} */ (resolved);
     payload = {
-        name: unresolved.name,
-        type: unresolved.type,
-        command: stdioResolved.command ?? unresolved.command,
-        args: stdioResolved.args ?? unresolved.args,
-        cwd: stdioResolved.cwd ?? unresolved.cwd,
-        envKeys: Object.keys(stdioResolved.env ?? unresolved.env).sort(),
-        envFile: unresolved.envFile,
+      name: unresolved.name,
+      type: unresolved.type,
+      command: stdioResolved.command ?? unresolved.command,
+      args: stdioResolved.args ?? unresolved.args,
+      cwd: stdioResolved.cwd ?? unresolved.cwd,
+      envKeys: Object.keys(stdioResolved.env ?? unresolved.env).sort(),
+      envDigest: digestJson(sortedRecord(stdioResolved.env ?? unresolved.env)),
+      envFile: unresolved.envFile,
     };
   } else {
     const httpResolved = /** @type {Partial<ResolvedNoraMcpHttpServer>} */ (resolved);
     payload = {
-        name: unresolved.name,
-        type: unresolved.type,
-        url: redactUrlForFingerprint(httpResolved.url ?? unresolved.url),
-        headerKeys: Object.keys(httpResolved.headers ?? unresolved.headers).map((key) => key.toLowerCase()).sort(),
+      name: unresolved.name,
+      type: unresolved.type,
+      url: redactUrlForFingerprint(httpResolved.url ?? unresolved.url),
+      urlDigest: digestJson(httpResolved.url ?? unresolved.url),
+      headerKeys: Object.keys(httpResolved.headers ?? unresolved.headers).map((key) => key.toLowerCase()).sort(),
+      headerDigest: digestJson(lowercaseSortedRecord(httpResolved.headers ?? unresolved.headers)),
     };
   }
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -238,6 +242,9 @@ function assertResolvedHttpUrl(urlText, label) {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError(`${label} must resolve to http or https`);
   if (url.username || url.password) throw new TypeError(`${label} must not resolve to URL userinfo`);
+  for (const key of url.searchParams.keys()) {
+    if (SECRET_QUERY_RE.test(key)) throw new TypeError(`${label} must not resolve to credential-bearing query parameter ${key}`);
+  }
 }
 
 /** @param {string} urlText */
@@ -251,4 +258,21 @@ function redactUrlForFingerprint(urlText) {
   } catch {
     return urlText;
   }
+}
+
+/** @param {unknown} value */
+function digestJson(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+/** @param {Record<string, string> | undefined} values */
+function sortedRecord(values = {}) {
+  return Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+/** @param {Record<string, string> | undefined} values */
+function lowercaseSortedRecord(values = {}) {
+  return Object.fromEntries(Object.entries(values)
+    .map(([key, value]) => [key.toLowerCase(), value])
+    .sort(([left], [right]) => left.localeCompare(right)));
 }

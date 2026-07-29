@@ -14,7 +14,7 @@ import { extractArchiveEntryToFile, readNoraArchive } from "./archive/reader.js"
 import { writeNoraArchive, writeNoraArchiveToPath } from "./archive/writer.js";
 import { createNoraArchiveWorkspace } from "./archive/workspace.js";
 import { DocumentMutationQueue } from "./document-mutation-queue.js";
-import { runTerminalRecord } from "./agent/transcript.js";
+import { runMutationRecord, runTerminalRecord } from "./agent/transcript.js";
 
 /** @typedef {import("../core/contracts/document.js").NoraDocument} PersistedNoraDocument */
 /** @typedef {import("../core/contracts/document.js").NoraDocumentState} NoraDocumentState */
@@ -51,6 +51,7 @@ export class NoraDocument {
    *   previousArchive?: NoraArchiveReadResult | null,
    *   runByteCutoffs?: Record<string, number>,
    *   savedFingerprint?: string | null,
+   *   workspaceFolderPath?: string | null,
    *   onRequestSave?: (() => unknown | Promise<unknown>) | null
    * }} options
    */
@@ -61,6 +62,8 @@ export class NoraDocument {
     this.archiveWorkspace = options.archiveWorkspace;
     this.previousArchive = options.previousArchive ?? null;
     this.runByteCutoffs = normalizeCutoffs(options.runByteCutoffs ?? {});
+    /** Session-scoped workspace folder used for MCP and skill loading. */
+    this.workspaceFolderPath = options.workspaceFolderPath ?? null;
     this.savedFingerprint = options.savedFingerprint ?? fingerprintFor(this.#memorySnapshot());
     this.savedRevision = this.state.revision;
     this.queue = new DocumentMutationQueue();
@@ -68,18 +71,17 @@ export class NoraDocument {
     this.undoStack = [];
     /** @type {HistoryEntry[]} */
     this.redoStack = [];
-    /** @type {{ runId: string, before: MemorySnapshot, after: MemorySnapshot, abort: () => unknown | Promise<unknown> } | null} */
+    /** @type {{ runId: string, before: MemorySnapshot, after: MemorySnapshot, abort: () => unknown | Promise<unknown>, mutationSequence: number } | null} */
     this.activeRun = null;
     /** @type {Map<string, Record<string, unknown>[]>} */
-    this.runRecords = new Map();
-    for (const [runId, records] of this.previousArchive?.runs ?? []) {
-      this.runRecords.set(runId, cloneJson(records));
-    }
+    this.runRecords = runRecordsForArchive(this.previousArchive);
     this.disposed = false;
     this.changeEmitter = new SimpleEmitter();
     this.disposeEmitter = new SimpleEmitter();
     this.requestSaveEmitter = new SimpleEmitter();
     this.materializedAssetsDir = path.join(this.archiveWorkspace.tempDir, "materialized-assets");
+    /** @type {Map<string, Promise<string>>} */
+    this.materializedAssetWrites = new Map();
     /** @type {Map<string, { repository: import("./git/cache.js").AcquiredRepository, release: () => unknown | Promise<unknown> }>} */
     this.repositoryHandles = new Map();
     if (options.onRequestSave) this.onDidRequestSave(options.onRequestSave);
@@ -108,15 +110,21 @@ export class NoraDocument {
       let persisted;
       if (archivePath) {
         previousArchive = await readNoraArchive(archivePath);
-        persisted = terminalizeInterruptedRuns(previousArchive.document, options.now);
+        const recovered = terminalizeInterruptedArchive(previousArchive, options.now);
+        previousArchive = recovered.archive;
+        persisted = recovered.document;
       } else if (options.untitledDocumentData && options.untitledDocumentData.byteLength) {
         const staged = path.join(archiveWorkspace.tempDir, "untitled.nora");
         await fs.writeFile(staged, options.untitledDocumentData);
         previousArchive = await readNoraArchive(staged);
-        persisted = terminalizeInterruptedRuns(previousArchive.document, options.now);
+        const recovered = terminalizeInterruptedArchive(previousArchive, options.now);
+        previousArchive = recovered.archive;
+        persisted = recovered.document;
       } else if (isFileUri(uri) && filePath && await fileExists(filePath)) {
         previousArchive = await readNoraArchive(filePath);
-        persisted = terminalizeInterruptedRuns(previousArchive.document, options.now);
+        const recovered = terminalizeInterruptedArchive(previousArchive, options.now);
+        previousArchive = recovered.archive;
+        persisted = recovered.document;
       } else {
         persisted = createMinimalNoraDocument(title, options);
       }
@@ -171,6 +179,13 @@ export class NoraDocument {
    * @param {{ history?: boolean, runMutation?: boolean }} [options]
    */
   async commitEvent(event, options = {}) {
+    if (this.activeRun || options.runMutation === true) {
+      if (!this.activeRun) return Promise.reject(new Error("No Nora run is active for this document"));
+      const runId = this.activeRun.runId;
+      const sequence = this.activeRun.mutationSequence++;
+      const published = await this.publishRunRecord(runId, runMutationRecord(runId, event, { sequence }), [event]);
+      return { committed: true, effects: published.effects };
+    }
     return this.queue.enqueue(async () => {
       this.#assertOpen();
       const before = this.#memorySnapshot();
@@ -179,9 +194,7 @@ export class NoraDocument {
       if (reduced.state.revision === previousRevision) return { committed: false, effects: reduced.effects };
       this.state = reduced.state;
       const after = this.#memorySnapshot();
-      if (this.activeRun || options.runMutation === true) {
-        if (this.activeRun) this.activeRun.after = after;
-      } else if (options.history !== false) {
+      if (options.history !== false) {
         this.#pushHistory(before, after, historyKind(event), historyKey(event));
       }
       this.#publishChanged();
@@ -203,6 +216,7 @@ export class NoraDocument {
         before: snapshot,
         after: snapshot,
         abort: options.abort ?? (() => undefined),
+        mutationSequence: 0,
       };
     });
   }
@@ -212,7 +226,6 @@ export class NoraDocument {
    * @returns {Promise<{ committed: boolean, effects: Record<string, unknown> }>}
    */
   commitRunEvent(event) {
-    if (!this.activeRun) return Promise.reject(new Error("No Nora run is active for this document"));
     return this.commitEvent(event, { history: false, runMutation: true });
   }
 
@@ -253,6 +266,11 @@ export class NoraDocument {
   /** @param {string} runId */
   getRunTranscriptRecords(runId) {
     return cloneJson(this.runRecords.get(runId) ?? []);
+  }
+
+  /** @param {string | null | undefined} workspaceFolderPath */
+  setWorkspaceFolderPath(workspaceFolderPath) {
+    this.workspaceFolderPath = workspaceFolderPath ?? null;
   }
 
   /** @param {string | null} profileId */
@@ -309,21 +327,29 @@ export class NoraDocument {
   async saveToPath(targetPath, options = {}) {
     const captured = await this.#captureSaveSnapshot();
     const writeArchive = options.writeArchive ?? writeNoraArchive;
-    await writeArchive(targetPath, captured.archiveSnapshot);
-    await this.queue.enqueue(async () => {
-      this.#assertOpen();
-      if (this.revision !== captured.revision) throw new SaveConflictError();
-      if (options.markSaved !== false) {
-        this.savedFingerprint = captured.fingerprint;
-        this.savedRevision = this.revision;
-        this.filePath = targetPath;
-        if (options.uri) this.uri = options.uri;
-        const readArchive = options.readArchive ?? readNoraArchive;
-        this.previousArchive = await readArchive(targetPath);
-        this.state = createDocumentState({ ...captured.documentState, revision: this.revision });
-        this.queue.releaseFollowingTurn();
-      }
-    });
+    const stagedPath = saveStagingPath(targetPath);
+    let replaced = false;
+    try {
+      await writeArchive(stagedPath, captured.archiveSnapshot);
+      await this.queue.enqueue(async () => {
+        this.#assertOpen();
+        if (this.revision !== captured.revision) throw new SaveConflictError();
+        await replaceSavedArchive(stagedPath, targetPath);
+        replaced = true;
+        if (options.markSaved !== false) {
+          this.savedFingerprint = captured.fingerprint;
+          this.savedRevision = this.revision;
+          this.filePath = targetPath;
+          if (options.uri) this.uri = options.uri;
+          const readArchive = options.readArchive ?? readNoraArchive;
+          this.previousArchive = await readArchive(targetPath);
+          this.state = createDocumentState({ ...captured.documentState, revision: this.revision });
+          this.queue.releaseFollowingTurn();
+        }
+      });
+    } finally {
+      if (!replaced) await fs.rm(stagedPath, { force: true }).catch(() => {});
+    }
   }
 
   async save() {
@@ -340,11 +366,12 @@ export class NoraDocument {
   async revert() {
     if (!this.filePath || !isFileUri(this.uri)) throw new UnsupportedUriSchemeError("revert", this.uri);
     const reopened = await readNoraArchive(this.filePath);
-    const persisted = terminalizeInterruptedRuns(reopened.document);
+    const recovered = terminalizeInterruptedArchive(reopened);
     await this.queue.enqueue(() => {
-      this.state = createDocumentState({ ...persisted, revision: this.revision + 1 });
-      this.previousArchive = reopened;
-      this.runByteCutoffs = runByteCutoffsForArchive(reopened);
+      this.state = createDocumentState({ ...recovered.document, revision: this.revision + 1 });
+      this.previousArchive = recovered.archive;
+      this.runByteCutoffs = runByteCutoffsForArchive(recovered.archive);
+      this.runRecords = runRecordsForArchive(recovered.archive);
       this.savedFingerprint = fingerprintFor(this.#memorySnapshot());
       this.savedRevision = this.revision;
       this.undoStack = [];
@@ -448,28 +475,48 @@ export class NoraDocument {
     const match = this.getAssetNames().find((entry) => entry.name === assetName);
     if (!match) throw new Error(`Nora asset is not referenced by the document: ${assetName}`);
     const safeName = safeMaterializedAssetName(assetName);
+    const pending = this.materializedAssetWrites.get(safeName);
+    if (pending) return pending;
+    const write = this.#materializeAssetByName(assetName, safeName, match);
+    this.materializedAssetWrites.set(safeName, write);
+    try {
+      return await write;
+    } finally {
+      this.materializedAssetWrites.delete(safeName);
+    }
+  }
+
+  /** @param {string} assetName @param {string} safeName @param {{ name: string, sha256: string }} match */
+  async #materializeAssetByName(assetName, safeName, match) {
     await fs.mkdir(this.materializedAssetsDir, { recursive: true });
     const targetPath = path.join(this.materializedAssetsDir, safeName);
     const existing = await hashExistingFile(targetPath).catch(() => null);
     if (existing?.sha256 === match.sha256) return targetPath;
+    const tempPath = path.join(this.materializedAssetsDir, `.incoming-${process.pid}-${Date.now()}-${randomUUID()}`);
     const staged = this.archiveWorkspace.assets.get(match.sha256);
-    if (staged?.filePath) {
-      await fs.copyFile(staged.filePath, targetPath);
-      const hashed = await hashExistingFile(targetPath);
-      if (hashed.sha256 !== match.sha256) throw new Error(`Materialized Nora asset ${assetName} failed verification`);
-      return targetPath;
-    }
-    const previous = this.previousArchive?.assets.get(match.sha256);
-    if (previous?.archivePath && previous.path) {
-      await extractArchiveEntryToFile(previous.archivePath, previous.path, targetPath, {
-        expectedSha256: match.sha256,
-        expectedBytes: previous.bytes,
-      });
-      return targetPath;
+    try {
+      if (staged?.filePath) {
+        await fs.copyFile(staged.filePath, tempPath);
+        const hashed = await hashExistingFile(tempPath);
+        if (hashed.sha256 !== match.sha256) throw new Error(`Materialized Nora asset ${assetName} failed verification`);
+        await fs.rename(tempPath, targetPath);
+        return targetPath;
+      }
+      const previous = this.previousArchive?.assets.get(match.sha256);
+      if (previous?.archivePath && previous.path) {
+        await extractArchiveEntryToFile(previous.archivePath, previous.path, tempPath, {
+          expectedSha256: match.sha256,
+          expectedBytes: previous.bytes,
+        });
+        await fs.rename(tempPath, targetPath);
+        return targetPath;
+      }
+    } catch (error) {
+      await fs.rm(tempPath, { force: true }).catch(() => {});
+      throw error;
     }
     throw new Error(`Nora asset bytes are unavailable: ${assetName}`);
   }
-
   #assertOpen() {
     if (this.disposed) throw new Error("Nora document is disposed");
   }
@@ -523,17 +570,15 @@ export class NoraDocument {
     if (!active) return;
     await Promise.resolve(active.abort()).catch(() => {});
     let cancelledAfter = active.after;
-    try {
-      const terminalRecord = runTerminalRecord(active.runId, "cancelled");
-      const cutoff = await this.archiveWorkspace.appendRunRecord(active.runId, terminalRecord);
-      const records = this.runRecords.get(active.runId) ?? [];
-      records.push(terminalRecord);
-      this.runRecords.set(active.runId, records);
-      cancelledAfter = {
-        documentState: active.after.documentState,
-        runByteCutoffs: normalizeCutoffs({ ...active.after.runByteCutoffs, [active.runId]: cutoff }),
-      };
-    } catch {}
+    const terminalRecord = runTerminalRecord(active.runId, "cancelled");
+    const cutoff = await this.archiveWorkspace.appendRunRecord(active.runId, terminalRecord);
+    const records = this.runRecords.get(active.runId) ?? [];
+    records.push(terminalRecord);
+    this.runRecords.set(active.runId, records);
+    cancelledAfter = {
+      documentState: active.after.documentState,
+      runByteCutoffs: normalizeCutoffs({ ...active.after.runByteCutoffs, [active.runId]: cutoff }),
+    };
     cancelledAfter = terminalizeRunSnapshot(cancelledAfter, active.runId, "cancelled");
     this.activeRun = null;
     this.#restoreSnapshot(active.before);
@@ -724,11 +769,67 @@ function runByteCutoffsForArchive(archive) {
   return cutoffs;
 }
 
+/** @param {NoraArchiveReadResult | null} archive @returns {Map<string, Record<string, unknown>[]>} */
+function runRecordsForArchive(archive) {
+  /** @type {Map<string, Record<string, unknown>[]>} */
+  const records = new Map();
+  for (const [runId, entries] of archive?.runs ?? []) records.set(runId, cloneJson(entries));
+  return records;
+}
+
 /** @param {Record<string, number>} cutoffs */
 function normalizeCutoffs(cutoffs) {
   return Object.fromEntries(Object.entries(cutoffs)
     .filter(([runId, cutoff]) => runId && Number.isSafeInteger(cutoff) && cutoff >= 0)
     .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+/** @param {string} targetPath */
+function saveStagingPath(targetPath) {
+  return path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}-${Date.now()}-${randomUUID()}.save`);
+}
+
+/** @param {string} stagedPath @param {string} targetPath */
+async function replaceSavedArchive(stagedPath, targetPath) {
+  const backupPath = `${stagedPath}.bak`;
+  try {
+    await fs.rename(stagedPath, targetPath);
+    await fsyncDirectory(path.dirname(targetPath));
+    return;
+  } catch (error) {
+    const code = /** @type {{ code?: unknown }} */ (error)?.code;
+    if (code !== "EPERM" && code !== "EEXIST") throw error;
+  }
+  let hasBackup = false;
+  try {
+    await fs.rename(targetPath, backupPath);
+    hasBackup = true;
+  } catch (error) {
+    if (/** @type {{ code?: unknown }} */ (error)?.code !== "ENOENT") throw error;
+  }
+  try {
+    await fs.rename(stagedPath, targetPath);
+    await fsyncDirectory(path.dirname(targetPath));
+  } catch (error) {
+    if (hasBackup) await fs.rename(backupPath, targetPath).catch(() => {});
+    throw error;
+  } finally {
+    if (hasBackup) await fs.rm(backupPath, { force: true }).catch(() => {});
+  }
+}
+
+/** @param {string} dirPath */
+async function fsyncDirectory(dirPath) {
+  const handle = await fs.open(dirPath, "r").catch((/** @type {any} */ error) => {
+    if (process.platform === "win32" || error?.code === "EISDIR" || error?.code === "EPERM") return null;
+    throw error;
+  });
+  if (!handle) return;
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 /** @param {string} filePath */
@@ -765,6 +866,31 @@ function historyKey(event) {
 }
 
 /**
+ * @param {NoraArchiveReadResult} archive
+ * @param {string} [now]
+ * @returns {{ archive: NoraArchiveReadResult, document: PersistedNoraDocument }}
+ */
+function terminalizeInterruptedArchive(archive, now = new Date().toISOString()) {
+  const runningRunIds = new Set(archive.document.runs.filter((run) => run.status === "running").map((run) => run.id));
+  const document = terminalizeInterruptedRuns(archive.document, now);
+  if (!runningRunIds.size) return { archive, document };
+  const runs = new Map(archive.runs);
+  for (const runId of runningRunIds) {
+    const records = cloneJson(runs.get(runId) ?? []);
+    if (!records.some(isRunTerminalRecord)) {
+      records.push(runTerminalRecord(runId, "interrupted", { now }));
+    }
+    runs.set(runId, records);
+  }
+  return { archive: { ...archive, document, runs }, document };
+}
+
+/** @param {unknown} record */
+function isRunTerminalRecord(record) {
+  return !!record && typeof record === "object" && /** @type {{ kind?: unknown }} */ (record).kind === "run_terminal";
+}
+
+/**
  * Persisted running work cannot resume after extension shutdown. This keeps all
  * material but makes the interrupted status explicit on open/recovery.
  * @param {PersistedNoraDocument} document
@@ -772,7 +898,7 @@ function historyKey(event) {
  * @returns {PersistedNoraDocument}
  */
 function terminalizeInterruptedRuns(document, now = new Date().toISOString()) {
-  const failed = /** @type {NoraNodeState} */ ("failed");
+  const interrupted = /** @type {NoraNodeState} */ ("interrupted");
   let changed = false;
   const runningRunIds = new Set();
   const runs = document.runs.map((run) => {
@@ -781,7 +907,7 @@ function terminalizeInterruptedRuns(document, now = new Date().toISOString()) {
     runningRunIds.add(run.id);
     return {
       ...run,
-      status: failed,
+      status: interrupted,
       endedAt: run.endedAt ?? now,
       error: run.error ?? { reason: "interrupted" },
     };
@@ -789,7 +915,7 @@ function terminalizeInterruptedRuns(document, now = new Date().toISOString()) {
   const nodes = document.nodes.map((node) => {
     if (!node.runId || !runningRunIds.has(node.runId) || node.state !== "running") return node;
     changed = true;
-    return { ...node, state: failed, updatedAt: node.updatedAt ?? now };
+    return { ...node, state: interrupted, updatedAt: node.updatedAt ?? now };
   });
   return changed ? { ...document, runs, nodes } : document;
 }

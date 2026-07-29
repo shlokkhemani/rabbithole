@@ -66,13 +66,13 @@ function isAllowedVsixEntry(entry) {
     || entry === "extension/readme.md"
     || /^extension\/out\/extension\.cjs(?:\.LEGAL\.txt)?$/.test(entry)
     || entry === "extension/out/extension.metafile.json"
+    || /^extension\/out\/(?:LICENSE\.photon-node\.md|photon_rs_bg\.wasm)$/.test(entry)
     || /^extension\/out\/webview\/(?:nora-entry|frozen-client)\.js(?:\.LEGAL\.txt)?$/.test(entry)
     || /^extension\/out\/webview\/(?:canvas|katex)\.css$/.test(entry)
     || /^extension\/out\/webview\/(?:dompurify|mermaid)\.js$/.test(entry)
     || /^extension\/out\/webview\/pdf(?:\.worker)?\.mjs$/.test(entry)
     || /^extension\/out\/webview\/cmaps\/[A-Za-z0-9_.-]+\.bcmap$/.test(entry)
-    || /^extension\/out\/webview\/standard_fonts\/[A-Za-z0-9_.-]+$/.test(entry)
-    || /^extension\/out\/runtime\/photon\/(?:LICENSE\.photon-node\.md|photon_rs_bg\.wasm)$/.test(entry);
+    || /^extension\/out\/webview\/standard_fonts\/[A-Za-z0-9_.-]+$/.test(entry);
 }
 
 function isTextEntry(entry) {

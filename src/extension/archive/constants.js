@@ -7,6 +7,9 @@ export const RUNS_PREFIX = "runs/";
 export const ASSETS_PREFIX = "assets/";
 
 export const ASSET_BYTES_LIMIT = 100 * 1024 * 1024;
+export const DOCUMENT_JSON_BYTES_LIMIT = 16 * 1024 * 1024;
+export const MANIFEST_JSON_BYTES_LIMIT = 16 * 1024 * 1024;
+export const RUN_JSONL_BYTES_LIMIT = 64 * 1024 * 1024;
 export const ARCHIVE_UNCOMPRESSED_BYTES_LIMIT = 1024 * 1024 * 1024;
 export const ARCHIVE_ZIP_BYTES_LIMIT = 1024 * 1024 * 1024;
 

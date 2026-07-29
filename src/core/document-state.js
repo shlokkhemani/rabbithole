@@ -373,7 +373,18 @@ function reduceNodeDeleted(state, event) {
     progressRuns = new Map(progressRuns);
     for (const id of ids) progressRuns.delete(id);
   }
-  return commitCandidate(state, { ...state, nodes, edges: rebuildEdges(state.edges, nodes), progressRuns }, { deletedNodeIds: ids, deletedNodes });
+  const deletedIds = new Set(ids);
+  const runs = new Map(state.runs);
+  for (const [runId, run] of runs) {
+    if (run.targetNodeId && deletedIds.has(run.targetNodeId)) {
+      runs.set(runId, { ...run, targetNodeId: null });
+    }
+  }
+  let checks = state.checks;
+  if ([...checks.values()].some((check) => deletedIds.has(check.nodeId))) {
+    checks = new Map([...checks].filter(([, check]) => !deletedIds.has(check.nodeId)));
+  }
+  return commitCandidate(state, { ...state, nodes, edges: rebuildEdges(state.edges, nodes), runs, checks, progressRuns }, { deletedNodeIds: ids, deletedNodes });
 }
 
 /** @param {NoraDocumentState} state @param {Record<string, any>} event */

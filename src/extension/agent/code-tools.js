@@ -95,16 +95,20 @@ export class RepositoryToolService {
       maxStdoutBytes: this.maxReadBytes,
       maxStderrBytes: 64 * 1024,
     });
-    const all = result.stdout.split("\0").filter(Boolean);
-    const matches = all
-      .filter((entry) => !query || entry.toLowerCase().includes(query))
-      .slice(0, this.maxFindResults);
+    const stripped = stripGitTruncationMarker(result.stdout);
+    const completeOutput = stripped.truncated && !stripped.stdout.endsWith("\0")
+      ? stripped.stdout.slice(0, stripped.stdout.lastIndexOf("\0") + 1)
+      : stripped.stdout;
+    const all = completeOutput.split("\0").filter(Boolean);
+    const allMatches = all
+      .filter((entry) => !query || entry.toLowerCase().includes(query));
+    const matches = allMatches.slice(0, this.maxFindResults);
     return {
       repositoryId: repository.id,
       path: directory,
       query,
       files: matches,
-      truncated: all.length > matches.length,
+      truncated: stripped.truncated || allMatches.length > matches.length,
     };
   }
 
@@ -125,6 +129,7 @@ export class RepositoryToolService {
         repository.worktreePath,
         "grep",
         "-n",
+        "-z",
         "-I",
         "-F",
         "-e",
@@ -141,14 +146,15 @@ export class RepositoryToolService {
       if (error instanceof GitCommandError && error.code === 1) stdout = "";
       else throw error;
     }
-    const lines = stdout.split(/\r?\n/).filter(Boolean);
-    const matches = lines.slice(0, this.maxSearchResults).map(parseGitGrepLine);
+    const stripped = stripGitTruncationMarker(stdout);
+    const parsedMatches = parseGitGrepOutput(stripped.stdout);
+    const matches = parsedMatches.slice(0, this.maxSearchResults);
     return {
       repositoryId: repository.id,
       path: directory,
       query,
       matches,
-      truncated: lines.length > matches.length || stdout.includes("[git output truncated]"),
+      truncated: stripped.truncated || parsedMatches.length > matches.length,
     };
   }
 
@@ -319,16 +325,32 @@ function tool(name, label, description, properties, execute) {
   };
 }
 
-/** @param {string} line */
-function parseGitGrepLine(line) {
-  const first = line.indexOf(":");
-  const second = first >= 0 ? line.indexOf(":", first + 1) : -1;
-  if (first < 0 || second < 0) return { path: "", line: 0, text: line };
-  return {
-    path: line.slice(0, first),
-    line: Number(line.slice(first + 1, second)) || 0,
-    text: line.slice(second + 1),
-  };
+/** @param {string} stdout */
+function stripGitTruncationMarker(stdout) {
+  const marker = "\n[git output truncated]";
+  if (!stdout.endsWith(marker)) return { stdout, truncated: false };
+  return { stdout: stdout.slice(0, -marker.length), truncated: true };
+}
+
+/** @param {string} output */
+function parseGitGrepOutput(output) {
+  /** @type {Array<{ path: string, line: number, text: string }>} */
+  const matches = [];
+  let cursor = 0;
+  while (cursor < output.length) {
+    const pathEnd = output.indexOf("\0", cursor);
+    const lineEnd = pathEnd >= 0 ? output.indexOf("\0", pathEnd + 1) : -1;
+    if (pathEnd < 0 || lineEnd < 0) break;
+    const textEnd = output.indexOf("\n", lineEnd + 1);
+    const nextCursor = textEnd < 0 ? output.length : textEnd + 1;
+    matches.push({
+      path: output.slice(cursor, pathEnd),
+      line: Number(output.slice(pathEnd + 1, lineEnd)) || 0,
+      text: output.slice(lineEnd + 1, textEnd < 0 ? output.length : textEnd),
+    });
+    cursor = nextCursor;
+  }
+  return matches;
 }
 
 /** @param {import("node:fs").Stats} stat @param {number} maxBytes */

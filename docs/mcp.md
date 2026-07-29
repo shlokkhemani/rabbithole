@@ -168,6 +168,11 @@ Each model-facing MCP result is bounded to 256 KiB UTF-8 and 2,000 text lines.
 When truncation happens, Nora includes an explicit truncation record. The
 transcript stores exactly the bounded result that Pi saw.
 
+When an MCP resource returns a binary blob, Nora decodes, hashes, and stores the
+raw bytes as a normal content-addressed attachment before the document mutation
+commits. Pi and the transcript receive only the bounded attachment and evidence
+metadata, not an inline base64 blob.
+
 Nora OutputChannel diagnostics include only server ID, operation, status,
 duration, and bounded error class. Diagnostics do not include URLs, headers,
 environment values, resolved inputs, tool arguments, tool results, or

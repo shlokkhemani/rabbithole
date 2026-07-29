@@ -4,8 +4,9 @@ import path from "node:path";
 import test from "node:test";
 import { createCodeTools, RepositoryToolService } from "../../src/extension/agent/code-tools.js";
 import { createSkillReadTool } from "../../src/extension/agent/skill-tools.js";
-import { createCanvasTools } from "../../src/extension/agent/canvas-tools.js";
+import { CanvasToolService, createCanvasTools } from "../../src/extension/agent/canvas-tools.js";
 import { runGit } from "../../src/extension/git/process.js";
+import { NoraDocument } from "../../src/extension/nora-document.js";
 import { withTempDir } from "../support/nora-archive-fixture.mjs";
 
 test("repository tools list, find, grep, read, and capture immutable evidence", async () => {
@@ -69,19 +70,20 @@ test("repository search uses fixed git argv and reports truncation", async () =>
   const calls = [];
   const git = async (args) => {
     calls.push(args);
-    return { stdout: "src/a.js:1:needle\nsrc/b.js:2:needle\n", stderr: "" };
+    return { stdout: "src/a:b.js\0" + "1\0needle\nsrc/b.js\0" + "2\0needle\n", stderr: "" };
   };
   const repository = fakeRepository("/worktree");
   const service = new RepositoryToolService({ repositories: [repository], git, maxSearchResults: 1 });
   const result = await service.searchText({ repositoryId: "repo-a", path: "src", query: "needle; rm -rf /" });
 
   assert.equal(result.truncated, true);
-  assert.deepEqual(result.matches, [{ path: "src/a.js", line: 1, text: "needle" }]);
+  assert.deepEqual(result.matches, [{ path: "src/a:b.js", line: 1, text: "needle" }]);
   assert.deepEqual(calls[0], [
     "-C",
     "/worktree",
     "grep",
     "-n",
+    "-z",
     "-I",
     "-F",
     "-e",
@@ -89,6 +91,18 @@ test("repository search uses fixed git argv and reports truncation", async () =>
     "--",
     "src",
   ]);
+});
+
+test("repository file finder drops partial paths when git ls-files output is truncated", async () => {
+  const git = async () => ({
+    stdout: "src/a.js\0src/app.js\0src/partia\n[git output truncated]",
+    stderr: "",
+  });
+  const service = new RepositoryToolService({ repositories: [fakeRepository("/worktree")], git, maxFindResults: 10 });
+  const result = await service.findFiles({ repositoryId: "repo-a", path: ".", query: "src/" });
+
+  assert.equal(result.truncated, true, "bounded git output must tell Pi when file results may be incomplete");
+  assert.deepEqual(result.files, ["src/a.js", "src/app.js"]);
 });
 
 test("Nora tool set does not register mutating Pi tools", () => {
@@ -103,6 +117,51 @@ test("Nora tool set does not register mutating Pi tools", () => {
   }
   assert(names.includes("read"), "standard read is reserved for skill resources");
   assert(names.includes("nora_read_file"), "repository reads use a Nora-specific tool");
+});
+
+test("canvas tools mutate only run-owned nodes and reject stale revisions or missing sources", async () => {
+  await withTempDir(async (dir) => {
+    const document = await NoraDocument.open(fileUri(path.join(dir, "canvas-tools.nora")), { tempRoot: dir, title: "Canvas Tools" });
+    await document.beginRun("run-tools", { abort: () => {} });
+    const service = new CanvasToolService({
+      document,
+      owner: "agent:run-tools",
+      idFactory: idSequence("agent-node"),
+      now: () => "2026-07-29T00:00:00.000Z",
+    });
+
+    const created = await service.createNode({ parentNodeId: "root", title: "Finding", markdown: "Initial" });
+    assert.equal(document.state.nodes.get(created.nodeId)?.extensions?.nora?.createdBy, "agent:run-tools");
+    await assert.rejects(() => service.updateNode({ nodeId: "root", markdown: "Nope" }), /not owned/);
+    await assert.rejects(() => service.updateNode({ nodeId: created.nodeId, expectedRevision: document.revision - 1 }), /Document revision changed/);
+    await assert.rejects(
+      () => service.attachEvidence({
+        nodeId: created.nodeId,
+        sourceId: "missing-source",
+        evidence: evidenceRecord("evidence-missing", "missing-source"),
+      }),
+      /not present/,
+    );
+
+    await document.commitRunEvent({ type: "source_record", source: {
+      id: "source-a",
+      type: "git-repository",
+      stableLocator: { repositoryId: "repo-a" },
+      title: "repo-a",
+      capturedAt: "2026-07-29T00:00:00.000Z",
+      extensions: {},
+    } });
+    const attached = await service.attachEvidence({
+      nodeId: created.nodeId,
+      sourceId: "source-a",
+      evidence: evidenceRecord("evidence-a", "source-a"),
+    });
+    assert.equal(attached.evidenceId, "evidence-a");
+    assert.deepEqual(document.state.nodes.get(created.nodeId)?.evidenceIds, ["evidence-a"]);
+
+    await document.undo();
+    await document.dispose();
+  });
 });
 
 /** @param {string} dir */
@@ -144,4 +203,30 @@ function fakeDocument() {
     revision: 0,
     commitRunEvent: async () => ({ committed: true, effects: {} }),
   };
+}
+
+/** @param  {...string} values */
+function idSequence(...values) {
+  let index = 0;
+  return () => values[index++] ?? `id-${index}`;
+}
+
+/** @param {string} id @param {string} sourceId */
+function evidenceRecord(id, sourceId) {
+  return {
+    id,
+    sourceId,
+    sourceType: "git",
+    stableLocator: { repositoryId: "repo-a", path: "README.md" },
+    title: "README.md",
+    excerpt: "one",
+    capturedAt: "2026-07-29T00:00:00.000Z",
+    range: null,
+    extensions: {},
+  };
+}
+
+/** @param {string} filePath */
+function fileUri(filePath) {
+  return { scheme: "file", fsPath: filePath, toString: () => `file://${filePath}` };
 }

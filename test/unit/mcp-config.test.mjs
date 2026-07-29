@@ -83,7 +83,8 @@ test("MCP config rejects unsupported transports, policy fields, invalid env and 
       "sandboxed": { "type": "stdio", "command": "node", "sandbox": true },
       "bad-env": { "type": "stdio", "command": "node", "env": { "BAD-NAME": "x" } },
       "bad-header": { "type": "http", "url": "https://example.test/mcp", "headers": { "Bad Header": "x" } },
-      "bad-url": { "type": "http", "url": "https://user:pass@example.test/mcp" }
+      "bad-url": { "type": "http", "url": "https://user:pass@example.test/mcp" },
+      "bad-query": { "type": "http", "url": "https://example.test/mcp?token=secret" }
     }
   }`, { source: "mcp.json" });
 
@@ -94,6 +95,7 @@ test("MCP config rejects unsupported transports, policy fields, invalid env and 
   assert(config.diagnostics.some((entry) => entry.message.includes("environment variable")));
   assert(config.diagnostics.some((entry) => entry.message.includes("HTTP header")));
   assert(config.diagnostics.some((entry) => entry.message.includes("userinfo")));
+  assert(config.diagnostics.some((entry) => entry.message.includes("credential-bearing query parameter token")));
 });
 
 test("MCP variable resolution fails clearly for unresolved values", async () => {
@@ -106,4 +108,60 @@ test("MCP variable resolution fails clearly for unresolved values", async () => 
     () => resolveMcpServerConfig(config.servers.get("stdio"), { env: {} }),
     /unresolved environment variable MISSING/,
   );
+});
+
+test("MCP variable resolution rejects credential-bearing HTTP query params without echoing resolved secrets", async () => {
+  const config = parseMcpConfigText(`{
+    "inputs": [
+      { "id": "queryKey", "type": "promptString", "password": true },
+      { "id": "secret", "type": "promptString", "password": true }
+    ],
+    "servers": {
+      "http": { "type": "http", "url": "https://example.test/mcp?\${input:queryKey}=\${input:secret}" }
+    }
+  }`);
+  await assert.rejects(
+    () => resolveMcpServerConfig(config.servers.get("http"), {
+      inputs: config.inputs,
+      inputResolver: (input) => input.id === "queryKey" ? "token" : "super-secret-value",
+    }),
+    (error) => {
+      assert.match(error.message, /credential-bearing query parameter token/);
+      assert(!error.message.includes("super-secret-value"));
+      return true;
+    },
+  );
+});
+
+test("MCP fingerprints separate resolved runtime values without exposing secrets", async () => {
+  const config = parseMcpConfigText(`{
+    "inputs": [
+      { "id": "secret", "type": "promptString", "password": true }
+    ],
+    "servers": {
+      "stdio": { "type": "stdio", "command": "node", "env": { "TOKEN": "\${input:secret}" } },
+      "http": { "type": "http", "url": "https://example.test/mcp?tenant=\${input:secret}", "headers": { "Authorization": "Bearer \${input:secret}" } }
+    }
+  }`);
+  const firstStdio = await resolveMcpServerConfig(config.servers.get("stdio"), {
+    inputs: config.inputs,
+    inputResolver: () => "first-secret",
+  });
+  const secondStdio = await resolveMcpServerConfig(config.servers.get("stdio"), {
+    inputs: config.inputs,
+    inputResolver: () => "second-secret",
+  });
+  const firstHttp = await resolveMcpServerConfig(config.servers.get("http"), {
+    inputs: config.inputs,
+    inputResolver: () => "first-secret",
+  });
+  const secondHttp = await resolveMcpServerConfig(config.servers.get("http"), {
+    inputs: config.inputs,
+    inputResolver: () => "second-secret",
+  });
+
+  assert.notEqual(firstStdio.fingerprint, secondStdio.fingerprint);
+  assert.notEqual(firstHttp.fingerprint, secondHttp.fingerprint);
+  assert(!firstStdio.fingerprint.includes("first-secret"));
+  assert(!firstHttp.fingerprint.includes("first-secret"));
 });

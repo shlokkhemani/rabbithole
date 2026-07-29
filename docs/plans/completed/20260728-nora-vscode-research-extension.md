@@ -889,17 +889,17 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Create: `docs/repositories-and-evidence.md`
 - Move on completion: `docs/plans/20260728-nora-vscode-research-extension.md` to `docs/plans/completed/20260728-nora-vscode-research-extension.md`
 
-- [ ] Rewrite README installation and quick start for VSIX/Marketplace/Open VSX, `.nora` custom editor, LLM profile setup, Codex sign-in, LiteLLM URL/token, repository acquisition, `.vscode/mcp.json`, and `.agents/skills`.
-- [ ] State clearly that Nora does not authenticate corporate sources, restrict MCP side effects, encrypt artifacts, collect telemetry, or support Remote/web extension hosts.
-- [ ] Replace Task 1's transitional `AGENTS.md` guidance with the final extension/core/UI/archive/agent/MCP/git structure, Node 24, generated `out/`, extension-host logging, no native binaries, and the new validation commands.
-- [ ] Document the exact archive schema, checksums, limits, transcript contract, v1 compatibility boundary, and safe failure behavior in `docs/nora-format.md`.
-- [ ] Document non-secret profile settings and SecretStorage lifecycle without showing real tokens in `docs/llm-profiles.md`.
-- [ ] Document supported/rejected `.vscode/mcp.json` fields, variable/input lifetime, shared server lifecycle, output bounds, and the user's responsibility for MCP security in `docs/mcp.md`.
-- [ ] Document repository cache layout, Git credential delegation, remote precedence, self-hosted forge selection, immutable revisions, and permalink/evidence shapes in `docs/repositories-and-evidence.md`.
-- [ ] Update `docs/testing.md` to match the exact scripts and suite ownership; remove web/MCP-server/IndexedDB/npm-tarball instructions.
-- [ ] Confirm `docs/SPEC.md` remains accepted, has no unresolved decision introduced by implementation, and update its plan link to `docs/plans/completed/20260728-nora-vscode-research-extension.md`.
-- [ ] Run all documentation examples that are executable, `npm run check`, `npm test`, and `git diff --check`.
-- [ ] Move this plan to `docs/plans/completed/` only after every prior checkbox and acceptance criterion is complete.
+- [x] Rewrite README installation and quick start for VSIX/Marketplace/Open VSX, `.nora` custom editor, LLM profile setup, Codex sign-in, LiteLLM URL/token, repository acquisition, `.vscode/mcp.json`, and `.agents/skills`.
+- [x] State clearly that Nora does not authenticate corporate sources, restrict MCP side effects, encrypt artifacts, collect telemetry, or support Remote/web extension hosts.
+- [x] Replace Task 1's transitional `AGENTS.md` guidance with the final extension/core/UI/archive/agent/MCP/git structure, Node 24, generated `out/`, extension-host logging, no native binaries, and the new validation commands.
+- [x] Document the exact archive schema, checksums, limits, transcript contract, v1 compatibility boundary, and safe failure behavior in `docs/nora-format.md`.
+- [x] Document non-secret profile settings and SecretStorage lifecycle without showing real tokens in `docs/llm-profiles.md`.
+- [x] Document supported/rejected `.vscode/mcp.json` fields, variable/input lifetime, shared server lifecycle, output bounds, and the user's responsibility for MCP security in `docs/mcp.md`.
+- [x] Document repository cache layout, Git credential delegation, remote precedence, self-hosted forge selection, immutable revisions, and permalink/evidence shapes in `docs/repositories-and-evidence.md`.
+- [x] Update `docs/testing.md` to match the exact scripts and suite ownership; remove web/MCP-server/IndexedDB/npm-tarball instructions.
+- [x] Confirm `docs/SPEC.md` remains accepted, has no unresolved decision introduced by implementation, and update its plan link to `docs/plans/completed/20260728-nora-vscode-research-extension.md`.
+- [x] Run all documentation examples that are executable, `npm run check`, `npm test`, and `git diff --check`.
+- [x] Move this plan to `docs/plans/completed/` only after every prior checkbox and acceptance criterion is complete.
 
 ## Technical Details
 

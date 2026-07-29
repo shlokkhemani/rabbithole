@@ -1,6 +1,6 @@
 # Nora Specification
 
-> Status: accepted. This document records the product and architecture decisions confirmed during the completed grill session. The implementation sequence lives in `docs/plans/20260728-nora-vscode-research-extension.md`.
+> Status: accepted. This document records the product and architecture decisions confirmed during the completed grill session. The completed implementation plan lives in `docs/plans/completed/20260728-nora-vscode-research-extension.md`. No unresolved product or architecture decision was introduced by implementation.
 
 ## Objective
 
@@ -12,7 +12,7 @@ Nora is not a general-purpose vector or diagram editor. The draw.io comparison a
 
 ### Research experience
 
-- Preserve the current user-facing Rabbithole research experience unless explicitly removed later:
+- Preserve the retained branching research experience unless explicitly removed later:
   - Reader and Canvas modes
   - branching from selected text
   - Markdown research nodes
@@ -20,12 +20,12 @@ Nora is not a general-purpose vector or diagram editor. The draw.io comparison a
   - follow-up questions and streamed answers
   - search and keyboard navigation
   - PDF, lenses, `show`, checks, snapshots, synthesis, and Markdown export remain included
-- Remove delivery surfaces and infrastructure that exist only for the standalone Rabbithole products:
-  - external-agent MCP server
+- Remove delivery surfaces and infrastructure that existed only for predecessor standalone products:
+  - external-agent MCP host
   - browser-launch and local HTTP/SSE session host
-  - standalone BYOK web application
-  - IndexedDB and `~/.rabbithole` persistence
-  - Cloudflare Pages, fetch proxy, and marketing website
+  - standalone BYOK browser application
+  - browser-local and predecessor filesystem persistence
+  - static-site deployment, fetch proxy, and marketing website
 - Nora has no persistent standalone chat:
   - `Ask Nora` opens a transient research prompt
   - the selected node is the prompt context
@@ -113,9 +113,9 @@ Nora is not a general-purpose vector or diagram editor. The draw.io comparison a
 - One attachment may be at most 100 MiB.
 - The complete `.nora` artifact may be at most 1 GiB.
 - An oversized addition is rejected before mutation and must not damage the last valid saved artifact.
-- Released `.nora` versions migrate forward. This compatibility commitment begins with the first public Nora format; it does not apply to `.rabbithole`.
+- Released `.nora` versions migrate forward. This compatibility commitment begins with the first public Nora format; it does not apply to predecessor formats.
 - Nora does not encrypt `.nora`. At-rest protection belongs to the filesystem and corporate data controls.
-- No `.rabbithole` migration or backward compatibility is required. Nora is a new product.
+- No predecessor-format migration or backward compatibility is required. Nora is a new product.
 
 ### Agent run lifecycle
 
@@ -293,7 +293,7 @@ Allow one active Agent Run per document and allow different documents to run con
 
 ### Compatibility and privacy
 
-Migrate released `.nora` versions forward while keeping `.rabbithole` migration out of scope. Do not implement application-level artifact encryption, telemetry, or crash reporting.
+Migrate released `.nora` versions forward while keeping predecessor-format migration out of scope. Do not implement application-level artifact encryption, telemetry, or crash reporting.
 
 ### Release pipeline
 
@@ -309,7 +309,7 @@ The Marketplace path requires initial Entra application/federated-credential and
 
 ### Continuous integration
 
-- Delete the Cloudflare Pages deployment workflow.
+- Keep CI free of static-site deployment workflows.
 - Run CI only on Linux.
 - Use Node.js 24.
 - Run type checks, unit tests, contract tests, integration tests, deterministic build checks, VS Code integration tests, and VSIX installation smoke tests.

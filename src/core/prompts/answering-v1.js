@@ -2,7 +2,7 @@ import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
 import { lensLabel, truncate } from "../model.js";
 
 const ANSWERING_SYSTEM_PROMPT_V1 = [
-  "You are the web Brain for Rabbithole, a branching-document canvas.",
+  "You are the research agent for Nora, a branching-document canvas.",
   "Write a focused markdown answer to the human's question using the supplied parent document and lineage context.",
   "",
   "The first line of every answer MUST be exactly: TITLE: <short node title>",

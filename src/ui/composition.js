@@ -28,15 +28,16 @@ import {
 } from "./branch-surfaces.js";
 import { disposeChrome, initChrome } from "./chrome-init.js";
 import { ensureNodeHtml, setRendererAssetData } from "./renderer.js";
+import { disposeRunStatus } from "./run-status.js";
 
 var activeRuntime = null;
 
 function noop() {}
 function resolved() { return Promise.resolve({ ok: true }); }
 
-export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
+export function createNoraUi({ hydration, host, capabilities } = {}) {
   if (activeRuntime && !activeRuntime.disposed) {
-    throw new Error("Dispose the active Rabbithole UI before starting another one");
+    throw new Error("Dispose the active research UI before starting another one");
   }
 
   host = host || {};
@@ -58,6 +59,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     own(function(){ setRendererAssetData(null); });
     own(disposeVisuals);
     own(disposeImageUx);
+    own(disposeRunStatus);
 
     registerCoreHooks({
       post: post,
@@ -128,7 +130,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       }
       try { disposeOwned(); } catch (error) { errors.push(error); }
       if (errors.length === 1) throw errors[0];
-      if (errors.length) throw new AggregateError(errors, "Rabbithole UI disposal failed");
+      if (errors.length) throw new AggregateError(errors, "Research UI disposal failed");
     }
   };
   activeRuntime = runtime;
@@ -140,6 +142,6 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       try { cleanups.pop()(); } catch (error) { errors.push(error); }
     }
     if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Rabbithole UI cleanup failed");
+    if (errors.length) throw new AggregateError(errors, "Research UI cleanup failed");
   }
 }

@@ -3,6 +3,7 @@ import {
   canvasBuilt,
   childrenOf,
   currentNodeId,
+  documentKindLabel,
   flashHint,
   frozen,
   closed,
@@ -173,7 +174,7 @@ export function closeShare(settings){
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){
     if (!n.origin) return "";
-    if (n.origin.synthesis) return "> ✦ Synthesis of the whole Rabbithole\n\n";
+    if (n.origin.synthesis) return "> ✦ Synthesis of the whole " + documentKindLabel() + "\n\n";
     var ask = n.origin.lens ? lensLabel(n.origin.lens) : (n.origin.question || "");
     if (n.origin.selected_text) return "> Asked about: “" + n.origin.selected_text + "”" + (ask ? " — " + ask : "") + "\n\n";
     return ask ? "> Follow-up — " + ask + "\n\n" : "";
@@ -218,21 +219,21 @@ export function closeShare(settings){
   function onExportPortable(){
     closeShare();
     if (typeof branchLifecycle.hooks.exportPortable !== "function"){
-      flashHint("Rabbithole export is only available in the web app.");
+      flashHint(documentKindLabel() + " export is only available in the web app.");
       return;
     }
-    flashHint("Preparing Rabbithole export...");
+    flashHint("Preparing " + documentKindLabel() + " export...");
     Promise.resolve()
       .then(function(){ return branchLifecycle.hooks.exportPortable(); })
       .then(function(result){
         var name = result && result.filename ? " " + result.filename : "";
-        flashHint("Rabbithole export downloading." + name);
+        flashHint(documentKindLabel() + " export downloading." + name);
       }, function(){
-        flashHint("Couldn't prepare the Rabbithole export.");
+        flashHint("Couldn't prepare the " + documentKindLabel() + " export.");
       });
   }
 function synthesize(source){
-    if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
+    if (closed){ flashHint("Session ended — reopen this " + documentKindLabel() + " first."); return; }
     var root = nodes[rootId];
     if (!root) return;
     for (var k in nodes){
@@ -243,10 +244,10 @@ function synthesize(source){
         return;
       }
     }
-    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
+    var q = "Step back and write the synthesis of this whole " + documentKindLabel() + " so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
     var kid = sendFollowup(root, q, null, true);
     if (mode === "canvas") revealNode(kid, source);
-    flashHint("✦ Synthesizing this journey — it will branch from where this Rabbithole began.");
+    flashHint("✦ Synthesizing this journey — it will branch from where this " + documentKindLabel() + " began.");
   }
 
   // ===========================================================================

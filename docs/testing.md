@@ -1,231 +1,217 @@
-# Testing Rabbithole
+# Testing Nora
 
-Rabbithole's tests are organized by the capability they protect. A failure should
-tell a contributor whether the problem is local logic, a public contract, a host
-integration, a user journey, a performance budget, or the published package.
+Nora's tests are organized by the capability they protect. A failure should tell
+the contributor whether the problem is local logic, a public contract, an
+extension-host integration, a browser/webview journey, a performance budget, or
+the packaged VSIX.
 
-The default suite runs deterministic checks that do not require live provider
-credentials. Packaging smoke tests and live-provider evaluations are separate
-because they are slower or environment-dependent.
+Deterministic source suites do not require live LLM credentials, live MCP
+servers, corporate systems, or network model calls. They use fake Pi sessions,
+fake providers, local fake MCP servers, temporary Git repositories, and local
+fixtures.
 
-## Running tests
+## Install and Default Validation
 
 ```bash
+npm ci --omit=optional
+npm run build
+npm run check
 npm test
-npm run test:packaging
-npm run eval
 ```
 
-Individual files are ordinary Node programs and can be run directly while
-iterating:
+`npm test` runs the deterministic source suite:
+
+1. `npm run build`
+2. `npm run check`
+3. `npm run test:unit`
+4. `npm run test:contracts`
+5. `npm run test:integration`
+6. `npm run test:e2e`
+7. `npm run test:performance`
+8. `npm run test:packaging`
+
+VS Code integration and installed-VSIX smoke are separate scripts because CI
+wraps them in a Linux display server:
 
 ```bash
-node test/unit/reducer.test.mjs
-node test/contracts/artifact-roundtrip.test.mjs
-node test/e2e/web-app.test.mjs
+npm run test:vscode
+npm run package:vsix
+npm run test:vsix
 ```
 
-Browser suites use Playwright. The UI primitives matrix exercises Chromium,
-Firefox, and WebKit; the product journeys use the browser selected by their test
-harness.
+On Linux CI these run as `xvfb-run -a npm run test:vscode` and
+`xvfb-run -a npm run test:vsix`. On desktop macOS or Windows, run the scripts
+directly.
 
-## Suite boundaries
+## Check Scripts
 
-### Unit tests
+- `npm run check:types` runs TypeScript over retained source, fixtures, and test
+  support declarations.
+- `npm run check:purity` checks webview bundle purity and self-contained UI
+  boundaries.
+- `npm run check:build` builds Nora twice into temporary directories and compares
+  relative paths and SHA-256 hashes.
+- `npm run check:native` fails if generated output, staged VSIX content, or
+  production dependency inventory contains forbidden native runtime artifacts or
+  excluded optional clipboard/native-canvas packages.
+- `npm run check:pi-runtime` verifies copied Pi/Photon runtime assets against the
+  esbuild metafile allowlist.
+- `npm run check:legacy` prevents removed runtime/package/workflow surfaces from
+  returning.
+- `npm run check:workflows` lints GitHub Actions workflows with actionlint.
 
-`test/unit/` contains deterministic, DOM-free or narrowly DOM-scoped behavior.
-These tests should be fast and should avoid host orchestration.
+## Suite Boundaries
 
-- `markdown-renderer.test.mjs` protects math delimiters, code highlighting,
-  unambiguous double-tilde strikethrough, literal approximation tildes,
-  Markdown composition, safe fallback for malformed or incomplete input, raw HTML
-  escaping, and the live/export page assembly needed for offline rendering.
-- `content-blocks.test.mjs` protects durable visual-block identity, registered
-  block normalization, descriptor and mount registration, pending placeholders,
-  framework-owned sanitization, and the Check block's parse, prose, and mount
-  contracts.
-- `base-url.test.mjs` protects link and image URL resolution, unsafe URL rejection,
-  GitHub image rewriting, frontmatter inference and precedence, child inheritance,
-  and MCP `base_url` validation.
-- `icons.test.mjs` protects the canonical icon renderer, accessibility defaults,
-  size overrides, favicon generation, and the repository boundary that forbids
-  product-owned inline SVG geometry outside `src/core/html/icons.js`.
-- `reducer.test.mjs` is the shared document-engine conformance suite. Its reviewable
-  cases live in `test/fixtures/reducer-goldens/cases.json` and run in Node and a
-  browser. They cover branch creation, streaming ordering and retries, completion,
-  deletion, updates, view state, extension state, immutability, unknown events,
-  and host-specific hydration projections.
+### Unit
 
-### Contract tests
+`npm run test:unit`
 
-`test/contracts/` protects formats and boundaries that other runtimes or
-untrusted input can reach. Changes here require an explicit contract or
-security decision; updating an assertion is not by itself sufficient.
+Unit tests cover pure or narrowly scoped behavior:
 
-- `assets.test.mjs` covers asset persistence, name and size validation, Markdown
-  references, MCP manifest and string limits, safe serving, referenced-only
-  export, and progress events.
-- `filesystem-store.test.mjs` and `indexeddb-store.test.mjs` instantiate the shared
-  store contract in `test/support/store-contract.mjs`. Both backends must support
-  hole and asset CRUD, schema stamping, future-schema refusal,
-  staging and adoption, traversal rejection, and reference-aware asset cleanup.
-- `mcp-markdown-wire.test.mjs` protects renderer fixtures, Markdown-only hydration
-  and progress events, MCP tool response shapes, streaming accumulation, canonical
-  export, web import, future-schema refusal,
-  and the isolation of learner block state from agent context and snapshots.
-- `fetch-proxy-worker.test.mjs` protects the relay boundary: GET-only access,
-  hostname allowlisting, credential stripping, CORS/content preservation, and the
-  streaming response-size cap.
-- `data-boundaries.test.mjs` couples the typed store, artifact, generation, and
-  content vocabularies to runtime validators. It covers canonical normalization,
-  extension bags, unknown format/schema refusal, malformed JSON and
-  base64, wrong field types, Unicode and RTL text, durable block IDs, import caps,
-  secret exclusion, failure cleanup, and the exact per-asset byte boundary.
-- `artifact-roundtrip.test.mjs` runs every corpus fixture through portable import,
-  the filesystem store, canonical snapshot HTML, web snapshot import, and portable
-  export. The projections must be normalized fixed points; referenced assets stay
-  byte-exact, extension state follows projection policy, and identity collisions
-  mint fresh hole IDs without changing content.
-- `compatibility-security.test.mjs` exercises hostile imported Markdown and visual
-  blocks on live and frozen paths, safe KaTeX degradation and trusted structure,
-  fully offline asset-bearing snapshots, frozen control policy, secret exclusion
-  from every artifact, and portable asset MIME derivation.
+- Markdown rendering, sanitization, math, code, Mermaid, and `show` blocks.
+- Durable content block parsing and Check state.
+- Base URL and asset URL resolution.
+- Product-owned icon rendering.
+- Nora document state reduction, validation, hydration projection, node/run
+  states, evidence references, and immutability.
+- Agent context construction.
+- LLM profile validation and SecretStorage adapter behavior.
+- Git remote normalization and permalink generation.
+- Nora read-only code tools, skill loading, and containment.
+- MCP config parsing and diagnostic redaction.
+- PDF provenance and selection metadata.
+- Shared lifecycle helpers.
 
-### Integration tests
+### Contracts
 
-`test/integration/` checks a complete capability across core code and one or more
-host adapters without owning the broad product journey.
+`npm run test:contracts`
 
-- `pdf-ingestion.test.mjs` covers page rendering, text extraction, ranges,
-  text-free ingestion, staged adoption, direct hole ingestion, and malformed or
-  missing inputs. A real-paper quality probe is optional when its local fixture is
-  available.
-- `image-experience.test.mjs` covers Markdown image behavior, shared image controls
-  and styles, and the real MCP Share action producing a canonical, portable,
-  referenced-assets-only snapshot.
-- `mermaid-rendering.test.mjs` covers lazy hosted-app loading, self-contained MCP
-  rendering, strict sanitization, invalid-source fallback, theme-aware rerendering,
-  conditional runtime embedding, and zero-network offline snapshots.
-- `mcp-rearm.test.mjs` protects the keep-listening response, grace period, live
-  reattachment, waiter cleanup, and exactly-once requeue of a saved pending ask.
-- `web-ingestion.test.mjs` protects local browser PDF ingestion, arXiv proxy
-  fallback and recovery messages, future-schema import refusal, MIME-independent
-  file classification, and the Markdown pre-read size limit.
-- `artifact-portability.test.mjs` covers provider selection in the portable shell,
-  author-stream invocation, credential-free `.rabbithole` export, download naming,
-  binary asset import, and the public deployment artifact.
-- `generation-lifecycle.test.mjs` protects OpenAI-compatible SSE
-  framing under arbitrary fragmentation, title extraction, normalized errors,
-  byte-preserving adapters, `GenerationRun` ordering and accumulation, browser and
-  MCP wiring, retry guards, empty-stream policy, authoring persistence, and browser
-  lifecycle flushes.
+Contract tests protect public formats and hostile-input boundaries:
 
-### End-to-end tests
+- Prompt payload fixtures.
+- Webview protocol validation.
+- `.nora` archive structure, canonical JSON/JSONL, size limits, hashes, path
+  refusal, duplicate/case-collision refusal, deterministic output, and partial
+  JSONL cutoff behavior.
+- Attachment limits and deduplication boundaries.
+- LLM secret exclusion from archives, exports, messages, and logs.
+- Pi transcript fidelity and replayable record boundaries.
+- Snapshot and Markdown export security.
+- UI bundle package boundaries.
 
-`test/e2e/` drives shipped user surfaces in a real browser.
+Contract changes require an explicit product, format, or security decision.
+Updating the expected fixture alone is not enough.
 
-- `web-app.test.mjs` covers the landing and composer, setup readiness, saved-hole
-  in-document hole switching, deletion and undo, streaming and reload recovery, reader/canvas navigation,
-  selection and whole-document branching, settings and provider controls,
-  accessible dialogs and popovers, keyboard operation, focus restoration,
-  Check-state persistence, image preview, canonical snapshot export, and frozen
+### Integration
+
+`npm run test:integration`
+
+Integration tests cover complete capabilities that cross one or more runtime
+boundaries:
+
+- Nora document open/save/save-as/revert/backup, dirty tracking, undo/redo, and
+  concurrent custom-editor behavior.
+- Repository cache acquisition, local and remote Git behavior, worktree reuse,
+  cancellation, and evidence immutability.
+- Skill resource loading across workspace/global skill roots.
+- Pi run control, streaming, transcript publication, cancellation, failed runs,
+  save/backup races, interrupted-open recovery, and cross-document concurrency.
+- MCP stdio/HTTP bridge lifecycle, variable/input resolution, tools/resources,
+  timeout, reconnect, truncation, and diagnostics.
+- PDF webview behavior and snapshot/image export behavior.
+- LLM auth interaction with fake provider flows.
+- Nora Markdown and snapshot export.
+- Mermaid rendering in the retained webview/snapshot path.
+
+### End To End
+
+`npm run test:e2e`
+
+E2E tests drive the webview in Chromium only:
+
+- Initial hydration, Reader/Canvas parity, pan/zoom, node selection, search,
+  keyboard navigation, checks, hostile Markdown, and reload behavior.
+- Selection asks, whole-canvas asks, follow-ups, streaming, cancellation/failure
+  display, and Run Details.
+- Shared UI primitive focus, keyboard, dismissal, layering, combobox, dialog,
+  popover, field, notice, and anchor behavior.
+
+### VS Code
+
+`npm run test:vscode`
+
+VS Code tests run through `@vscode/test-electron` against the custom editor:
+
+- Activation and opening `.nora` files.
+- Dirty indicator behavior from `CustomDocumentContentChangeEvent`.
+- Nora-owned undo/redo commands and keybindings.
+- Save, save-as, revert, backup, hot-exit recovery, and disposal.
+- Packaged research journey coverage and multi-document run behavior.
+
+### Performance
+
+`npm run test:performance`
+
+`test/performance/budgets.test.mjs` enforces budgets in `test/budgets.json` for
+meaningful Nora measures: activation, representative archive open/save, webview
+hydration, streaming batching, snapshot size, and VSIX size.
+
+Rebaseline only after reviewing the product trade-off. The recalibration script
+is `npm run calibrate:budgets`, and it should be used only when intentionally
+updating `test/budgets.json`.
+
+Every budget records the baseline, tolerance, ceiling, rationale, and baseline
+commit. Do not hide regressions by raising a ceiling without explaining the
+trade-off.
+
+### Packaging
+
+`npm run test:packaging`
+
+Packaging tests inspect VSIX contents and the package allowlist:
+
+- Activation entry and generated webview assets are present.
+- Source-only, secret, old-host, and forbidden native files are absent.
+- The package boundary matches `.vscodeignore`.
+
+`npm run test:vsix` installs `artifacts/nora.vsix` into a clean downloaded VS
+Code test build, opens a minimal `.nora`, verifies activation without source-tree
+resolution, and under `NORA_VSIX_SMOKE=1` exercises the bundled Pi SDK path with
+a no-network fake provider/tool flow and Photon WebAssembly preprocessing.
+
+## Fixtures and Support
+
+- `test/fixtures/document-goldens/cases.json` contains reviewable Nora document
+  state cases for Unicode, RTL, branches, math, code, Mermaid, checks, assets,
+  evidence, and interrupted runs.
+- `test/fixtures/contracts/` contains typed contract examples that must agree
+  with runtime validation.
+- `test/fixtures/nora/` contains minimal archive/document fixtures and run JSONL
+  samples.
+- `test/fixtures/pdfs/` contains small PDF fixtures for deterministic PDF
   behavior.
-- `ui-primitives-browsers.test.mjs` runs the shared Button, Field, Layer, Anchor,
-  Popover, Dialog, Notice, Select, and Combobox contracts in Chromium, Firefox,
-  and WebKit. It concentrates cross-engine keyboard, focus, dismissal, labeling,
-  timing, and placement behavior in one matrix.
-- `cross-host-journey.test.mjs` proves a current hole can travel through MCP
-  authoring, browser interaction, snapshot
-  download, fresh-profile web import, portable export, filesystem import, and MCP
-  resume without content, asset, identity, or credential regressions.
+- `test/support/` contains fake Pi sessions, fake MCP servers, archive fixtures,
+  webview harnesses, and budget measurement helpers.
 
-### Performance tests
+Fixtures must be minimal, named for the behavior they demonstrate, and safe to
+commit. Never place real credentials, private documents, corporate data, or live
+provider responses in fixtures.
 
-`test/performance/budgets.test.mjs` enforces machine-relative ceilings recorded in
-`test/budgets.json`. The gauges cover live and frozen client bytes, representative
-snapshot bytes and build time, cold open, streaming DOM batching and duration,
-and the final-update-to-save window.
+## Adding or Changing Tests
 
-Re-baseline only after reviewing the product trade-off:
+Choose the narrowest suite that observes the behavior:
 
-```bash
-npm run calibrate:budgets
-```
-
-Each budget records its baseline, tolerance, ceiling, rationale, and measurement
-commit. A faster or smaller result does not require recalibration; a regression
-must not be hidden by raising a ceiling without explanation.
-
-### Packaging tests
-
-`test/packaging/install-smoke.test.mjs` packs the repository, installs the tarball
-into a clean consumer project, verifies the executable, metadata, runtime source,
-and committed browser bundles, then completes an MCP initialize handshake. It is
-kept outside the default suite and should run against every supported Node release
-in CI.
-
-### Live-provider evaluations
-
-`test/evals/run-eval.mjs` is an opt-in quality probe, not a deterministic contract
-suite. It uses live providers and heuristic scoring for math, diagrams, explanation
-lenses, code-aware answers, follow-ups, synthesis, long documents, title handling,
-hostile selected text, and baseline factual responses. See
-`test/evals/README.md` for credentials and invocation details.
-
-## Data and protocol contracts
-
-The following surfaces are deliberately tested across versions and hosts:
-
-| Surface | Required behavior | Primary coverage |
-|---|---|---|
-| Persisted holes | Current records round-trip canonically; other schema versions are refused before lossy reconstruction. | Store contracts, data boundaries, cross-host journey |
-| Portable `.rabbithole` files | Valid files round-trip canonically; malformed, oversized, or newer formats fail clearly; import collisions receive fresh identity. | Data boundaries, artifact round-trip, artifact portability |
-| Snapshot HTML | Exports are inert, self-contained, escaped against script breakout, offline-capable, and include only referenced assets and shareable state. | MCP wire, compatibility/security, web app, artifact round-trip |
-| MCP tools and events | Tool inputs, responses, progress events, reattachment, and hydration remain compatible with supported clients. | Assets, MCP wire, MCP rearm, reducer |
-| Browser storage | IndexedDB data round-trips without drift; credentials remain device-local and never enter holes or exports. | IndexedDB contract, compatibility/security, web app |
-| Renderer and blocks | Markdown source remains authoritative; unsafe markup and URLs are rejected consistently on live and frozen paths; durable block IDs survive import and edits. | Renderer, content blocks, MCP wire, compatibility/security |
-| Cross-host documents | Content, referenced asset bytes, durable asks, and supported metadata survive movement between MCP, web, snapshots, and portable files. | Artifact round-trip, cross-host journey |
-
-Keep the unsupported-input failure mode as carefully tested as the happy path.
-
-## Fixtures and test support
-
-- `test/fixtures/corpus/` contains curated portable files for empty, math-heavy,
-  visual-block, Mermaid, asset-bearing, deep and wide, pending, Unicode, RTL,
-  code-fence, base-URL, view-state, origin, and mixed-status documents. Its README
-  records the purpose of each fixture.
-- `test/fixtures/reducer-goldens/cases.json` is the reviewable state/effect corpus
-  for the shared reducer.
-- `test/fixtures/contracts/` provides typed examples that must agree with runtime
-  validation.
-- `test/support/store-contract.mjs` is instantiated by both storage backends and is
-  not an independently executed suite.
-- `test/support/budget-measurements.mjs` and
-  `test/support/calibrate-budgets.mjs` own performance measurement and deliberate
-  re-baselining.
-
-Fixtures should be minimal, named for the behavior they demonstrate, and safe to
-commit. Never place real credentials or private documents in the corpus.
-
-## Adding or changing tests
-
-Choose the narrowest suite that observes the contract:
-
-1. Put pure transformations and reducer behavior in `unit/`.
-2. Put public formats, persistence, protocol shapes, limits, and
-   trust boundaries in `contracts/`.
-3. Put one capability spanning a host boundary in `integration/`.
-4. Put browser journeys and cross-host workflows in `e2e/`.
-5. Put measured regression ceilings in `performance/` and clean-install behavior
-   in `packaging/`.
+1. Put pure transforms and single-module behavior in `unit/`.
+2. Put public formats, protocol shapes, limits, persistence, and hostile-input
+   boundaries in `contracts/`.
+3. Put one capability spanning extension/core/webview/Git/MCP/Pi boundaries in
+   `integration/`.
+4. Put browser-facing journeys and reusable UI primitive behavior in `e2e/`.
+5. Put VS Code custom-editor behavior in `test/vscode/`.
+6. Put packaged-extension behavior in `test/packaging/`.
 
 Prefer observable outcomes over implementation sentinels. For browser behavior,
 assert accessible roles, focus, keyboard operation, persisted state, network
-scope, and exported artifacts rather than private function names or incidental DOM
-nesting. For format behavior, prove both acceptance of current inputs and clear
-refusal of unsupported inputs.
-
-Every bug fix should add a regression at the lowest layer that can reproduce it.
-If the defect crossed a public boundary or a real user journey, add that coverage
-too. Keep test output capability-named so CI failures remain understandable on
-their own.
+scope, and exported artifacts rather than incidental DOM structure. For formats,
+prove both acceptance of current valid inputs and clear refusal of unsupported
+or future inputs.

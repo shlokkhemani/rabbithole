@@ -9,9 +9,11 @@ import { iconSvg } from "./icons.js";
 export const CANVAS_SHELL = `
 <div id="taskbar">
   <div class="tb-pill" id="tb-tools">
-    ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes · S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
-    ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole · N", ariaLabel: "New Rabbithole", svgIconHtml: iconSvg("new") })}
+    ${iconButtonMarkup({ id: "t-rail", title: "Branches · S", ariaLabel: "Toggle branches", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
+    ${iconButtonMarkup({ id: "t-new", title: "New Nora document · N", ariaLabel: "New Nora document", svgIconHtml: iconSvg("new") })}
     <span class="sep" id="app-sep"></span>
+    ${iconButtonMarkup({ id: "t-ask", title: "Ask", ariaLabel: "Ask", svgIconHtml: iconSvg("question") })}
+    <span class="sep"></span>
     <span class="tb-group" data-mode="reader">
       ${buttonMarkup({ id: "t-canvas", title: "Open the spatial canvas", label: "Canvas" })}
       <span class="sep"></span>
@@ -79,7 +81,7 @@ export const CANVAS_SHELL = `
 <div id="palette" hidden><div id="palette-panel">
   <div class="pal-input">
     ${iconSvg("search")}
-    <input id="pal-text" placeholder="Search this Rabbithole…" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
+    <input id="pal-text" placeholder="Search this Nora document…" aria-label="Search this Nora document" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
     <kbd>esc</kbd>
   </div>
   <div id="pal-results" role="listbox" aria-label="Search results"></div>
@@ -90,7 +92,7 @@ export const CANVAS_SHELL = `
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-doc", role: "menuitem", tabIndex: -1, label: "Copy document as Markdown", svgIconHtml: '<span class="sm-ic">⧉</span>' })}
   <div class="sm-sep"></div>
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-export", role: "menuitem", tabIndex: -1, label: "Download snapshot (.html)", svgIconHtml: '<span class="sm-ic">⇩</span>' })}
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Rabbithole (.rabbithole)", svgIconHtml: '<span class="sm-ic">⇣</span>' })}
+  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Nora archive", svgIconHtml: '<span class="sm-ic">⇣</span>' })}
   <div class="sm-sep" id="sm-sep2"></div>
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-synth", role: "menuitem", tabIndex: -1, label: "Synthesize this journey", svgIconHtml: '<span class="sm-ic">✦</span>' })}
 </div>
@@ -98,6 +100,31 @@ export const CANVAS_SHELL = `
 <div id="confirm">
   <div class="cf-msg" id="cf-msg"></div>
   <div class="cf-row">${buttonMarkup({ bare: true, id: "cf-keep", label: "Keep" })}${buttonMarkup({ bare: true, className: "cf-remove", id: "cf-remove", label: "Remove" })}</div>
+</div>
+
+<div id="run-details-backdrop" hidden>
+  <section id="run-details" aria-labelledby="run-details-title">
+    <div class="run-details-head">
+      <div>
+        <h2 id="run-details-title">Run Details</h2>
+        <p data-run-details-node></p>
+      </div>
+      ${iconButtonMarkup({ bare: true, className: "run-details-close", title: "Close", ariaLabel: "Close run details", icon: "×", dataAttrs: { runDetailsClose: "" } })}
+    </div>
+    <dl class="run-details-meta">
+      <div><dt>Status</dt><dd data-run-details-status></dd></div>
+      <div><dt>Profile</dt><dd data-run-details-profile></dd></div>
+      <div><dt>Endpoint</dt><dd data-run-details-endpoint></dd></div>
+    </dl>
+    <div class="run-details-section">
+      <h3>Prompt</h3>
+      <p data-run-details-prompt></p>
+    </div>
+    <div class="run-details-section">
+      <h3>Transcript</h3>
+      <div class="run-details-trace" data-run-details-trace></div>
+    </div>
+  </section>
 </div>
 
 <div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title" data-notice-title></span><span id="banner-msg" data-notice-message></span></div>${iconButtonMarkup({ bare: true, id: "banner-x", title: "Dismiss", ariaLabel: "Dismiss banner", icon: "×", dataAttrs: { noticeDismiss: "" } })}</div>

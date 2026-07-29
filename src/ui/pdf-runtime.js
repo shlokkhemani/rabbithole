@@ -8,8 +8,8 @@ let pdfjsNetworkAttempts = 0;
 export async function loadPdfJsModule() {
   if (pdfjs) return pdfjs;
   if (!pdfjsPromise) {
-    const carrier = typeof document !== "undefined" && document.getElementById("rabbithole-pdfjs-runtime");
-    const source = globalThis.__RABBITHOLE_PDFJS_SOURCE__ || carrier?.textContent || "";
+    const carrier = typeof document !== "undefined" && document.getElementById("nora-pdfjs-runtime");
+    const source = globalThis.__NORA_PDFJS_SOURCE__ || carrier?.textContent || "";
     if (source && typeof Blob === "function" && globalThis.URL?.createObjectURL) {
       const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
       pdfjsPromise = import(url)
@@ -17,7 +17,7 @@ export async function loadPdfJsModule() {
         .catch((error) => { pdfjsPromise = null; throw error; });
     } else {
       const nodeRuntime = typeof process !== "undefined" && process.versions?.node;
-      let runtimeUrl = nodeRuntime ? ["pdfjs-dist", "build/pdf.mjs"].join("/") : new URL("pdf.mjs", document.baseURI).href;
+      let runtimeUrl = nodeRuntime ? ["pdfjs-dist", "build/pdf.mjs"].join("/") : new URL("pdf.mjs", import.meta.url).href;
       if (!nodeRuntime && pdfjsNetworkAttempts) {
         const retryUrl = new URL(runtimeUrl);
         retryUrl.searchParams.set("retry", String(pdfjsNetworkAttempts));
@@ -35,19 +35,19 @@ export async function loadPdfJsModule() {
 function configurePdfJs() {
   if (configured || !pdfjs) return;
   configured = true;
-  const carrier = typeof document !== "undefined" && document.getElementById("rabbithole-pdf-worker-runtime");
-  const source = globalThis.__RABBITHOLE_PDF_WORKER_SOURCE__ || carrier?.textContent || "";
+  const carrier = typeof document !== "undefined" && document.getElementById("nora-pdf-worker-runtime");
+  const source = globalThis.__NORA_PDF_WORKER_SOURCE__ || carrier?.textContent || "";
   if (source && typeof Blob === "function" && globalThis.URL?.createObjectURL) {
     workerObjectUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     pdfjs.GlobalWorkerOptions.workerSrc = workerObjectUrl;
   } else if (typeof window !== "undefined") {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdf.worker.mjs", document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdf.worker.mjs", import.meta.url).href;
   }
 }
 
 function runtimeAssetUrl(directory) {
   if (typeof document === "undefined" || location.protocol === "file:") return undefined;
-  return new URL(`${directory}/`, document.baseURI).href;
+  return new URL(`${directory}/`, import.meta.url).href;
 }
 
 /** Share a parsed PDF between Reader and Canvas mounts of the same node. */

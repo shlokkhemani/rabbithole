@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { buildPdfDocument, normalizePdfExtension } from "../../src/core/pdf-shared.js";
-import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../src/core/reducer.js";
-import { parsePersistedHole, toPersistedHole } from "../../src/core/schema.js";
+import { createDocumentState, documentStateToPersisted, reduceDocumentEvent } from "../../src/core/document-state.js";
 
 const sha256 = "ab".repeat(32);
 const source = { asset: `pdf-${sha256}.pdf`, sha256, byte_length: 12345 };
@@ -46,17 +45,16 @@ const pdfAnchor = {
   kind: "text",
   fragments: [{ page: 1, quads: [[[40, 120], [140, 120], [140, 105], [40, 105]]] }],
 };
-const branch = reduceHoleEvent(createHoleState({
-  hole_id: "pdf-roundtrip", title: "PDF", root_id: "root",
-  nodes: [{ id: "root", parent_id: null, title: "Root", markdown: "Body", extensions: {} }],
+const noraBranch = reduceDocumentEvent(createDocumentState({
+  documentId: "nora-pdf-roundtrip", title: "PDF", rootNodeId: "root",
+  nodes: [{ id: "root", parentId: null, title: "Root", markdown: "Body", extensions: {} }],
 }), {
   type: "branch_request", parent_id: "root", node_id: "clip-child", question: "What is this?",
   selected_text: "selected text", anchor: { offset_start: 0, offset_end: 0, pdf: pdfAnchor },
 }, { now: "2026-07-13T00:00:00.000Z" });
-const persisted = parsePersistedHole(toPersistedHole(holeStateToHole(branch.state), { updatedAt: "2026-07-13T00:00:01.000Z" }));
-const child = persisted.nodes.find((node) => node.id === "clip-child");
-assert.deepEqual(child.origin.anchor.pdf, pdfAnchor);
-assert.equal(child.origin.crop_asset, undefined, "PDF-space provenance replaces durable crop images");
-assert.equal(child.markdown, "");
+const noraPersisted = documentStateToPersisted(noraBranch.state);
+const noraChild = noraPersisted.nodes.find((node) => node.id === "clip-child");
+assert.deepEqual(noraChild.origin.anchor.pdf, pdfAnchor);
+assert.equal(noraChild.origin.crop_asset, undefined, "Nora document state preserves PDF-space provenance without crop assets");
 
 console.log("ok PDF v2 provenance: original source, visible boxes, and PDF-space quads round-trip");

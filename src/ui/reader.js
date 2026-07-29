@@ -30,6 +30,7 @@ import { captureContentPosition, restoreContentPosition } from "./scroll-positio
 import { mountVisuals } from "./visuals.js";
 import { applyChildHighlights } from "./text-marks.js";
 import { buildOriginCrop } from "./origin-provenance.js";
+import { buildRunDetailsButton } from "./run-status.js";
 
 function defaultReaderHooks(){
   return {
@@ -206,6 +207,8 @@ export function renderReaderBody(){
     }
     var crop = buildOriginCrop(node, "reader");
     if (crop) col.appendChild(crop);
+    var runTools = buildReaderRunTools(node);
+    if (runTools) col.appendChild(runTools);
     var dc = buildDocContent(node, READER_BASE);
     col.appendChild(dc);
     applyChildHighlights(dc, node);
@@ -218,6 +221,15 @@ export function renderReaderBody(){
     readerMain.appendChild(col);
     // Each document remembers where you were; a first open starts at the top.
     readerMain.scrollTop = node._scrollTop || 0;
+  }
+
+function buildReaderRunTools(node){
+    var details = buildRunDetailsButton(node, { className: "run-details-button reader-run-details" });
+    if (!details) return null;
+    var wrap = document.createElement("div");
+    wrap.className = "reader-run-tools";
+    wrap.appendChild(details);
+    return wrap;
   }
   // Open the parent and land on the exact origin when this branch is anchored.
 export function jumpToOrigin(node, source){

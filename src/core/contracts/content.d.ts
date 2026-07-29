@@ -1,5 +1,5 @@
 /**
- * Content and learning-primitive vocabulary for Phases 6–8.
+ * Content and learning-primitive vocabulary for Nora canvas blocks.
  *
  * Runtime block authority is {@link ../blocks.js}. Its descriptor registry
  * drives closed-fence placeholders and pending-fence recognition in
@@ -8,7 +8,7 @@
  *
  * Client mounts are bound to those same descriptors in
  * {@link ../../ui/visuals.js}. Both
- * {@link ../../ui/entry.js} and {@link ../../ui/frozen-entry.js} call
+ * {@link ../../ui/nora-entry.js} and {@link ../../ui/frozen-entry.js} call
  * `mountVisuals`, which finds `.viz[data-viz][data-src]`, skips pending
  * placeholders, base64-decodes the source, dispatches through the separate
  * `registerBlockMount(type, mountSpec)`, and replace placeholders with cached

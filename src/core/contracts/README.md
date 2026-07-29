@@ -1,7 +1,7 @@
 # Core contracts
 
 This directory holds the hand-authored TypeScript declaration files that form
-Rabbithole's shared boundary vocabulary.
+Nora's archive, document, evidence, agent-run, and content boundary vocabulary.
 
 Every `.d.ts` contract added here must ship with:
 

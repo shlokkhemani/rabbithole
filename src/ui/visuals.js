@@ -17,10 +17,10 @@ var mermaidGeneration = 0;
 
 function loadEmbeddedMermaidRuntime(){
   if (window.mermaid) return window.mermaid;
-  var carrier = document.getElementById("rabbithole-mermaid-runtime");
+  var carrier = document.getElementById("nora-mermaid-runtime");
   if (!carrier || !carrier.textContent) throw new Error("Mermaid runtime is unavailable");
   var script = document.createElement("script");
-  script.setAttribute("data-rabbithole-runtime", "mermaid");
+  script.setAttribute("data-nora-runtime", "mermaid");
   script.textContent = carrier.textContent;
   (document.head || document.body || document.documentElement).appendChild(script);
   script.remove();

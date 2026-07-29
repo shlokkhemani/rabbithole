@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v4.2.2 tag resolved 2026-07-29.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # actions/setup-node v4.4.0 tag resolved 2026-07-29.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --omit=optional
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/verify-release-version.mjs
+      - run: npm test
+      - run: xvfb-run -a npm run test:vscode
+      - run: npm run check:build
+      - run: node scripts/check-pi-runtime-assets.mjs
+      - run: npm run package:vsix
+      - run: xvfb-run -a npm run test:vsix
+      - run: sha256sum artifacts/nora.vsix > artifacts/nora.vsix.sha256
+      # actions/upload-artifact v4.6.2 tag resolved 2026-07-29.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nora-release-artifact
+          path: artifacts
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # actions/download-artifact v4.3.0 tag resolved 2026-07-29.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: nora-release-artifact
+          path: artifacts
+      - run: sha256sum -c artifacts/nora.vsix.sha256
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" artifacts/nora.vsix artifacts/nora.vsix.sha256 \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Nora ${GITHUB_REF_NAME}" \
+          || gh release upload "${GITHUB_REF_NAME}" artifacts/nora.vsix artifacts/nora.vsix.sha256 --clobber
+
+  marketplace:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # actions/checkout v4.2.2 tag resolved 2026-07-29.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # actions/setup-node v4.4.0 tag resolved 2026-07-29.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --omit=optional
+      # actions/download-artifact v4.3.0 tag resolved 2026-07-29.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: nora-release-artifact
+          path: artifacts
+      - run: sha256sum -c artifacts/nora.vsix.sha256
+      # Azure/login v2.3.0 tag resolved 2026-07-29.
+      - uses: Azure/login@eec3c95657c1536435858eda1f3ff5437fee8474
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - run: npx vsce publish --packagePath artifacts/nora.vsix --azure-credential
+
+  open-vsx:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # actions/setup-node v4.4.0 tag resolved 2026-07-29.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      # actions/download-artifact v4.3.0 tag resolved 2026-07-29.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: nora-release-artifact
+          path: artifacts
+      - run: sha256sum -c artifacts/nora.vsix.sha256
+      - run: npm exec --yes --package ovsx@1.0.2 -- ovsx publish artifacts/nora.vsix -p "${{ secrets.OVSX_PAT }}"

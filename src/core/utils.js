@@ -45,6 +45,26 @@ export function randomId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** @template T @param {T} value @returns {T} */
+export function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+/**
+ * @param {Uint8Array | { arrayBuffer: () => Promise<ArrayBuffer> }} binary
+ * @returns {Promise<string>}
+ */
+export async function binaryToBase64(binary) {
+  const bytes = binary instanceof Uint8Array
+    ? binary
+    : new Uint8Array(await binary.arrayBuffer());
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(out);
+}
+
 /**
  * Serializes a value for safe embedding inside an inline `<script>`.
  * @param {unknown} value

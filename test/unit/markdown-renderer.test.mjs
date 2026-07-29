@@ -1,15 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { getKatexCss } from "../../src/node/html/built-assets.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
-
-process.env.RABBITHOLE_NO_BROWSER = "1";
-process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-markdown-renderer-"));
+import {
+  createTestNoraWebviewHtml,
+  readWebviewAsset,
+} from "../support/nora-webview-assets.mjs";
 
 const KATEX_CSS_SENTINEL = ".katex .katex-version::after";
 
@@ -166,73 +160,24 @@ async function runMarkdownFixtures() {
 }
 
 async function assertPageAssembly() {
-  const rootMarkdown = [
-    "Root with $x^2$.",
-    "",
-    "```js",
-    "const x = 1;",
-    "```",
-  ].join("\n");
-  const rootNode = {
-    id: "root",
-    parent_id: null,
-    title: "Root",
-    markdown: rootMarkdown,
-    origin: null,
-    position: { x: 0, y: 0 },
-    size: null,
-    font_scale: 1,
-    collapsed: false,
-    status: "answered",
-    read: true,
-    created_at: new Date().toISOString(),
-  };
+  const html = await createTestNoraWebviewHtml();
+  const katexCss = await readWebviewAsset("katex.css");
+  const noraEntry = await readWebviewAsset("nora-entry.js");
+  const frozenClient = await readWebviewAsset("frozen-client.js");
 
-  const session = await createSession({
-    holeId: "markdown-renderer-test",
-    title: "Markdown Renderer Test",
-    rootId: "root",
-    nodes: [rootNode],
-    isResume: false,
-    renderPage: (hydration) => buildCanvasHtml(hydration),
-  });
+  assert.equal(count(katexCss, KATEX_CSS_SENTINEL), 1, "webview KaTeX CSS should include the version sentinel once");
+  assert.equal(count(katexCss, "data:font/woff2;base64,"), 20, "webview KaTeX CSS should inline woff2 fonts");
+  assert(!/fonts\/KaTeX_[^)]+\.(?:woff|ttf)/.test(katexCss), "webview KaTeX CSS should not reference external fonts");
+  assert(html.includes('href="vscode-resource:/out/webview/canvas.css"'), "webview HTML should link the canvas stylesheet");
+  assert(html.includes('href="vscode-resource:/out/webview/katex.css"'), "webview HTML should link the KaTeX stylesheet");
+  assert(html.includes('src="vscode-resource:/out/webview/dompurify.js"'), "webview HTML should load DOMPurify through the CSP nonce");
+  assert(html.includes('type="module" src="vscode-resource:/out/webview/nora-entry.js"'), "webview HTML should load the Nora entry module");
+  assert(noraEntry.includes("nora-shared-markdown-renderer-v1"), "Nora webview bundle should include the shared renderer");
+  assert(frozenClient.includes("startPortableSnapshot"), "frozen snapshot client should expose snapshot hydration");
+  assert(!noraEntry.includes("new EventSource"), "Nora webview bundle must not include the old SSE transport");
+  assert(!noraEntry.includes("/sse"), "Nora webview bundle must not include the old SSE route");
 
-  try {
-    const live = await fetch(session.url);
-    assert.equal(live.status, 200);
-    const liveHtml = await live.text();
-    const exported = await fetch(`${session.url}/export`);
-    assert.equal(exported.status, 200);
-    const exportHtml = await exported.text();
-
-    for (const [label, html] of [
-      ["live", liveHtml],
-      ["export", exportHtml],
-    ]) {
-      assert.equal(count(html, KATEX_CSS_SENTINEL), 1, `${label} should include KaTeX CSS once`);
-      assert.equal(count(html, "data:font/woff2;base64,"), 20, `${label} should inline KaTeX woff2 fonts`);
-      assert(!/fonts\/KaTeX_[^)]+\.(?:woff|ttf)/.test(html), `${label} should not reference external KaTeX fonts`);
-      assert(html.includes("Root with $x^2$."), `${label} should carry markdown in hydration`);
-      assert(!html.includes('"contentHtml"'), `${label} hydration should not carry server-rendered HTML`);
-      assert(html.includes("rabbithole-shared-markdown-renderer-v1"), `${label} should bundle the shared renderer`);
-    }
-    assert(liveHtml.includes("new EventSource"), "live page should keep the live SSE transport");
-    assert(!exportHtml.includes("new EventSource"), "frozen export should not include the live SSE transport");
-    assert(!exportHtml.includes("/sse"), "frozen export should not include the live SSE route");
-
-    const scriptMatch = liveHtml.match(/<script>\n([\s\S]*)\n<\/script>/);
-    assert(scriptMatch, "assembled HTML should contain one inline script");
-    const scriptPath = path.join(process.env.RABBITHOLE_DIR, "assembled-client.js");
-    await fs.writeFile(scriptPath, scriptMatch[1], "utf8");
-    const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
-    assert.equal(check.status, 0, check.stderr || check.stdout);
-
-    const katexCssBytes = Buffer.byteLength(getKatexCss(), "utf8");
-    const pageBytes = Buffer.byteLength(liveHtml, "utf8");
-    console.log(`ok page assembly: KaTeX CSS ${katexCssBytes} bytes, live page ${pageBytes} bytes`);
-  } finally {
-    await closeAllSessions("markdown_renderer_test_complete");
-  }
+  console.log(`ok page assembly: Nora webview HTML ${Buffer.byteLength(html, "utf8")} bytes, KaTeX CSS ${Buffer.byteLength(katexCss, "utf8")} bytes`);
 }
 
 await runMarkdownFixtures();

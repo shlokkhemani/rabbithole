@@ -17,7 +17,7 @@ const textMeasureContext = textMeasureCanvas?.getContext("2d") || null;
 export function mountPdfView(container, node, options = {}) {
   const pdf = normalizePdfExtension(node);
   const rawPdf = node?.extensions?.pdf;
-  if (!pdf || pdf.converted || pdf.converting) {
+  if (!pdf || pdf.converted || pdf.converting || pdf.pages.length === 0) {
     if (rawPdf?.version === 1 && !rawPdf.converted) mountLegacyNotice(container);
     return null;
   }

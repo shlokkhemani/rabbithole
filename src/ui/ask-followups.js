@@ -13,6 +13,7 @@ import {
   composerSend,
   composerText,
   currentNodeId,
+  documentKindLabel,
   flashHint,
   frozen,
   lensLabel,
@@ -86,6 +87,8 @@ export function initAskFollowups(){
     var b = e.target.closest ? e.target.closest(".lens") : null;
     if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
   });
+  var toolbarAsk = document.getElementById("t-ask");
+  if (toolbarAsk) askScope.listen(toolbarAsk, "click", function(e){ showWholeCanvasAsk(toolbarAsk, motionSourceFromEvent(e)); });
   askScope.listen(askText, "input", function(){ autoGrowEl(askText, 110); });
   askScope.listen(askText, "keydown", onAskTextKeydown);
   askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
@@ -143,8 +146,8 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     // Asks stay open while the agent is merely away (they queue server-side and
     // are answered when it returns) — only a fully closed session can't take them.
     if (closed){
-      flashHint(frozen ? "This is a read-only snapshot — asking needs the live Rabbithole."
-        : "Session ended — reopen this Rabbithole from your terminal to keep asking.");
+      flashHint(frozen ? "This is a read-only snapshot — asking needs the live " + documentKindLabel() + "."
+        : "Session ended — reopen this " + documentKindLabel() + " to keep asking.");
       return;
     }
     var range = sel.getRangeAt(0);
@@ -179,8 +182,8 @@ export function showAskFromSelection(options){
     var parent = parentId && nodes[parentId];
     if (!parent || parent.status === "pending" || parent.extensions?.pdf?.converting) return false;
     if (closed){
-      flashHint(frozen ? "This is a read-only snapshot — asking needs the live Rabbithole."
-        : "Session ended — reopen this Rabbithole from your terminal to keep asking.");
+      flashHint(frozen ? "This is a read-only snapshot — asking needs the live " + documentKindLabel() + "."
+        : "Session ended — reopen this " + documentKindLabel() + " to keep asking.");
       return false;
     }
     var anchorEl = options.anchorRectEl;
@@ -201,10 +204,40 @@ export function showAskFromSelection(options){
     openAskSurface(anchorEl, owner);
     return true;
   }
+
+export function showWholeCanvasAsk(anchor, source){
+    if (closed){
+      flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this " + documentKindLabel() + " to continue.");
+      return false;
+    }
+    if (ask.classList.contains("visible")) hideAsk();
+    var scopedNodeId = source === "command" && currentNodeId && nodes[currentNodeId] ? currentNodeId : null;
+    pendingAsk = { parentId: null, container: readerMain, selectedText: "", startOff: 0, endOff: 0,
+      range: null, scope: scopedNodeId ? { type: "node", node_id: scopedNodeId } : { type: "whole_canvas" }, source: source || "command" };
+    askText.value = "";
+    askText.placeholder = "Ask Nora…";
+    ask.classList.add("visible");
+    askTabOwner = document.body;
+    askOwnerCleanup = askLifecycle.scope
+      ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown)
+      : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
+    openAskSurface(anchor || viewportCenterAnchor(), document.body);
+    return true;
+  }
+
+function viewportCenterAnchor(){
+    return { contextElement: document.body, getBoundingClientRect: function(){
+      var width = window.innerWidth || document.documentElement.clientWidth || 0;
+      var height = window.innerHeight || document.documentElement.clientHeight || 0;
+      var x = Math.round(width / 2);
+      var y = Math.round(height / 2);
+      return { left: x, right: x, top: y, bottom: y, width: 0, height: 0, x: x, y: y };
+    } };
+  }
   function openAskSurface(anchor, owner){
     var mobile = usesMobileAskSurface();
     ask.classList.toggle("mobile-sheet", mobile);
-    askText.placeholder = "Ask about this…";
+    if (!pendingAsk || !pendingAsk.scope) askText.placeholder = "Ask about this…";
     var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
     askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
       placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
@@ -292,6 +325,14 @@ export function disposeAskFollowups(){
 
   function submitAsk(lensKey, source){
     if (!pendingAsk || closed) return;
+    if (pendingAsk.scope){
+      var scopedLens = (lensKey && LENSES[lensKey]) ? lensKey : null;
+      var scopedQuestion = scopedLens ? LENSES[scopedLens].q : askText.value.trim();
+      askLifecycle.hooks.post({ type: "nora_ask", request_id: uuid(), prompt: scopedQuestion,
+        lens: scopedLens, scope: pendingAsk.scope });
+      hideAsk();
+      return;
+    }
     var parent = nodes[pendingAsk.parentId];
     if (!parent){ hideAsk(); return; }
     var lens = (lensKey && LENSES[lensKey]) ? lensKey : null;
@@ -339,6 +380,7 @@ export function disposeAskFollowups(){
     hideAsk();
     var request = askLifecycle.hooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: node.origin.selected_text, question: question, lens: lens, anchor: anchor,
+           scope: { type: "node", node_id: parent.id },
            branch_type: BRANCH_SELECTION,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } });
     if (isPdfRegion) {
@@ -360,8 +402,8 @@ export function updateComposerState(){
     applyComposerState(
       { text: composerText, send: composerSend, wrap: composerInner },
       { phase: sessionPhase(), pending: !current || current.status === "pending" || !!current.extensions?.pdf?.converting },
-      { frozen: "Read-only snapshot — open the live Rabbithole to keep asking",
-        closed: "Session ended — reopen this Rabbithole from your terminal; saved questions are answered there",
+      { frozen: "Read-only snapshot — open the live " + documentKindLabel() + " to keep asking",
+        closed: "Session ended — reopen this " + documentKindLabel() + "; saved questions are answered there",
         pending: "This answer is still being written…",
         away: "The agent is away — questions are saved and answered when it returns…",
         live: "Ask a follow-up about this document…" }
@@ -393,6 +435,7 @@ export function sendFollowup(parent, question, lens, synthesis){
     if (currentNodeId === parent.id && mode === "reader") renderMarginNotes();
     var payload = { type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: "", question: question, lens: lens, anchor: null,
+           scope: synthesis ? { type: "whole_canvas" } : { type: "node", node_id: parent.id },
            branch_type: BRANCH_FOLLOWUP,
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
@@ -441,7 +484,7 @@ export function animateScroll(el, target, source){
   }
   function interruptScrollAnimation(){ cancelScrollAnimation(); }
   function submitFollowup(source){
-    if (closed){ flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this Rabbithole from your terminal to continue."); return; }
+    if (closed){ flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this " + documentKindLabel() + " to continue."); return; }
     var parent = nodes[currentNodeId];
     if (!parent || parent.status === "pending" || parent.extensions?.pdf?.converting) return;
     var question = composerText.value.trim();

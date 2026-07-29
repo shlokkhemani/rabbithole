@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import http from "node:http";
 import path from "node:path";
-import { chromium, firefox, webkit } from "playwright";
-import { serveStatic } from "../support/static-server.mjs";
+import { chromium } from "playwright";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
-const server = await serveStatic(ROOT, { routes: { "/": (_req, res) => { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><html><head></head><body></body></html>"); } } });
+const server = await serveRoot(ROOT, {
+  routes: {
+    "/": (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end("<!doctype html><html><head></head><body></body></html>");
+    },
+  },
+});
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
 try {
-  for (const [name, browserType] of Object.entries({ chromium, firefox, webkit })) {
+  for (const [name, browserType] of Object.entries({ chromium })) {
     const browser = await browserType.launch();
     const context = await browser.newContext({ viewport: { width: 640, height: 480 } });
     const page = await context.newPage();
@@ -167,4 +175,42 @@ async function verifyFormPrimitivesAndButtons(page, engine) {
   assert.equal(await page.getAttribute("#key", "aria-describedby"), "key-hint", `${engine}: Field connects hint description`);
   await page.click("#toggle");
   assert.deepEqual(await page.locator("#toggle").evaluate((el) => [document.getElementById("key").type, el.getAttribute("aria-pressed")]), ["text", "true"], `${engine}: Field password toggle stays synchronized`);
+}
+
+async function serveRoot(rootDir, { routes = {} } = {}) {
+  const root = path.resolve(rootDir);
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url || "/", "http://127.0.0.1");
+    const route = routes[url.pathname];
+    if (route) {
+      await route(req, res, url);
+      return;
+    }
+    const relative = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+    const file = path.resolve(root, relative);
+    if (!file.startsWith(root + path.sep)) {
+      res.writeHead(403).end("Forbidden");
+      return;
+    }
+    try {
+      const bytes = await fs.readFile(file);
+      res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
+      res.end(bytes);
+    } catch {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not Found");
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return server;
+}
+
+function contentType(filePath) {
+  if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
+  if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "text/javascript; charset=utf-8";
+  if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".woff2")) return "font/woff2";
+  if (filePath.endsWith(".ttf")) return "font/ttf";
+  return "application/octet-stream";
 }

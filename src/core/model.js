@@ -1,12 +1,12 @@
 import { inheritedNodeBaseUrl } from "./base-url.js";
 import { validateAssetName } from "./assets.js";
 
-/** @typedef {import("./contracts/engine.js").HoleNode} ModelHoleNode */
-/** @typedef {import("./contracts/engine.js").BranchRequestEvent} ModelBranchRequestEvent */
-/** @typedef {import("./contracts/engine.js").NodePresentationFields} NodePresentationFields */
-/** @typedef {import("./contracts/artifact.js").Position} Position */
-/** @typedef {import("./contracts/artifact.js").NodeSize} NodeSize */
-/** @typedef {import("./contracts/artifact.js").PersistedViewState} PersistedViewState */
+/** @typedef {import("./contracts/document.js").Position} Position */
+/** @typedef {import("./contracts/document.js").NodeSize} NodeSize */
+/** @typedef {import("./contracts/document.js").PersistedViewState} PersistedViewState */
+/** @typedef {{ id: string, parent_id?: string | null, title?: string, markdown?: string, base_url?: string | null, base_url_source?: import("./contracts/document.js").BaseUrlSource | null, origin?: unknown, position?: Position, size?: NodeSize | null, font_scale?: number, collapsed?: boolean, status?: string, read?: boolean, created_at?: string | null, extensions?: Record<string, unknown> } & Record<string, any>} ModelHoleNode */
+/** @typedef {{ parent_id?: unknown, node_id?: unknown, selected_text?: unknown, question?: unknown, lens?: unknown, synthesis?: unknown, anchor?: unknown, branch_type?: unknown, position?: unknown, size?: unknown, crop_asset?: unknown }} ModelBranchRequestEvent */
+/** @typedef {{ position?: unknown, size?: unknown, collapsed?: unknown, font_scale?: unknown, read?: unknown }} NodePresentationFields */
 /** @typedef {Map<string, ModelHoleNode> | Record<string, ModelHoleNode>} NodeCollection */
 
 export const BRANCH_SELECTION = "selection";
@@ -214,10 +214,11 @@ export function collectSubtreeIds(nodes, rootId) {
   const doomed = new Set();
   const children = new Map();
   for (const node of valuesOfNodes(nodes)) {
-    if (!node.parent_id) continue;
-    const siblings = children.get(node.parent_id);
+    const parentId = node.parent_id ?? node.parentId;
+    if (!parentId) continue;
+    const siblings = children.get(parentId);
     if (siblings) siblings.push(node.id);
-    else children.set(node.parent_id, [node.id]);
+    else children.set(parentId, [node.id]);
   }
   const pending = [rootId];
   while (pending.length) {

@@ -1,7 +1,7 @@
 import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
 
 const EXPLAINER_SYSTEM_PROMPT_V1 = [
-  "You are the explainer Brain for Rabbithole, a branching-document canvas for learning.",
+  "You are the explainer agent for Nora, a branching-document canvas for learning.",
   "Write a compact, substantive primer document in GFM markdown that answers and teaches the user's question.",
   "",
   "Return markdown only. Do not wrap the document in a code fence and do not emit a TITLE sentinel.",
@@ -26,7 +26,7 @@ export function buildExplainerMessages({ question = "" } = {}) {
         "Question:",
         clean(question) || "(empty)",
         "",
-        "Write the root Rabbithole document.",
+        "Write the root Nora document.",
       ].join("\n"),
     },
   ];

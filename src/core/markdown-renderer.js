@@ -32,7 +32,7 @@ import { escapeHtml } from "./utils.js";
 import { resolveMarkdownUrl } from "./base-url.js";
 import { getBlockType, listBlockTypes, parseBlockInfo } from "./blocks.js";
 
-export const MARKDOWN_RENDERER_SENTINEL = "rabbithole-shared-markdown-renderer-v1";
+export const MARKDOWN_RENDERER_SENTINEL = "nora-shared-markdown-renderer-v1";
 
 const SAFE_URL = /^(?:https?:|mailto:|tel:|#|\/|\.\/|\.\.\/|[^:]*$)/i;
 const SAFE_IMG = /^(?:https?:\/\/|\/|\.\/|\.\.\/|blob:|asset:[a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg)$|data:image\/(?:png|jpe?g|gif|webp|svg);base64,)/i;
@@ -49,10 +49,10 @@ const BLOCK_MATH_START = /(?:^|\n) {0,3}(?:\$\$(?!\$)|\\\[)/;
 // GFM accepts either one or two tildes for deletion. A lone tilde is far more
 // commonly approximation notation in pasted technical prose (`~77%`,
 // `~1,000`) and can otherwise pair with a distant tilde to delete whole
-// paragraphs. Rabbithole deliberately requires the unambiguous `~~text~~`
+// paragraphs. Nora deliberately requires the unambiguous `~~text~~`
 // spelling while retaining the rest of the GFM grammar.
 /** @typedef {{ baseUrl: string | null, assetNames: Set<string> | null, resolveAssetUrl: (name: string) => string | null }} RenderContext */
-/** @typedef {{ name: string, level: "block" | "inline", start(src: string): number | undefined, tokenizer(src: string): any, renderer(token: any): string }} RabbitholeExtension */
+/** @typedef {{ name: string, level: "block" | "inline", start(src: string): number | undefined, tokenizer(src: string): any, renderer(token: any): string }} NoraMarkdownExtension */
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("c", c);
@@ -292,7 +292,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     return `<pre><code class="language-${escapeHtml(language)} hljs">${highlighted}</code></pre>\n`;
   }
 
-  /** @returns {RabbitholeExtension[]} */
+  /** @returns {NoraMarkdownExtension[]} */
   function buildExtensions() {
     return [
       {
@@ -406,7 +406,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         if (safe === null) return text;
         const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
         // Open real links in a new tab so clicking one never navigates away from
-        // and tears down the Rabbithole page; keep in-page fragment links local.
+        // and tears down the Nora page; keep in-page fragment links local.
         const target = safe.startsWith("#") ? "" : ` target="_blank"`;
         return `<a href="${escapeHtml(safe)}"${titleAttr}${target} rel="noopener noreferrer">${text}</a>`;
       },

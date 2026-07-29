@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { TextDecoder } from "node:util";
 import { encodeBase64Utf8, renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
 import { getBlockType, listBlockTypes, markdownContainsBlockType, normalizeBlockIds, registerBlockType } from "../../src/core/blocks.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { getDompurifyScript, getMermaidScript } from "../../src/node/html/built-assets.js";
 import { buildCheckVisual, mountVisuals, registerBlockMount } from "../../src/ui/visuals.js";
+import {
+  createTestNoraWebviewHtml,
+  readWebviewAsset,
+} from "../support/nora-webview-assets.mjs";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -467,24 +465,19 @@ function runFrameworkSanitization() {
 }
 
 async function assertPageAssembly() {
-  const html = buildCanvasHtml({ title: "Content Blocks", root_id: "root", nodes: [] });
-  const purify = getDompurifyScript();
-  const mermaid = getMermaidScript();
-  assert.equal(count(html, purify), 1, "DOMPurify should be inlined exactly once");
-  assert.equal(count(html, mermaid), 1, "the inert Mermaid runtime should be embedded exactly once");
-  assert(html.includes('<script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">'));
-  assert.equal(count(html, "<script>"), 1, "page should keep one inline script for the node --check gate");
-  assert(html.indexOf(purify) < html.indexOf('\n(function(){\n\t  "use strict";'), "DOMPurify should load before the client runtime");
+  const html = await createTestNoraWebviewHtml();
+  const purify = await readWebviewAsset("dompurify.js");
+  const mermaid = await readWebviewAsset("mermaid.js");
+  const noraEntry = await readWebviewAsset("nora-entry.js");
+  assert.equal(count(html, 'src="vscode-resource:/out/webview/dompurify.js"'), 1, "DOMPurify should load exactly once");
+  assert.equal(count(html, 'src="vscode-resource:/out/webview/nora-entry.js"'), 1, "Nora entry should load exactly once");
+  assert(html.indexOf("dompurify.js") < html.indexOf("nora-entry.js"), "DOMPurify should load before the client runtime");
+  assert(purify.includes("DOMPurify"), "built webview assets should include DOMPurify");
+  assert(mermaid.includes("mermaid"), "built webview assets should include the lazy Mermaid runtime");
+  assert(noraEntry.includes("mermaid.js"), "Nora entry should lazy-load Mermaid from the webview asset root");
+  assert(!html.includes('id="nora-mermaid-runtime"'), "live Nora webviews should not embed the inert Mermaid carrier");
 
-  const scriptMatch = html.match(/<script>\n([\s\S]*)\n<\/script>/);
-  assert(scriptMatch, "assembled HTML should contain an inline script");
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-content-blocks-"));
-  const scriptPath = path.join(dir, "assembled-client.js");
-  await fs.writeFile(scriptPath, scriptMatch[1], "utf8");
-  const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
-  assert.equal(check.status, 0, check.stderr || check.stdout);
-
-  console.log("ok page assembly: DOMPurify inline once and assembled script parses");
+  console.log("ok page assembly: DOMPurify and Nora webview assets are wired once");
 }
 
 runBlockIdNormalization();

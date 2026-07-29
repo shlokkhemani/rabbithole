@@ -3,8 +3,9 @@ import { resolveAssetMarkdownImageUrl } from "./assets.js";
 const BASE_URL_KEYS = ["base_url", "canonical", "canonical_url", "source_url", "url", "source"];
 const VALID_BASE_SOURCES = new Set(["explicit", "frontmatter", "inherited"]);
 const SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+const SECRET_QUERY_RE = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential|authorization|auth|key)$/i;
 
-/** @typedef {{ base_url: string | null, base_url_source: import("./contracts/artifact.js").BaseUrlSource | null }} BaseFields */
+/** @typedef {{ base_url: string | null, base_url_source: import("./contracts/document.js").BaseUrlSource | null }} BaseFields */
 /** @typedef {Record<string, any>} LooseObject */
 
 /** @param {unknown} value @param {string} [paramName] */
@@ -21,6 +22,9 @@ export function normalizeBaseUrl(value, paramName = "base_url") {
   }
   if (url.username || url.password) {
     throw new Error(`${paramName} must not include credentials`);
+  }
+  for (const key of url.searchParams.keys()) {
+    if (SECRET_QUERY_RE.test(key)) throw new Error(`${paramName} must not include credential-bearing query parameter ${key}`);
   }
   return url.href;
 }
@@ -107,7 +111,7 @@ export function inheritedNodeBaseUrl(parent) {
 
 /** @param {LooseObject | null | undefined} node @returns {BaseFields} */
 export function normalizeStoredBaseUrlFields(node) {
-  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? /** @type {import("./contracts/artifact.js").BaseUrlSource} */ (node?.base_url_source) : null;
+  const source = VALID_BASE_SOURCES.has(node?.base_url_source) ? /** @type {import("./contracts/document.js").BaseUrlSource} */ (node?.base_url_source) : null;
   const baseUrl = parseHttpBaseUrl(node?.base_url);
   return {
     base_url: source && baseUrl ? baseUrl : null,

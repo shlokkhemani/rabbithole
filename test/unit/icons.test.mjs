@@ -10,10 +10,10 @@ assert.match(iconSvg("search", { size: 13 }), /^<svg width="13" height="13" /);
 assert.notEqual(iconSvg("paste"), iconSvg("file"), "paste and file actions need distinct silhouettes");
 assert.equal(BUNNY_MARK_SVG, iconSvg("bunny"));
 assert.match(faviconSvg(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-assert.throws(() => iconSvg("missing"), /Unknown Rabbithole icon/);
+assert.throws(() => iconSvg("missing"), /Unknown product icon/);
 assert.throws(() => iconSvg("send", { size: 0 }), /positive number/);
 
-const roots = ["src", "website/about"];
+const roots = ["src"];
 const violations = [];
 for (const root of roots) {
   for (const file of await sourceFiles(root)) {

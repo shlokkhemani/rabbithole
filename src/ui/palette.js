@@ -1,4 +1,5 @@
 import {
+  documentKindLabel,
   goToNode,
   lensLabel,
   mode,
@@ -147,7 +148,7 @@ function closePalette(settings){
       palText.removeAttribute("aria-activedescendant");
       var empty = palResults.querySelector(".pal-empty");
       if (!empty){ empty = document.createElement("div"); empty.className = "pal-empty"; palResults.appendChild(empty); }
-      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
+      empty.textContent = tokens.length ? "Nothing in this " + documentKindLabel() + " matches that." : "";
       empty.hidden = !tokens.length;
       return;
     }

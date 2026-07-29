@@ -4,6 +4,7 @@
     "checkJs": true,
     "noEmit": true,
     "strict": true,
+    "skipLibCheck": true,
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -11,15 +12,16 @@
   },
   "include": [
     "src/core/**/*.js",
-    "src/core/contracts/artifact.d.ts",
-    "src/core/contracts/store.d.ts",
-    "src/core/contracts/engine.d.ts",
-    "src/core/contracts/generation.d.ts",
+    "src/extension/**/*.js",
     "src/core/contracts/content.d.ts",
-    "test/fixtures/contracts/artifact-fixture.js",
-    "test/fixtures/contracts/store-fixture.js",
-    "test/fixtures/contracts/engine-fixture.js",
-    "test/fixtures/contracts/generation-fixture.js",
-    "test/fixtures/contracts/content-fixture.js"
+    "src/core/contracts/document.d.ts",
+    "src/core/contracts/evidence.d.ts",
+    "src/core/contracts/agent-run.d.ts",
+    "src/core/contracts/archive.d.ts",
+    "src/extension/archive/zip-libs.d.ts",
+    "test/fixtures/contracts/content-fixture.js",
+    "test/fixtures/contracts/document-fixture.js",
+    "test/fixtures/contracts/evidence-fixture.js",
+    "test/fixtures/contracts/agent-run-fixture.js"
   ]
 }

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import * as esbuild from "esbuild";
 import { CANVAS_SHELL } from "../../src/core/html/shell.js";
 import { CANVAS_STYLES } from "../../src/core/html/styles.js";
+
+await assertPathAbsent("src/web", "standalone web source must stay deleted");
 
 const result = await esbuild.build({
   entryPoints: ["src/ui/frozen-entry.js"],
@@ -44,3 +47,12 @@ for (const pattern of [
 }
 
 console.log("ok UI bundle boundaries: frozen client excludes live host modules and removed activity messaging");
+
+async function assertPathAbsent(filePath, message) {
+  try {
+    await fs.access(filePath);
+    assert.fail(message);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}

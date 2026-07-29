@@ -8,25 +8,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # actions/checkout v4.2.2 tag resolved 2026-07-29.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # actions/setup-node v4.4.0 tag resolved 2026-07-29.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
           cache: npm
       - run: npm ci --omit=optional
-      - run: npm run check:types
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run check:purity
       - run: npm test
-
-  packaging:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - run: xvfb-run -a npm run test:vscode
+      - run: npm run check:build
+      - run: node scripts/check-pi-runtime-assets.mjs
+      - run: npm run package:vsix
+      - run: xvfb-run -a npm run test:vsix
+      - run: npm run check:workflows
+      # actions/upload-artifact v4.6.2 tag resolved 2026-07-29.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          node-version: "24"
-          cache: npm
-      - run: npm ci --omit=optional
-      - run: npm run test:packaging
+          name: nora-vsix
+          path: artifacts

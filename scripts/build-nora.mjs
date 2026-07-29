@@ -23,10 +23,24 @@ const extensionBuild = await esbuild.build({
   platform: "node",
   format: "cjs",
   target: "node24",
+  mainFields: ["module", "main"],
   external: ["vscode"],
   minify: true,
   sourcemap: false,
   legalComments: "linked",
+  banner: {
+    js: [
+      "const __noraPathToFileURL = require(\"node:url\").pathToFileURL;",
+      "const __noraCreateRequire = require(\"node:module\").createRequire;",
+      "const __noraImportMetaUrl = __noraPathToFileURL(__filename).href;",
+      "const __noraImportMetaRequire = __noraCreateRequire(__filename);",
+      "const __noraImportMetaResolve = (specifier) => __noraPathToFileURL(__noraImportMetaRequire.resolve(specifier)).href;",
+    ].join("\n"),
+  },
+  define: {
+    "import.meta.url": "__noraImportMetaUrl",
+    "import.meta.resolve": "__noraImportMetaResolve",
+  },
   metafile: true,
   logLevel: "silent",
 });

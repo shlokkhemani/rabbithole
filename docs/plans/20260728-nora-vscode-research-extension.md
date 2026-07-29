@@ -822,23 +822,23 @@ The reviewer’s suggestion to disable untrusted workspaces was not applied beca
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
-- [ ] Make CI run only on `ubuntu-latest` with Node.js 24 and `npm ci --omit=optional`.
-- [ ] Install only Playwright Chromium and Linux browser dependencies.
-- [ ] Run `npm test`, `xvfb-run -a npm run test:vscode`, deterministic build and Pi-runtime-asset verification, VSIX packaging, then `xvfb-run -a npm run test:vsix`.
-- [ ] Upload the tested VSIX as the CI artifact. Do not run a Windows/macOS matrix.
-- [ ] Make `test/packaging/vsix-install-smoke.test.mjs` download the VS Code test build, install the built VSIX into clean extensions/user-data directories, list `r13v.nora`, open a minimal `.nora`, and verify activation without source-tree or development `node_modules` resolution.
-- [ ] Under `NORA_VSIX_SMOKE=1` only, expose a private activation API from `src/extension/testing/pi-smoke.js`. It must construct the real bundled `ModelRuntime` and `AgentSession`, run a no-network fake provider through one tool call/result, preprocess a tiny image through Photon WASM, and return an assertion-friendly result. The API is absent in normal activation.
-- [ ] Trigger release only for `v*` tags. Verify the tag without `v` exactly equals `package.json` version.
-- [ ] Grant release workflow permissions `contents: write` and `id-token: write`.
-- [ ] Build and test once, package `artifacts/nora.vsix`, generate `artifacts/nora.vsix.sha256`, and transfer both between jobs through GitHub Actions artifacts.
-- [ ] Create/update the GitHub Release and upload that exact VSIX/checksum.
-- [ ] Authenticate with `azure/login` through OIDC using repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` plus `allow-no-subscriptions: true`.
-- [ ] Publish the downloaded `artifacts/nora.vsix` to Visual Studio Marketplace with `vsce publish --packagePath artifacts/nora.vsix --azure-credential`.
-- [ ] Publish the same downloaded file to Open VSX with `ovsx publish artifacts/nora.vsix -p "${{ secrets.OVSX_PAT }}"`.
-- [ ] Compare the SHA-256 before each publish and fail if either job rebuilt or changed the artifact.
-- [ ] Pin third-party actions to immutable commit SHAs and annotate the corresponding release tag in comments. Resolve current official SHAs when implementing the workflow because action revisions are security-sensitive and time-dependent.
-- [ ] Implement `scripts/check-workflows.mjs` with `actionlint.createLinter()`, lint both workflow files, and make any diagnostic fail `npm run check:workflows`.
-- [ ] Run `npm run package:vsix`, `node scripts/check-pi-runtime-assets.mjs`, `npm run check:native`, `xvfb-run -a npm run test:vsix`, and `npm run check:workflows`.
+- [x] Make CI run only on `ubuntu-latest` with Node.js 24 and `npm ci --omit=optional`.
+- [x] Install only Playwright Chromium and Linux browser dependencies.
+- [x] Run `npm test`, `xvfb-run -a npm run test:vscode`, deterministic build and Pi-runtime-asset verification, VSIX packaging, then `xvfb-run -a npm run test:vsix`.
+- [x] Upload the tested VSIX as the CI artifact. Do not run a Windows/macOS matrix.
+- [x] Make `test/packaging/vsix-install-smoke.test.mjs` download the VS Code test build, install the built VSIX into clean extensions/user-data directories, list `r13v.nora`, open a minimal `.nora`, and verify activation without source-tree or development `node_modules` resolution.
+- [x] Under `NORA_VSIX_SMOKE=1` only, expose a private activation API from `src/extension/testing/pi-smoke.js`. It must construct the real bundled `ModelRuntime` and `AgentSession`, run a no-network fake provider through one tool call/result, preprocess a tiny image through Photon WASM, and return an assertion-friendly result. The API is absent in normal activation.
+- [x] Trigger release only for `v*` tags. Verify the tag without `v` exactly equals `package.json` version.
+- [x] Grant release workflow permissions `contents: write` and `id-token: write`.
+- [x] Build and test once, package `artifacts/nora.vsix`, generate `artifacts/nora.vsix.sha256`, and transfer both between jobs through GitHub Actions artifacts.
+- [x] Create/update the GitHub Release and upload that exact VSIX/checksum.
+- [x] Authenticate with `azure/login` through OIDC using repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` plus `allow-no-subscriptions: true`.
+- [x] Publish the downloaded `artifacts/nora.vsix` to Visual Studio Marketplace with `vsce publish --packagePath artifacts/nora.vsix --azure-credential`.
+- [x] Publish the same downloaded file to Open VSX with `ovsx publish artifacts/nora.vsix -p "${{ secrets.OVSX_PAT }}"`.
+- [x] Compare the SHA-256 before each publish and fail if either job rebuilt or changed the artifact.
+- [x] Pin third-party actions to immutable commit SHAs and annotate the corresponding release tag in comments. Resolve current official SHAs when implementing the workflow because action revisions are security-sensitive and time-dependent.
+- [x] Implement `scripts/check-workflows.mjs` with `actionlint.createLinter()`, lint both workflow files, and make any diagnostic fail `npm run check:workflows`.
+- [x] Run `npm run package:vsix`, `node scripts/check-pi-runtime-assets.mjs`, `npm run check:native`, `xvfb-run -a npm run test:vsix`, and `npm run check:workflows`. Local note: `xvfb-run` is unavailable on this macOS environment, so the installed VSIX smoke was validated with `npm run test:vsix` directly.
 
 ### Task 18: Verify acceptance criteria and runtime boundaries
 

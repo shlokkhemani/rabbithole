@@ -8,6 +8,7 @@ import { DocumentRegistry } from "./document-registry.js";
 import { NoraRunController } from "./agent/run-controller.js";
 import { McpSupervisor } from "./mcp/supervisor.js";
 import { NoraEditorProvider, VIEW_TYPE } from "./nora-editor-provider.js";
+import { runVsixSmoke } from "./testing/pi-smoke.js";
 
 /** @param {vscode.ExtensionContext} context */
 export function activate(context) {
@@ -48,6 +49,12 @@ export function activate(context) {
     ...registerLlmCommands(context, registry, { vscode }),
     ...registerRepositoryCommands(context, registry, { vscode }),
   );
+  if (process.env.NORA_VSIX_SMOKE === "1") {
+    return {
+      runVsixSmoke: () => runVsixSmoke({ extensionPath: context.extensionPath }),
+    };
+  }
+  return undefined;
 }
 
 export function deactivate() {}

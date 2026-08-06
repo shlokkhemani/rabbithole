@@ -311,7 +311,7 @@ body.mode-canvas #viewport { display: block; }
 #viewport.panning { cursor: grabbing; }
 #viewport.pinching { cursor: zoom-in; }
 #canvas-gesture-plane { position: absolute; inset: 0; touch-action: none; }
-#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
 /* Hover wakes an edge gently — a lean toward the accent, not a costume change. */

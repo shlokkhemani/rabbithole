@@ -33,6 +33,7 @@ export function hydrateInitialState({ connectSse = null, refreshStatus = null } 
       html: "",
       _order: 0,
       delegated: !!raw.delegated,
+      queued: !!raw.queued,
       _startTs: raw.status === "pending" ? systemClock.now() : 0,
     };
     registerNode(node);

@@ -174,6 +174,7 @@ export class RabbitholeSession extends SessionAnswer {
           this.discardRegionFile(record.requestId);
         }
         this.queue = this.queue.filter((event) => !(event.node_id && doomed.has(event.node_id)));
+        for (const nodeId of doomed) this.queuedNodeIds.delete(nodeId);
         this.outboundEvents = this.outboundEvents.filter((entry) => !(entry.data.node_id && doomed.has(entry.data.node_id)));
       },
     });

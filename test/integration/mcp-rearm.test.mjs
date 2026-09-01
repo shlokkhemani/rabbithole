@@ -959,6 +959,64 @@ async function runDelegatedConcurrencyFixture() {
   console.log("ok sub-agent lifecycle: parallel delegation, reclaim, reload, out-of-order completion, and listener isolation");
 }
 
+async function runQueuedAskLifecycleFixture() {
+  const opened = await openRabbithole({
+    title: "Queued ask lifecycle",
+    content: "Root",
+    signal: abortAfter(),
+  });
+  const session = getSession(opened.session_id);
+  assert(session);
+
+  const listenForA = session.waitForEvent();
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "queued-req-a", node_id: "queued-node-a", parent_id: session.rootId,
+    selected_text: "Root", question: "Answer A first",
+  });
+  const requestA = await listenForA;
+  assert.equal(requestA.request_id, "queued-req-a");
+
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "queued-req-b", node_id: "queued-node-b", parent_id: session.rootId,
+    selected_text: "Root", question: "Wait behind A",
+  });
+  const workStatesBeforeAnswer = session.outboundEvents
+    .filter((event) => event.data.type === "node_work_state" && event.data.node_id === "queued-node-b")
+    .map((event) => event.data.state);
+  assert.deepEqual(workStatesBeforeAnswer, ["queued"], "a second ask broadcasts queued while the listener owns A");
+
+  let hydration = session.buildHydration();
+  assert.equal(hydration.nodes.find((node) => node.id === "queued-node-a")?.queued, undefined,
+    "the delivered request is not marked queued during hydration");
+  assert.equal(hydration.nodes.find((node) => node.id === "queued-node-b")?.queued, true,
+    "a live-page reload preserves the queued label");
+
+  await session.flushSave();
+  const saved = await defaultFsStore.loadHole(session.holeId);
+  assert(saved, "the pending asks are durable");
+  assert.equal(JSON.stringify(saved).includes('"queued"'), false,
+    "queued coordination state never enters the saved hole JSON");
+
+  const requestB = await answerBranch({
+    sessionId: session.id,
+    requestId: requestA.request_id,
+    title: "Answer A",
+    content: "A is complete.",
+  });
+  assert.equal(requestB.request_id, "queued-req-b", "A's final re-arms the listener with queued request B");
+  const workStatesAfterAnswer = session.outboundEvents
+    .filter((event) => event.data.type === "node_work_state" && event.data.node_id === "queued-node-b")
+    .map((event) => event.data.state);
+  assert.deepEqual(workStatesAfterAnswer, ["queued", "thinking"],
+    "delivery broadcasts thinking after the queued marker");
+
+  hydration = session.buildHydration();
+  assert.equal(hydration.nodes.find((node) => node.id === "queued-node-b")?.queued, undefined,
+    "delivery removes queued state from hydration before streaming begins");
+
+  console.log("ok queued ask lifecycle: queue, reload, delivery, and persistence stay truthful");
+}
+
 try {
   await runIdleSessionLifetimeFixture();
   await runAgentPublishFixture();
@@ -970,6 +1028,7 @@ try {
   await runNotesContextFixture();
   await runNoteDeltaAndReactionFixture();
   await runDoneNotesDeliveryFixture();
+  await runQueuedAskLifecycleFixture();
   await runDelegatedConcurrencyFixture();
 } finally {
   await closeAllSessions("mcp_rearm_test_complete");

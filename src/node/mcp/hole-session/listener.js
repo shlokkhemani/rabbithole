@@ -70,6 +70,10 @@ export class SessionListener extends SessionBase {
       return;
     }
     this.queue.push(event);
+    if (event.status === "branch_request" && event.node_id) {
+      this.queuedNodeIds.add(event.node_id);
+      this.broadcast({ type: "node_work_state", node_id: event.node_id, state: "queued" });
+    }
   }
 
   // Every branch_request handed to the agent arms the watchdog; any subsequent
@@ -109,6 +113,9 @@ export class SessionListener extends SessionBase {
       // Keep the undecorated event for fresh, idempotent redelivery. The map,
       // note delta, thread, and hole id above are a delivery-time projection.
       this.requests.deliver(event.request_id, baseEvent);
+      if (event.status === "branch_request" && this.queuedNodeIds.delete(event.node_id)) {
+        this.broadcast({ type: "node_work_state", node_id: event.node_id, state: "thinking" });
+      }
       this.startAnswerWatchdog(event.request_id);
       this.setContextBusy(true);
     }

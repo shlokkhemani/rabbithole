@@ -453,7 +453,11 @@ export function buildLoading(node) {
   st.innerHTML =
     LOADING_BUNNY_HTML +
     '<span class="shimmer-text ll-live">' +
-    (node && node.delegated ? "Working in sub-agent…" : "Thinking") +
+    (node && node.queued
+      ? "Waiting for previous answer"
+      : node && node.delegated
+        ? "Working in sub-agent…"
+        : "Thinking") +
     "</span>" +
     '<span class="ll-stalled">Saved — waiting for the agent</span>' +
     '<span class="ll-closed">Saved — answered when you reopen this hole</span>' +

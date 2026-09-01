@@ -106,7 +106,13 @@ export class SessionBroadcast extends SessionListener {
     });
     // The MCP page immediately serializes this projection into its isolated
     // HTML response, so its extension bags are already crossing by value.
-    hydration.nodes = hydration.nodes.map((node) => delegatedNodeIds.has(node.id) ? { ...node, delegated: true } : node);
+    hydration.nodes = hydration.nodes.map((node) => {
+      const delegated = delegatedNodeIds.has(node.id);
+      const queued = node.status === "pending" && this.queuedNodeIds.has(node.id);
+      return delegated || queued
+        ? { ...node, ...(delegated ? { delegated: true } : {}), ...(queued ? { queued: true } : {}) }
+        : node;
+    });
     return hydration;
   }
 

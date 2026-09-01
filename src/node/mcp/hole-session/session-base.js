@@ -92,6 +92,9 @@ export class SessionBase {
     this.closePromise = null;
 
     this.queue = []; // agent-facing events awaiting consumption
+    // Queue position is live coordination state, never document state. Only
+    // branch requests have a pending card that can surface this distinction.
+    this.queuedNodeIds = new Set();
     // Exactly one long-lived listener owns agent delivery. Transport liveness
     // must never be implemented as model polling, and overlapping listeners
     // must never receive the same branch request.
@@ -219,6 +222,7 @@ export class SessionBase {
     // Drop any queued (now unanswerable) branch requests and release every
     // blocked agent call with session_closed.
     this.queue.length = 0;
+    this.queuedNodeIds.clear();
     this.requests.clearActive();
     const waiter = this.waiter;
     this.waiter = null;

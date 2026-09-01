@@ -6,6 +6,7 @@ Each description is harvested from the test file's `@protects` declaration.
 
 ## unit
 
+- `test/unit/apply-server-event.test.mjs` — live node work-state projection capability contracts.
 - `test/unit/auto-tidy.test.mjs` — auto-tidy branch selection and preference capability contracts.
 - `test/unit/base-url.test.mjs` — base url capability contracts.
 - `test/unit/bridge-catalog.test.mjs` — bridge catalog capability contracts.

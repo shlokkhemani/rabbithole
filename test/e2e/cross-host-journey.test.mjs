@@ -34,11 +34,46 @@ const browser = await chromium.launch({ headless: true });
 
 try {
   await modernJourney();
+  await queuedAskJourney();
   console.log("cross-host journey verification passed");
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
   await fs.rm(tmp, { recursive: true, force: true });
+}
+
+async function queuedAskJourney() {
+  const dir = await fs.mkdtemp(path.join(tmp, "queued-ask-"));
+  const mcp = await startMcp(dir);
+  const context = await browser.newContext();
+  try {
+    const openPromise = callTool(mcp.client, "open_rabbithole", {
+      title: "Queued ask journey",
+      content: "Select this exact phrase for queued answers.",
+    });
+    const page = await context.newPage();
+    await page.goto(await mcp.nextUrl());
+
+    await selectAndAsk(page, "Select this exact phrase", "Answer this first");
+    const first = await openPromise;
+    assert.equal(first.status, "branch_request");
+
+    await selectAndAsk(page, "Select this exact phrase", "Answer this second");
+    await page.locator(".ll-live", { hasText: "Waiting for previous answer" }).waitFor();
+
+    const second = await streamAnswer(mcp.client, first, "First queued answer", page, { expectNext: true });
+    assert.equal(second.status, "branch_request", `first final should receive queued request: ${JSON.stringify(second)}`);
+    const secondSurface = page.locator(`.doc-content[data-node-id="${second.node_id}"]`).first();
+    await secondSurface.locator(".ll-live", { hasText: "Thinking" }).waitFor();
+
+    await streamAnswer(mcp.client, second, "Second queued answer", page);
+    await secondSurface.getByText("First streamed paragraph.", { exact: false }).waitFor();
+
+    console.log("ok cross-host journey: queued ask waits, advances to thinking, and streams normally");
+  } finally {
+    await context.close();
+    await mcp.close();
+  }
 }
 
 async function modernJourney() {
@@ -183,7 +218,7 @@ async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMa
     assert.equal(request.thread[0].markdown, rootMarkdown, `resumed root markdown: ${JSON.stringify(request.thread[0])}`);
     assert.equal(request.map.nodes.find((node) => node.id === saved.root_id)?.title, title);
     if (branchMarkdown) assert(request.map.nodes.some((node) => node.title === "Modern branch"), `resume map lacks the prior branch: ${JSON.stringify(request.map)}`);
-    await streamAnswer(mcp.client, request, "Resume answer");
+    await streamAnswer(mcp.client, request, "Resume answer", page);
 
     const secondPromise = callTool(mcp.client, "open_rabbithole", { hole_id: imported.hole_id });
     await selectAndAsk(page, "Select this exact phrase", "Use the same restored lineage");
@@ -281,15 +316,22 @@ async function assertFrozenDockedNote(page, noteId) {
   await page.keyboard.press("Escape");
 }
 
-async function streamAnswer(client, request, title) {
+async function streamAnswer(client, request, title, page, { expectNext = false } = {}) {
   const split = BRANCH_MARKDOWN.indexOf("\n\n") + 2;
   const partial = await callTool(client, "answer_branch", { session_id: request.session_id, request_id: request.request_id, content: BRANCH_MARKDOWN.slice(0, split), partial: true });
   assert.equal(partial.partial, true);
+  const surface = page.locator(`.doc-content[data-node-id="${request.node_id}"]`).first();
+  await surface.getByText("First streamed paragraph.", { exact: false }).waitFor();
+  if (expectNext) {
+    return callTool(client, "answer_branch", {
+      session_id: request.session_id, request_id: request.request_id, title, content: BRANCH_MARKDOWN.slice(split),
+    });
+  }
   const controller = new AbortController();
   const final = callTool(client, "answer_branch", {
     session_id: request.session_id, request_id: request.request_id, title, content: BRANCH_MARKDOWN.slice(split),
   }, { signal: controller.signal });
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await surface.getByText("Second final paragraph", { exact: false }).waitFor();
   controller.abort();
   await assert.rejects(final, /abort/i, "the host should be able to cancel an otherwise indefinite listener after the answer commits");
 }

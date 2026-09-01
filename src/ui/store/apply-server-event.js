@@ -36,6 +36,7 @@ export function applyServerEvent(store, message, options = {}) {
 
   if (type === "node_answered") {
     node.delegated = false;
+    node.queued = false;
     node.error = null;
     node.status = "answered";
     node.title = message.title || node.title;
@@ -49,6 +50,7 @@ export function applyServerEvent(store, message, options = {}) {
   } else if (type === "node_progress" && node.status === "pending") {
     result.firstChunk = !node.markdown;
     node.delegated = false;
+    node.queued = false;
     node.error = null;
     node.markdown = message.markdown || "";
     node.base_url = message.base_url || node.base_url || null;
@@ -56,6 +58,7 @@ export function applyServerEvent(store, message, options = {}) {
     invalidated.add("stream");
   } else if (type === "node_work_state" && node.status === "pending") {
     node.delegated = message.state === "delegated";
+    node.queued = message.state === "queued";
     invalidated.add("status");
   } else if (type === "node_extensions_patch") {
     const value =

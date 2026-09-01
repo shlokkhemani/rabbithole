@@ -1,5 +1,3 @@
-import { systemClock } from "./clock.js";
-
 /**
  * Shared utility functions.
  */
@@ -36,15 +34,43 @@ export function slugifyTitle(title, { fallback = "" } = {}) {
   return slug || fallback;
 }
 
-export function randomUuidOrFallback() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${Math.random().toString(36).slice(2)}${systemClock.now().toString(36)}`;
+/**
+ * Mint an eight-character lowercase hexadecimal id from four secure random
+ * bytes. Browser callers use Web Crypto; Node callers on runtimes without the
+ * Web Crypto global inject `node:crypto`'s randomBytes through their host
+ * adapter so this core module stays isomorphic.
+ * @param {(length: number) => Uint8Array} [randomBytes]
+ */
+export function shortId(randomBytes) {
+  let bytes;
+  if (randomBytes) {
+    bytes = randomBytes(4);
+  } else if (globalThis.crypto?.getRandomValues) {
+    bytes = globalThis.crypto.getRandomValues(new Uint8Array(4));
+  } else {
+    throw new Error("Secure random bytes are unavailable");
+  }
+  if (!(bytes instanceof Uint8Array) || bytes.length < 4) {
+    throw new Error("shortId needs at least four random bytes");
+  }
+  return Array.from(bytes.subarray(0, 4), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** @param {string} prefix */
-export function randomId(prefix) {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${prefix}-${systemClock.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+/** Normalize a copied id before a boundary lookup. @param {unknown} value */
+export function normalizeId(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^[\s'"`]+|[\s'"`]+$/gu, "")
+    .replace(/\s+/gu, "");
+}
+
+export function randomUuidOrFallback() {
+  return shortId();
+}
+
+/** @param {string} _prefix */
+export function randomId(_prefix) {
+  return shortId();
 }
 
 /**

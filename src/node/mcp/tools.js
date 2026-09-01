@@ -1,5 +1,6 @@
 import { openRabbithole, answerBranch, listRabbitholes, sendToRabbithole } from "./open.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
+import { normalizeId } from "../../core/utils.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/authoring-v1.js";
 import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
 import { validateAssetEntriesSync } from "./store/fs-store.js";
@@ -26,7 +27,7 @@ const assetInput = z.object({
 function validateOpen(params) {
   normalizeBaseUrl(params.base_url);
   validateAssetEntriesSync(params.assets);
-  if (params.hole_id) return;
+  if (normalizeId(params.hole_id)) return;
   if (!params.title && !looksLikePdf(params.file_path)) throw new Error("title is required when starting a new non-PDF Rabbithole");
   if (!params.content && !params.file_path) {
     throw new Error("Provide content or file_path when starting a new Rabbithole");
@@ -44,6 +45,8 @@ function looksLikePdf(filePath) {
 }
 
 function validateAnswer(params) {
+  if (!normalizeId(params.session_id)) throw new Error("session_id is required");
+  if (!normalizeId(params.request_id)) throw new Error("request_id is required");
   if (typeof params.delegated === "boolean") {
     const contentFields = ["title", "content", "base_url", "assets", "partial"];
     if (contentFields.some((field) => params[field] !== undefined)) {
@@ -57,8 +60,8 @@ function validateAnswer(params) {
 }
 
 function validatePublish(params) {
-  if (!String(params.hole_id || "").trim()) throw new Error("hole_id is required");
-  if (!String(params.operation_id || "").trim()) throw new Error("operation_id is required");
+  if (!normalizeId(params.hole_id)) throw new Error("hole_id is required");
+  if (!normalizeId(params.operation_id)) throw new Error("operation_id is required");
   if (!String(params.content || "").trim()) throw new Error("content is required");
 }
 
@@ -140,7 +143,7 @@ export const toolDefinitions = [
         content,
         filePath: file_path,
         baseUrl: base_url,
-        holeId: hole_id,
+        holeId: normalizeId(hole_id),
         assets,
         focus,
         signal: extra?.signal,
@@ -181,8 +184,8 @@ export const toolDefinitions = [
     validateInput: validateAnswer,
     run: ({ session_id, request_id, title, content, base_url, assets, partial, delegated }, extra) =>
       withProgressKeepalive(() => answerBranch({
-        sessionId: session_id,
-        requestId: request_id,
+        sessionId: normalizeId(session_id),
+        requestId: normalizeId(request_id),
         title,
         content,
         baseUrl: base_url,
@@ -214,11 +217,11 @@ export const toolDefinitions = [
     },
     validateInput: validatePublish,
     run: ({ hole_id, operation_id, title, content, parent_node_id, kind }) => sendToRabbithole({
-      holeId: hole_id,
-      operationId: operation_id,
+      holeId: normalizeId(hole_id),
+      operationId: normalizeId(operation_id),
       title,
       content,
-      parentNodeId: parent_node_id,
+      parentNodeId: parent_node_id == null ? undefined : normalizeId(parent_node_id),
       kind,
     }),
   },

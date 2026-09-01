@@ -1,3 +1,5 @@
+import { shortId } from "../../shared/ids.js";
+
 /**
  * The complete live coordination record for one agent request. Document state
  * stays in HoleEngine; this table owns only request-lifetime facts.
@@ -34,6 +36,13 @@ export class RequestTable {
 
   get(requestId) {
     return this.recordsById.get(requestId) || null;
+  }
+
+  mintId(mint = shortId) {
+    while (true) {
+      const id = mint();
+      if (!this.recordsById.has(id)) return id;
+    }
   }
 
   records() {

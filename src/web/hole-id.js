@@ -22,6 +22,13 @@ const NOUNS = Object.freeze([
 
 const SUFFIX_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 export const WHIMSICAL_HOLE_ID_PATTERN = /^[a-z]+-[a-z]+-[a-z0-9]{6}$/;
+export const SHORT_HOLE_ID_PATTERN = /^[a-f0-9]{8}$/;
+export const UUID_HOLE_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+export function isValidHoleId(value) {
+  const id = String(value || "");
+  return SHORT_HOLE_ID_PATTERN.test(id) || UUID_HOLE_ID_PATTERN.test(id) || WHIMSICAL_HOLE_ID_PATTERN.test(id);
+}
 
 export function createWhimsicalHoleId({ randomBytes = secureRandomBytes } = {}) {
   const bytes = randomBytes(8);
@@ -42,11 +49,11 @@ export function holeIdFromPathname(pathname) {
   if (!match) return "";
   let candidate;
   try { candidate = decodeURIComponent(match[1]); } catch { return ""; }
-  return WHIMSICAL_HOLE_ID_PATTERN.test(candidate) ? candidate : "";
+  return isValidHoleId(candidate) ? candidate : "";
 }
 
 export function pathnameForHole(holeId) {
-  if (!WHIMSICAL_HOLE_ID_PATTERN.test(String(holeId || ""))) {
+  if (!isValidHoleId(holeId)) {
     throw new Error(`Invalid browser Rabbithole id: ${JSON.stringify(holeId)}`);
   }
   return `/${holeId}`;

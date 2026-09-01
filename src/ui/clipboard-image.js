@@ -1,4 +1,5 @@
 import { MAX_ASSET_BYTES } from "../core/assets.js";
+import { shortId } from "../core/utils.js";
 
 export const CLIPBOARD_IMAGE_MAX_LONG_EDGE = 2048;
 export const CLIPBOARD_IMAGE_PNG_REENCODE_BYTES = 3 * 1024 * 1024;
@@ -33,9 +34,9 @@ export function clipboardImageSizeErrorCode(encodedBytes) {
   return null;
 }
 
-/** @param {unknown} sourceType @param {() => string} [randomUUID] */
-export function createPastedImageName(sourceType, randomUUID = () => crypto.randomUUID()) {
-  return `paste-${randomUUID()}.${clipboardImageOutput(sourceType).extension}`;
+/** @param {unknown} sourceType @param {() => string} [mintId] */
+export function createPastedImageName(sourceType, mintId = shortId) {
+  return `paste-${mintId()}.${clipboardImageOutput(sourceType).extension}`;
 }
 
 /** @param {Blob} source */

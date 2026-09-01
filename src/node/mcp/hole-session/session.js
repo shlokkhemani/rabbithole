@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { MAX_ASK_ATTACHMENTS } from "../../../core/attachments.js";
 import { validateImageAssetName } from "../../../core/assets.js";
 import { normalizePdfAnchor } from "../../../core/hole/anchor.js";
@@ -13,6 +12,7 @@ import { cropPdfRegionToFile } from "../pdf/crop.js";
 import { handleSessionRequest } from "../http/routes.js";
 import { SessionAnswer } from "./answer.js";
 import { rawOrigin, rawPdfExtension } from "./session-values.js";
+import { shortId } from "../../shared/ids.js";
 
 const MAX_PREFERENCE_VALUE_BYTES = 64 * 1024;
 const MAX_PREFERENCE_PATCH_BYTES = 256 * 1024;
@@ -56,8 +56,11 @@ export class RabbitholeSession extends SessionAnswer {
     // normalization rejects it — which would drop the lock exactly when it matters.
     if (rawPdfExtension(parent)?.converting) throw buildJsonError("This PDF is being converted", 409);
 
-    const requestId = String(payload.request_id || randomUUID());
-    const nodeId = String(payload.node_id || randomUUID());
+    const suppliedRequestId = String(payload.request_id || "");
+    const requestId = suppliedRequestId && !this.requests.get(suppliedRequestId)
+      ? suppliedRequestId
+      : this.requests.mintId();
+    const nodeId = String(payload.node_id || this.mintNodeId());
     const effects = this.dispatchHoleEvent(
       { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId },
       { now: new Date().toISOString() }
@@ -96,6 +99,13 @@ export class RabbitholeSession extends SessionAnswer {
       this.pushEvent(event);
     });
     return { ok: true, node_id: nodeId, request_id: requestId };
+  }
+
+  mintNodeId() {
+    while (true) {
+      const id = shortId();
+      if (!this.nodes.has(id)) return id;
+    }
   }
 
   async preparePdfCrop(payload) {

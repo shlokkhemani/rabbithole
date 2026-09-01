@@ -1,6 +1,7 @@
 import { systemClock } from "../core/clock.js";
 import { isNoteNode } from "../core/hole/ask.js";
 import { BUNNY_MARK_SVG } from "../core/html/icons.js";
+import { shortId } from "../core/utils.js";
 import { mountCodeCopy } from "./code-copy.js";
 import { qsa } from "./dom.js";
 import { createCleanupScope } from "./kit/scope.js";
@@ -272,8 +273,10 @@ export function nextStack() {
 }
 // ---------- helpers ----------
 export function uuid() {
-  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-  return "n-" + systemClock.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  while (true) {
+    const id = shortId();
+    if (!nodes[id]) return id;
+  }
 }
 export function registerNode(node) {
   return holeStore.register(node);

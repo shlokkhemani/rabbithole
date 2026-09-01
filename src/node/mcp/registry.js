@@ -1,5 +1,6 @@
 import { RabbitholeSession } from "./hole-session/session.js";
 import { getAgentContextMonitor } from "../context-gauge/index.js";
+import { shortId } from "../shared/ids.js";
 
 const sessions = new Map();
 
@@ -7,6 +8,7 @@ export async function createSession(config) {
   let unsubscribeContext = () => {};
   const session = new RabbitholeSession({
     ...config,
+    sessionId: mintSessionId(),
     onContextClose: () => unsubscribeContext(),
     onClose: (s) => sessions.delete(s.id),
   });
@@ -27,6 +29,13 @@ export async function createSession(config) {
     throw error;
   }
   return session;
+}
+
+function mintSessionId() {
+  while (true) {
+    const id = shortId();
+    if (!sessions.has(id)) return id;
+  }
 }
 
 export function getSession(sessionId) {

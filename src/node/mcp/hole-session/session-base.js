@@ -1,5 +1,4 @@
 import http from "node:http";
-import { randomUUID } from "node:crypto";
 import { systemClock } from "../../../core/clock.js";
 import { HoleEngine } from "../../../core/engine/hole-engine.js";
 import { openBrowser } from "../../shared/process.js";
@@ -11,6 +10,7 @@ import { sweepPdfRegionFiles } from "../pdf/crop.js";
 import { unavailableContextUsage } from "../../context-gauge/usage.js";
 import { RequestTable } from "./request-table.js";
 import { SessionCrops } from "./crops.js";
+import { shortId } from "../../shared/ids.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -22,6 +22,7 @@ export class SessionBase {
    *   title?: string,
    *   rootId?: string | null,
    *   createdAt?: string | null,
+   *   sessionId?: string,
    *   nodes?: any[],
    *   assetNames?: Iterable<string>,
    *   viewState?: any,
@@ -32,9 +33,9 @@ export class SessionBase {
    *   mintRunId?: () => string,
    * }} options
    */
-  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose, onContextClose, mintRunId = randomUUID }) {
-    this.id = randomUUID();
-    this.holeId = holeId || randomUUID();
+  constructor({ holeId, title, rootId, createdAt, sessionId, nodes, assetNames, viewState, isResume, renderPage, onClose, onContextClose, mintRunId = shortId }) {
+    this.id = sessionId || shortId();
+    this.holeId = holeId || shortId();
     this.title = title || "Untitled";
     this.rootId = rootId || null;
     this.createdAt = createdAt || new Date().toISOString();

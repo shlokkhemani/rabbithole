@@ -2,7 +2,6 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { errorCode } from "../../shared/errno.js";
 import { systemClock } from "../../../core/clock.js";
 import { mapConcurrent } from "../../../core/concurrency.js";
@@ -10,6 +9,7 @@ import { warn } from "../../shared/logger.js";
 import { parsePersistedHole, toPersistedHole } from "../../../core/schema.js";
 import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } from "../../../core/store.js";
 import { MAX_ASSETS_PER_CALL, maxAssetBytes, validateAssetName } from "../../../core/assets.js";
+import { shortId } from "../../shared/ids.js";
 
 /**
  * Holes are persisted one JSON file per hole under ~/.rabbithole/.
@@ -188,7 +188,7 @@ export class FsStore {
     const buffer = await bytesToBuffer(bytes, "asset bytes", safeName);
     const dir = await ensureAssetDir(holeId);
     const destination = path.join(dir, safeName);
-    const temporary = path.join(dir, `.${safeName}.${randomUUID()}.tmp`);
+    const temporary = path.join(dir, `.${safeName}.${shortId()}.tmp`);
     try {
       await fs.writeFile(temporary, buffer, { flag: "wx" });
       try {
@@ -292,7 +292,7 @@ async function createStagedAssetDir() {
   await cleanupStagedAssets();
   await fs.mkdir(stagingRootDir(), { recursive: true });
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const ingestId = createIngestId();
+    const ingestId = createIngestId(shortId);
     const dir = stagedAssetDir(ingestId);
     try {
       await fs.mkdir(dir);
@@ -394,9 +394,9 @@ function persistHole(hole) {
   // Unique temp name per write so concurrent/overlapping saves of the same hole
   // never clobber each other's temp file mid-write; rename is atomic, last wins.
   const finalPath = holePath(holeId);
-  const tmp = `${finalPath}.${randomUUID()}.tmp`;
+  const tmp = `${finalPath}.${shortId()}.tmp`;
   const summaryPath = holeSummaryPath(holeId);
-  const summaryTmp = `${summaryPath}.${randomUUID()}.tmp`;
+  const summaryTmp = `${summaryPath}.${shortId()}.tmp`;
   try {
     // Both independent payloads can reach durable temp files together. The
     // hole rename still precedes the summary rename so listHoles never exposes

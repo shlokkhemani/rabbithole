@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { systemClock } from "../../../core/clock.js";
 import { warn } from "../../shared/logger.js";
+import { shortId } from "../../shared/ids.js";
 
 const PREFERENCES_VERSION = 1;
 const LOCK_RETRY_MS = 10;
@@ -83,7 +83,7 @@ async function acquireLock() {
 async function mergeLocked(patch) {
   const lock = await acquireLock();
   const finalPath = preferencePath();
-  const temporary = finalPath + "." + randomUUID() + ".tmp";
+  const temporary = finalPath + "." + shortId() + ".tmp";
   try {
     const envelope = await readEnvelope();
     Object.keys(patch).forEach(function (key) {

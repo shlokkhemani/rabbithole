@@ -207,6 +207,8 @@ async function runAgentPublishFixture() {
     content: "This is genuinely an annotation.",
     kind: "note",
   });
+  assert.match(note.node_id, /^agent-note-[a-f0-9]{8}$/,
+    "agent-published note ids keep their stable hash form with an eight-hex digest");
   const withNote = await defaultFsStore.loadHole(dormantHoleId);
   assert.deepEqual(withNote.nodes.find((node) => node.id === note.node_id).origin, { kind: "note", author: "agent" },
     "explicit notes retain note presentation with agent attribution");

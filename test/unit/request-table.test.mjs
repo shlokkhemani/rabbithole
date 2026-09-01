@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { RequestTable } from "../../src/node/mcp/hole-session/request-table.js";
 
 const requests = new RequestTable();
+requests.ensure("taken-id");
+const candidates = ["taken-id", "fresh-id"];
+assert.equal(requests.mintId(() => candidates.shift() || "fallback-id"), "fresh-id", "request id minting retries table collisions");
 const first = requests.pending("request-a", "node-a");
 assert.equal(first, requests.get("request-a"), "one request id must always resolve to one coordination record");
 

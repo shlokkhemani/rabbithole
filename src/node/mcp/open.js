@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { log } from "../shared/logger.js";
 import { buildCanvasHtml } from "./http/page.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./registry.js";
@@ -11,6 +11,8 @@ import { BRANCH_FOLLOWUP, isDockedNote, isNoteNode } from "../../core/hole/ask.j
 import { makeNode } from "../../core/hole/node.js";
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/hole/reduce.js";
 import { ingestPdfDocument, isPdfFile } from "./pdf/ingest.js";
+import { normalizeId } from "../../core/utils.js";
+import { shortId } from "../shared/ids.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -35,6 +37,7 @@ async function resolveMarkdown({ content, filePath }) {
  * }} input
  */
 export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, focus, signal }) {
+  holeId = normalizeId(holeId);
   if (holeId) {
     return resumeRabbithole(holeId, signal, assets, focus);
   }
@@ -46,11 +49,11 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
   log(`openRabbithole: "${resolvedTitle}"`);
   const markdown = pdf?.markdown || normalizeBlockIds(await resolveMarkdown({ content, filePath })).markdown;
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
-  const newHoleId = randomUUID();
+  const newHoleId = await mintHoleId();
   if (pdf) await pdf.adopt(newHoleId);
   await addAssetsToHole(newHoleId, assets);
   const assetNames = new Set(await defaultFsStore.listAssets(newHoleId));
-  const rootId = randomUUID();
+  const rootId = mintNodeId(new Map());
   const rootNode = makeNode({
     id: rootId,
     parent_id: null,
@@ -154,6 +157,8 @@ async function resumeRabbithole(holeId, signal, assets, focus = false) {
  * }} input
  */
 export async function answerBranch({ sessionId, requestId, title, content, partial, delegated, baseUrl, assets, signal }) {
+  sessionId = normalizeId(sessionId);
+  requestId = normalizeId(requestId);
   const session = getSession(sessionId);
   if (!session || session.isClosed()) {
     return { status: "session_closed", session_id: sessionId, reason: session?.closeReason || "session_closed" };
@@ -181,6 +186,9 @@ export async function listRabbitholes() {
  */
 /** @param {{holeId: string, operationId: string, title?: string, content: string, parentNodeId?: string, kind?: "answer" | "note"}} input */
 export async function sendToRabbithole({ holeId, operationId, title, content, parentNodeId, kind = "answer" }) {
+  holeId = normalizeId(holeId);
+  operationId = normalizeId(operationId);
+  parentNodeId = parentNodeId == null ? undefined : normalizeId(parentNodeId);
   const nodeId = publishedNoteId(holeId, operationId);
   const liveSession = getSessionByHole(holeId);
   if (liveSession) {
@@ -229,8 +237,22 @@ function publishResult(node, session, duplicate) {
 }
 
 function publishedNoteId(holeId, operationId) {
-  const digest = createHash("sha256").update(`${holeId}\0${operationId}`).digest("hex").slice(0, 32);
+  const digest = createHash("sha256").update(`${holeId}\0${operationId}`).digest("hex").slice(0, 8);
   return `agent-note-${digest}`;
+}
+
+async function mintHoleId() {
+  while (true) {
+    const id = shortId();
+    if (!(await defaultFsStore.loadHole(id))) return id;
+  }
+}
+
+function mintNodeId(nodes) {
+  while (true) {
+    const id = shortId();
+    if (!nodes.has(id)) return id;
+  }
 }
 
 /** @returns {import("../../core/contracts/engine.js").NodeCreateEvent} */

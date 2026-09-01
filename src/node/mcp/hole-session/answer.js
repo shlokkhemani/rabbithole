@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { addAssetsToHole, defaultFsStore } from "../store/fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../../core/base-url.js";
 import { collectAllNotes, isNoteNode } from "../../../core/hole/ask.js";
@@ -230,7 +229,7 @@ export class SessionAnswer extends SessionBroadcast {
       if (candidate.parent_id === nodeId && !isNoteNode(candidate)) throw buildJsonError("Create a text version before asking follow-ups", 409);
     }
     if (pdf.converting && !saved) throw buildJsonError("Conversion is already running", 409);
-    const requestId = randomUUID();
+    const requestId = this.requests.mintId();
     if (!pdf.converting) this.patchNodePdf(nodeId, { ...pdf, converting: true, converted: false, original_markdown: node.markdown, convert_request: true });
     const activePdf = normalizePdfExtension({ markdown: node.markdown, extensions: { pdf: rawPdfExtension(this.nodes.get(nodeId)) } });
     if (!activePdf) throw buildJsonError("This node is not a native PDF", 400);
@@ -287,7 +286,7 @@ export class SessionAnswer extends SessionBroadcast {
       .filter((n) => n.status === "pending" && n.origin)
       .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
     for (const node of saved) {
-      const requestId = randomUUID();
+      const requestId = this.requests.mintId();
       this.requests.pending(requestId, node.id);
       const contextParentId = node.parent_id ?? this.rootId;
       const parent = this.nodes.get(contextParentId);

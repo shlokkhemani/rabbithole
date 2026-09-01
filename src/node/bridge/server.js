@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -26,6 +25,7 @@ import {
 import { assertHttpRequest } from "../shared/http-guard.js";
 import { errorCode, errorStatusCode } from "../shared/errno.js";
 import { AGENT_TURN_DEADLINE_MS } from "../shared/deadline.js";
+import { shortId } from "../shared/ids.js";
 
 const HOST = "127.0.0.1";
 const REQUEST_TIMEOUT_MS = AGENT_TURN_DEADLINE_MS;
@@ -52,7 +52,7 @@ function sendBridgeError(res, error) {
 }
 
 function completionId() {
-  return `chatcmpl-${crypto.randomUUID().replaceAll("-", "")}`;
+  return `chatcmpl-${shortId()}`;
 }
 
 function sseData(res, value) {

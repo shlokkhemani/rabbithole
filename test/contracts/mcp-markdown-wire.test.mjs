@@ -6,6 +6,7 @@ import path from "node:path";
 import { encodeBase64Utf8 } from "../../src/core/markdown.js";
 import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
 import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
+import { buildMap, buildThread } from "../../src/core/hole/context.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
@@ -50,10 +51,11 @@ function abortAfter(ms = 25) {
 }
 
 function assertBranchRequestShape(result, session, requestId, nodeId) {
-  assert.deepEqual(Object.keys(result).sort(), [
+  const expectedKeys = [
     "hole_id",
     "lens",
     "lineage",
+    "map",
     "node_id",
     "parent_node_id",
     "parent_node_title",
@@ -62,7 +64,9 @@ function assertBranchRequestShape(result, session, requestId, nodeId) {
     "selected_text",
     "session_id",
     "status",
-  ]);
+  ];
+  if (result.thread) expectedKeys.push("thread");
+  assert.deepEqual(Object.keys(result).sort(), expectedKeys.sort());
   assert.equal(result.status, "branch_request");
   assert.equal(result.session_id, session.id);
   assert.equal(result.hole_id, session.holeId);
@@ -74,6 +78,11 @@ function assertBranchRequestShape(result, session, requestId, nodeId) {
   assert.equal(result.question, "Explain root");
   assert.equal(result.lens, null);
   assert.deepEqual(result.lineage, ["Markdown Wire Root"]);
+  assert.deepEqual(result.map.nodes.map((node) => [node.id, node.status]), [
+    [session.rootId, "answered"],
+    [nodeId, "pending"],
+  ]);
+  assert.deepEqual(result.map.notes, []);
 }
 
 function assertSessionClosedShape(result, sessionId, reason) {
@@ -224,8 +233,12 @@ async function runMarkdownWireFixture() {
   assert.deepEqual(persistedCheck.nodes.find((node) => node.id === session.rootId).extensions.learn[checkId], {
     attempts: 1, last: { option: 1, correct: true }, revealed: true,
   });
-  assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("extensions"), false, "agent rehydration stays lean");
-  assert.equal(JSON.stringify(session.buildRehydrationPayload()).includes("attempts"), false, "learner state never enters agent rehydration");
+  const agentContext = JSON.stringify({
+    map: buildMap(session.nodes, session.rootId),
+    thread: buildThread(session.nodes, session.rootId),
+  });
+  assert.equal(agentContext.includes("extensions"), false, "agent map and thread stay lean");
+  assert.equal(agentContext.includes("attempts"), false, "learner state never enters agent context");
 
   const requestId = "req-markdown-wire";
   const nodeId = "node-markdown-wire";
@@ -374,7 +387,11 @@ async function runMarkdownWireFixture() {
   });
   const notesBranch = await openRabbithole({ holeId: session.holeId });
   assert.deepEqual(notesBranch.notes, [standaloneNoteEntry, anchoredNoteEntry],
-    "branch_request carries exactly the standalone-first relevant note entries, docked or placed");
+    "branch_request carries every new note in standalone-first order, docked or placed");
+  assert.deepEqual(notesBranch.map.notes.map((note) => [note.id, note.new]), [
+    ["standalone-wire-note", true],
+    ["anchored-wire-note", true],
+  ]);
   assert.equal(JSON.stringify(notesBranch.notes).includes("docked"), false,
     "how a note is shown is the human's business, never the agent's");
   assertCancelledShape(await answerBranch({
@@ -396,8 +413,12 @@ async function runMarkdownWireFixture() {
     question: "Can you expand on my note?",
   });
   const noteThreadBranch = await openRabbithole({ holeId: session.holeId });
-  assert.deepEqual(noteThreadBranch.notes, [{ ...anchoredNoteEntry, on_lineage: true }, standaloneNoteEntry],
-    "a branch_request inside a note carries that note body first with on_lineage: true");
+  assert.deepEqual(noteThreadBranch.notes, [{ ...anchoredNoteEntry, on_lineage: true }],
+    "a branch_request inside a note always carries that lineage note but omits an unchanged ambient note");
+  assert.deepEqual(noteThreadBranch.map.notes.map((note) => [note.id, note.new]), [
+    ["standalone-wire-note", false],
+    ["anchored-wire-note", false],
+  ]);
   assertCancelledShape(await answerBranch({
     sessionId: session.id,
     requestId: noteThreadRequestId,
@@ -407,9 +428,9 @@ async function runMarkdownWireFixture() {
   }), session);
 
   const reloaded = await fetch(session.url);
-  const rehydration = parseHydration(await reloaded.text());
-  assertNoContentHtml(rehydration, "reloaded hydration");
-  assert.equal(rehydration.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
+  const reloadedHydration = parseHydration(await reloaded.text());
+  assertNoContentHtml(reloadedHydration, "reloaded hydration");
+  assert.equal(reloadedHydration.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
 
   const exported = await fetch(`${session.url}/export`);
   assert.equal(exported.status, 200);
@@ -455,9 +476,8 @@ async function runMarkdownWireFixture() {
     status: "session_closed",
     session_id: session.id,
     reason: "markdown_wire_done",
-    notes: [standaloneNoteEntry, anchoredNoteEntry],
-  }, "a blocked agent call receives all hole notes on session_closed without lineage flags");
-  assert.deepEqual(await session.waitForEvent(), closedWithNotes, "post-close waitForEvent uses the same notes-enriched delivery seam");
+  }, "session_closed omits notes already delivered at their current hashes");
+  assert.deepEqual(await session.waitForEvent(), closedWithNotes, "post-close waitForEvent has no new notes to redeliver");
   assertSessionClosedShape(
     await answerBranch({ sessionId: session.id, requestId, content: "late" }),
     session.id,

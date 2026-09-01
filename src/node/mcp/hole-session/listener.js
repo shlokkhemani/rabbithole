@@ -1,6 +1,9 @@
-import { collectAllNotes, collectRelevantNotes } from "../../../core/hole/ask.js";
+import { isNoteNode } from "../../../core/hole/ask.js";
+import { buildMap, buildThread, collectBranchNotes, collectNewNotes } from "../../../core/hole/context.js";
+import { lineageNodesFromMap } from "../../../core/hole/tree.js";
 import { openBrowser } from "../../shared/process.js";
 import { log } from "../../shared/logger.js";
+import { noteHashesForNodes, notesFromContextEntries, recordDeliveredNoteEntries } from "../note-hashes.js";
 import { SessionBase } from "./session-base.js";
 
 const ANSWER_WATCHDOG_MS = 4 * 60 * 1000;
@@ -71,25 +74,42 @@ export class SessionListener extends SessionBase {
 
   // Every branch_request handed to the agent arms the watchdog; any subsequent
   // agent activity (answer_branch, another waitForEvent) clears or re-arms it.
-  deliverToAgent(event) {
+  deliverToAgent(baseEvent) {
+    if (!baseEvent) return baseEvent;
+    const event = { ...baseEvent };
     // Branch work carries both identities: session_id routes answers to this
     // live process, while hole_id lets a coordinator restore the listener after
     // a delegated call returns. Terminal response shapes stay unchanged.
-    if (event?.status === "branch_request" || event?.status === "convert_request") event.hole_id = this.holeId;
-    if (event?.status === "branch_request") {
-      const notes = collectRelevantNotes(this.nodes, event.parent_node_id, { includeLineage: true });
+    if (event.status === "branch_request" || event.status === "convert_request") event.hole_id = this.holeId;
+    if (event.status === "branch_request") {
+      const noteHashes = noteHashesForNodes(this.nodes);
+      const noteOptions = { deliveredNoteHashes: this.deliveredNoteHashes, noteHashes };
+      event.map = buildMap(this.nodes, this.rootId, noteOptions);
+
+      const notes = collectBranchNotes(this.nodes, event.parent_node_id, noteOptions);
       if (notes.length) event.notes = notes;
-      else delete event.notes;
-    } else if (event?.status === "session_closed") {
-      const notes = collectAllNotes(this.nodes);
+
+      const lineageHasUndeliveredNode = lineageNodesFromMap(this.nodes, event.parent_node_id)
+        .some((node) => !isNoteNode(node) && node.status !== "pending" && !this.delivered.has(node.id));
+      const thread = lineageHasUndeliveredNode ? buildThread(this.nodes, event.parent_node_id) : [];
+      if (thread.length) {
+        event.thread = thread;
+        for (const entry of thread) {
+          if (!isNoteNode(this.nodes.get(entry.id))) this.delivered.add(entry.id);
+        }
+      }
+      recordDeliveredNoteEntries(this.deliveredNoteHashes, [...notes, ...notesFromContextEntries(thread)]);
+    } else if (event.status === "session_closed") {
+      const noteHashes = noteHashesForNodes(this.nodes);
+      const notes = collectNewNotes(this.nodes, { deliveredNoteHashes: this.deliveredNoteHashes, noteHashes });
       if (notes.length) event.notes = notes;
-      else delete event.notes;
+      recordDeliveredNoteEntries(this.deliveredNoteHashes, notes);
     }
-    if (event && (event.status === "branch_request" || event.status === "convert_request")) {
-      this.requests.deliver(event.request_id, event);
+    if (event.status === "branch_request" || event.status === "convert_request") {
+      // Keep the undecorated event for fresh, idempotent redelivery. The map,
+      // note delta, thread, and hole id above are a delivery-time projection.
+      this.requests.deliver(event.request_id, baseEvent);
       this.startAnswerWatchdog(event.request_id);
-    }
-    if (event && (event.status === "branch_request" || event.status === "convert_request")) {
       this.setContextBusy(true);
     }
     return event;

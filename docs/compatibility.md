@@ -77,11 +77,13 @@ files, snapshots, MCP hydration, and stored holes.
 
 ## MCP surface
 
-The server exposes `open_rabbithole`, `answer_branch`, `send_to_rabbithole`,
-and `list_rabbitholes`. Tool inputs are validated and capped before filesystem
-or session mutation. The browser transport uses the event vocabulary in
+The server exposes `open_rabbithole`, `answer_branch`, `read_rabbithole`,
+`send_to_rabbithole`, and `list_rabbitholes`. Tool inputs are validated and
+capped before filesystem or session mutation. The browser transport uses the event vocabulary in
 `src/core/contracts/engine.d.ts`; the agent loop receives branch requests,
-conversion requests, rehydration, and terminal session status.
+conversion requests, and terminal session status. Branch requests carry a
+compact tree-and-note map, add full note deltas, and include an undelivered
+lineage thread when needed; saved pending asks remain ordinary branch requests.
 
 Sub-agent protocol (`branch_request` only; never `convert_request`):
 

@@ -1,4 +1,4 @@
-import { openRabbithole, answerBranch, listRabbitholes, sendToRabbithole } from "./open.js";
+import { openRabbithole, answerBranch, listRabbitholes, readRabbithole, sendToRabbithole } from "./open.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
 import { normalizeId } from "../../core/utils.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/authoring-v1.js";
@@ -10,7 +10,7 @@ import {
   CONVERT_RULE,
   LISTENER_RULE,
   REGION_AND_ATTACHMENTS,
-  RESUME_AND_REHYDRATION,
+  CONTEXT_READING_RULE,
   STREAMING_RULE,
   SUB_AGENT_PROTOCOL,
 } from "./protocol.js";
@@ -65,6 +65,14 @@ function validatePublish(params) {
   if (!String(params.content || "").trim()) throw new Error("content is required");
 }
 
+function validateRead(params) {
+  if (!normalizeId(params.hole_id)) throw new Error("hole_id is required");
+  if (params.node_ids !== undefined) {
+    if (!Array.isArray(params.node_ids)) throw new Error("node_ids must be an array");
+    if (params.node_ids.length > 20) throw new Error("node_ids may contain at most 20 items");
+  }
+}
+
 function progressIntervalMs() {
   const configured = Number(process.env.RABBITHOLE_PROGRESS_INTERVAL_MS);
   return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : PROGRESS_INTERVAL_MS;
@@ -111,8 +119,7 @@ export const toolDefinitions = [
       "this selection's clip or the immediate parent's clip; read that image before answering and trust it over extracted text for math, tables, and figures. " +
       "When anchor.block is present, the selection came from that rendered visual block; use the matching fenced source in the parent document as context. " +
       "A convert_request asks you to transcribe the listed page image_path files under its inline rules; stream the document through answer_branch with that request_id. " +
-      "On a resumed hole the first branch_request carries " +
-      "a 'rehydration' field with the whole tree (and any saved_asks); read it to reload your context. " +
+      "A branch_request includes a compact map and may include a thread when this session has not delivered its lineage. " +
       "Long waits remain blocked and should be left running in the background; never poll the canvas. " +
       "The pending tool call itself is the listener. Never claim the canvas is open or that you are listening unless this call was actually invoked and remains running. " +
       "Do not post a host-chat final answer or end the agent turn merely to announce that Rabbithole opened; keep this call pending until a real canvas event arrives. " +
@@ -122,7 +129,7 @@ export const toolDefinitions = [
       "Only when the human explicitly asks to see the canvas, resume with { hole_id, focus: true }; " +
       "a live browser tab is reused and a tab is opened only when none is connected. " +
       "It returns status='session_closed' with a reason when the human clicks Done or the session otherwise ends.\n\n" +
-      [REGION_AND_ATTACHMENTS, CONVERT_RULE, RESUME_AND_REHYDRATION, LISTENER_RULE, SUB_AGENT_PROTOCOL].join("\n\n"),
+      [REGION_AND_ATTACHMENTS, CONVERT_RULE, CONTEXT_READING_RULE, LISTENER_RULE, SUB_AGENT_PROTOCOL].join("\n\n"),
     input: {
       title: z.string().max(2000).describe("Document title (required for a new hole)").optional(),
       content: z.string().max(10485760).describe("Raw markdown for the starting document").optional(),
@@ -194,6 +201,29 @@ export const toolDefinitions = [
         delegated,
         signal: extra?.signal,
       }), extra),
+  },
+  {
+    name: "read_rabbithole",
+    description:
+      "Read a saved or open Rabbithole without a listener: map only by default; thread_of returns the lineage root→node with markdown and notes; node_ids returns specific nodes; notes returns every note. " +
+      "Use it before answering when the ask refers to text you do not hold verbatim.",
+    input: {
+      hole_id: z.string().max(200).describe("Saved or open Rabbithole id"),
+      thread_of: z.string().max(200)
+        .describe("Node id whose lineage root→node should be returned with markdown and notes")
+        .optional(),
+      node_ids: z.array(z.string().max(200)).max(20)
+        .describe("Up to 20 node ids to return with markdown and notes, in the requested order")
+        .optional(),
+      notes: z.boolean().describe("Return every note in full").optional(),
+    },
+    validateInput: validateRead,
+    run: ({ hole_id, thread_of, node_ids, notes }) => readRabbithole({
+      holeId: normalizeId(hole_id),
+      threadOf: thread_of === undefined ? undefined : normalizeId(thread_of),
+      nodeIds: node_ids === undefined ? undefined : node_ids.map((id) => normalizeId(id)),
+      notes,
+    }),
   },
   {
     name: "send_to_rabbithole",

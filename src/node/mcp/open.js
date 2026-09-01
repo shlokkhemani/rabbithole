@@ -7,12 +7,14 @@ import { addAssetsToHole, defaultFsStore } from "./store/fs-store.js";
 import { deriveNodeBaseUrl, normalizeBaseUrl } from "../../core/base-url.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
 import { DEFAULT_CHILD, DEFAULT_ROOT, DEFAULT_STANDALONE_NOTE, TREE_PARENT_GAP, placeChild } from "../../core/layout.js";
-import { BRANCH_FOLLOWUP, isDockedNote, isNoteNode } from "../../core/hole/ask.js";
+import { BRANCH_FOLLOWUP, collectAllNotes, isDockedNote, isNoteNode, noteEntry } from "../../core/hole/ask.js";
+import { buildMap, buildNodeContext, buildThread } from "../../core/hole/context.js";
 import { makeNode } from "../../core/hole/node.js";
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/hole/reduce.js";
 import { ingestPdfDocument, isPdfFile } from "./pdf/ingest.js";
 import { normalizeId } from "../../core/utils.js";
 import { shortId } from "../shared/ids.js";
+import { noteHashesForNodes, notesFromContextEntries, recordDeliveredNoteEntries } from "./note-hashes.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -77,6 +79,7 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
     nodes: [rootNode],
     assetNames,
     isResume: false,
+    deliveredNodeIds: content ? [rootId] : [],
     renderPage: (hydration) => buildCanvasHtml(hydration),
   });
 
@@ -187,6 +190,82 @@ export async function listRabbitholes({ limit, query } = {}) {
     holes: matching.slice(0, normalizeListLimit(limit)),
     total: matching.length,
   };
+}
+
+/**
+ * Read bounded context from a live or saved Rabbithole without attaching a
+ * listener. Live reads update only the process-local delivery bookkeeping.
+ * @param {{holeId: string, threadOf?: string, nodeIds?: string[], notes?: boolean}} input
+ */
+export async function readRabbithole({ holeId, threadOf, nodeIds, notes: includeNotes }) {
+  holeId = normalizeId(holeId);
+  threadOf = threadOf === undefined ? undefined : normalizeId(threadOf);
+  nodeIds = nodeIds === undefined ? undefined : nodeIds.map(normalizeId);
+
+  const session = getSessionByHole(holeId);
+  let title;
+  let rootId;
+  let nodes;
+  if (session) {
+    title = session.title;
+    rootId = session.rootId;
+    nodes = session.nodes;
+  } else {
+    const hole = await defaultFsStore.loadHole(holeId);
+    if (!hole) throw new Error(`Hole ${holeId} not found.`);
+    const state = createHoleState(/** @type {any} */ (hole), { cloneExtensions: false });
+    title = state.title;
+    rootId = state.root_id;
+    nodes = state.nodes;
+  }
+
+  const noteHashes = noteHashesForNodes(nodes);
+  const deliveredNoteHashes = session?.deliveredNoteHashes || new Map();
+  /** @type {any} */
+  const result = {
+    hole_id: holeId,
+    title,
+    map: buildMap(nodes, rootId, { deliveredNoteHashes, noteHashes }),
+  };
+  /** @type {Array<Record<string, any>>} */
+  const deliveredNotes = [];
+
+  if (threadOf !== undefined) {
+    requireNode(nodes, threadOf);
+    result.thread = buildThread(nodes, threadOf);
+    deliveredNotes.push(...notesFromContextEntries(result.thread));
+    if (session) {
+      for (const entry of result.thread) {
+        const node = nodes.get(entry.id);
+        if (isNoteNode(node)) deliveredNotes.push(noteEntry(node));
+        else session.delivered.add(entry.id);
+      }
+    }
+  }
+  if (nodeIds !== undefined) {
+    const selected = nodeIds.map((id) => requireNode(nodes, id));
+    result.nodes = selected.map((node) => buildNodeContext(nodes, node));
+    deliveredNotes.push(...notesFromContextEntries(result.nodes));
+    if (session) {
+      for (const node of selected) {
+        if (isNoteNode(node)) deliveredNotes.push(noteEntry(node));
+        else if (node.status !== "pending") session.delivered.add(node.id);
+      }
+    }
+  }
+  if (includeNotes === true) {
+    result.notes = collectAllNotes(nodes);
+    deliveredNotes.push(...result.notes);
+  }
+  if (session) recordDeliveredNoteEntries(session.deliveredNoteHashes, deliveredNotes);
+  return result;
+}
+
+/** @param {Map<string, any>} nodes @param {string} id */
+function requireNode(nodes, id) {
+  const node = nodes.get(id);
+  if (!node) throw new Error(`Node ${id} not found.`);
+  return node;
 }
 
 function normalizeListLimit(value) {

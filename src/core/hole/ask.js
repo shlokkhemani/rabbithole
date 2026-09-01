@@ -176,7 +176,7 @@ export function makeTranscribeAsk(node, state) {
 }
 
 /** @param {HoleNode} node @returns {Record<string, any>} */
-function noteEntry(node) {
+export function noteEntry(node) {
   const author = /** @type {{ author?: unknown } | null | undefined} */ (node.origin)?.author === "agent" ? "agent" : "human";
   return {
     note_id: node.id,
@@ -189,7 +189,7 @@ function noteEntry(node) {
 }
 
 /** @param {HoleNode} a @param {HoleNode} b */
-function standaloneFirstByAge(a, b) {
+export function standaloneFirstByAge(a, b) {
   const scope = Number(a.parent_id !== null) - Number(b.parent_id !== null);
   return scope || String(a.created_at || "").localeCompare(String(b.created_at || ""));
 }

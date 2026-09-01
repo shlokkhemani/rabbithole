@@ -27,6 +27,49 @@ export function collectSubtreeIds(nodes, rootId) {
   return [...doomed];
 }
 
+/**
+ * Return every node in deterministic depth-first order. The document root is
+ * visited first, followed by parentless canvas nodes, then any malformed
+ * disconnected components so legacy data is never silently omitted.
+ * @param {NodeCollection} nodes
+ * @param {string | null} rootId
+ * @returns {HoleNode[]}
+ */
+export function depthFirstNodes(nodes, rootId) {
+  const all = [...valuesOfNodes(nodes)];
+  const byId = new Map(all.map((node) => [node.id, node]));
+  /** @type {Map<string | null, HoleNode[]>} */
+  const children = new Map();
+  for (const node of all) {
+    const parentId = node.parent_id ?? null;
+    const siblings = children.get(parentId);
+    if (siblings) siblings.push(node);
+    else children.set(parentId, [node]);
+  }
+  /** @param {HoleNode} a @param {HoleNode} b */
+  const compareByAge = (a, b) => String(a.created_at || "").localeCompare(String(b.created_at || ""))
+    || String(a.id).localeCompare(String(b.id));
+  for (const siblings of children.values()) siblings.sort(compareByAge);
+
+  /** @type {HoleNode[]} */
+  const ordered = [];
+  const visited = new Set();
+  /** @param {HoleNode | undefined} node */
+  const visit = (node) => {
+    if (!node || visited.has(node.id)) return;
+    visited.add(node.id);
+    ordered.push(node);
+    for (const child of children.get(node.id) || []) visit(child);
+  };
+
+  if (rootId) visit(byId.get(rootId));
+  for (const node of children.get(null) || []) {
+    if (node.id !== rootId) visit(node);
+  }
+  for (const node of [...all].sort(compareByAge)) visit(node);
+  return ordered;
+}
+
 /** @param {NodeCollection} nodes @param {string} nodeId @returns {HoleNode[]} */
 export function lineageNodesFromMap(nodes, nodeId) {
   /** @type {HoleNode[]} */

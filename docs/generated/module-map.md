@@ -27,6 +27,7 @@ This inventory is derived from the source tree.
 - `src/core/hole/anchor.js`
 - `src/core/hole/ask.js`
 - `src/core/hole/bookmark.js`
+- `src/core/hole/context.js`
 - `src/core/hole/events.js`
 - `src/core/hole/lens.js`
 - `src/core/hole/node.js`
@@ -114,6 +115,7 @@ This inventory is derived from the source tree.
 - `src/node/mcp/http/page.js`
 - `src/node/mcp/http/routes.js`
 - `src/node/mcp/main.js`
+- `src/node/mcp/note-hashes.js`
 - `src/node/mcp/open.js`
 - `src/node/mcp/pdf/crop.js`
 - `src/node/mcp/pdf/ingest.js`

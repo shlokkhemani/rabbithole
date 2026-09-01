@@ -85,11 +85,6 @@ export class RabbitholeSession extends SessionAnswer {
       lineage: this.lineageTitles(contextParentId),
     };
 
-    if (this.needsRehydration) {
-      this.needsRehydration = false;
-      event.rehydration = this.buildRehydrationPayload();
-    }
-
     // Persist the ask immediately (not just on answer/close) so a crash or
     // SIGKILL between ask and answer can't lose the question.
     this.scheduleSave();

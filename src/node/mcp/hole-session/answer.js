@@ -1,6 +1,6 @@
 import { addAssetsToHole, defaultFsStore } from "../store/fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../../core/base-url.js";
-import { collectAllNotes, isNoteNode } from "../../../core/hole/ask.js";
+import { isNoteNode } from "../../../core/hole/ask.js";
 import { projectNode } from "../../../core/hole/node.js";
 import { buildJsonError } from "../../shared/http.js";
 import { buildNodeAnsweredEvent } from "../../../core/hole-host.js";
@@ -156,6 +156,7 @@ export class SessionAnswer extends SessionBroadcast {
     if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(answered);
     this.dispatchHoleEvent(answered);
     const finalNode = this.nodes.get(nodeId);
+    this.delivered.add(finalNode.id);
     this.requests.answer(requestId, finalNode.id);
 
     this.broadcast(buildNodeAnsweredEvent(finalNode));
@@ -185,6 +186,7 @@ export class SessionAnswer extends SessionBroadcast {
     await this.crops.releaseConversion(requestId);
     await this.flushSave();
     this.broadcast(buildNodeAnsweredEvent(this.nodes.get(node.id)));
+    this.delivered.add(node.id);
     this.requests.answer(requestId, node.id);
     return this.waitForEvent(signal);
   }
@@ -256,27 +258,6 @@ export class SessionAnswer extends SessionBroadcast {
     }
   }
 
-  buildRehydrationPayload() {
-    const saved = [...this.nodes.values()].filter((n) => n.status === "pending" && n.origin);
-    const notes = collectAllNotes(this.nodes);
-    return {
-      title: this.title,
-      nodes: [...this.nodes.values()]
-        .filter((n) => n.status === "answered")
-        .map((n) => ({ id: n.id, parent_id: n.parent_id, title: n.title, markdown: n.markdown, ...(isNoteNode(n) ? { kind: "note" } : {}) })),
-      notes,
-      ...(saved.length
-        ? {
-            saved_asks: saved.map((n) => ({
-              node_id: n.id,
-              question: rawOrigin(n).question || "",
-              selected_text: n.parent_id == null ? "" : (rawOrigin(n).selected_text || ""),
-            })),
-          }
-        : {}),
-    };
-  }
-
   // Re-queue every persisted pending ask for the agent, oldest first. Runs at
   // construction on resume, before the agent's first waitForEvent, so saved
   // questions are answered before anything new.
@@ -307,10 +288,6 @@ export class SessionAnswer extends SessionBroadcast {
         lineage: this.lineageTitles(contextParentId),
         saved: true, // asked while the agent was away; answer it like any other
       };
-      if (this.needsRehydration) {
-        this.needsRehydration = false;
-        event.rehydration = this.buildRehydrationPayload();
-      }
       enqueue = enqueue.then(async () => {
         try {
           await this.queueBranchEvent(event, node, parent);

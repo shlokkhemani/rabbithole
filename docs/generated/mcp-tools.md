@@ -14,6 +14,12 @@ Answer one pending branch_request or convert_request from an open Rabbithole.
 
 Inputs: `session_id`, `request_id`, `title`, `content`, `base_url`, `assets`, `partial`, `delegated`
 
+## read_rabbithole
+
+Read a saved or open Rabbithole without a listener: map only by default; thread_of returns the lineage root→node with markdown and notes; node_ids returns specific nodes; notes returns every note.
+
+Inputs: `hole_id`, `thread_of`, `node_ids`, `notes`
+
 ## send_to_rabbithole
 
 Durably publish a completed document to an existing Rabbithole only when the human explicitly asks you to send or save content there.

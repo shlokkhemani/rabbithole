@@ -23,6 +23,6 @@ export const SUB_AGENT_PROTOCOL = [
 
 export const CONVERT_RULE = "A convert_request means the human clicked Create text version. Read pages[].image_path in order, follow its inline rules, and stream through answer_branch. The host crops figure: references; never send page images back.";
 
-export const RESUME_AND_REHYDRATION = "On a resumed hole, the first branch_request includes rehydration with the full tree and saved asks. Read it to restore context; use list_rabbitholes to find a saved hole.";
+export const CONTEXT_READING_RULE = "Branch requests include a compact map and automatically include an undelivered lineage as thread. Use read_rabbithole when you need other saved node or note text verbatim.";
 
 export const REGION_AND_ATTACHMENTS = "Read every attachments[].image_path. When region.image_path is present, read it before answering and trust it over extracted text for math, tables, and figures.";

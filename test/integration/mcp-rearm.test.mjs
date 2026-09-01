@@ -416,7 +416,12 @@ async function runOrphanedWaiterRecoveryFixture() {
   const lostDelivery = await orphaned;
   assert.equal(lostDelivery.request_id, ask.request_id, "the orphaned waiter receives the first delivery");
   assert.equal(session.waiter, null, "delivery clears the orphaned waiter before resolving it");
-  assert.equal(session.requests.get(ask.request_id).inFlight, lostDelivery);
+  const storedBaseEvent = session.requests.get(ask.request_id).inFlight;
+  assert.notEqual(storedBaseEvent, lostDelivery, "the request table keeps a base event, not its delivery projection");
+  assert.equal(Object.hasOwn(storedBaseEvent, "hole_id"), false);
+  assert.equal(Object.hasOwn(storedBaseEvent, "map"), false);
+  assert.equal(Object.hasOwn(storedBaseEvent, "notes"), false);
+  assert.equal(Object.hasOwn(storedBaseEvent, "thread"), false);
   await session.flushSave();
   assert.equal((await defaultFsStore.loadHole(session.holeId)).nodes.find((node) => node.id === ask.node_id)?.status, "pending");
 
@@ -424,6 +429,8 @@ async function runOrphanedWaiterRecoveryFixture() {
   assert.equal(recovered.status, "branch_request");
   assert.equal(recovered.request_id, ask.request_id, "the next attach redelivers the exact in-flight ask");
   assert.equal(recovered.node_id, ask.node_id);
+  assert.notEqual(recovered, lostDelivery, "redelivery creates a fresh decorated event");
+  assert.deepEqual(recovered, lostDelivery, "unchanged context produces the same wire payload");
   const afterAnswer = await answerBranch({
     sessionId: recovered.session_id,
     requestId: recovered.request_id,
@@ -600,12 +607,15 @@ async function runSavedAskRequeueFixture() {
   assert.equal(path.isAbsolute(saved.attachments[0].image_path), true);
   await fs.realpath(saved.attachments[0].image_path);
   assert.deepEqual(await fs.readFile(saved.attachments[0].image_path), Buffer.from([5, 6, 7, 8]));
-  assert(saved.rehydration, "first saved ask should include rehydration");
-  assert.deepEqual(saved.rehydration.saved_asks, [{
-    node_id: "saved-child", question: "Saved while away?", selected_text: "",
-  }, {
-    node_id: "saved-child-later", question: "Does the next saved ask still arrive?", selected_text: "",
-  }]);
+  assert.deepEqual(saved.thread, [{ id: "root", title: "Root", markdown: "Root", notes: [] }],
+    "the first cold-resume ask carries its undelivered lineage");
+  assert.deepEqual(saved.map.nodes.map((node) => [node.id, node.status]), [
+    ["root", "answered"],
+    ["saved-child", "pending"],
+    ["saved-child-later", "pending"],
+  ], "saved asks are ordinary pending nodes in the map");
+  assert.equal(JSON.stringify(saved).includes("rehydration"), false);
+  assert.equal(JSON.stringify(saved).includes("saved_asks"), false);
 
   const session = getSession(saved.session_id);
   assert(session, "cold resume should create a live session");
@@ -620,6 +630,7 @@ async function runSavedAskRequeueFixture() {
   assert.equal(afterAnswer.status, "branch_request", "a bad saved attachment name must not wedge the later saved-ask requeue");
   assert.equal(afterAnswer.node_id, "saved-child-later");
   assert.equal(afterAnswer.question, "Does the next saved ask still arrive?");
+  assert.equal(Object.hasOwn(afterAnswer, "thread"), false, "the delivered root lineage is not repeated");
   const afterLaterAnswer = await answerBranch({
     sessionId: afterAnswer.session_id,
     requestId: afterAnswer.request_id,
@@ -687,10 +698,11 @@ async function runNotesContextFixture() {
     noteEntry(session, "ambient-note-two", "Compare this with the appendix."),
   ];
   assert.deepEqual(branch.notes, expectedNotes, "a live follow-up inside one of three notes delivers all three with the replied-to note flagged first");
-  const expectedAllNotes = [
-    noteEntry(session, "replied-note", "Keep the target caveat in mind."),
-    ...expectedNotes.slice(1),
-  ];
+  assert.deepEqual(branch.map.notes.map((note) => [note.id, note.new]), [
+    ["replied-note", true],
+    ["ambient-note-one", true],
+    ["ambient-note-two", true],
+  ]);
 
   const holeId = session.holeId;
   await session.close("notes_context_cold_resume");
@@ -698,13 +710,84 @@ async function runNotesContextFixture() {
   assert.equal(resumed.status, "branch_request");
   assert.equal(resumed.saved, true);
   assert.deepEqual(resumed.notes, expectedNotes, "saved branch delivery recomputes lineage-aware note context after cold resume");
-  assert.deepEqual(resumed.rehydration.notes, expectedAllNotes, "cold resume carries all active notes without lineage presentation flags");
-  assert.equal(resumed.rehydration.nodes.find((node) => node.id === "replied-note")?.kind, "note");
-  assert.equal(resumed.rehydration.nodes.find((node) => node.id === "ambient-note-one")?.kind, "note");
-  assert.equal(resumed.rehydration.nodes.find((node) => node.id === "ambient-note-two")?.kind, "note");
-  assert.equal(Object.hasOwn(resumed.rehydration.nodes.find((node) => node.id === session.rootId), "kind"), false, "non-note rehydration nodes stay untagged");
+  assert.equal(resumed.map.nodes.some((node) => node.id === "replied-note"), false, "notes stay out of map.nodes");
+  assert.deepEqual(resumed.map.notes.map((note) => [note.id, note.new]), [
+    ["replied-note", true],
+    ["ambient-note-one", true],
+    ["ambient-note-two", true],
+  ], "a cold session starts with no delivered note hashes");
+  assert.equal(JSON.stringify(resumed).includes("rehydration"), false);
+  assert.equal(JSON.stringify(resumed).includes("saved_asks"), false);
 
-  console.log("ok rearm notes: three-note reply thread, lineage flag, and cold-resume note rehydration");
+  console.log("ok rearm notes: three-note reply thread, lineage flag, cold-resume map, and fresh deltas");
+}
+
+async function runNoteDeltaAndReactionFixture() {
+  const opened = await openRabbithole({ title: "MCP note deltas", content: "Root note delta target", signal: abortAfter() });
+  const session = getSession(opened.session_id);
+  assert(session);
+
+  await session.handleBrowserEvent({
+    type: "node_create",
+    id: "delta-note",
+    markdown: "Original note text.",
+    origin: { kind: "note" },
+  });
+  await session.handleBrowserEvent({
+    type: "node_create",
+    id: "reaction-note",
+    parent_id: session.rootId,
+    markdown: "👍",
+    origin: { kind: "note", instruction: "Preserve the concrete example." },
+    docked: true,
+  });
+  await session.handleBrowserEvent({
+    type: "node_extensions_patch",
+    node_id: "reaction-note",
+    namespace: "note",
+    value: { docked: true, reaction: true },
+  });
+
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "delta-request-one", node_id: "delta-branch-one", parent_id: session.rootId,
+    selected_text: "Root", question: "First note delivery",
+  });
+  const first = await openRabbithole({ holeId: session.holeId });
+  assert.equal(Object.hasOwn(first, "thread"), false, "content supplied on open makes the root already delivered");
+  assert.equal(first.notes.find((entry) => entry.note_id === "reaction-note")?.content, "Preserve the concrete example.",
+    "reaction notes resolve to their instruction when sent in full");
+  assert.equal(first.map.notes.find((entry) => entry.id === "reaction-note")?.preview, "Preserve the concrete example.",
+    "reaction map previews use the same resolved instruction");
+  assert(first.map.notes.every((entry) => entry.new), "new notes are flagged before their first full delivery");
+  assert.equal((await answerBranch({
+    sessionId: session.id, requestId: first.request_id, title: "First", content: "First answer.", signal: abortAfter(),
+  })).status, "cancelled");
+
+  await session.handleBrowserEvent({ type: "node_update", node_id: "delta-note", markdown: "Edited note text." });
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "delta-request-two", node_id: "delta-branch-two", parent_id: session.rootId,
+    selected_text: "Root", question: "Second note delivery",
+  });
+  const second = await openRabbithole({ holeId: session.holeId });
+  assert.deepEqual(second.map.notes.map((entry) => [entry.id, entry.new]), [
+    ["delta-note", true],
+    ["reaction-note", false],
+  ]);
+  assert.deepEqual(second.notes.map((entry) => [entry.note_id, entry.content]), [["delta-note", "Edited note text."]],
+    "an edited note ships in full exactly once");
+  assert.equal((await answerBranch({
+    sessionId: session.id, requestId: second.request_id, title: "Second", content: "Second answer.", signal: abortAfter(),
+  })).status, "cancelled");
+
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "delta-request-three", node_id: "delta-branch-three", parent_id: session.rootId,
+    selected_text: "Root", question: "Third note delivery",
+  });
+  const third = await openRabbithole({ holeId: session.holeId });
+  assert(third.map.notes.every((entry) => entry.new === false));
+  assert.equal(Object.hasOwn(third, "notes"), false, "the unchanged third delivery omits all full note entries");
+
+  console.log("ok rearm note deltas: edited notes ship once and reaction previews use resolved instructions");
 }
 
 async function runDoneNotesDeliveryFixture() {
@@ -726,6 +809,19 @@ async function runDoneNotesDeliveryFixture() {
     origin: { kind: "note" },
   });
 
+  await session.handleBrowserEvent({
+    type: "branch_request", request_id: "done-prime-request", node_id: "done-prime-branch", parent_id: session.rootId,
+    selected_text: "feedback target", question: "Prime note delivery",
+  });
+  const primed = await openRabbithole({ holeId: session.holeId });
+  assert.equal(primed.notes.length, 2, "the first branch delivery records both note hashes");
+  assert.equal((await answerBranch({
+    sessionId: session.id, requestId: primed.request_id, title: "Primed", content: "Primed.", signal: abortAfter(),
+  })).status, "cancelled");
+  await session.handleBrowserEvent({
+    type: "node_update", node_id: "done-anchored-note", markdown: "Tighten this paragraph and its example.",
+  });
+
   const blocked = session.waitForEvent();
   assert(session.waiter, "the agent call should be blocked before Done");
   assert.deepEqual(await session.handleBrowserEvent({ type: "done" }), { ok: true });
@@ -734,16 +830,15 @@ async function runDoneNotesDeliveryFixture() {
     session_id: session.id,
     reason: "done",
     notes: [
-      noteEntry(session, "done-standalone-note", "Check the conclusion too."),
-      noteEntry(session, "done-anchored-note", "Tighten this paragraph.", { on_node_id: session.rootId, on_selected_text: "feedback target" }),
+      noteEntry(session, "done-anchored-note", "Tighten this paragraph and its example.", { on_node_id: session.rootId, on_selected_text: "feedback target" }),
     ],
-  }, "Done resolves the blocked agent call with every note in the hole");
+  }, "Done resolves the blocked agent call with only notes new since their last delivery");
   assert.equal([...session.requests.records()].filter((record) => record.watchdog).length, 0,
     "session_closed delivery must not arm the answer watchdog");
   assert.equal([...session.requests.records()].filter((record) => record.inFlight).length, 0,
     "session_closed delivery must not enter branch request tracking");
 
-  console.log("ok rearm notes: Done delivers all notes without arming branch lifecycle state");
+  console.log("ok rearm notes: Done delivers only new notes without arming branch lifecycle state");
 }
 
 async function runDelegatedConcurrencyFixture() {
@@ -873,6 +968,7 @@ try {
   await runProgressKeepaliveFixture();
   await runSavedAskRequeueFixture();
   await runNotesContextFixture();
+  await runNoteDeltaAndReactionFixture();
   await runDoneNotesDeliveryFixture();
   await runDelegatedConcurrencyFixture();
 } finally {

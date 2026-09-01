@@ -27,13 +27,14 @@ export class SessionBase {
    *   assetNames?: Iterable<string>,
    *   viewState?: any,
    *   isResume?: boolean,
+   *   deliveredNodeIds?: Iterable<string>,
    *   renderPage?: (hydration: any) => string,
    *   onClose?: (session: SessionBase) => void,
    *   onContextClose?: (session: SessionBase) => void,
    *   mintRunId?: () => string,
    * }} options
    */
-  constructor({ holeId, title, rootId, createdAt, sessionId, nodes, assetNames, viewState, isResume, renderPage, onClose, onContextClose, mintRunId = shortId }) {
+  constructor({ holeId, title, rootId, createdAt, sessionId, nodes, assetNames, viewState, isResume, deliveredNodeIds, renderPage, onClose, onContextClose, mintRunId = shortId }) {
     this.id = sessionId || shortId();
     this.holeId = holeId || shortId();
     this.title = title || "Untitled";
@@ -78,7 +79,11 @@ export class SessionBase {
     // One record owns every request-scoped transition: delivery, delegation,
     // streaming ingress, cancellation, completion, conversion, and watchdog.
     this.requests = new RequestTable();
-    this.needsRehydration = !!isResume;
+    // Context delivery state is process-local coordination state. It is never
+    // persisted or projected into browser hydration.
+    this.delivered = new Set(deliveredNodeIds || []);
+    /** @type {Map<string, string>} */
+    this.deliveredNoteHashes = new Map();
 
     this.server = null;
     this.url = null;

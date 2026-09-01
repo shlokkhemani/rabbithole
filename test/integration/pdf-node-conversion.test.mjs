@@ -149,4 +149,4 @@ function abortAfter(ms) {
   assert.equal(persistedRoot.extensions.pdf.converted, true);
 }
 
-console.log("ok node conversion: note-child gate, convert_request loop, redelivery, ask lock, figures, disconnect restore, and saved-convert rehydration");
+console.log("ok node conversion: note-child gate, convert_request loop, redelivery, ask lock, figures, disconnect restore, and saved conversion resume");

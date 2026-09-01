@@ -173,17 +173,23 @@ async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMa
     const resumePromise = callTool(mcp.client, "open_rabbithole", { hole_id: imported.hole_id });
     const page = await context.newPage();
     await page.goto(await mcp.nextUrl());
-    await selectAndAsk(page, "Select this exact phrase", "Rehydrate this tree");
+    await selectAndAsk(page, "Select this exact phrase", "Restore this tree");
     const request = await resumePromise;
     assert.equal(request.status, "branch_request", `resume result: ${JSON.stringify(request)}`);
-    assert(request.rehydration, `first resumed request lacks rehydration: ${JSON.stringify(request)}`);
-    assert.equal(JSON.stringify(request.rehydration).includes("extensions"), false, `rehydration leaked extensions: ${JSON.stringify(request.rehydration)}`);
-    assertNoCredentials(JSON.stringify(request), `${prefix} rehydration`);
-    const nodes = request.rehydration.nodes;
-    assert.equal(request.rehydration.title, title);
-    assert.equal(nodes[0].markdown, rootMarkdown, `rehydrated root markdown: ${JSON.stringify(nodes[0])}`);
-    if (branchMarkdown) assert(nodes.some((node) => node.title === "Modern branch" && node.markdown === branchMarkdown), `rehydrated branch mismatch: ${JSON.stringify(nodes)}`);
+    assert.equal(JSON.stringify(request).includes("extensions"), false, `resume context leaked extensions: ${JSON.stringify(request)}`);
+    assert.equal(JSON.stringify(request).includes("rehydration"), false, `resume used the removed full-tree payload: ${JSON.stringify(request)}`);
+    assertNoCredentials(JSON.stringify(request), `${prefix} resume context`);
+    assert.deepEqual(request.thread.map((node) => node.id), [saved.root_id]);
+    assert.equal(request.thread[0].markdown, rootMarkdown, `resumed root markdown: ${JSON.stringify(request.thread[0])}`);
+    assert.equal(request.map.nodes.find((node) => node.id === saved.root_id)?.title, title);
+    if (branchMarkdown) assert(request.map.nodes.some((node) => node.title === "Modern branch"), `resume map lacks the prior branch: ${JSON.stringify(request.map)}`);
     await streamAnswer(mcp.client, request, "Resume answer");
+
+    const secondPromise = callTool(mcp.client, "open_rabbithole", { hole_id: imported.hole_id });
+    await selectAndAsk(page, "Select this exact phrase", "Use the same restored lineage");
+    const second = await secondPromise;
+    assert.equal(second.status, "branch_request");
+    assert.equal(Object.hasOwn(second, "thread"), false, "a second ask on the delivered lineage omits thread");
   } finally { await context.close(); await mcp.close(); }
 }
 
@@ -217,7 +223,9 @@ async function startMcp(dir) {
 async function callTool(client, name, args, options = {}) {
   const result = await client.callTool({ name, arguments: args }, undefined, { timeout: 15000, ...options });
   assert.equal(result.isError, undefined, `${name} failed: ${JSON.stringify(result)}`);
-  return JSON.parse(result.content[0].text);
+  const parsed = JSON.parse(result.content[0].text);
+  assert.equal(result.content[0].text, JSON.stringify(parsed), `${name} returns compact JSON text`);
+  return parsed;
 }
 
 async function selectAndAsk(page, phrase, question) {

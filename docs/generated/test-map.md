@@ -13,6 +13,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/unit/bridge.test.mjs` — bridge capability contracts.
 - `test/unit/clipboard-image.test.mjs` — clipboard image capability contracts.
 - `test/unit/content-blocks.test.mjs` — content blocks capability contracts.
+- `test/unit/context-model.test.mjs` — compact context map, deterministic tree order, thread, and delta-note contracts.
 - `test/unit/context-usage.test.mjs` — context usage capability contracts.
 - `test/unit/dev-reload.test.mjs` — dev reload capability contracts.
 - `test/unit/edge-scroll.test.mjs` — edge scroll capability contracts.
@@ -54,8 +55,10 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/contracts/filesystem-store.test.mjs` — filesystem store capability contracts.
 - `test/contracts/host-parity.test.mjs` — Shared engine state, persistence, and asset GC parity across the MCP and web host adapters.
 - `test/contracts/indexeddb-store.test.mjs` — indexeddb store capability contracts.
+- `test/contracts/mcp-context-budget.test.mjs` — branch context payload ceilings across the portable corpus and a 50-node note-heavy hole.
 - `test/contracts/mcp-list-rabbitholes.test.mjs` — bounded and searchable list_rabbitholes MCP contracts.
 - `test/contracts/mcp-markdown-wire.test.mjs` — mcp markdown wire capability contracts.
+- `test/contracts/mcp-read-rabbithole.test.mjs` — read_rabbithole selectors, disk/live delivery state, normalization, and file-root context contracts.
 - `test/contracts/mcp-short-ids.test.mjs` — MCP short-id, legacy-id, and copied-id boundary contracts.
 - `test/contracts/node-projection.test.mjs` — node projection capability contracts.
 - `test/contracts/preferences-wire.test.mjs` — machine preference patch validation and document-boundary capability contracts.

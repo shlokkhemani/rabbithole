@@ -987,11 +987,14 @@ async function assertInstalledHoleSurvives(binary, env) {
     assert.equal(opened.status, "branch_request", "pre-seeded pending hole must open after upgrade");
     assert.equal(opened.node_id, "saved-question");
     assert.equal(opened.saved, true, "pre-upgrade pending ask must be delivered as saved");
-    assert.ok(opened.rehydration, "opened pre-upgrade hole must include rehydration");
-    assert.equal(opened.rehydration.title, "Upgrade survivor");
+    assert.equal(Object.hasOwn(opened, "rehydration"), false, "the full-tree rehydration payload was removed");
     assert.ok(
-      opened.rehydration.nodes.some((node) => node.id === "root"),
-      "opened pre-upgrade hole must rehydrate its root node",
+      Array.isArray(opened.thread) && opened.thread.some((node) => node.id === "root"),
+      "opened pre-upgrade hole must carry its undelivered root lineage as thread",
+    );
+    assert.ok(
+      opened.map?.nodes?.some((node) => node.id === "root" && node.title === "Upgrade survivor"),
+      "opened pre-upgrade hole must index its root node in map",
     );
     return { listed: listed.holes.length, opened: "upgrade-survivor" };
   } finally {

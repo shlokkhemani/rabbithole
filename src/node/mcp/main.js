@@ -6,7 +6,7 @@ import {
   CONVERT_RULE,
   LISTENER_RULE,
   REGION_AND_ATTACHMENTS,
-  RESUME_AND_REHYDRATION,
+  CONTEXT_READING_RULE,
   STREAMING_RULE,
   SUB_AGENT_PROTOCOL,
 } from "./protocol.js";
@@ -61,10 +61,9 @@ const server = new McpServer(
       "over extracted text for math, tables, and figures. The region page number is included alongside it.",
       "When a branch_request includes attachments, read every attachments[].image_path before answering;",
       "these are images the human pasted directly into the question.",
-      "You already hold the documents you authored, so that's enough context. On a RESUMED hole the",
-      "first branch_request includes a 'rehydration' field with the full tree (plus any saved_asks);",
-      "read it to reload context. Use list_rabbitholes to find a saved hole to resume.",
-      RESUME_AND_REHYDRATION,
+      "Branch requests include a compact map and automatically carry a thread when this session has not delivered its lineage.",
+      "Use read_rabbithole when you need other saved node or note text verbatim.",
+      CONTEXT_READING_RULE,
       REGION_AND_ATTACHMENTS,
       "When the human explicitly asks you to save or send a new document to an existing canvas, use",
       "send_to_rabbithole. It publishes an answer document by default; choose kind='note' only for an annotation.",
@@ -82,7 +81,7 @@ const server = new McpServer(
 );
 
 function formatSuccessText(result) {
-  return JSON.stringify(result, null, 2);
+  return JSON.stringify(result);
 }
 
 function getErrorMessage(err) {

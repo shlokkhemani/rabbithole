@@ -12,7 +12,6 @@ import { unavailableContextUsage } from "../../context-gauge/usage.js";
 import { RequestTable } from "./request-table.js";
 import { SessionCrops } from "./crops.js";
 
-const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const SAVE_DEBOUNCE_MS = 400;
 
 /** Local server, lifetime, and owned state for one MCP-backed Rabbithole. */
@@ -114,8 +113,6 @@ export class SessionBase {
     this.lastContextBroadcastAt = 0;
     this.contextBroadcastTimer = null;
 
-    this.timeoutHandle = null;
-    this.timeoutAt = 0;
     this.saveChain = this.engine.saveChain;
     this.shutdownScheduled = false;
 
@@ -183,7 +180,6 @@ export class SessionBase {
       });
     });
 
-    this.touch();
     // Persist right away so the hole is resumable even if the process dies
     // before the first answer (durable asks depend on the file existing).
     this.scheduleSave();
@@ -193,35 +189,6 @@ export class SessionBase {
 
   isClosed() {
     return this.closed;
-  }
-
-  touch() {
-    if (this.closed) return;
-    this.timeoutAt = systemClock.now() + SESSION_TIMEOUT_MS;
-    if (this.timeoutHandle) return;
-    const check = () => {
-      this.timeoutHandle = null;
-      if (this.closed) return;
-      const remaining = this.timeoutAt - systemClock.now();
-      if (remaining > 0) {
-        this.timeoutHandle = setTimeout(check, remaining);
-        this.timeoutHandle.unref?.();
-        return;
-      }
-      // An open canvas is active even when the human is only reading. Keep its
-      // local URL and agent delivery lease stable instead of expiring the
-      // session and forcing a later resume into a second browser tab.
-      if (this.sseClients.size > 0) {
-        this.timeoutAt = systemClock.now() + SESSION_TIMEOUT_MS;
-        this.timeoutHandle = setTimeout(check, SESSION_TIMEOUT_MS);
-        this.timeoutHandle.unref?.();
-        return;
-      }
-      log(`Session ${this.id} timed out`);
-      this.close("timeout");
-    };
-    this.timeoutHandle = setTimeout(check, SESSION_TIMEOUT_MS);
-    this.timeoutHandle.unref?.();
   }
 
   close(reason = "session_closed") {
@@ -238,11 +205,6 @@ export class SessionBase {
       clearTimeout(this.contextBroadcastTimer);
       this.contextBroadcastTimer = null;
     }
-    if (this.timeoutHandle) {
-      clearTimeout(this.timeoutHandle);
-      this.timeoutHandle = null;
-    }
-    this.timeoutAt = 0;
     this.clearAnswerWatchdog();
     this.closePromise = this.flushSave();
 

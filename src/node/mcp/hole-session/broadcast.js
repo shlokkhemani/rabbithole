@@ -179,7 +179,6 @@ export class SessionBroadcast extends SessionListener {
 
   /** Add an explicit agent-published document without consuming or creating an agent listener. */
   async publishNode(event) {
-    this.touch();
     const effects = this.dispatchHoleEvent(event, { now: new Date().toISOString() });
     const node = effects.createdNode;
     this.scheduleSave();

@@ -622,12 +622,6 @@ export function refreshStatus() {
         "Reopened elsewhere",
         "This Rabbithole was just reopened in another tab — continue there. This view is now read-only.",
       );
-    else if (closedReason === "timeout")
-      setBanner(
-        "timeout",
-        "Session timed out",
-        "Everything is saved. Reopen this Rabbithole from your terminal to continue." + savedNote,
-      );
     else
       setBanner(
         "closed",

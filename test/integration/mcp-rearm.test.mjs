@@ -109,44 +109,43 @@ class FakeSseResponse {
   end() {}
 }
 
-async function runConnectedCanvasLifetimeFixture() {
+async function runIdleSessionLifetimeFixture() {
   const fakeTimeouts = useFakeTimeouts();
   let session;
-  let request;
   try {
     session = new RabbitholeSession({
-      holeId: "connected-canvas-lifetime",
-      title: "Connected Canvas Lifetime",
+      holeId: "idle-session-lifetime",
+      title: "Idle Session Lifetime",
       rootId: "root",
       nodes: [rootNode()],
       isResume: false,
       renderPage: () => "",
     });
-    session.url = "http://127.0.0.1:61234";
-    session.touch();
-
-    request = new FakeSseRequest();
-    await session.handleRequest(request, new FakeSseResponse());
-    assert.equal(session.sseClients.size, 1);
-    assert.equal(session.focusBrowser(), false, "focus must reuse a connected canvas instead of opening a duplicate tab");
-
-    session.timeoutAt = Date.now() - 1;
-    fakeTimeouts.advance(2 * 60 * 60 * 1000 + 1);
+    const listener = session.waitForEvent();
+    assert(session.waiter, "the connected agent listener must remain blocked while the canvas is idle");
+    fakeTimeouts.advance(3 * 60 * 60 * 1000);
     await Promise.resolve();
-    assert.equal(session.closed, false, "an open canvas must keep its local session alive while the human is reading");
-
-    request.emit("close");
-    session.timeoutAt = Date.now() - 1;
-    fakeTimeouts.advance(2 * 60 * 60 * 1000 + 1);
-    await Promise.resolve();
-    assert.equal(session.closed, true, "a canvas with no browser client still expires after the inactivity window");
+    assert.equal(session.closed, false, "a connected client must keep its session open after three idle hours");
+    const askPending = session.handleBrowserEvent({
+      type: "branch_request",
+      parent_id: session.rootId,
+      request_id: "three-hour-request",
+      node_id: "three-hour-node",
+      selected_text: "Root",
+      question: "Are you still listening?",
+    });
+    fakeTimeouts.advance(401);
+    const ask = await askPending;
+    const branch = await listener;
+    assert.equal(branch.status, "branch_request");
+    assert.equal(branch.request_id, ask.request_id);
+    assert.equal(branch.node_id, ask.node_id);
   } finally {
-    request?.emit("close");
     fakeTimeouts.restore();
-    await session?.close("connected_canvas_lifetime_test_complete");
+    await session?.close("idle_session_lifetime_test_complete");
   }
 
-  console.log("ok canvas lifetime: connected tab survives inactivity and focus never duplicates it");
+  console.log("ok session lifetime: a blocked listener survives three idle hours and receives the next ask");
 }
 
 async function runAgentPublishFixture() {
@@ -864,7 +863,7 @@ async function runDelegatedConcurrencyFixture() {
 }
 
 try {
-  await runConnectedCanvasLifetimeFixture();
+  await runIdleSessionLifetimeFixture();
   await runAgentPublishFixture();
   await runTransientSseReconnectFixture();
   await runZeroIdleTurnsAndSingleListenerFixture();

@@ -23,7 +23,6 @@ const pdfRuntimeAssetCache = new Map();
  * @param {import("node:http").ServerResponse} res
  */
 export async function handleSessionRequest(session, req, res) {
-  session.touch();
   const url = new URL(req.url || "/", session.url || "http://127.0.0.1");
   const assetRequestName = rawAssetRequestName(req.url);
 

@@ -65,7 +65,6 @@ export class SessionAnswer extends SessionBroadcast {
    * }} input
    */
   async answerBranch({ requestId, title, content, partial, delegated, baseUrl, assets, signal }) {
-    this.touch();
     if (this.closed) throw new Error("Rabbithole session is already closed");
     this.markAgentAttached();
     let request = this.requests.get(requestId);

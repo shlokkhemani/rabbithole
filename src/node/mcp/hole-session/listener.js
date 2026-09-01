@@ -19,7 +19,6 @@ export class SessionListener extends SessionBase {
     if (this.closed) return Promise.resolve(this.deliverToAgent({
       status: "session_closed", session_id: this.id, reason: this.closeReason,
     }));
-    this.touch();
     this.setContextBusy(false);
     this.markAgentAttached();
     if (this.queue.length > 0) return Promise.resolve(this.deliverToAgent(this.queue.shift()));

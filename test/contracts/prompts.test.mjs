@@ -79,5 +79,7 @@ assert.match(AUTHORING_VOCABULARY_V1, /flowcharts, sequence, class, state, and e
 assert.match(AUTHORING_VOCABULARY_V1, /Markdown Strings/);
 assert.match(AUTHORING_VOCABULARY_V1, /Do not put HTML tags such as <i>, <b>, or <br> in Mermaid labels/);
 assert.match(AUTHORING_VOCABULARY_V1, /mindmap, architecture, and Mermaid-side KaTeX syntax are not supported/);
+assert.match(AUTHORING_VOCABULARY_V1, /```show id=<slug>/);
+assert.match(AUTHORING_VOCABULARY_V1, /```check with strict JSON/);
 
 console.log("ok prompts: PDF attachments, note context and budget priority, byte-identical text-only messages, and Mermaid guidance");

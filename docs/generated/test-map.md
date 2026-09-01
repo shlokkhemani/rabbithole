@@ -57,6 +57,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/contracts/host-parity.test.mjs` — Shared engine state, persistence, and asset GC parity across the MCP and web host adapters.
 - `test/contracts/indexeddb-store.test.mjs` — indexeddb store capability contracts.
 - `test/contracts/mcp-context-budget.test.mjs` — branch context payload ceilings across the portable corpus and a 50-node note-heavy hole.
+- `test/contracts/mcp-copy.test.mjs` — MCP instruction and tool-description context budgets.
 - `test/contracts/mcp-list-rabbitholes.test.mjs` — bounded and searchable list_rabbitholes MCP contracts.
 - `test/contracts/mcp-markdown-wire.test.mjs` — mcp markdown wire capability contracts.
 - `test/contracts/mcp-read-rabbithole.test.mjs` — read_rabbithole selectors, disk/live delivery state, normalization, and file-root context contracts.

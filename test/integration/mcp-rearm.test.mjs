@@ -11,7 +11,8 @@ process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole
 const { openRabbithole, answerBranch, sendToRabbithole } = await import("../../src/node/rabbithole.js");
 const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
 const { defaultFsStore } = await import("../../src/node/fs-store.js");
-const { SUB_AGENT_PROTOCOL, toolDefinitions } = await import("../../src/node/tools/manifest.js");
+const { SERVER_INSTRUCTIONS } = await import("../../src/node/mcp/instructions.js");
+const { toolDefinitions } = await import("../../src/node/tools/manifest.js");
 const { RabbitholeSession } = await import("../../src/node/transport/session.js");
 
 function sleep(ms) {
@@ -451,24 +452,22 @@ async function runProgressKeepaliveFixture() {
   const openTool = toolDefinitions.find((tool) => tool.name === "open_rabbithole");
   const answerTool = toolDefinitions.find((tool) => tool.name === "answer_branch");
   assert(openTool && answerTool);
-  assert.match(openTool.description, /whenever the human says 'Rabbithole' or 'rabbit hole'/,
-    "tool discovery must recognize the product name as an explicit MCP request");
-  assert.match(openTool.description, /Never claim the canvas is open or that you are listening unless this call was actually invoked and remains running/,
-    "the open tool must forbid false listener claims");
-  assert.match(openTool.description, /Do not post a host-chat final answer or end the agent turn/,
-    "the open tool must preserve its blocking listener instead of handing back early");
-  assert.match(answerTool.description, /Do not post a host-chat final answer or end the agent turn/,
-    "the final answer call must preserve its re-armed listener");
-  assert.match(answerTool.description, /ordinary, never-delegated request/,
-    "the tool contract must scope blocking final-answer behavior to ordinary work");
-  assert.equal(openTool.description.includes(SUB_AGENT_PROTOCOL), true,
-    "the open tool must carry the canonical sub-agent protocol");
-  assert.equal(answerTool.description.includes(SUB_AGENT_PROTOCOL), true,
-    "the answer tool must carry the canonical sub-agent protocol");
-  assert.match(answerTool.input.partial.description, /protocol step 4/,
-    "the partial parameter must preserve delegated return behavior");
-  assert.match(answerTool.input.delegated.description, /protocol steps 2 and 5/,
-    "the delegated parameter must point to the canonical state-only calls");
+  assert.match(SERVER_INSTRUCTIONS, /"Rabbithole" or "rabbit hole" in a request means use this server/,
+    "server discovery must recognize the product name as an explicit MCP request");
+  assert.match(SERVER_INSTRUCTIONS, /The pending call is the listener: never poll or re-call while one is running/,
+    "the shared instructions must explain the one-listener rule for both blocking tools");
+  assert.equal([SERVER_INSTRUCTIONS, openTool.description, answerTool.description]
+    .filter((text) => text.includes("The pending call is the listener")).length, 1,
+  "the listener rule must have one agent-facing home");
+  assert.match(SERVER_INSTRUCTIONS, /never claim you are listening unless a blocking call is running/,
+    "the shared instructions must forbid false listener claims");
+  assert.match(answerTool.input.delegated.description,
+    /true right after spawning a sub-agent[\s\S]*restore the listener with open_rabbithole \{hole_id\}/,
+    "the delegated parameter must carry the restore-listener rule");
+  assert.doesNotMatch(answerTool.input.partial.description, /protocol\s+step/i,
+    "the partial parameter must not refer to a deleted numbered protocol");
+  assert.doesNotMatch(answerTool.input.delegated.description, /protocol\s+step/i,
+    "the delegated parameter must not refer to a deleted numbered protocol");
   process.env.RABBITHOLE_PROGRESS_INTERVAL_MS = "10";
   try {
     const openingController = new AbortController();

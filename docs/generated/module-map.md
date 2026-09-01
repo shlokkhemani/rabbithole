@@ -114,12 +114,12 @@ This inventory is derived from the source tree.
 - `src/node/mcp/http/export.js`
 - `src/node/mcp/http/page.js`
 - `src/node/mcp/http/routes.js`
+- `src/node/mcp/instructions.js`
 - `src/node/mcp/main.js`
 - `src/node/mcp/note-hashes.js`
 - `src/node/mcp/open.js`
 - `src/node/mcp/pdf/crop.js`
 - `src/node/mcp/pdf/ingest.js`
-- `src/node/mcp/protocol.js`
 - `src/node/mcp/registry.js`
 - `src/node/mcp/server.js`
 - `src/node/mcp/store/fs-store.js`

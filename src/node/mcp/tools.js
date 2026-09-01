@@ -6,18 +6,8 @@ import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
 import { validateAssetEntriesSync } from "./store/fs-store.js";
 import fs from "node:fs";
 import { z } from "zod";
-import {
-  CONVERT_RULE,
-  LISTENER_RULE,
-  REGION_AND_ATTACHMENTS,
-  CONTEXT_READING_RULE,
-  STREAMING_RULE,
-  SUB_AGENT_PROTOCOL,
-} from "./protocol.js";
 
 const PROGRESS_INTERVAL_MS = 4 * 60 * 1000;
-
-export { SUB_AGENT_PROTOCOL } from "./protocol.js";
 
 const assetInput = z.object({
   name: z.string().max(300).describe("Filename to use in markdown asset: references, e.g. diagram-1.png"),
@@ -98,38 +88,16 @@ export const toolDefinitions = [
   {
     name: "open_rabbithole",
     description:
-      "Use this tool whenever the human says 'Rabbithole' or 'rabbit hole' and wants content presented, explained, or explored there. " +
-      "Rabbithole is this MCP product, not a Markdown outline or a generic step-by-step format. " +
-      "Open a document on an infinite canvas so the human can read it and dive down rabbit holes. " +
-      "Start a NEW hole with { title, content } (or { title, file_path }), or RESUME a saved one with " +
-      "{ hole_id } (use list_rabbitholes to find it). " +
-      "When opening content fetched from a URL or repo, pass the document's own URL as base_url so " +
-      "relative images and links resolve. " +
-      "For local images that are not on the web, pass assets and reference them as ![alt](asset:name.png). " +
-      "For a local PDF, pass its path directly as file_path; Rabbithole extracts text and opens native JPEG pages automatically. " +
-      "For arXiv, prefer the HTML version with base_url when available. " +
-      "The canvas opens in the browser and this call BLOCKS until the human acts. " +
-      "It returns status='branch_request' when the human selects text and asks a question — answer it " +
-      "with answer_branch. " +
-      "A branch_request with EMPTY selected_text is a follow-up question about the " +
-      "parent document as a whole (a chat reply beneath it) — answer conversationally in that document's " +
-      "context. A branch_request may carry a 'lens' preset key (explain | eli5 | deeper | custom) and a separate 'instruction'; " +
-      "honor the instruction while answering the human's question. An empty question means the selection or whole parent document is implicit. One marked saved=true was asked while no " +
-      "agent was listening — answer it like any other. When attachments are present, read every attachments[].image_path; these are images pasted into the question. When region.image_path is present, it is either " +
-      "this selection's clip or the immediate parent's clip; read that image before answering and trust it over extracted text for math, tables, and figures. " +
-      "When anchor.block is present, the selection came from that rendered visual block; use the matching fenced source in the parent document as context. " +
-      "A convert_request asks you to transcribe the listed page image_path files under its inline rules; stream the document through answer_branch with that request_id. " +
-      "A branch_request includes a compact map and may include a thread when this session has not delivered its lineage. " +
-      "Long waits remain blocked and should be left running in the background; never poll the canvas. " +
-      "The pending tool call itself is the listener. Never claim the canvas is open or that you are listening unless this call was actually invoked and remains running. " +
-      "Do not post a host-chat final answer or end the agent turn merely to announce that Rabbithole opened; keep this call pending until a real canvas event arrives. " +
-      "If the host truly cancels or times out the tool call, re-call open_rabbithole { hole_id } once; " +
-      "nothing is lost and asks are saved. A status='already_listening' result means another live " +
-      "background call owns delivery; do not call again. Reconnecting the agent never requires focus. " +
-      "Only when the human explicitly asks to see the canvas, resume with { hole_id, focus: true }; " +
-      "a live browser tab is reused and a tab is opened only when none is connected. " +
-      "It returns status='session_closed' with a reason when the human clicks Done or the session otherwise ends.\n\n" +
-      [REGION_AND_ATTACHMENTS, CONVERT_RULE, CONTEXT_READING_RULE, LISTENER_RULE, SUB_AGENT_PROTOCOL].join("\n\n"),
+      "Open a new Rabbithole document or resume a saved one, then wait for the next canvas event. " +
+      "Start with {title, content} or {file_path}; resume with {hole_id}, using list_rabbitholes if needed. " +
+      "Use base_url for content fetched from a URL or repository so relative links and images resolve. " +
+      "file_path accepts Markdown or PDF; PDFs open as native page images with extracted text. " +
+      "If a branch_request includes region.image_path, read it before answering, use region.page for its page number, and trust the image over extracted text for math, tables, and figures; also read every attachments[].image_path. " +
+      "anchor.block identifies a rendered visual selection, so use the matching fenced source in the parent document. " +
+      "For convert_request, read pages[].image_path in order, follow its inline rules, and stream the transcription through answer_branch; the host handles figure: references. " +
+      '{status:"already_listening"} means another call owns delivery, so do not call again. ' +
+      'Host cancellation returns {status:"cancelled"}. ' +
+      "session_closed has reason done, server_error, agent_exited, superseded (the hole was opened again), or session_closed.",
     input: {
       title: z.string().max(2000).describe("Document title (required for a new hole)").optional(),
       content: z.string().max(10485760).describe("Raw markdown for the starting document").optional(),
@@ -159,16 +127,9 @@ export const toolDefinitions = [
   {
     name: "answer_branch",
     description: [
-      "Answer one pending branch_request or convert_request from an open Rabbithole. For convert_request, read every pages[].image_path in order, follow rules exactly, stream transcription chunks, and emit figure: refs rather than cropping. For branch_request, write a focused answer using the supplied selection context; read every attachments[].image_path when attachments are present. When region.image_path is present, it may be the new selection clip or the immediate parent's clip, so read it and trust it over extracted text.",
+      "Answer one pending request in an open Rabbithole.",
       "",
       AUTHORING_VOCABULARY_V1,
-      "",
-      REGION_AND_ATTACHMENTS,
-      CONVERT_RULE,
-      STREAMING_RULE,
-      LISTENER_RULE,
-      "",
-      SUB_AGENT_PROTOCOL,
     ].join("\n"),
     input: {
       session_id: z.string().max(200).describe("Active session ID from open_rabbithole"),
@@ -182,10 +143,10 @@ export const toolDefinitions = [
         .describe("Local image files to attach to this hole; reference them in markdown as asset:name.png images")
         .optional(),
       partial: z.boolean()
-        .describe("true streams this normal answer chunk and returns immediately; omit/false finishes it. An ordinary final becomes the listener; a retained delegated final returns immediately (protocol step 4)")
+        .describe("true renders this chunk and returns immediately; omit/false finishes it. A final for retained delegated work also returns immediately")
         .optional(),
       delegated: z.boolean()
-        .describe("State-only flag for protocol steps 2 and 5: true delegates; false reclaims. Use only on a branch_request. When present, send exactly session_id, request_id, and delegated; never use it on a convert_request")
+        .describe("State-only for branch_request: use true right after spawning a sub-agent for this request, then restore the listener with open_rabbithole {hole_id}; use false to reclaim the request yourself. Send only session_id, request_id, and delegated; never use for convert_request")
         .optional(),
     },
     validateInput: validateAnswer,
@@ -205,8 +166,8 @@ export const toolDefinitions = [
   {
     name: "read_rabbithole",
     description:
-      "Read a saved or open Rabbithole without a listener: map only by default; thread_of returns the lineage root→node with markdown and notes; node_ids returns specific nodes; notes returns every note. " +
-      "Use it before answering when the ask refers to text you do not hold verbatim.",
+      "Read saved or open Rabbithole context without starting a listener. " +
+      "The default returns the map; use thread_of for a lineage with markdown and notes, node_ids for up to 20 specific nodes, and notes for all notes.",
     input: {
       hole_id: z.string().max(200).describe("Saved or open Rabbithole id"),
       thread_of: z.string().max(200)
@@ -228,11 +189,8 @@ export const toolDefinitions = [
   {
     name: "send_to_rabbithole",
     description:
-      "Durably publish a completed document to an existing Rabbithole only when the human explicitly asks you to send or save content there. " +
-      "This never opens or focuses a browser and never answers a pending branch request. The default kind is answer: model-authored content appears as a normal completed document. " +
-      "Use kind='note' only when you genuinely mean to annotate the canvas; the note carries agent attribution. Omit parent_node_id for a standalone canvas document, " +
-      "or provide a known node id to place it beneath that node. Supply a stable operation_id and reuse it for retries so the document is created exactly once. " +
-      "It appears immediately when that Rabbithole has a connected canvas in this MCP session; otherwise it is stored for the next open.",
+      "Publish a completed document to a saved Rabbithole without opening its canvas. " +
+      "Use a stable operation_id for retries, parent_node_id to place it below a node, and kind='note' only for an annotation.",
     input: {
       hole_id: z.string().max(200).describe("Saved Rabbithole id from list_rabbitholes or prior context"),
       operation_id: z.string().max(200).describe("Caller-chosen stable id for this one publish operation; reuse unchanged on retry"),
@@ -258,9 +216,8 @@ export const toolDefinitions = [
   {
     name: "list_rabbitholes",
     description:
-      "List up to 10 saved Rabbitholes (most recently updated first) so you can resume one by hole_id via " +
-      "open_rabbithole. Filter titles with query or request up to 50 with limit. Returns id, title, " +
-      "last-updated time, and node count for each, plus the total matching count before the limit.",
+      "List saved Rabbitholes for selecting a hole_id to resume. " +
+      "Results are newest first and may be bounded or filtered.",
     input: {
       limit: z.coerce.number().catch(10)
         .describe("Maximum results to return; defaults to 10 and clamps to 1–50")

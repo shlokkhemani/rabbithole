@@ -4,31 +4,31 @@
 
 ## open_rabbithole
 
-Use this tool whenever the human says 'Rabbithole' or 'rabbit hole' and wants content presented, explained, or explored there.
+Open a new Rabbithole document or resume a saved one, then wait for the next canvas event.
 
 Inputs: `title`, `content`, `file_path`, `base_url`, `assets`, `hole_id`, `focus`
 
 ## answer_branch
 
-Answer one pending branch_request or convert_request from an open Rabbithole.
+Answer one pending request in an open Rabbithole.
 
 Inputs: `session_id`, `request_id`, `title`, `content`, `base_url`, `assets`, `partial`, `delegated`
 
 ## read_rabbithole
 
-Read a saved or open Rabbithole without a listener: map only by default; thread_of returns the lineage root→node with markdown and notes; node_ids returns specific nodes; notes returns every note.
+Read saved or open Rabbithole context without starting a listener.
 
 Inputs: `hole_id`, `thread_of`, `node_ids`, `notes`
 
 ## send_to_rabbithole
 
-Durably publish a completed document to an existing Rabbithole only when the human explicitly asks you to send or save content there.
+Publish a completed document to a saved Rabbithole without opening its canvas.
 
 Inputs: `hole_id`, `operation_id`, `title`, `content`, `parent_node_id`, `kind`
 
 ## list_rabbitholes
 
-List up to 10 saved Rabbitholes (most recently updated first) so you can resume one by hole_id via open_rabbithole.
+List saved Rabbitholes for selecting a hole_id to resume.
 
 Inputs: `limit`, `query`
 

@@ -5,7 +5,7 @@ export const AUTHORING_VOCABULARY_V1 = [
   "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
   "- Use standard ```mermaid fences for flowcharts, sequence, class, state, and entity-relationship diagrams.",
   "- Format Mermaid flowchart labels with Markdown Strings: wrap a quoted label in backticks, use *italic* or **bold**, and use real newlines for line breaks. Do not put HTML tags such as <i>, <b>, or <br> in Mermaid labels.",
-  "- Use ```show for bespoke spatial explanations that Mermaid cannot express well: architecture layouts, memory diagrams, comparisons, and custom relationships.",
+  "- Use ```show id=<slug> for bespoke spatial explanations that Mermaid cannot express well: architecture layouts, memory diagrams, comparisons, and custom relationships. The id attribute is optional.",
   "- show dialect: HTML/CSS/inline-SVG only; no scripts. Scripts and unsafe attributes are stripped.",
   "- show craft: prefer HTML/CSS layout with flexbox/grid over absolute SVG coordinates.",
   "- Design visuals for about 380px card width; make them fluid and keep labels short.",
@@ -21,9 +21,9 @@ export const AUTHORING_VOCABULARY_V1 = [
   "flowchart LR",
   '  Question["`A **good** question`"] --> Explore --> Understand',
   "```",
+  '- Use ```check with strict JSON for a quiz, for example {"question":"2 + 2?","options":["3","4"],"answer":1}.',
   "- Mermaid mindmap, architecture, and Mermaid-side KaTeX syntax are not supported; use ```show or ordinary math around the diagram instead.",
-  "- Streaming choreography: send prose in 1-3 sentence chunks as usual.",
-  "- Emit each visual fence contiguously, ideally in one chunk; readers see a placeholder until the fence closes.",
+  "- Send any visual fence in one chunk; readers see a placeholder until the fence closes.",
   "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
 ].join("\n");
 

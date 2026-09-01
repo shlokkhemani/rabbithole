@@ -418,20 +418,20 @@ class McpProcess {
 async function initializeInstalledMcp(binary, env, clientName) {
   const mcp = new McpProcess(binary, env, clientName);
   try {
-    return await mcp.initialize();
+    await mcp.initialize();
+    return await mcp.request("tools/list", {});
   } finally {
     await mcp.close();
   }
 }
 
 function initializeShape(response) {
-  return {
-    jsonrpc: response.jsonrpc,
-    protocolVersion: response.result.protocolVersion,
-    capabilities: response.result.capabilities,
-    serverInfo: response.result.serverInfo,
-    instructions: response.result.instructions,
-  };
+  return response.result.tools
+    .map((tool) => ({
+      name: tool.name,
+      inputKeys: Object.keys(tool.inputSchema?.properties || {}).sort(),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function spawnInstalledBridge(binary, args, env) {
@@ -987,7 +987,7 @@ async function assertInstalledHoleSurvives(binary, env) {
     assert.equal(opened.status, "branch_request", "pre-seeded pending hole must open after upgrade");
     assert.equal(opened.node_id, "saved-question");
     assert.equal(opened.saved, true, "pre-upgrade pending ask must be delivered as saved");
-    assert.equal(Object.hasOwn(opened, "rehydration"), false, "the full-tree rehydration payload was removed");
+    assert.equal(Object.hasOwn(opened, "rehydration"), false, "the removed full-tree payload must stay absent");
     assert.ok(
       Array.isArray(opened.thread) && opened.thread.some((node) => node.id === "root"),
       "opened pre-upgrade hole must carry its undelivered root lineage as thread",

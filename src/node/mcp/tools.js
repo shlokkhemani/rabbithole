@@ -228,9 +228,17 @@ export const toolDefinitions = [
   {
     name: "list_rabbitholes",
     description:
-      "List saved Rabbitholes (most recently updated first) so you can resume one by hole_id via " +
-      "open_rabbithole. Returns id, title, last-updated time, and node count for each.",
-    input: {},
-    run: () => listRabbitholes(),
+      "List up to 10 saved Rabbitholes (most recently updated first) so you can resume one by hole_id via " +
+      "open_rabbithole. Filter titles with query or request up to 50 with limit. Returns id, title, " +
+      "last-updated time, and node count for each, plus the total matching count before the limit.",
+    input: {
+      limit: z.coerce.number().catch(10)
+        .describe("Maximum results to return; defaults to 10 and clamps to 1–50")
+        .optional(),
+      query: z.string().max(2000)
+        .describe("Case-insensitive substring filter on the Rabbithole title")
+        .optional(),
+    },
+    run: (params = {}) => listRabbitholes(params),
   },
 ];

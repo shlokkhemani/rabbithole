@@ -22,7 +22,7 @@ Inputs: `hole_id`, `operation_id`, `title`, `content`, `parent_node_id`, `kind`
 
 ## list_rabbitholes
 
-List saved Rabbitholes (most recently updated first) so you can resume one by hole_id via open_rabbithole.
+List up to 10 saved Rabbitholes (most recently updated first) so you can resume one by hole_id via open_rabbithole.
 
-Inputs: none.
+Inputs: `limit`, `query`
 

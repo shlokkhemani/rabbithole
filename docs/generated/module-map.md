@@ -132,6 +132,7 @@ This inventory is derived from the source tree.
 - `src/node/shared/errno.js`
 - `src/node/shared/http-guard.js`
 - `src/node/shared/http.js`
+- `src/node/shared/ids.js`
 - `src/node/shared/logger.js`
 - `src/node/shared/ndjson.js`
 - `src/node/shared/process.js`

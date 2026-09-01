@@ -176,8 +176,23 @@ export async function answerBranch({ sessionId, requestId, title, content, parti
 }
 
 /** List saved Rabbitholes (most-recently-updated first). */
-export async function listRabbitholes() {
-  return { holes: await defaultFsStore.listHoles() };
+/** @param {{limit?: unknown, query?: unknown}} [input] */
+export async function listRabbitholes({ limit, query } = {}) {
+  const holes = await defaultFsStore.listHoles();
+  const normalizedQuery = String(query ?? "").trim().toLowerCase();
+  const matching = normalizedQuery
+    ? holes.filter((hole) => String(hole.title ?? "").toLowerCase().includes(normalizedQuery))
+    : holes;
+  return {
+    holes: matching.slice(0, normalizeListLimit(limit)),
+    total: matching.length,
+  };
+}
+
+function normalizeListLimit(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 10;
+  return Math.min(50, Math.max(1, Math.floor(numeric)));
 }
 
 /**

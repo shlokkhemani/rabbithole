@@ -959,6 +959,21 @@ async function verifyDockedNotes() {
       `entering edit must not shift the first glyph: ${JSON.stringify({ readState, editState })}`);
     assert.deepEqual(editState.chrome, { background: "rgba(0, 0, 0, 0)", borderLeft: "0px", radius: "0px" },
       "the edit state is plain: no wash, no left rule, no radius");
+    const originalRootLeft = await rootCard.evaluate((card) => {
+      const left = card.style.left;
+      card.style.left = "733px";
+      return left;
+    });
+    const editor = popover.locator(".note-editor");
+    await editor.fill("");
+    await editor.focus();
+    await page.keyboard.type("t ");
+    await page.waitForTimeout(50);
+    assert.equal(await rootCard.evaluate((card) => card.style.left), "733px",
+      "typing t in a docked-note editor must not tidy the canvas");
+    assert.equal((await editor.textContent()).replaceAll("\u00a0", " ").replace(/\n+$/, ""), "t ",
+      "single-key shortcuts must type into a docked-note editor");
+    await rootCard.evaluate((card, left) => { card.style.left = left; }, originalRootLeft);
     await popover.locator(".note-editor").fill("Text that Escape must throw away");
     await page.keyboard.press("Escape");
     await popover.locator(".note-pop-view").waitFor();

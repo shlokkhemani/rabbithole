@@ -55,7 +55,13 @@ function onPointerdown(event) {
   )
     return;
   if (layer.ignoreOutsidePointer?.(event)) return;
-  if (layer.preventOutsidePointerDefault) consumePointerGesture(event);
+  const preventOutsidePointerDefault = layer.preventOutsidePointerDefault;
+  if (
+    typeof preventOutsidePointerDefault === "function"
+      ? preventOutsidePointerDefault(event)
+      : preventOutsidePointerDefault
+  )
+    consumePointerGesture(event);
   layer.onClose("outside-pointer");
   if (layer.restoreFocus)
     layer.focusTimer = setTimeout(function () {
@@ -69,6 +75,9 @@ function syncListeners() {
   document[method]("pointerdown", onPointerdown, true);
 }
 
+/**
+ * @param {{ element: Element, trigger?: Element | null, onClose: (reason: string) => void, ignoreOutsidePointer?: ((event: PointerEvent) => boolean) | null, closeOnEscape?: boolean, closeOnOutsidePointer?: boolean, preventOutsidePointerDefault?: boolean | ((event: PointerEvent) => boolean), restoreFocus?: boolean }} options
+ */
 export function registerLayer(options) {
   const layer = {
     element: options.element,
@@ -77,7 +86,8 @@ export function registerLayer(options) {
     ignoreOutsidePointer: options.ignoreOutsidePointer || null,
     closeOnEscape: options.closeOnEscape !== false,
     closeOnOutsidePointer: options.closeOnOutsidePointer !== false,
-    preventOutsidePointerDefault: options.preventOutsidePointerDefault !== false,
+    preventOutsidePointerDefault:
+      options.preventOutsidePointerDefault === undefined ? true : options.preventOutsidePointerDefault,
     restoreFocus: options.restoreFocus !== false,
     previousFocus: document.activeElement,
     focusTimer: 0,

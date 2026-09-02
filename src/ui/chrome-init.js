@@ -1,6 +1,7 @@
 import { tidy } from "./canvas/index.js";
 import { currentNodeId, flashHint, mode, nodes } from "./core.js";
 import { hydrateInitialState } from "./hydrate.js";
+import { isTypingTarget } from "./input-intent.js";
 import { createCleanupScope } from "./kit/scope.js";
 import { togglePalette } from "./palette.js";
 import { applyTheme } from "./preferences.js";
@@ -39,7 +40,7 @@ function onGlobalKeydown(e) {
     togglePalette();
     return;
   }
-  if (e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT")) return;
+  if (isTypingTarget(e)) return;
   if (e.key === "?") {
     flashHint(
       mode === "canvas"

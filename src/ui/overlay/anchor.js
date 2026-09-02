@@ -208,7 +208,7 @@ export function anchorSurface(trigger, surface, options) {
 }
 
 /**
- * @param {{ surface: Element, anchor: Element | { getBoundingClientRect: () => DOMRect, contextElement?: Element }, placement?: string, trackAnchorVisibility?: boolean, trigger?: Element, restoreFocus?: boolean, closeOnOutsidePointer?: boolean, preventOutsidePointerDefault?: boolean, ignoreOutsidePointer?: (event: PointerEvent) => boolean, onClose?: (reason: string) => void }} options
+ * @param {{ surface: Element, anchor: Element | { getBoundingClientRect: () => DOMRect, contextElement?: Element }, placement?: string, trackAnchorVisibility?: boolean, trigger?: Element, restoreFocus?: boolean, closeOnOutsidePointer?: boolean, preventOutsidePointerDefault?: boolean | ((event: PointerEvent) => boolean), ignoreOutsidePointer?: (event: PointerEvent) => boolean, onClose?: (reason: string) => void }} options
  */
 export function openAnchoredSurface(options) {
   const surface = options.surface;

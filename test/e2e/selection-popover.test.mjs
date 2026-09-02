@@ -19,6 +19,38 @@ try {
   await page.waitForSelector(".card.root .doc-content p:nth-of-type(2)");
 
   const paragraphs = page.locator(".card.root .doc-content p");
+  const wholeParagraph = "The middle paragraph should open the selection popover.";
+  const paragraphBox = await paragraphs.nth(0).boundingBox();
+  assert.ok(paragraphBox, "the triple-click target must have visible geometry");
+  const paragraphPoint = { x: paragraphBox.x + 36, y: paragraphBox.y + 10 };
+  const clickOnceWithCount = async (clickCount) => {
+    await page.mouse.move(paragraphPoint.x, paragraphPoint.y);
+    await page.mouse.down({ clickCount });
+    await page.mouse.up({ clickCount });
+  };
+  await clickOnceWithCount(1);
+  await clickOnceWithCount(2);
+  await page.waitForSelector("#ask.visible");
+  await paragraphs.nth(0).evaluate((paragraph) => {
+    paragraph.addEventListener(
+      "mouseup",
+      () => {
+        window.__tripleClickSelection = window.getSelection().toString();
+      },
+      { once: true },
+    );
+  });
+  await clickOnceWithCount(3);
+  assert.equal(
+    await page.evaluate(() => window.__tripleClickSelection?.trim() || ""),
+    wholeParagraph,
+    "a third click through the open Ask surface must select the whole paragraph",
+  );
+  await page.waitForSelector("#ask.visible");
+
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#ask:not(.visible)", { state: "attached" });
+
   await paragraphs.nth(0).click({ clickCount: 3, position: { x: 36, y: 10 } });
   await page.waitForSelector("#ask.visible");
 

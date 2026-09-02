@@ -335,6 +335,10 @@ function openAskSurface(anchor, owner) {
     // text — the viewport can't scroll away from itself.
     trackAnchorVisibility: !mobile,
     restoreFocus: false,
+    preventOutsidePointerDefault: function (event) {
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+      return !!composedClosest(path[0] || event.target, ".viz-mounted, .rh-lightbox");
+    },
     ignoreOutsidePointer: function (event) {
       return !!closestEl(event.target, ".rh-pdf-zoom-control");
     },

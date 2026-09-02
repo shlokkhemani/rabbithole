@@ -68,6 +68,39 @@ export function collectNewNotes(nodes, { deliveredNoteHashes = new Map(), noteHa
     .map(noteEntry);
 }
 
+/**
+ * Character budget for an auto-sent thread. A thread scales with lineage
+ * depth and answer length, not canvas size, so it is the one branch payload
+ * that needs a ceiling. Entries are admitted nearest-first (the parent holds
+ * the selection); anything past the budget is stubbed with `omitted: true`
+ * so the agent can fetch it deliberately with read_rabbithole.
+ */
+export const THREAD_BUDGET_CHARS = 24000;
+
+/**
+ * The lineage entries the agent provably never received, in root→node order.
+ * Note nodes on the lineage travel as `on_lineage` notes, and pending nodes
+ * have no markdown yet, so neither belongs here.
+ * @param {NodeCollection} nodes
+ * @param {string} nodeId
+ * @param {{ delivered: Set<string>, budget?: number }} options
+ */
+export function buildUndeliveredThread(nodes, nodeId, { delivered, budget = THREAD_BUDGET_CHARS }) {
+  const undelivered = lineageNodesFromMap(nodes, nodeId)
+    .filter((node) => !isNoteNode(node) && node.status !== "pending" && !delivered.has(node.id));
+  let remaining = budget;
+  const entries = new Map();
+  for (const node of [...undelivered].reverse()) {
+    const entry = buildNodeContext(nodes, node);
+    const size = JSON.stringify(entry).length;
+    if (size > remaining) continue;
+    remaining -= size;
+    entries.set(node.id, entry);
+  }
+  return undelivered.map((node) => entries.get(node.id)
+    || { id: node.id, title: node.title || "Untitled", chars: String(node.markdown || "").length, omitted: true });
+}
+
 /** @param {NodeCollection} nodes @param {string} nodeId */
 export function buildThread(nodes, nodeId) {
   return lineageNodesFromMap(nodes, nodeId)

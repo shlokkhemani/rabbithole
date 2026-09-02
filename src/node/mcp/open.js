@@ -298,6 +298,9 @@ export async function sendToRabbithole({ holeId, operationId, title, content, pa
       kind,
     });
     const node = await liveSession.publishNode(event);
+    // The agent authored this text, so it is delivered the moment it lands.
+    if (isNoteNode(node)) recordDeliveredNoteEntries(liveSession.deliveredNoteHashes, [noteEntry(node)]);
+    else liveSession.delivered.add(node.id);
     return publishResult(node, liveSession, false);
   }
 

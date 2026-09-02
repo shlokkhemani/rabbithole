@@ -1,6 +1,4 @@
-import { isNoteNode } from "../../../core/hole/ask.js";
-import { buildMap, buildThread, collectBranchNotes, collectNewNotes } from "../../../core/hole/context.js";
-import { lineageNodesFromMap } from "../../../core/hole/tree.js";
+import { buildMap, buildUndeliveredThread, collectBranchNotes, collectNewNotes } from "../../../core/hole/context.js";
 import { openBrowser } from "../../shared/process.js";
 import { log } from "../../shared/logger.js";
 import { noteHashesForNodes, notesFromContextEntries, recordDeliveredNoteEntries } from "../note-hashes.js";
@@ -90,19 +88,18 @@ export class SessionListener extends SessionBase {
       const noteOptions = { deliveredNoteHashes: this.deliveredNoteHashes, noteHashes };
       event.map = buildMap(this.nodes, this.rootId, noteOptions);
 
-      const notes = collectBranchNotes(this.nodes, event.parent_node_id, noteOptions);
-      if (notes.length) event.notes = notes;
+      // Only lineage text this process never sent or received travels here;
+      // an omitted stub is not a delivery, so it is offered again next ask.
+      const thread = buildUndeliveredThread(this.nodes, event.parent_node_id, { delivered: this.delivered });
+      const sent = thread.filter((entry) => !entry.omitted);
+      if (thread.length) event.thread = thread;
+      for (const entry of sent) this.delivered.add(entry.id);
 
-      const lineageHasUndeliveredNode = lineageNodesFromMap(this.nodes, event.parent_node_id)
-        .some((node) => !isNoteNode(node) && node.status !== "pending" && !this.delivered.has(node.id));
-      const thread = lineageHasUndeliveredNode ? buildThread(this.nodes, event.parent_node_id) : [];
-      if (thread.length) {
-        event.thread = thread;
-        for (const entry of thread) {
-          if (!isNoteNode(this.nodes.get(entry.id))) this.delivered.add(entry.id);
-        }
-      }
-      recordDeliveredNoteEntries(this.deliveredNoteHashes, [...notes, ...notesFromContextEntries(thread)]);
+      const threadNoteIds = new Set(notesFromContextEntries(sent).map((note) => note.note_id));
+      const notes = collectBranchNotes(this.nodes, event.parent_node_id, noteOptions)
+        .filter((note) => !threadNoteIds.has(note.note_id));
+      if (notes.length) event.notes = notes;
+      recordDeliveredNoteEntries(this.deliveredNoteHashes, [...notes, ...notesFromContextEntries(sent)]);
     } else if (event.status === "session_closed") {
       const noteHashes = noteHashesForNodes(this.nodes);
       const notes = collectNewNotes(this.nodes, { deliveredNoteHashes: this.deliveredNoteHashes, noteHashes });

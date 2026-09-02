@@ -156,7 +156,10 @@ export class SessionAnswer extends SessionBroadcast {
     if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(answered);
     this.dispatchHoleEvent(answered);
     const finalNode = this.nodes.get(nodeId);
-    this.delivered.add(finalNode.id);
+    // A delegated final was written by a sub-agent; the listener that will
+    // field the next ask on this node never saw its text, so it stays
+    // undelivered and rides along as thread when that ask arrives.
+    if (!nonBlocking) this.delivered.add(finalNode.id);
     this.requests.answer(requestId, finalNode.id);
 
     this.broadcast(buildNodeAnsweredEvent(finalNode));

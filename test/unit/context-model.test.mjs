@@ -1,6 +1,6 @@
 /** @protects compact context map, deterministic tree order, thread, and delta-note contracts. */
 import assert from "node:assert/strict";
-import { buildMap, buildThread, collectBranchNotes, collectNewNotes } from "../../src/core/hole/context.js";
+import { buildMap, buildThread, buildUndeliveredThread, collectBranchNotes, collectNewNotes } from "../../src/core/hole/context.js";
 import { depthFirstNodes } from "../../src/core/hole/tree.js";
 
 const nodes = new Map([
@@ -55,6 +55,29 @@ assert.deepEqual(buildThread(nodes, "nested"), [
   },
   { id: "nested", title: "Nested", markdown: "Nested markdown", notes: [] },
 ]);
+
+assert.deepEqual(
+  buildUndeliveredThread(nodes, "nested", { delivered: new Set(["root", "nested"]) }).map((entry) => entry.id),
+  ["early"],
+  "only lineage nodes never delivered travel as thread; delivered ancestors are skipped",
+);
+assert.deepEqual(buildUndeliveredThread(nodes, "nested", { delivered: new Set(["root", "early", "nested"]) }), []);
+assert.deepEqual(
+  buildUndeliveredThread(nodes, "docked-note", { delivered: new Set(["root"]) }).map((entry) => entry.id),
+  ["early"],
+  "note nodes on the lineage ride as on_lineage notes, never as thread entries",
+);
+assert.deepEqual(
+  buildUndeliveredThread(nodes, "pending", { delivered: new Set() }).map((entry) => entry.id),
+  ["orphan"],
+  "pending nodes have no markdown to deliver",
+);
+
+const budgeted = buildUndeliveredThread(nodes, "nested", { delivered: new Set(), budget: 140 });
+assert.deepEqual(budgeted.map((entry) => [entry.id, entry.omitted === true]), [["root", false], ["early", true], ["nested", false]],
+  "the budget admits nearest-first, skips an entry that does not fit, and keeps root→node order");
+assert.deepEqual(budgeted[1], { id: "early", title: "Early", chars: "Early markdown".length, omitted: true });
+assert.equal(budgeted[2].markdown, "Nested markdown");
 
 console.log("ok context model: deterministic DFS, compact map, reaction preview, thread, and note deltas");
 

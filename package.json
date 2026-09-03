@@ -95,6 +95,7 @@
     "access": "public"
   },
   "overrides": {
-    "canvas": "-"
+    "canvas": "-",
+    "fast-uri": "3.1.3"
   }
 }

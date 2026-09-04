@@ -35,3 +35,4 @@
 | `npm run test:performance` | `node test/run.mjs performance` |
 | `npm run test:quick` | `node test/support/quick-test.mjs` |
 | `npm run test:unit` | `node test/run.mjs unit` |
+| `npm run version` | `npm run build && npm run build:docs && git add dist docs` |

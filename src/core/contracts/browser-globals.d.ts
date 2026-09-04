@@ -9,6 +9,8 @@ declare global {
   }
 
   const __RABBITHOLE_DEFAULT_PROXY_URL__: string;
+  const __RABBITHOLE_VERSION__: string;
+  const __RABBITHOLE_COMMIT__: string;
 }
 
 export {};

@@ -155,4 +155,5 @@ ordinary refactors. Refuse unknown formats safely and update
 - Treat Markdown as source and rendered HTML as a derived view.
 - Keep stdout reserved for the MCP protocol.
 
-For deployment steps, see [DEPLOY.md](DEPLOY.md).
+For deployment steps, see [DEPLOY.md](DEPLOY.md). For cutting a tagged release,
+see [RELEASING.md](RELEASING.md) and the history in [CHANGELOG.md](CHANGELOG.md).

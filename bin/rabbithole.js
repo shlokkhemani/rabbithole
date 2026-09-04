@@ -1,7 +1,10 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 function usage() {
-  process.stderr.write("Usage: rabbithole <bridge [--port N] [--new-token] [--no-open] | mcp>\n");
+  process.stderr.write("Usage: rabbithole <bridge [--port N] [--new-token] [--no-open] | mcp | --version>\n");
 }
 
 function parseBridgeArgs(args) {
@@ -30,6 +33,9 @@ function parseBridgeArgs(args) {
 const [command, ...args] = process.argv.slice(2);
 if (!command) {
   await import("../src/node/mcp/server.js");
+} else if ((command === "--version" || command === "-v") && args.length === 0) {
+  // package.json is the single source of truth for the release version.
+  process.stdout.write(`${require("../package.json").version}\n`);
 } else if (command === "mcp" && args.length === 0) {
   await import("../src/node/mcp/server.js");
 } else if (command === "bridge") {

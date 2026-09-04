@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { minify as minifyJavaScript } from "terser";
@@ -19,6 +20,13 @@ const absOutdir = path.resolve(rootDir, outdir);
 // Rabbithole's hosted link relay; RABBITHOLE_PROXY_URL overrides it, and an
 // empty value ships the app with no default relay.
 const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL ?? DEFAULT_FETCH_PROXY_URL);
+// package.json is the single source of truth for the release version; every
+// host reads it from here. The committed dist/ bundles must stay byte-
+// reproducible (check:dist rebuilds and compares them), so they carry the
+// version alone — only the continuously deployed web build is stamped with a
+// commit. RABBITHOLE_COMMIT overrides the stamp for builds without a git dir.
+const packageVersion = require("./package.json").version;
+const buildCommit = readBuildCommit();
 
 const CANONICAL_HOST_SCRIPT = `if(location.hostname==="www.rabbithole.ing")location.replace("https://rabbithole.ing"+location.pathname+location.search+location.hash);`;
 // This runs in the parser-blocking head, before the external stylesheet or app
@@ -70,6 +78,10 @@ async function buildUiBundle(entry, outfile, globalName) {
     sourcemap: false,
     tsconfigRaw: {},
     loader: { ".css": "text" },
+    define: {
+      __RABBITHOLE_VERSION__: JSON.stringify(packageVersion),
+      __RABBITHOLE_COMMIT__: JSON.stringify(""),
+    },
     legalComments: "none",
     external: ["pdfjs-dist/build/pdf.mjs"],
     logLevel: "silent",
@@ -171,6 +183,8 @@ async function buildWebApp(assetDir) {
     loader: { ".css": "text" },
     define: {
       __RABBITHOLE_DEFAULT_PROXY_URL__: JSON.stringify(proxyConfig.defaultUrl),
+      __RABBITHOLE_VERSION__: JSON.stringify(packageVersion),
+      __RABBITHOLE_COMMIT__: JSON.stringify(buildCommit),
     },
     legalComments: "none",
     logLevel: "silent"
@@ -264,6 +278,14 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
 <script type="module" src="./app.js${assetQuery}"></script>
 </body>
 </html>`;
+}
+
+function readBuildCommit() {
+  const override = String(process.env.RABBITHOLE_COMMIT || "").trim();
+  if (override) return override;
+  const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: rootDir, encoding: "utf8" });
+  const sha = result.status === 0 ? String(result.stdout).trim() : "";
+  return sha || "dev";
 }
 
 function readProxyConfig(raw) {

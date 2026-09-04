@@ -29,6 +29,11 @@ import { openDialog } from "./primitives/dialog.js";
 
 const SCRIM_ID = "settings-sheet-scrim";
 const SHEET_ID = "settings-sheet";
+// Build stamps, injected by build.mjs from package.json. The committed dist/
+// bundles must stay byte-reproducible, so they carry the version alone; only
+// the continuously deployed web build also carries a commit.
+const BUILD_VERSION = typeof __RABBITHOLE_VERSION__ === "string" ? __RABBITHOLE_VERSION__ : "";
+const BUILD_COMMIT = typeof __RABBITHOLE_COMMIT__ === "string" ? __RABBITHOLE_COMMIT__ : "";
 const THEME_CHOICES = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
@@ -120,6 +125,17 @@ export function isSettingsSheetOpen() {
   return !!scrim;
 }
 
+/*
+ * The build stamp sits under the host identity, in the identity block's own
+ * faint type. It is deliberately not a <span>: the identity spans name the
+ * product and its host, and host journeys assert exactly those two.
+ */
+function buildStampMarkup() {
+  if (!BUILD_VERSION) return "";
+  const stamp = BUILD_COMMIT ? "v" + BUILD_VERSION + " · " + BUILD_COMMIT : "v" + BUILD_VERSION;
+  return "<div data-settings-version>" + escapeHtml(stamp) + "</div>";
+}
+
 function sheetMarkup() {
   const nav = sections
     .map(function (entry, index) {
@@ -150,7 +166,9 @@ function sheetMarkup() {
     "</div>" +
     '<div class="settings-sheet-identity"><span>Rabbithole</span><span data-settings-host>' +
     escapeHtml(hostLabel) +
-    "</span></div>" +
+    "</span>" +
+    buildStampMarkup() +
+    "</div>" +
     "</div>" +
     '<div class="settings-sheet-pane">' +
     '<header class="settings-pane-head">' +

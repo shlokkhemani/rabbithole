@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { log, error as logError } from "../shared/logger.js";
@@ -5,8 +6,11 @@ import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { toolDefinitions } from "./tools.js";
 import { closeAllSessions } from "./registry.js";
 
+// package.json is the single source of truth for the release version.
+const require = createRequire(import.meta.url);
+
 const server = new McpServer(
-  { name: "rabbithole", version: "0.1.0" },
+  { name: "rabbithole", version: require("../../../package.json").version },
   {
     instructions: SERVER_INSTRUCTIONS,
   }

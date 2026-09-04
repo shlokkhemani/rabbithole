@@ -14,6 +14,7 @@
     "build": "node build.mjs",
     "build:docs": "node scripts/build-docs.mjs",
     "build:publish": "node scripts/build-publish.mjs",
+    "version": "npm run build && npm run build:docs && git add dist docs",
     "generate:icons": "node scripts/generate-ionicons.mjs",
     "generate:design-doc": "node scripts/generate-design-doc.mjs",
     "icons:studio": "node tools/icon-studio/server.mjs",

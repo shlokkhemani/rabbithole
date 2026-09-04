@@ -1,0 +1,63 @@
+name: Release
+
+# A vX.Y.Z tag is the release trigger. RELEASING.md documents the flow that
+# produces one; this workflow is everything that happens after the push.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing (OIDC); there is no NPM_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      # setup-node ships an npm older than trusted publishing.
+      - run: npm install -g npm@latest
+      - run: npm ci
+
+      - name: Verify the tag matches package.json
+        run: |
+          expected="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $expected" >&2
+            exit 1
+          fi
+
+      # The package gate, not the whole CI matrix: the browser tiers already
+      # ran on the commit this tag points at. check:dist must verify the
+      # committed bytes before build rewrites them.
+      - run: npm run check:types
+      - run: npm run check:dist
+      - run: npm run build
+      - run: npm run check:purity
+      - run: npm run check:docs
+      - run: npm run test:unit
+      - run: npm run test:packaging
+
+      - name: Extract the release notes
+        run: |
+          awk -v heading="## $GITHUB_REF_NAME" '
+            index($0, heading) == 1 { found = 1; next }
+            found && index($0, "## ") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no section for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - run: npm publish --provenance --access public
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "Rabbithole $GITHUB_REF_NAME" --notes-file release-notes.md

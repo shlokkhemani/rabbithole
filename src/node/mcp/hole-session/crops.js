@@ -20,6 +20,14 @@ export class SessionCrops {
     pages.set(pageNumber, filePath);
   }
 
+  hasPath(filePath) {
+    if ([...this.regions.values()].includes(filePath)) return true;
+    for (const pages of this.conversionPages.values()) {
+      if ([...pages.values()].includes(filePath)) return true;
+    }
+    return false;
+  }
+
   async releaseRegion(requestId) {
     const filePath = this.regions.get(requestId);
     if (!filePath) return;

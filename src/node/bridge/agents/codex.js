@@ -51,9 +51,10 @@ export function codexConfigToml({ suffix = "" } = {}) {
 export async function prepareCodexHome({
   env = process.env,
   configSuffix = "",
+  directoryName = "codex-home",
 } = {}) {
   const directory = bridgeDirectory(env);
-  const codexHome = path.join(directory, "codex-home");
+  const codexHome = path.join(directory, directoryName);
   const configPath = path.join(codexHome, "config.toml");
   const authPath = path.join(codexHome, "auth.json");
   const userAuthPath = path.join(env.HOME || os.homedir(), ".codex", "auth.json");

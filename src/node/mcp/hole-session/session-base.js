@@ -108,6 +108,7 @@ export class SessionBase {
     // redelivery. Its eventual completion also returns immediately so it cannot
     // steal the main coordinator's listener lease.
     this.crops = new SessionCrops();
+    this.imageAbortControllers = new Set();
     this.regionSweep = isResume ? sweepPdfRegionFiles(this.holeId).catch(() => {}) : Promise.resolve();
 
     this.sseClients = new Set();
@@ -206,6 +207,8 @@ export class SessionBase {
     // Only this session's own crops — a successor session for the same hole may
     // already be writing fresh ones under different request ids.
     this.crops.releaseAll().catch(() => {});
+    for (const controller of this.imageAbortControllers) controller.abort();
+    this.imageAbortControllers.clear();
     this.closed = true;
     this.closeReason = reason;
     this.onContextClose?.(this);

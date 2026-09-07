@@ -25,6 +25,15 @@ export class SessionAnswer extends SessionBroadcast {
     });
   }
 
+  resolvePendingRequest(requestId) {
+    const request = this.requests.get(requestId);
+    const nodeId = request?.nodeId;
+    if (!nodeId) throw buildJsonError(`No pending branch request ${requestId}`, 404);
+    const node = this.nodes.get(nodeId);
+    if (!node || node.status !== "pending") throw buildJsonError(`Node ${nodeId} is not pending`, 409);
+    return { request, node };
+  }
+
   setRequestDelegated(requestId, delegated) {
     const record = this.requests.get(requestId);
     if (record?.conversion) throw buildJsonError("PDF conversion requests cannot be delegated", 409);

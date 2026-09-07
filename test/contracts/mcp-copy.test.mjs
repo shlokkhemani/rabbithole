@@ -10,7 +10,8 @@ const toolDescriptionLength = toolDefinitions.reduce(
   (total, tool) => total + String(tool.description || "").length,
   0,
 );
-assert.ok(toolDescriptionLength < 5000,
-  `tool descriptions must stay under 5,000 characters, got ${toolDescriptionLength}`);
+// generate_image added roughly 900 characters of operational guidance in 2026-09.
+assert.ok(toolDescriptionLength < 6000,
+  `tool descriptions must stay under 6,000 characters, got ${toolDescriptionLength}`);
 
 console.log(`ok MCP copy budgets: instructions=${SERVER_INSTRUCTIONS.length}, tool descriptions=${toolDescriptionLength}`);

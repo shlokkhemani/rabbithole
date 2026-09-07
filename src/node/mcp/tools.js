@@ -4,6 +4,7 @@ import { normalizeId } from "../../core/utils.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/authoring-v1.js";
 import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
 import { validateAssetEntriesSync } from "./store/fs-store.js";
+import { generateImage } from "./image-gen.js";
 import fs from "node:fs";
 import { z } from "zod";
 
@@ -47,6 +48,14 @@ function validateAnswer(params) {
   if (params.content === undefined) throw new Error("content is required when answering a branch");
   normalizeBaseUrl(params.base_url);
   validateAssetEntriesSync(params.assets);
+}
+
+function validateGenerateImage(params) {
+  if (!normalizeId(params.session_id)) throw new Error("session_id is required");
+  if (!normalizeId(params.request_id)) throw new Error("request_id is required");
+  if (params.edit_of !== undefined && params.reference !== undefined) {
+    throw new Error("edit_of and reference are mutually exclusive");
+  }
 }
 
 function validatePublish(params) {
@@ -162,6 +171,36 @@ export const toolDefinitions = [
         delegated,
         signal: extra?.signal,
       }), extra),
+  },
+  {
+    name: "generate_image",
+    description:
+      "Generate one PNG for a pending answer. prompt is complete art direction; aspect optionally requests square, landscape, or portrait; caption is image alt text; edit_of resumes an earlier generated asset; reference attaches an existing image asset or session-issued PDF crop. edit_of and reference cannot be combined.\n" +
+      "Draw only when the learner asks.\n" +
+      "Stream prose first with answer_branch partial.\n" +
+      "Use the returned markdown verbatim where the picture belongs.\n" +
+      "Look at the result and call again with edit_of, describing only the change.",
+    input: {
+      session_id: z.string().max(200).describe("Active session ID from open_rabbithole"),
+      request_id: z.string().max(200).describe("Pending request_id whose answer node receives the image provenance"),
+      prompt: z.string().max(4000).describe("Full image art direction, passed verbatim to the image generator"),
+      aspect: z.enum(["square", "landscape", "portrait"]).describe("Optional output shape; omit to let the model choose").optional(),
+      caption: z.string().max(140).describe("Markdown alt text; defaults to the prompt's first sentence").optional(),
+      edit_of: z.string().max(300).describe("Earlier generated asset name whose Codex thread should be resumed").optional(),
+      reference: z.string().max(4096).describe("Existing image asset name or session-issued PDF crop image_path to attach").optional(),
+    },
+    validateInput: validateGenerateImage,
+    explicitContent: true,
+    run: ({ session_id, request_id, prompt, aspect, caption, edit_of, reference }, extra) => generateImage({
+      sessionId: normalizeId(session_id),
+      requestId: normalizeId(request_id),
+      prompt,
+      aspect,
+      caption,
+      editOf: edit_of,
+      reference,
+      signal: extra?.signal,
+    }),
   },
   {
     name: "read_rabbithole",

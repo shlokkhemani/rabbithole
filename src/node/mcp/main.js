@@ -5,6 +5,7 @@ import { log, error as logError } from "../shared/logger.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { toolDefinitions } from "./tools.js";
 import { closeAllSessions } from "./registry.js";
+import { formatToolSuccess } from "./tool-result.js";
 
 // package.json is the single source of truth for the release version.
 const require = createRequire(import.meta.url);
@@ -15,10 +16,6 @@ const server = new McpServer(
     instructions: SERVER_INSTRUCTIONS,
   }
 );
-
-function formatSuccessText(result) {
-  return JSON.stringify(result);
-}
 
 function getErrorMessage(err) {
   return err instanceof Error ? err.message : String(err);
@@ -32,7 +29,7 @@ for (const tool of toolDefinitions) {
       try {
         if (tool.validateInput) tool.validateInput(params);
         const result = await /** @type {any} */ (tool.run)(params, extra);
-        return { content: [{ type: /** @type {const} */ ("text"), text: formatSuccessText(result) }] };
+        return formatToolSuccess(tool, result);
       } catch (err) {
         const message = getErrorMessage(err);
         logError(`${tool.name} failed: ${message}`);

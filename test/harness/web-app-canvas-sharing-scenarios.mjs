@@ -3585,12 +3585,19 @@ async function verifyCanvasBranching() {
   assert.equal(await page.locator(".asking-editor.open").count(), 0, "no editor is open until a pill is clicked");
   assert.equal(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-add]').innerText(), "Add question",
     "an absent optional slot exposes one verb-first Add affordance");
-  assert.deepEqual(await page.locator("[data-reaction-prompt] .asking-reaction-glyph").allInnerTexts(), ["👍", "👎"],
-    "reaction glyphs are the two fixed row labels");
-  assert.equal(await page.locator("[data-reaction-prompt] textarea").count(), 2,
-    "each reaction row exposes one multiline instruction field");
-  assert.equal(await page.locator("[data-reaction-prompt] input").count(), 0,
-    "reaction labels have no editable or emoji-specific field");
+  // Reactions are chrome on the selection surface, so the replica wears them in
+  // the same trailing slot — no separate Reactions section anywhere.
+  assert.deepEqual(await page.locator('[data-asking-surface][data-set="selection"] .thumb-pair [data-reaction-button]')
+    .evaluateAll((buttons) => buttons.map((button) => button.firstChild.nodeValue)), ["👍 ", "👎 "],
+  "the selection replica renders the two thumbs after the pills");
+  assert.deepEqual(await page.locator('[data-asking-surface][data-set="selection"] [data-reaction-button] kbd').allTextContents(),
+    ["↑", "↓"], "thumbs wear their arrow hints exactly as the product does");
+  assert.equal(await page.locator('[data-asking-surface][data-set="followup"] .thumb-pair').count(), 0,
+    "the follow-up replica has no thumbs, like the follow-up composer");
+  assert.equal(await page.locator(".asking-reactions, [data-reaction-prompt]").count(), 0,
+    "no standalone Reactions section and no always-open reaction fields");
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] .ask-actions.has-four-presets').count(), 1,
+    "Add question fills the fourth slot, so the replica previews the two-line shape a fourth question brings");
   const fidelity = await page.evaluate(() => {
     const mock = document.querySelector('[data-asking-surface][data-set="selection"] .asking-mock');
     const row = mock.querySelector(".ask-actions");
@@ -3645,15 +3652,37 @@ async function verifyCanvasBranching() {
     JSON.parse(localStorage.getItem("rh-ask-presets-v1")).selection, "custom")), false,
   "custom removal persists as an absent slot");
 
+  // A thumb edits like a pill: click it, the editor opens in place beneath the
+  // row with the instruction focused. There is no label and nothing to remove.
+  await page.click('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]');
+  await page.waitForSelector('[data-asking-surface][data-set="selection"] .asking-editor.open');
+  assert.equal(await page.evaluate(() => document.activeElement.id), "asking-reaction-up-instruction",
+    "opening a thumb editor moves focus straight into its instruction");
+  assert.equal(await page.getAttribute('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]', "aria-expanded"), "true");
+  assert.equal(await page.locator('[data-reaction-prompt="up"] input').count(), 0, "a reaction has no label field");
+  assert.equal(await page.locator('[data-reaction-prompt="up"] [data-preset-remove]').count(), 0, "a reaction cannot be removed");
   const upInstruction = page.locator('[data-reaction-prompt="up"] [data-reaction-instruction]');
+  assert.equal(await upInstruction.inputValue(), "This landed well — use a similar approach.");
+  assert.equal(await page.locator('[data-reaction-prompt="up"] [data-reaction-reset]').isVisible(), false,
+    "Reset appears only once the instruction differs from its default");
   await upInstruction.fill("Keep the concrete opening.");
   assert.equal(await page.locator('[data-reaction-prompt="up"] [data-reaction-reset]').isVisible(), true,
     "a reaction reset appears only after its instruction changes");
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("rh-reaction-prompts-v1"))).up.instruction,
     "Keep the concrete opening.");
+  assert.equal(await page.getAttribute('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]', "title"),
+    "Keep the concrete opening.", "the thumb's tooltip mirrors the stored instruction live");
   await page.click('[data-reaction-prompt="up"] [data-reaction-reset]');
   assert.equal(await upInstruction.inputValue(), "This landed well — use a similar approach.");
   assert.equal(await page.locator('[data-reaction-prompt="up"] [data-reaction-reset]').isVisible(), false);
+  // Clicking the other thumb swaps editors; clicking the open one closes it.
+  await page.click('[data-asking-surface][data-set="selection"] [data-reaction-button="down"]');
+  assert.equal(await page.evaluate(() => document.activeElement.id), "asking-reaction-down-instruction");
+  assert.equal(await page.getAttribute('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]', "aria-expanded"), "false");
+  await page.click('[data-asking-surface][data-set="selection"] [data-reaction-button="down"]');
+  await page.waitForSelector('[data-asking-surface][data-set="selection"] .asking-editor:not(.open)');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.reactionButton), "down",
+    "closing a thumb editor hands focus back to the thumb");
 
   // Click-to-edit: the pill expands its editor in place and hands over focus.
   await page.click('[data-asking-surface][data-set="selection"] [data-preset-button="explain"]');

@@ -146,8 +146,12 @@ restorable in Settings. The follow-up default set is unchanged.
 - Ordinary notes: dots, dialogs, docking, placement, note→ask — untouched.
   A hand-typed note whose text happens to be "👍" is still an ordinary note;
   only the extensions flag makes a reaction.
-- Settings: no new section, no configuration. The only Settings-adjacent
-  change is the `example` default flip in §4.
+- Settings: no new section. Each thumb's instruction (the `origin.instruction`
+  seam) is edited inside the Quick questions replica of the selection surface:
+  the replica wears the thumb pair in its real trailing slot, and clicking a
+  thumb opens an in-place editor (Instruction, Reset, Done — no label, no
+  Remove) exactly as clicking a pill does. The glyphs are fixed. The other
+  Settings-adjacent change is the `example` default flip in §4.
 - Follow-up composer and card composers: byte-identical.
 
 ## 8. Edge cases

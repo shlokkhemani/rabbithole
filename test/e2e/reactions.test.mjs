@@ -95,6 +95,7 @@ try {
   await page.fill("#asking-selection-custom-label", "Counterpoint");
   await page.fill("#asking-selection-custom-instruction", "Challenge this claim from another angle.");
   await page.click('[data-asking-surface][data-set="selection"] [data-preset-done]');
+  await page.click('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]');
   await page.fill('[data-reaction-prompt="up"] [data-reaction-instruction]',
     "Keep the exact concrete shape that worked here.");
   await page.click("[data-settings-close]");

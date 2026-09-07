@@ -581,7 +581,8 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(3) { grid-column: 5; grid-row: 1; }
 #ask:not(.mobile-sheet) #ask-actions.has-four-presets .lens:nth-child(4),
 .asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(4) { grid-column: 1 / span 3; grid-row: 2; justify-self: start; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .thumb-pair { grid-column: 5; grid-row: 2; justify-self: end; }
+#ask:not(.mobile-sheet) #ask-actions.has-four-presets .thumb-pair,
+.asking-surface[data-set="selection"] .ask-actions.has-four-presets .thumb-pair { grid-column: 5; grid-row: 2; justify-self: end; }
 #ask:not(.mobile-sheet) #ask-actions.has-four-presets .commit-actions,
 .asking-surface[data-set="selection"] .ask-actions.has-four-presets .commit-actions { grid-column: 1 / -1; }
 .commit-actions { position: relative; display: flex; flex: 1 1 auto; min-width: 0; gap: 2px; }
@@ -943,8 +944,8 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .asking-settings { gap: 0; }
 .asking-settings .asking-link { min-height: 0; margin-top: var(--space-11); }
 .asking-reveal-body > .asking-surface { margin-top: var(--space-8); }
-.asking-surface, .asking-reactions { display: flex; flex-direction: column; gap: var(--space-4); }
-.asking-surface h4, .asking-reactions h4 { margin: 0; color: var(--fg-bold); font-size: var(--text-body); font-weight: var(--weight-semibold); }
+.asking-surface { display: flex; flex-direction: column; gap: var(--space-4); }
+.asking-surface h4 { margin: 0; color: var(--fg-bold); font-size: var(--text-body); font-weight: var(--weight-semibold); }
 .asking-mock { overflow: hidden; }
 /* The replicas keep the surfaces' skins but not their elevation: nothing here
    floats over content, so the popover's drop shadow stays in the product. */
@@ -955,7 +956,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 /* Editing lights the frame exactly the way using the real surface does. */
 .asking-mock:focus-within { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .asking-ghost { flex: 1; min-height: 20px; padding: 3px 0; color: var(--fg-faint); font-family: var(--font-ui); font-size: var(--text-body); line-height: 1.5; }
-.asking-mock .lens.editing { color: var(--fg-bold); background: var(--hl-strong); }
+.asking-mock .lens.editing, .asking-mock .thumb.editing { color: var(--fg-bold); background: var(--hl-strong); filter: none; }
 .asking-mock .ask-actions.no-presets { display: none; }
 .asking-add { color: var(--accent); }
 /* 0fr -> 1fr animates the expansion to auto height without measuring; the
@@ -1015,13 +1016,6 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
   transition: grid-template-rows var(--duration-enter) var(--ease-out), opacity var(--duration-fast) var(--ease-standard),
     visibility var(--duration-zero) linear var(--duration-enter); }
 .asking-reveal-body { min-height: 0; overflow: hidden; }
-.asking-reactions { margin-top: var(--space-11); }
-.asking-reaction-list { overflow: hidden; border: var(--border-default); border-radius: var(--radius-popover); background: var(--card-bg); }
-.asking-reaction-row { align-items: stretch; min-height: 0; gap: 0; }
-.asking-reaction-row + .asking-reaction-row { border-top: var(--border-default); }
-.asking-reaction-glyph { display: flex; width: 44px; flex: 0 0 44px; align-items: center; justify-content: center; font-size: var(--text-lg); background: color-mix(in srgb, var(--fg) 2.5%, transparent); }
-.asking-reaction-fields { flex: 1 1 auto; padding: var(--space-5) var(--space-6); }
-.asking-reaction-fields .asking-editor-foot { min-height: var(--control-h-sm); }
 .settings-nav-item:focus-visible, .settings-sheet-close:focus-visible, .settings-segment:focus-visible,
 .settings-step:focus-visible, .settings-reset:focus-visible, .settings-pane-body:focus-visible,
 .asking-preset-remove:focus-visible, .asking-preset-reset:focus-visible, .asking-preset-done:focus-visible, .asking-restore:focus-visible {

@@ -73,6 +73,7 @@ try {
   await pageA.locator("#asking-selection-custom-label").fill("Persistent fourth");
   await pageA.locator("#asking-selection-custom-instruction").fill("Carry the fourth slot across origins.");
   await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-done]').click();
+  await pageA.locator('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]').click();
   await pageA.locator('[data-reaction-prompt="up"] [data-reaction-instruction]').fill(
     "Keep this exact machine-backed approach.",
   );
@@ -118,6 +119,7 @@ try {
     "Persistent fourth ",
     "the optional slot follows the reader to the new random origin",
   );
+  await pageB.locator('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]').click();
   assert.equal(await pageB.locator('[data-reaction-prompt="up"] [data-reaction-instruction]').inputValue(),
     "Keep this exact machine-backed approach.",
     "reaction instructions use the same host-persisted preference backing");
@@ -136,6 +138,7 @@ try {
   assert.equal(await frozenPage.locator('[data-asking-surface][data-set="selection"] [data-preset-button="explain"]').evaluate((button) =>
     button.firstChild?.nodeValue), "Explain ", "a frozen file uses its own default preference backing");
   assert.equal(await frozenPage.locator('[data-asking-surface][data-set="selection"] [data-preset-button="custom"]').count(), 0);
+  await frozenPage.locator('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]').click();
   assert.equal(await frozenPage.locator('[data-reaction-prompt="up"] [data-reaction-instruction]').inputValue(),
     "This landed well — use a similar approach.");
 } finally {

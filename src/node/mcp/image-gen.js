@@ -4,8 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { validateImageAssetName } from "../../core/assets.js";
-import { prepareCodexHome } from "../bridge/codex.js";
-import { resolveExecutable, terminateChild } from "../bridge/agents/isolation.js";
+import { prepareCodexHome } from "../shared/codex-home.js";
+import { resolveExecutable, terminateChild } from "../shared/process.js";
 import { getSession } from "./registry.js";
 import { defaultFsStore, resolveAsset } from "./store/fs-store.js";
 

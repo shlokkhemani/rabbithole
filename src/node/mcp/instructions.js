@@ -7,6 +7,7 @@ export const SERVER_INSTRUCTIONS = [
   "A branch_request carries the selection, the question, the lineage of titles, and a map of the whole canvas. It may include thread: lineage markdown this server never sent you; an entry marked omitted was too large to attach, so fetch it with read_rabbithole node_ids if the ask needs it. Empty selected_text means a question about the parent document as a whole. notes are the human's margin notes: on_lineage ones are the text being replied to; others are context, not questions. Answer only with the parent's text in context: if you do not hold it verbatim (after a compaction, a fresh conversation, or a sub-agent's answer), call read_rabbithole with thread_of first.",
   "",
   "The card shows nothing until a call lands. answer_branch with partial:true renders at once and returns immediately; chunks concatenate verbatim. Send any visual fence in one chunk.",
+  "generate_image draws a picture when the learner asks for one; answer_branch explains the workflow.",
   "",
   "send_to_rabbithole publishes a document to a saved hole without opening it; use it only when asked to save or send something there.",
 ].join("\n");

@@ -25,6 +25,7 @@ scheme: releases are tagged `vX.Y.Z`, and public copy names the minor only
 - Canvas is home everywhere — the reader is the maximized card, reached by an anchored zoom.
 - Paste images into notes and asks, copy any code block, and scroll the canvas by dragging to its edge.
 - Delegated sub-agent branches, so an agent can hand a branch to a sub-agent and stream the answer back.
+- Ask an agent to draw or illustrate something and the picture lands in the card: `generate_image` runs the Codex CLI's built-in image generation on your ChatGPT plan, and follow-up asks can edit the picture.
 - Rabbithole is published to npm as `@shlokkhemani/rabbithole`.
 
 ### Changed

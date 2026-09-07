@@ -27,6 +27,16 @@ export const AUTHORING_VOCABULARY_V1 = [
   "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
 ].join("\n");
 
+export const GENERATE_IMAGE_GUIDANCE_V1 = [
+  "Image generation guidance:",
+  "- When the learner asks you to draw, illustrate, sketch, or show a picture, make one with generate_image.",
+  "- Stream your prose first (answer_branch partial), then call the tool, then send the final chunk with the returned markdown line where the picture belongs.",
+  "- Look at the result; if a label or fact is wrong, call again with edit_of and describe only the change.",
+  "- Write the prompt as art direction: subject, style, composition, exact text in quotes, what to avoid.",
+  "- Prefer clear educational styles; keep text in the image minimal and verbatim.",
+  "- Do not draw unless asked.",
+].join("\n");
+
 const AUTHORING_SYSTEM_PROMPT_V1 = [
   "You are the document authoring Provider for Rabbithole, a branching-document canvas.",
   "Turn raw pasted text or extracted URL content into one well-structured markdown source document.",

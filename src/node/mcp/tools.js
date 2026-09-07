@@ -1,7 +1,7 @@
 import { openRabbithole, answerBranch, listRabbitholes, readRabbithole, sendToRabbithole } from "./open.js";
 import { normalizeBaseUrl } from "../../core/base-url.js";
 import { normalizeId } from "../../core/utils.js";
-import { AUTHORING_VOCABULARY_V1 } from "../../core/prompts/authoring-v1.js";
+import { AUTHORING_VOCABULARY_V1, GENERATE_IMAGE_GUIDANCE_V1 } from "../../core/prompts/authoring-v1.js";
 import { MAX_ASSETS_PER_CALL } from "../../core/assets.js";
 import { validateAssetEntriesSync } from "./store/fs-store.js";
 import { generateImage } from "./image-gen.js";
@@ -139,6 +139,8 @@ export const toolDefinitions = [
       "Answer one pending request in an open Rabbithole.",
       "",
       AUTHORING_VOCABULARY_V1,
+      "",
+      GENERATE_IMAGE_GUIDANCE_V1,
     ].join("\n"),
     input: {
       session_id: z.string().max(200).describe("Active session ID from open_rabbithole"),
@@ -175,11 +177,7 @@ export const toolDefinitions = [
   {
     name: "generate_image",
     description:
-      "Generate one PNG for a pending answer. prompt is complete art direction; aspect optionally requests square, landscape, or portrait; caption is image alt text; edit_of resumes an earlier generated asset; reference attaches an existing image asset or session-issued PDF crop. edit_of and reference cannot be combined.\n" +
-      "Draw only when the learner asks.\n" +
-      "Stream prose first with answer_branch partial.\n" +
-      "Use the returned markdown verbatim where the picture belongs.\n" +
-      "Look at the result and call again with edit_of, describing only the change.",
+      "Generate one PNG for a pending answer. prompt is complete art direction; aspect optionally requests square, landscape, or portrait; caption is image alt text; edit_of resumes an earlier generated asset; reference attaches an existing image asset or session-issued PDF crop. edit_of and reference cannot be combined. Follow answer_branch's image workflow.",
     input: {
       session_id: z.string().max(200).describe("Active session ID from open_rabbithole"),
       request_id: z.string().max(200).describe("Pending request_id whose answer node receives the image provenance"),

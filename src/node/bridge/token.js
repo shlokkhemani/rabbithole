@@ -1,15 +1,13 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+
+import { bridgeDirectory } from "../shared/codex-home.js";
+
+export { bridgeDirectory };
 
 const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
-
-export function bridgeDirectory(env = process.env) {
-  return env.RABBITHOLE_DIR
-    || path.join(env.HOME || os.homedir(), ".rabbithole");
-}
 
 export async function readOrCreateBridgeToken({
   env = process.env,

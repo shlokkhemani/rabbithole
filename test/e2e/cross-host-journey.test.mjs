@@ -14,6 +14,7 @@ import { assertCodeCopy } from "../support/code-copy.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
+const IMAGE_FIXTURE = path.join(ROOT, "test/integration/fixtures/fake-codex-image.mjs");
 const SECRET_KEYS = ["api_key", "apiKey", "provider_keys", "rh-web-settings", "sk-or-v1-"];
 const ASSET_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zs1sAAAAASUVORK5CYII=", "base64");
 const JOURNEY_CODE = 'const answer = "<raw>&";\nconsole.log(answer);';
@@ -35,6 +36,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   await modernJourney();
   await queuedAskJourney();
+  await imageGenerationJourney();
   console.log("cross-host journey verification passed");
 } finally {
   await browser.close();
@@ -73,6 +75,133 @@ async function queuedAskJourney() {
   } finally {
     await context.close();
     await mcp.close();
+  }
+}
+
+async function imageGenerationJourney() {
+  const hangDir = await fs.mkdtemp(path.join(tmp, "image-hang-"));
+  const hangMcp = await startMcp(hangDir, {
+    RABBITHOLE_CODEX_BIN: IMAGE_FIXTURE,
+    FAKE_CODEX_IMAGE_MODE: "hang",
+    RABBITHOLE_IMAGE_DEADLINE_MS: "1500",
+  });
+  const hangContext = await browser.newContext();
+  try {
+    const openPromise = callTool(hangMcp.client, "open_rabbithole", {
+      title: "Image generation journey",
+      content: "Select this sentence before drawing.",
+    });
+    const page = await hangContext.newPage();
+    await page.goto(await hangMcp.nextUrl());
+    await selectAndAsk(page, "Select this sentence", "Draw a water cycle diagram");
+    const request = await openPromise;
+
+    const partial = await callTool(hangMcp.client, "answer_branch", {
+      session_id: request.session_id,
+      request_id: request.request_id,
+      content: "Here is the streamed explanation.",
+      partial: true,
+    });
+    assert.equal(partial.partial, true);
+    const surface = page.locator(`.doc-content[data-node-id="${request.node_id}"]`).first();
+    await surface.getByText("Here is the streamed explanation.", { exact: false }).waitFor();
+
+    const drawingCall = hangMcp.client.callTool({
+      name: "generate_image",
+      arguments: {
+        session_id: request.session_id,
+        request_id: request.request_id,
+        prompt: "A simple labelled diagram of the water cycle.",
+        aspect: "landscape",
+      },
+    }, undefined, { timeout: 10000 });
+    await surface.locator(".stream-status .ll-live", { hasText: "Drawing…" }).waitFor();
+    const drawingResult = await drawingCall;
+    const drawingContent = /** @type {any[]} */ (drawingResult.content);
+    assert.equal(drawingResult.isError, undefined, JSON.stringify(drawingResult));
+    assert.equal(drawingContent.length, 1);
+    assert.deepEqual(JSON.parse(drawingContent[0].text), {
+      status: "error",
+      code: "timeout",
+      message: "Image generation timed out.",
+    });
+    await surface.locator(".stream-status .ll-live", { hasText: "Writing" }).waitFor();
+    console.log("ok cross-host journey: generate_image timeout shows Drawing and restores Writing");
+  } finally {
+    await hangContext.close();
+    await hangMcp.close();
+  }
+
+  const okDir = await fs.mkdtemp(path.join(tmp, "image-ok-"));
+  const okMcp = await startMcp(okDir, {
+    RABBITHOLE_CODEX_BIN: IMAGE_FIXTURE,
+    FAKE_CODEX_IMAGE_MODE: "ok",
+  });
+  const okContext = await browser.newContext();
+  try {
+    const openPromise = callTool(okMcp.client, "open_rabbithole", {
+      title: "Image generation success",
+      content: "Select this sentence before drawing.",
+    });
+    const page = await okContext.newPage();
+    await page.goto(await okMcp.nextUrl());
+    await selectAndAsk(page, "Select this sentence", "Draw a water cycle diagram");
+    const request = await openPromise;
+    const partial = await callTool(okMcp.client, "answer_branch", {
+      session_id: request.session_id,
+      request_id: request.request_id,
+      content: "The explanation comes first.",
+      partial: true,
+    });
+    assert.equal(partial.partial, true);
+
+    const imageResult = await okMcp.client.callTool({
+      name: "generate_image",
+      arguments: {
+        session_id: request.session_id,
+        request_id: request.request_id,
+        prompt: "A simple labelled diagram of the water cycle with exactly four labels: evaporation, condensation, precipitation, collection. Clean textbook style.",
+        aspect: "landscape",
+        caption: "Water cycle diagram",
+      },
+    }, undefined, { timeout: 10000 });
+    const imageContent = /** @type {any[]} */ (imageResult.content);
+    assert.equal(imageResult.isError, undefined, JSON.stringify(imageResult));
+    assert.equal(imageContent.length, 2);
+    const imageBody = JSON.parse(imageContent[0].text);
+    assert.equal(imageBody.status, "ok");
+    assert.match(imageBody.markdown, /^!\[[^\]]*\]\(asset:gen-[a-z0-9]{8}\.png\)$/);
+    assert.equal(imageContent[1].type, "image");
+    assert.equal(imageContent[1].mimeType, "image/png");
+    assert.match(imageContent[1].data, /^[A-Za-z0-9+/]+=*$/);
+    const finalController = new AbortController();
+    const finalAnswer = callTool(okMcp.client, "answer_branch", {
+      session_id: request.session_id,
+      request_id: request.request_id,
+      title: "Water cycle diagram",
+      content: imageBody.markdown,
+    }, { signal: finalController.signal });
+    const surface = page.locator(`.doc-content[data-node-id="${request.node_id}"]`).first();
+    const image = surface.locator("img").first();
+    await image.waitFor();
+    finalController.abort();
+    await assert.rejects(finalAnswer, /abort/i);
+    const src = await image.getAttribute("src");
+    assert.ok(src?.endsWith(`/assets/${imageBody.asset}`), `unexpected image src: ${src}`);
+    await page.waitForFunction((nodeId) => {
+      const image = document.querySelector(`.doc-content[data-node-id="${nodeId}"] img`);
+      return image?.complete && image.naturalWidth > 0;
+    }, request.node_id);
+    await image.evaluate((element) => element.click());
+    const lightbox = page.locator(".rh-lightbox");
+    await lightbox.waitFor({ state: "visible" });
+    await lightbox.locator(".rh-lightbox-caption").waitFor();
+    assert.equal(await lightbox.locator(".rh-lightbox-caption-alt").innerText(), "Water cycle diagram");
+    assert.equal(await lightbox.locator(".rh-lightbox-caption-prompt").count(), 1);
+    console.log("ok cross-host journey: generate_image returns PNG, renders it, and opens provenance lightbox");
+  } finally {
+    await okContext.close();
+    await okMcp.close();
   }
 }
 
@@ -228,10 +357,10 @@ async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMa
   } finally { await context.close(); await mcp.close(); }
 }
 
-async function startMcp(dir) {
+async function startMcp(dir, env = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath, args: [path.join(ROOT, "bin/mcp-server.js")], cwd: ROOT, stderr: "pipe",
-    env: { ...process.env, RABBITHOLE_DIR: dir, RABBITHOLE_NO_BROWSER: "1" },
+    env: { ...process.env, RABBITHOLE_DIR: dir, RABBITHOLE_NO_BROWSER: "1", ...env },
   });
   let stderr = "";
   const urls = [];

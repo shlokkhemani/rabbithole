@@ -27,6 +27,7 @@
     "check:bridge-live": "node scripts/bridge-live-check.mjs",
     "check:install-live": "node scripts/install-journey-check.mjs",
     "check:vision-live": "node scripts/vision-live-check.mjs",
+    "check:imagegen-live": "node scripts/imagegen-live-check.mjs",
     "check:isolation-live": "node test/run.mjs isolation-live",
     "check:purity": "node scripts/check-ui-purity.mjs",
     "check:types": "node scripts/check-types.mjs",

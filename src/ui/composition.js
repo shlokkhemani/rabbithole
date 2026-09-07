@@ -98,7 +98,15 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     own(disposeVisuals);
     own(disposeImageUx);
     const mountImages = function (dc, surfaceKey) {
-      mountDocImages(dc, surfaceKey, { hideAsk: hideAsk, scheduleEdges: scheduleEdges });
+      mountDocImages(dc, surfaceKey, {
+        hideAsk: hideAsk,
+        scheduleEdges: scheduleEdges,
+        provenanceFor: function (nodeId, assetName) {
+          const generatedImages = nodes[nodeId]?.extensions?.generated_images;
+          const provenance = generatedImages && generatedImages[assetName];
+          return provenance && typeof provenance === "object" ? provenance : null;
+        },
+      });
     };
 
     initCore(hydration, {

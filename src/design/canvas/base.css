@@ -94,12 +94,17 @@ html[data-theme="dark"] .md .rh-img-frame > img { color: var(--image-matte-ink);
 .rh-lightbox { position: fixed; inset: 0; z-index: var(--layer-lightbox); display: flex; align-items: center; justify-content: center; background: var(--backdrop-dark); cursor: zoom-out; touch-action: none; animation: rh-lightbox-backdrop-in var(--duration-enter) var(--ease-out); }
 .rh-lightbox-variant-diagram { background: var(--card-bg); }
 .rh-lightbox-dialog { display: contents; }
+.rh-lightbox-variant-image .rh-lightbox-dialog { display: flex; flex-direction: column; align-items: stretch; max-width: min(92vw, calc(100vw - 112px)); max-height: 92vh; }
 .rh-lightbox-viewport { display: flex; align-items: center; justify-content: center; animation: rh-lightbox-content-in var(--duration-enter) var(--ease-out); }
+.rh-lightbox-variant-image .rh-lightbox-viewport { min-height: 0; }
 .rh-lightbox-content { transform: translate(var(--rh-pan-x, 0px), var(--rh-pan-y, 0px)) scale(var(--rh-zoom, 1)); transform-origin: center center; cursor: grab; user-select: none; -webkit-user-select: none; }
 .rh-lightbox-selection .rh-lightbox-content { cursor: text; user-select: text; -webkit-user-select: text; }
 .rh-lightbox-content:active { cursor: grabbing; }
 .rh-lightbox-img { display: block; max-width: min(92vw, calc(100vw - 112px)); max-height: 92vh; border-radius: 8px; }
 html[data-theme="dark"] .rh-lightbox-img:not([data-rh-pasted="1"]) { padding: 8px; background: var(--image-matte); border: 1px solid color-mix(in srgb, var(--border) 60%, var(--image-matte)); }
+.rh-lightbox-caption { box-sizing: border-box; width: 100%; max-width: min(92vw, calc(100vw - 112px)); padding: 10px 2px 0; color: var(--fg-dim); font-family: var(--font-ui); font-size: var(--text-sm); line-height: 1.45; cursor: default; }
+.rh-lightbox-caption-alt { color: var(--fg); font-weight: var(--weight-semibold); }
+.rh-lightbox-caption-prompt { margin-top: 3px; }
 .rh-lightbox-diagram-viewport { position: relative; z-index: var(--layer-local-base); box-sizing: border-box; overflow: visible; padding: clamp(12px, 2vw, 24px); color: var(--fg); }
 .rh-lightbox-diagram { display: block; width: 100%; height: 100%; flex: none; }
 .rh-lightbox-show { display: block; width: min(1100px, calc(100vw - 112px)); max-width: 92vw; max-height: 90vh; overflow: auto; }

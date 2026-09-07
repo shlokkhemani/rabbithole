@@ -4,11 +4,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import * as esbuild from "esbuild";
 import { chromium } from "playwright";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
+import { getUiAssets } from "../../src/node/html/built-assets.js";
 import { CANVAS_STYLES } from "../support/design-css.mjs";
 import { addAssetsToHole, defaultFsStore } from "../../src/node/fs-store.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
@@ -24,6 +26,26 @@ function extractScript(html) {
   const match = html.match(/<script>\n([\s\S]*)\n<\/script>/);
   assert(match, "assembled HTML should contain one inline script");
   return match[1];
+}
+
+async function buildSourceClient() {
+  const built = await esbuild.build({
+    entryPoints: [path.resolve("src/ui/entry.js")],
+    bundle: true,
+    write: false,
+    format: "iife",
+    globalName: "RabbitholeClient",
+    target: "es2018",
+    loader: { ".css": "text" },
+    define: {
+      __RABBITHOLE_VERSION__: JSON.stringify("test"),
+      __RABBITHOLE_COMMIT__: JSON.stringify(""),
+    },
+    external: ["pdfjs-dist/build/pdf.mjs"],
+    legalComments: "none",
+    logLevel: "silent",
+  });
+  return built.outputFiles[0].text.replace(/<script/gi, "<scr\\x69pt").replace(/<\/script/gi, "<\\/script");
 }
 
 async function runMarkdownSmoke() {
@@ -94,6 +116,7 @@ async function runPageFixtures() {
     assertIncludes(imageUxSource, 'img.closest(".viz, .viz-mounted")', "show-fence images should be skipped by image UX mount");
     assertIncludes(CANVAS_STYLES, 'html[data-theme="dark"] .md .rh-img-frame', "canvas CSS should define the dark-mode image matte");
     assertIncludes(CANVAS_STYLES, '.md .rh-img-frame[data-rh-resized="1"] { display: block; margin-left: auto; margin-right: auto; }', "resized images should center in the content column");
+    assertIncludes(CANVAS_STYLES, ".rh-lightbox-caption", "canvas CSS should style generated-image provenance");
     assertIncludes(liveHtml, "--image-matte", "served page should carry the bundled image-matte CSS");
     assert(!CANVAS_STYLES.includes('html[data-theme="dark"] .md img'), "matte selector should not target every .md img directly");
 
@@ -116,16 +139,20 @@ async function runLiveSnapshotDownload() {
   const referencedBytes = Buffer.from("referenced snapshot asset");
   const pastedBytes = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const generatedBytes = Buffer.from(pastedBytes);
   const unreferencedBytes = Buffer.from("unreferenced snapshot asset");
   const referencedPath = path.join(process.env.RABBITHOLE_DIR, "diagram.png");
   const pastedPath = path.join(process.env.RABBITHOLE_DIR, "paste-deadbeef.png");
+  const generatedPath = path.join(process.env.RABBITHOLE_DIR, "gen-abcdefgh.png");
   const unreferencedPath = path.join(process.env.RABBITHOLE_DIR, "unused.png");
   await fs.writeFile(referencedPath, referencedBytes);
   await fs.writeFile(pastedPath, pastedBytes);
+  await fs.writeFile(generatedPath, generatedBytes);
   await fs.writeFile(unreferencedPath, unreferencedBytes);
   await addAssetsToHole("image-live-snapshot", [
     { name: "diagram.png", file_path: referencedPath },
     { name: "paste-deadbeef.png", file_path: pastedPath },
+    { name: "gen-abcdefgh.png", file_path: generatedPath },
     { name: "unused.png", file_path: unreferencedPath },
   ]);
 
@@ -137,14 +164,32 @@ async function runLiveSnapshotDownload() {
     nodes: [
       {
         id: "root", parent_id: null, title: "Root",
-        markdown: "Referenced asset ![diagram](asset:diagram.png)\n\n![Pasted image](asset:paste-deadbeef.png)",
+        markdown: "Referenced asset ![diagram](asset:diagram.png)\n\n![Pasted image](asset:paste-deadbeef.png)\n\n![Water mill](asset:gen-abcdefgh.png)",
         origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1,
         collapsed: false, status: "answered", read: true, created_at: now,
+        extensions: {
+          generated_images: {
+            "gen-abcdefgh.png": {
+              prompt: "A water mill",
+              revised_prompt: "A cutaway of a water mill",
+              thread_id: "thread-1",
+              aspect: "landscape",
+              edit_of: null,
+              created_at: now,
+            },
+          },
+        },
       },
       {
         id: "pending", parent_id: "root", title: "Pending",
         markdown: "half-streamed markdown must not escape", question: "Finish this answer",
         origin: null, position: { x: 420, y: 0 }, size: null, font_scale: 1,
+        collapsed: false, status: "pending", read: false, created_at: now,
+      },
+      {
+        id: "pending-stream", parent_id: "root", title: "Pending stream",
+        markdown: "", question: "Stream then draw",
+        origin: null, position: { x: 840, y: 0 }, size: null, font_scale: 1,
         collapsed: false, status: "pending", read: false, created_at: now,
       },
     ],
@@ -155,13 +200,35 @@ async function runLiveSnapshotDownload() {
 
   const browser = await chromium.launch({ headless: true });
   try {
+    assert.equal(
+      session.buildHydration().nodes.find((node) => node.id === "root")?.extensions?.generated_images?.[
+        "gen-abcdefgh.png"
+      ]?.revised_prompt,
+      "A cutaway of a water mill",
+      "generated-image provenance should reach browser hydration",
+    );
     const page = await browser.newPage({ acceptDownloads: true });
+    page.on("pageerror", (error) => process.stderr.write(`browser page error: ${error.stack || error.message}\n`));
+    const liveResponse = await fetch(session.url);
+    const liveHtml = await liveResponse.text();
+    const sourceClient = await buildSourceClient();
+    const distClient = (await getUiAssets()).clientSource;
+    const clientIndex = liveHtml.lastIndexOf(distClient);
+    assert(clientIndex >= 0, "served page should contain the committed client bundle");
+    const sourceLiveHtml = liveHtml.slice(0, clientIndex) + sourceClient + liveHtml.slice(clientIndex + distClient.length);
+    assert.notEqual(sourceLiveHtml, liveHtml, "source client should replace the committed bundle in the browser harness");
+    const sourceScriptPath = path.join(process.env.RABBITHOLE_DIR, "source-image-client.js");
+    await fs.writeFile(sourceScriptPath, extractScript(sourceLiveHtml), "utf8");
+    const sourceCheck = spawnSync(process.execPath, ["--check", sourceScriptPath], { encoding: "utf8" });
+    assert.equal(sourceCheck.status, 0, sourceCheck.stderr || sourceCheck.stdout);
+    await page.route(session.url, (route) => route.fulfill({ status: 200, contentType: "text/html", body: sourceLiveHtml }));
     await page.goto(session.url);
     await page.waitForSelector("#t-share");
     await page.waitForSelector(".rh-img-frame .rh-img-handle");
     await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
     const sourceImage = page.locator('.rh-img-frame img[alt="diagram"]');
     const pastedImage = page.locator('.rh-img-frame img[alt="Pasted image"]');
+    const generatedImage = page.locator('.rh-img-frame img[alt="Water mill"]');
     assert.deepEqual(await sourceImage.locator("..").evaluate((frame) => {
       const style = getComputedStyle(frame);
       return { pasted: frame.dataset.rhPasted || null, padding: style.paddingTop,
@@ -176,6 +243,7 @@ async function runLiveSnapshotDownload() {
     "pasted asset images should not receive the dark-theme matte");
     await sourceImage.click();
     await page.waitForSelector(".rh-lightbox:not([hidden])");
+    assert.equal(await page.locator(".rh-lightbox-caption").count(), 0, "ordinary asset images should have no provenance caption");
     assert.equal(await page.locator('.rh-lightbox-close[aria-label="Close"]').count(), 1);
     await page.locator(".rh-lightbox-img").dblclick();
     assert.equal(await page.locator(".rh-lightbox-img").evaluate((img) => img.style.getPropertyValue("--rh-zoom")), "2");
@@ -200,6 +268,20 @@ async function runLiveSnapshotDownload() {
     }), { pasted: "1", padding: "0px", background: "rgba(0, 0, 0, 0)", border: "0px" },
     "the pasted marker should exempt the lightbox image from the dark-theme matte");
     await page.keyboard.press("Escape");
+    await generatedImage.evaluate((img) => img.click());
+    await page.waitForSelector(".rh-lightbox:not([hidden])");
+    assert.equal(await page.locator(".rh-lightbox-caption").count(), 1);
+    assert.equal(await page.locator(".rh-lightbox-caption-alt").textContent(), "Water mill");
+    assert.equal(await page.locator(".rh-lightbox-caption-prompt").textContent(), "A cutaway of a water mill");
+    await page.keyboard.press("Escape");
+
+    session.broadcast({ type: "node_work_state", node_id: "pending", state: "drawing" });
+    await page.locator('.card[data-id="pending"] .ll-live', { hasText: "Drawing…" }).waitFor();
+    session.broadcast({ type: "node_progress", node_id: "pending-stream", markdown: "Prose before pixels." });
+    await page.locator('.card[data-id="pending-stream"] .stream-status .ll-live', { hasText: "Writing" }).waitFor();
+    session.broadcast({ type: "node_work_state", node_id: "pending-stream", state: "drawing" });
+    await page.locator('.card[data-id="pending-stream"] .stream-status .ll-live', { hasText: "Drawing…" }).waitFor();
+
     const liveStyles = await page.locator("head style:first-of-type").textContent();
 
     await page.click("#t-share");
@@ -216,8 +298,9 @@ async function runLiveSnapshotDownload() {
     assert.equal(snapshotHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "snapshot should contain exactly one inert payload");
     assertIncludes(snapshotHtml, `<style>\n${liveStyles}\n</style>`, "snapshot should embed the canonical served stylesheet");
     assertIncludes(snapshotHtml, "RabbitholeFrozenClient.startPortableSnapshot", "snapshot should use derived portable hydration");
-    assert.deepEqual(Object.keys(projection.assets), ["diagram.png", "paste-deadbeef.png"], "snapshot should embed referenced assets only");
+    assert.deepEqual(Object.keys(projection.assets), ["diagram.png", "gen-abcdefgh.png", "paste-deadbeef.png"], "snapshot should embed referenced assets only");
     assert.equal(projection.assets["diagram.png"], referencedBytes.toString("base64"));
+    assert.equal(projection.assets["gen-abcdefgh.png"], generatedBytes.toString("base64"));
     assert.equal(projection.assets["paste-deadbeef.png"], pastedBytes.toString("base64"));
     assert.equal(projection.hole.nodes.find((node) => node.id === "pending")?.markdown, "", "snapshot endpoint should apply persisted pending-node policy");
 

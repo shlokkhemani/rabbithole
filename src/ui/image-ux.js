@@ -8,6 +8,19 @@ let activeImageResizeCleanup = null;
 const IMAGE_MIN_WIDTH = 120;
 
 function noop() {}
+function noProvenance(_nodeId, _assetName) {
+  return null;
+}
+
+function imageAssetName(src) {
+  try {
+    const path = new URL(src, window.location.href).pathname;
+    const match = path.match(/\/assets\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch (_error) {
+    return null;
+  }
+}
 
 function imageSurfaceScale(dc) {
   if (!dc || !dc.offsetWidth) return 1;
@@ -91,7 +104,7 @@ function beginImageResize(e, dc, frame, key, hideAsk, scheduleEdges) {
   window.addEventListener("pointerup", done, true);
   window.addEventListener("pointercancel", done, true);
 }
-export function openImageLightbox(src, alt, trigger) {
+export function openImageLightbox(src, alt, trigger, provenance) {
   closeLightbox();
   const img = document.createElement("img");
   img.className = "rh-lightbox-img";
@@ -99,8 +112,27 @@ export function openImageLightbox(src, alt, trigger) {
   img.alt = alt || "";
   img.draggable = false;
   if (trigger && trigger.dataset && trigger.dataset.rhPasted === "1") img.dataset.rhPasted = "1";
+  let caption = null;
+  if (provenance) {
+    caption = document.createElement("div");
+    caption.className = "rh-lightbox-caption";
+    if (alt) {
+      const altLine = document.createElement("div");
+      altLine.className = "rh-lightbox-caption-alt";
+      altLine.textContent = alt;
+      caption.appendChild(altLine);
+    }
+    const prompt = provenance.revised_prompt != null ? provenance.revised_prompt : provenance.prompt;
+    if (prompt != null) {
+      const promptLine = document.createElement("div");
+      promptLine.className = "rh-lightbox-caption-prompt";
+      promptLine.textContent = prompt;
+      caption.appendChild(promptLine);
+    }
+  }
   return openLightbox({
     content: img,
+    caption: caption,
     label: alt || "Image preview",
     trigger: trigger,
     variant: "image",
@@ -111,7 +143,11 @@ export function disposeImageUx() {
   disposeLightbox();
   imageResizeMemory = {};
 }
-export function mountDocImages(dc, surfaceKey, { hideAsk = noop, scheduleEdges = noop } = {}) {
+export function mountDocImages(
+  dc,
+  surfaceKey,
+  { hideAsk = noop, scheduleEdges = noop, provenanceFor = noProvenance } = {},
+) {
   if (!dc || !dc.querySelectorAll) return;
   const imgs = dc.querySelectorAll("img");
   for (let i = 0; i < imgs.length; i++) {
@@ -146,7 +182,10 @@ export function mountDocImages(dc, surfaceKey, { hideAsk = noop, scheduleEdges =
     img.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
+      const src = e.currentTarget.currentSrc || e.currentTarget.src;
+      const assetName = imageAssetName(src);
+      const provenance = assetName ? provenanceFor(dc.dataset.nodeId, assetName) : null;
+      openImageLightbox(src, e.currentTarget.alt, e.currentTarget, provenance);
     });
     handle.addEventListener(
       "pointerdown",

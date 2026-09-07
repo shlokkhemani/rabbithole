@@ -93,6 +93,7 @@ export function openLightbox(options) {
   viewport.appendChild(content);
   dialog.appendChild(close);
   dialog.appendChild(viewport);
+  if (options.caption) dialog.appendChild(options.caption);
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
 

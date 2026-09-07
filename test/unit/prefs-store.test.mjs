@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { mergePreferences, readPreferences } from "../../src/node/mcp/store/prefs-store.js";
+import { mergePreferences, onPreferencesMerged, readPreferences } from "../../src/node/mcp/store/prefs-store.js";
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-prefs-store-"));
 const previousDir = process.env.RABBITHOLE_DIR;
@@ -42,6 +42,40 @@ try {
     version: 1,
     values: { "rh-theme": "dark" },
   }, "the next write recreates a corrupt file in the canonical envelope");
+
+  const delivery = [];
+  const stopFirst = onPreferencesMerged((patch) => delivery.push(["first", patch]));
+  const stopSecond = onPreferencesMerged((patch) => delivery.push(["second", patch]));
+  await mergePreferences({ "rh-ai-images": "on", "rh-ignored": true });
+  assert.deepEqual(delivery, [
+    ["first", { "rh-ai-images": "on" }],
+    ["second", { "rh-ai-images": "on" }],
+  ], "merged listeners receive the applied raw patch in registration order after the write");
+  stopFirst();
+  stopSecond();
+
+  let logged = "";
+  const writeStderr = process.stderr.write;
+  process.stderr.write = (chunk, ...args) => {
+    logged += String(chunk);
+    return true;
+  };
+  const stopThrowing = onPreferencesMerged(() => {
+    throw new Error("listener boom");
+  });
+  try {
+    await mergePreferences({ "rh-ai-images": null });
+  } finally {
+    stopThrowing();
+    process.stderr.write = writeStderr;
+  }
+  assert.match(logged, /preference merge listener failed/i, "a throwing merge listener is logged");
+
+  let calls = 0;
+  const stopAfterUnsubscribe = onPreferencesMerged(() => { calls += 1; });
+  stopAfterUnsubscribe();
+  await mergePreferences({ "rh-ai-images": "on" });
+  assert.equal(calls, 0, "unsubscribed merge listeners stop receiving writes");
 
   const observed = [];
   const large = "x".repeat(48 * 1024);

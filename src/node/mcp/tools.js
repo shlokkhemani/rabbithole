@@ -92,6 +92,16 @@ async function withProgressKeepalive(run, extra) {
   finally { clearInterval(timer); }
 }
 
+export function answerBranchDescription({ imagesEnabled }) {
+  const description = [
+    "Answer one pending request in an open Rabbithole.",
+    "",
+    AUTHORING_VOCABULARY_V1,
+  ];
+  if (imagesEnabled) description.push("", GENERATE_IMAGE_GUIDANCE_V1);
+  return description.join("\n");
+}
+
 /** @type {any[]} */
 export const toolDefinitions = [
   {
@@ -135,13 +145,7 @@ export const toolDefinitions = [
   },
   {
     name: "answer_branch",
-    description: [
-      "Answer one pending request in an open Rabbithole.",
-      "",
-      AUTHORING_VOCABULARY_V1,
-      "",
-      GENERATE_IMAGE_GUIDANCE_V1,
-    ].join("\n"),
+    description: answerBranchDescription({ imagesEnabled: true }),
     input: {
       session_id: z.string().max(200).describe("Active session ID from open_rabbithole"),
       request_id: z.string().max(200).describe("The request_id of the branch_request being answered"),

@@ -45,13 +45,16 @@ windowTarget.matchMedia = () => ({ matches: false, addEventListener() {}, remove
 globalThis.matchMedia = windowTarget.matchMedia;
 
 const {
+  aiImagesEnabled,
   applyPreferencePatch,
+  AI_IMAGES_PREF_KEY,
   autoTidyEnabled,
   configurePreferenceBacking,
   onPreferenceChange,
   readingScale,
   resetPreferenceBacking,
   setAutoTidyEnabled,
+  setAiImagesEnabled,
   setReadingScale,
 } = await import("../../src/ui/preferences.js");
 
@@ -66,12 +69,18 @@ const readsBeforeBackedAccess = localReads;
 assert.equal(readingScale(), 1.2, "the host seed wins before the first preference read");
 assert.equal(autoTidyEnabled(), true);
 assert.equal(localReads, readsBeforeBackedAccess, "a non-empty host seed never consults the random origin");
+assert.equal(aiImagesEnabled(), false, "AI images default off in an empty host seed");
 assert.equal(setReadingScale(1.3), 1.3, "host-backed writes update the synchronous cache");
 assert.equal(readingScale(), 1.3);
 assert.equal(setAutoTidyEnabled(false), false);
+assert.equal(setAiImagesEnabled(true), true);
+assert.equal(aiImagesEnabled(), true);
+assert.equal(setAiImagesEnabled(false), false);
 assert.deepEqual(forwarded, [
   ["rh-reading-scale", "1.3"],
   ["rh-auto-tidy", null],
+  [AI_IMAGES_PREF_KEY, "on"],
+  [AI_IMAGES_PREF_KEY, null],
 ]);
 
 const kinds = [];
@@ -79,8 +88,10 @@ const stop = onPreferenceChange((kind) => kinds.push(kind));
 assert.equal(applyPreferencePatch({ "rh-reading-scale": "1.4", "rh-auto-tidy": "on" }), true);
 assert.equal(readingScale(), 1.4, "an SSE patch updates the same cache without reposting");
 assert.equal(autoTidyEnabled(), true);
-assert.deepEqual(forwarded.length, 2, "a remote patch never loops back through the writer");
-assert.deepEqual(kinds, ["reading-scale", "auto-tidy"]);
+assert.deepEqual(forwarded.length, 4, "a remote patch never loops back through the writer");
+assert.equal(applyPreferencePatch({ [AI_IMAGES_PREF_KEY]: "on" }), true);
+assert.equal(aiImagesEnabled(), true);
+assert.deepEqual(kinds, ["reading-scale", "auto-tidy", "ai-images"]);
 stop();
 
 resetPreferenceBacking();

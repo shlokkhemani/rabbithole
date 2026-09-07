@@ -6,6 +6,7 @@ Each description is harvested from the test file's `@protects` declaration.
 
 ## unit
 
+- `test/unit/ai-images-setting.test.mjs` — AI images preference interpretation and runtime copy builders.
 - `test/unit/apply-server-event.test.mjs` — live node work-state projection capability contracts.
 - `test/unit/auto-tidy.test.mjs` — auto-tidy branch selection and preference capability contracts.
 - `test/unit/base-url.test.mjs` — base url capability contracts.

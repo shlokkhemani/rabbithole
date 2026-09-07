@@ -10,6 +10,7 @@ const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 5000;
 const LOCK_STALE_MS = 30000;
 const mergeQueues = new Map();
+const preferenceMergeListeners = [];
 
 function storeDir() {
   return process.env.RABBITHOLE_DIR || path.join(os.homedir(), ".rabbithole");
@@ -84,20 +85,43 @@ async function mergeLocked(patch) {
   const lock = await acquireLock();
   const finalPath = preferencePath();
   const temporary = finalPath + "." + shortId() + ".tmp";
+  const appliedPatch = {};
   try {
     const envelope = await readEnvelope();
     Object.keys(patch).forEach(function (key) {
       const value = patch[key];
-      if (value === null) delete envelope.values[key];
-      else if (typeof value === "string") envelope.values[key] = value;
+      if (value === null) {
+        delete envelope.values[key];
+        appliedPatch[key] = value;
+      } else if (typeof value === "string") {
+        envelope.values[key] = value;
+        appliedPatch[key] = value;
+      }
     });
     await fs.writeFile(temporary, JSON.stringify(envelope), "utf8");
     await fs.rename(temporary, finalPath);
+    const snapshot = preferenceMergeListeners.slice();
+    for (const listener of snapshot) {
+      try {
+        listener(appliedPatch);
+      } catch (error) {
+        warn("Reader preference merge listener failed (" + (error?.message || String(error)) + "); continuing.");
+      }
+    }
   } finally {
     await fs.rm(temporary, { force: true }).catch(function () {});
     await lock.close().catch(function () {});
     await fs.rm(lockPath(), { force: true }).catch(function () {});
   }
+}
+
+export function onPreferencesMerged(listener) {
+  if (typeof listener !== "function") return function () {};
+  preferenceMergeListeners.push(listener);
+  return function () {
+    const index = preferenceMergeListeners.indexOf(listener);
+    if (index !== -1) preferenceMergeListeners.splice(index, 1);
+  };
 }
 
 export function mergePreferences(patch) {

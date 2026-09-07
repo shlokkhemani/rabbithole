@@ -77,9 +77,10 @@ files, snapshots, MCP hydration, and stored holes.
 
 ## MCP surface
 
-The server exposes `open_rabbithole`, `answer_branch`, `generate_image`,
-`read_rabbithole`, `send_to_rabbithole`, and `list_rabbitholes`. Tool inputs are validated and
-capped before filesystem or session mutation. The browser transport uses the event vocabulary in
+The server exposes `open_rabbithole`, `answer_branch`, `read_rabbithole`,
+`send_to_rabbithole`, and `list_rabbitholes`; when AI images are enabled in
+settings, it also exposes `generate_image`. Tool inputs are validated and capped
+before filesystem or session mutation. The browser transport uses the event vocabulary in
 `src/core/contracts/engine.d.ts`; the agent loop receives branch requests,
 conversion requests, and terminal session status. Branch requests carry a
 compact tree-and-note map, add full note deltas, and include an undelivered

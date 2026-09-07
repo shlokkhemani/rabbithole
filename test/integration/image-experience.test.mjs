@@ -229,6 +229,12 @@ async function runLiveSnapshotDownload() {
     const sourceImage = page.locator('.rh-img-frame img[alt="diagram"]');
     const pastedImage = page.locator('.rh-img-frame img[alt="Pasted image"]');
     const generatedImage = page.locator('.rh-img-frame img[alt="Water mill"]');
+    assert.equal(await generatedImage.count(), 1,
+      "an existing generated image must render when the AI images preference is absent");
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.rh-img-frame img[alt="Water mill"]');
+      return image?.complete && image.naturalWidth > 0;
+    });
     assert.deepEqual(await sourceImage.locator("..").evaluate((frame) => {
       const style = getComputedStyle(frame);
       return { pasted: frame.dataset.rhPasted || null, padding: style.paddingTop,

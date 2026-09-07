@@ -115,6 +115,7 @@ This inventory is derived from the source tree.
 - `src/node/mcp/http/page.js`
 - `src/node/mcp/http/routes.js`
 - `src/node/mcp/image-gen.js`
+- `src/node/mcp/images-setting.js`
 - `src/node/mcp/instructions.js`
 - `src/node/mcp/main.js`
 - `src/node/mcp/note-hashes.js`
@@ -195,6 +196,7 @@ This inventory is derived from the source tree.
 - `src/ui/focus-trap.js`
 - `src/ui/frozen-entry.js`
 - `src/ui/hosts/frozen/index.js`
+- `src/ui/hosts/live/ai-images-settings.js`
 - `src/ui/hosts/live/index.js`
 - `src/ui/hydrate.js`
 - `src/ui/image-ux.js`

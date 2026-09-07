@@ -17,6 +17,7 @@ const THEME_KEY = "rh-theme";
 const READING_SCALE_KEY = "rh-reading-scale";
 const AUTO_TIDY_KEY = "rh-auto-tidy";
 const AUTO_TIDY_GRACE_KEY = "rh-auto-tidy-grace";
+export const AI_IMAGES_PREF_KEY = "rh-ai-images";
 export const ASK_PRESETS_KEY = "rh-ask-presets-v1";
 export const REACTION_PROMPTS_KEY = "rh-reaction-prompts-v1";
 
@@ -31,6 +32,7 @@ let systemThemeMql = null;
 let readingScaleCache = null;
 let autoTidyEnabledCache = null;
 let autoTidyGraceCache = null;
+let aiImagesEnabledCache = null;
 let swapFrame = 0;
 let askPresetsCache = null;
 let reactionPromptsCache = null;
@@ -92,6 +94,7 @@ function resetDerivedCaches() {
   readingScaleCache = null;
   autoTidyEnabledCache = null;
   autoTidyGraceCache = null;
+  aiImagesEnabledCache = null;
   askPresetsCache = null;
   reactionPromptsCache = null;
 }
@@ -118,6 +121,7 @@ function preferenceKind(key) {
   if (key === ASK_PRESETS_KEY) return "ask-presets";
   if (key === REACTION_PROMPTS_KEY) return "reaction-prompts";
   if (key === AUTO_TIDY_KEY || key === AUTO_TIDY_GRACE_KEY) return "auto-tidy";
+  if (key === AI_IMAGES_PREF_KEY) return "ai-images";
   return null;
 }
 
@@ -305,6 +309,22 @@ export function setAutoTidyGraceSeconds(value) {
   autoTidyGraceCache = next;
   writeStored(AUTO_TIDY_GRACE_KEY, String(next));
   notify("auto-tidy");
+  return next;
+}
+
+// ------------------------------------------------------------- AI images
+
+export function aiImagesEnabled() {
+  if (aiImagesEnabledCache === null) aiImagesEnabledCache = readStored(AI_IMAGES_PREF_KEY) === "on";
+  return aiImagesEnabledCache;
+}
+
+export function setAiImagesEnabled(value) {
+  const next = value === true;
+  aiImagesEnabledCache = next;
+  if (next) writeStored(AI_IMAGES_PREF_KEY, "on");
+  else removeStored(AI_IMAGES_PREF_KEY);
+  notify("ai-images");
   return next;
 }
 

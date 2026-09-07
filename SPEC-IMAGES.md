@@ -167,6 +167,8 @@ same change and record why.
 
 ## 7. What does not change
 
+Host surfaces and the default-off preference are specified in [SPEC-IMAGES-SETTING.md](./SPEC-IMAGES-SETTING.md).
+
 - `answer_branch`, `branch_request`, node schema, wire projection, GC rules,
   export formats, the composer, presets, lenses, the ⋯ menu.
 - The web BYOK path: `generate_image` is MCP-host only in v1. Web guidance

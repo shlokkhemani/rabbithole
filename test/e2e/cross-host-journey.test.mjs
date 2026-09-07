@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 import { serveStatic } from "../support/static-server.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { FsStore } from "../../src/node/fs-store.js";
 import { importRabbitholeFile } from "../../src/web/portable.js";
@@ -36,6 +37,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   await modernJourney();
   await queuedAskJourney();
+  await imageSettingJourney();
   await imageGenerationJourney();
   console.log("cross-host journey verification passed");
 } finally {
@@ -80,6 +82,7 @@ async function queuedAskJourney() {
 
 async function imageGenerationJourney() {
   const hangDir = await fs.mkdtemp(path.join(tmp, "image-hang-"));
+  await seedImagesEnabled(hangDir);
   const hangMcp = await startMcp(hangDir, {
     RABBITHOLE_CODEX_BIN: IMAGE_FIXTURE,
     FAKE_CODEX_IMAGE_MODE: "hang",
@@ -133,6 +136,7 @@ async function imageGenerationJourney() {
   }
 
   const okDir = await fs.mkdtemp(path.join(tmp, "image-ok-"));
+  await seedImagesEnabled(okDir);
   const okMcp = await startMcp(okDir, {
     RABBITHOLE_CODEX_BIN: IMAGE_FIXTURE,
     FAKE_CODEX_IMAGE_MODE: "ok",
@@ -205,6 +209,76 @@ async function imageGenerationJourney() {
   }
 }
 
+async function imageSettingJourney() {
+  const offDir = await fs.mkdtemp(path.join(tmp, "image-setting-off-"));
+  const offMcp = await startMcp(offDir);
+  const context = await browser.newContext();
+  try {
+    const initialTools = await offMcp.client.listTools();
+    assert.equal(initialTools.tools.some((tool) => tool.name === "generate_image"), false,
+      "the default store must hide generate_image");
+    assert.equal(initialTools.tools.find((tool) => tool.name === "answer_branch")?.description.includes("generate_image"), false,
+      "the default answer_branch description must omit image guidance");
+    assert.equal(offMcp.client.getInstructions()?.includes("generate_image"), false,
+      "the default server instructions must omit image guidance");
+
+    const openPromise = callTool(offMcp.client, "open_rabbithole", {
+      title: "Image setting journey", content: "Select this sentence before changing image settings.",
+    });
+    const page = await context.newPage();
+    const url = await offMcp.nextUrl();
+    await page.goto(url);
+    await selectAndAsk(page, "Select this sentence", "Explain this setting");
+    await openPromise;
+
+    const turnedOn = new Promise((resolve) => offMcp.client.setNotificationHandler(ToolListChangedNotificationSchema, resolve));
+    const onResponse = await fetch(url + "/events", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "preferences_patch", values: { "rh-ai-images": "on" } }),
+    });
+    assert.equal(onResponse.status, 200);
+    await turnedOn;
+    const onTools = await offMcp.client.listTools();
+    assert.equal(onTools.tools.some((tool) => tool.name === "generate_image"), true,
+      "enabling AI images must add generate_image to the live tool list");
+    assert.equal(onTools.tools.find((tool) => tool.name === "answer_branch")?.description.includes("generate_image"), true,
+      "enabling AI images must restore answer_branch guidance");
+
+    const turnedOff = new Promise((resolve) => offMcp.client.setNotificationHandler(ToolListChangedNotificationSchema, resolve));
+    const offResponse = await fetch(url + "/events", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "preferences_patch", values: { "rh-ai-images": null } }),
+    });
+    assert.equal(offResponse.status, 200);
+    await turnedOff;
+    const offTools = await offMcp.client.listTools();
+    assert.equal(offTools.tools.some((tool) => tool.name === "generate_image"), false,
+      "disabling AI images must remove generate_image from the live tool list");
+    assert.equal(offTools.tools.find((tool) => tool.name === "answer_branch")?.description.includes("generate_image"), false,
+      "disabling AI images must remove answer_branch guidance");
+    await page.close();
+    console.log("ok cross-host journey: AI image discovery is off by default and flips live");
+  } finally {
+    await context.close();
+    await offMcp.close();
+  }
+
+  const onDir = await fs.mkdtemp(path.join(tmp, "image-setting-on-"));
+  await seedImagesEnabled(onDir);
+  const onMcp = await startMcp(onDir);
+  try {
+    const tools = await onMcp.client.listTools();
+    assert.equal(tools.tools.some((tool) => tool.name === "generate_image"), true,
+      "a pre-seeded preference must expose generate_image at startup");
+    assert.equal(tools.tools.find((tool) => tool.name === "answer_branch")?.description.includes("generate_image"), true,
+      "a pre-seeded preference must expose answer_branch guidance");
+    assert.equal(onMcp.client.getInstructions()?.includes("generate_image"), true,
+      "a pre-seeded preference must expose the image instruction sentence");
+  } finally {
+    await onMcp.close();
+  }
+}
+
 async function modernJourney() {
   const authorDir = await fs.mkdtemp(path.join(tmp, "modern-author-"));
   const mcp = await startMcp(authorDir);
@@ -223,7 +297,7 @@ async function modernJourney() {
     await page.goto(liveUrl);
     await assertRendered(page, "Select this exact phrase", true);
     await assertCodeCopy(page, { scope: ".doc-content:visible", rawCode: JOURNEY_CODE, click: true, label: "live MCP" });
-    await assertSharedSettings(page, "live MCP", { canvas: true });
+    await assertSharedSettings(page, "live MCP", { canvas: true, images: true, preferencesPath: path.join(authorDir, "preferences.json") });
     await selectAndAsk(page, "Select this exact phrase", "Explain the selected phrase");
     const branch = await openPromise;
     assert.equal(branch.status, "branch_request", `modern MCP open result: ${JSON.stringify(branch)}`);
@@ -289,7 +363,7 @@ async function assertSharedSettings(page, label, capabilities) {
   await page.click("#t-settings");
   await page.waitForSelector("#settings-sheet");
   const expectedSections = capabilities.canvas
-    ? ["Appearance", "Canvas", "Quick questions"]
+    ? ["Appearance", "Canvas", "Quick questions", ...(capabilities.images ? ["Images"] : [])]
     : ["Appearance", "Quick questions"];
   assert.deepEqual(await page.locator("[data-settings-section]").allTextContents(), expectedSections,
     `${label}: settings sections should match the host's live capabilities`);
@@ -317,9 +391,32 @@ async function assertSharedSettings(page, label, capabilities) {
   assert.equal(await page.locator(".doc-content").first().evaluate((doc) => parseFloat(getComputedStyle(doc).fontSize)) >= 15, true,
     `${label}: the global reading size should reach the cards`);
   await page.click("[data-reading-reset]");
+  if (capabilities.images) {
+    await page.getByRole("tab", { name: "Images" }).click();
+    assert.deepEqual(await page.locator(".settings-sheet-sub").allTextContents(),
+      ["Your agent can draw a picture when you ask for one, using Codex image generation. Each picture costs extra tokens, so this is off by default. Needs Codex installed and signed in."],
+      `${label}: the Images setting uses the specified copy`);
+    const imageSwitch = page.locator("[data-ai-images-enabled]");
+    assert.equal(await imageSwitch.isChecked(), false, `${label}: AI images default off`);
+    await imageSwitch.check();
+    await waitForPreference(capabilities.preferencesPath, (values) => values["rh-ai-images"] === "on");
+    await imageSwitch.uncheck();
+    await waitForPreference(capabilities.preferencesPath, (values) => !Object.hasOwn(values, "rh-ai-images"));
+  }
   await page.keyboard.press("Escape");
   await page.waitForSelector("#settings-sheet", { state: "detached" });
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-settings", `${label}: closing should restore focus to the gear`);
+}
+
+async function waitForPreference(file, predicate) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    try {
+      const values = JSON.parse(await fs.readFile(file, "utf8")).values;
+      if (predicate(values)) return values;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("preferences.json did not reach the expected state");
 }
 
 async function resumePortableOverMcp(text, prefix, title, rootMarkdown, branchMarkdown) {
@@ -382,6 +479,10 @@ async function startMcp(dir, env = {}) {
     }),
     close: async () => { await client.close(); },
   };
+}
+
+async function seedImagesEnabled(dir) {
+  await fs.writeFile(path.join(dir, "preferences.json"), JSON.stringify({ version: 1, values: { "rh-ai-images": "on" } }), "utf8");
 }
 
 async function callTool(client, name, args, options = {}) {

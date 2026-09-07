@@ -189,6 +189,14 @@ function onAskOwnerKeydown(e) {
 function focusAskOwner(owner) {
   if (!owner || !owner.isConnected) return;
   if (!owner.hasAttribute("tabindex")) owner.setAttribute("tabindex", "-1");
+  owner.setAttribute("data-focus-quiet", "");
+  owner.addEventListener(
+    "blur",
+    function () {
+      owner.removeAttribute("data-focus-quiet");
+    },
+    { once: true },
+  );
   try {
     owner.focus({ preventScroll: true });
   } catch (e) {

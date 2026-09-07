@@ -76,6 +76,7 @@ export function createCanvasAttention() {
     getHoveredCardId: function () {
       return hoveredCardId;
     },
+    engageCard: engageCard,
     cardScrolled: function (card) {
       engageCard(cardIdFromTarget(card));
     },

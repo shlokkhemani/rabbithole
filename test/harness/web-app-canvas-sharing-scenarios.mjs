@@ -2202,6 +2202,39 @@ async function verifyStandaloneNotesAndEditing() {
 
     await standaloneAsk.locator('.card-btn[aria-label="Collapse card"]').click();
     assert.equal(await standaloneAsk.evaluate((card) => card.classList.contains("collapsed")), true,
+      "the palette target should start from the ordinary collapsed-card path");
+    await page.keyboard.press("Control+K");
+    await page.fill("#pal-text", "Standalone canvas ask");
+    await page.locator(".pal-item:visible", { hasText: "Standalone canvas ask" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.evaluate(() => window.__rabbitholeTest.waitForCanvasViewSettled());
+    await page.waitForFunction(async (id) => {
+      const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((entry) => entry.id === id);
+      return node?.collapsed === false && typeof node.extensions?.attention?.seen_at === "number";
+    }, askDraftState.id);
+    const paletteUnfolded = await page.evaluate(async (id) => {
+      const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((entry) => entry.id === id);
+      const card = document.querySelector(`.card[data-id="${id}"]`);
+      const body = card?.querySelector(".card-body");
+      const viewport = document.getElementById("viewport")?.getBoundingClientRect();
+      const rect = card?.getBoundingClientRect();
+      return {
+        nodeCollapsed: node?.collapsed,
+        seenAt: node?.extensions?.attention?.seen_at,
+        cardCollapsed: card?.classList.contains("collapsed"),
+        bodyVisible: !!body && getComputedStyle(body).display !== "none",
+        cardWithinViewport: !!rect && !!viewport && rect.left >= viewport.left - 1 && rect.top >= viewport.top - 1
+          && rect.right <= viewport.right + 1 && rect.bottom <= viewport.bottom + 1,
+      };
+    }, askDraftState.id);
+    assert.equal(paletteUnfolded.nodeCollapsed, false, "a palette result should expand the collapsed target in persistence");
+    assert.equal(paletteUnfolded.cardCollapsed, false, "a palette result should remove the target card's collapsed class");
+    assert.equal(paletteUnfolded.bodyVisible, true, "a palette result should make the target body visible");
+    assert.equal(typeof paletteUnfolded.seenAt, "number", "a palette result should write the target's seen ledger");
+    assert.equal(paletteUnfolded.cardWithinViewport, true, "palette navigation should frame the target at its expanded height");
+
+    await standaloneAsk.locator('.card-btn[aria-label="Collapse card"]').click();
+    assert.equal(await standaloneAsk.evaluate((card) => card.classList.contains("collapsed")), true,
       "standalone asks must use the ordinary collapse path");
     await deleteCardBranch(page, standaloneAsk);
     await page.waitForSelector(`.card[data-id="${askDraftState.id}"]`, { state: "detached" });
@@ -4194,6 +4227,8 @@ async function verifyCanvasBranching() {
   await page.waitForSelector("#ask:not(.visible)", { state: "attached" });
   await page.waitForFunction(() => document.activeElement?.matches(".card.root"));
   assert.equal(await page.evaluate(() => window.getSelection().toString()), "Euler identity", "selection-bar Escape should preserve the live text selection");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none",
+    "selection-bar Escape should keep the focused card free of a focus ring");
   assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "selection-bar Escape must stay inside the selection bar");
   await panCanvasBy(page, { x: -edgeSelection.pan.x, y: -edgeSelection.pan.y });
 

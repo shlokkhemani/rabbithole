@@ -22,8 +22,18 @@ function consumePointerGesture(event) {
   event.stopImmediatePropagation();
 }
 
-export function focusElement(element) {
+export function focusElement(element, quiet) {
   if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+  if (quiet && element.getAttribute("tabindex") === "-1" && element.matches(".card, #reader-main")) {
+    element.setAttribute("data-focus-quiet", "");
+    element.addEventListener(
+      "blur",
+      function () {
+        element.removeAttribute("data-focus-quiet");
+      },
+      { once: true },
+    );
+  }
   try {
     element.focus({ preventScroll: true });
   } catch (error) {
@@ -66,7 +76,7 @@ function onPointerdown(event) {
   if (layer.restoreFocus)
     layer.focusTimer = setTimeout(function () {
       layer.focusTimer = 0;
-      if (!focusElement(layer.trigger)) focusElement(layer.previousFocus);
+      if (!focusElement(layer.trigger)) focusElement(layer.previousFocus, true);
     }, 0);
 }
 function syncListeners() {
@@ -106,7 +116,7 @@ export function registerLayer(options) {
       layer.focusTimer = 0;
     }
     if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
-      if (!focusElement(layer.trigger)) focusElement(layer.previousFocus);
+      if (!focusElement(layer.trigger)) focusElement(layer.previousFocus, true);
     }
   };
 }

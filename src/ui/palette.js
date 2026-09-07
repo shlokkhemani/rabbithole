@@ -1,7 +1,15 @@
+import { isNoteNode } from "../core/hole/ask.js";
 import { truncate } from "../core/hole/lens.js";
 import { escapeHtml } from "../core/utils.js";
 import { presetLabelForOrigin } from "./ask-presets.js";
-import { createStandaloneNoteAtViewportCenter, frameAll, tidy } from "./canvas/index.js";
+import {
+  createStandaloneNoteAtViewportCenter,
+  ensureCanvasBuilt,
+  frameAll,
+  tidy,
+  toggleCollapse,
+} from "./canvas/index.js";
+import { r } from "./canvas/runtime.js";
 import { goToNode, mode, motionSourceFromEvent, nodes, paletteEl, palResults, palText } from "./core.js";
 import { isCommandEnter } from "./input-intent.js";
 import { createModuleLifecycle } from "./kit/scope.js";
@@ -366,7 +374,15 @@ function commitPal(source) {
   }
   const node = nodes[item.id];
   closePalette();
-  if (node) goToNode(node, source);
+  if (node) {
+    const canUnfold = !isNoteNode(node);
+    if (canUnfold && node.collapsed) {
+      ensureCanvasBuilt();
+      toggleCollapse(node);
+    }
+    goToNode(node, source);
+    if (canUnfold) r.canvasMaintenance?.engageCard(node.id);
+  }
 }
 function onPaletteClick(e) {
   const it = e.target.closest(".pal-item");

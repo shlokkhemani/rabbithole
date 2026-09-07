@@ -36,6 +36,7 @@ function createCanvasMaintenance(clock) {
     throw error;
   }
   return {
+    engageCard: attention.engageCard,
     branchExpanded: autoTidy.branchExpanded,
     cardScrolled: attention.cardScrolled,
     modeChanged: function (nextMode) {

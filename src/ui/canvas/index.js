@@ -3,7 +3,7 @@ export { createNodeEl } from "./card.js";
 export { autoGrowEl, updateCardComposer } from "./card-composer.js";
 export { fillBody, noteCommitFromEnter, noteComposerActions } from "./document.js";
 export { clearEdgeHighlight, drawEdges, effH, scheduleEdges } from "./edges.js";
-export { renderVisibility, setBranchCollapsed } from "./fold.js";
+export { renderVisibility, setBranchCollapsed, toggleCollapse } from "./fold.js";
 export { layoutNode } from "./gestures.js";
 export { canConvertNote, ensureNodeMenuButton } from "./menu.js";
 export { convertNoteToAsk, rollbackNoteConversion, startTitleEditing } from "./note-convert.js";

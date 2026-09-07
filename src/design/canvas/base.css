@@ -330,6 +330,7 @@ body.mode-flight #viewport { display: block; }
 /* overflow stays visible so the follow-up drawer can slide out below the card;
    the head carries its own top radius instead. */
 .card { --card-head-bg: var(--card-head); position: absolute; display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+[data-focus-quiet]:focus-visible { outline: none; }
 .card.card-note { --card-head-bg: var(--note-card-head); background: var(--note-card-bg); border-color: var(--note-card-border); }
 .card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) 16%, transparent); opacity: 0; pointer-events: none; transition: opacity var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1); }
 .card.card-enter { opacity: 0; transform: translateY(8px); transition: opacity var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1), transform var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1); }

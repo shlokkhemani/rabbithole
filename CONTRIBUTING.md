@@ -2,7 +2,7 @@
 
 Thank you for helping make Rabbithole better. The project uses plain JavaScript
 ES modules, Node 18 or newer, and browser-native APIs. There is no application
-framework and no runtime build step for the MCP package.
+framework, and published packages require no consumer-side build step.
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing a public format, host
 boundary, or UI composition. [Testing Rabbithole](docs/testing.md) documents the
@@ -42,8 +42,8 @@ through `npx` without adding it to the project.
 
 | Command | Purpose |
 |---|---|
-| `npm run build` | Rebuild committed MCP browser assets in `dist/` and the ignored static app in `web/dist/`. |
-| `npm run check:dist` | Rebuild to a temporary directory and verify that committed `dist/` is current. |
+| `npm run build` | Rebuild the ignored MCP browser assets in `dist/` and static app in `web/dist/`. |
+| `npm run build:package` | Rebuild only the ignored MCP browser assets in `dist/`. |
 | `npm run check:purity` | Enforce browser/core import boundaries. |
 | `npm run check:types` | Run strict JavaScript checking over the typed core contracts and their fixtures. |
 | `npm test` | Run unit, contract, integration, end-to-end, and performance suites. |
@@ -68,18 +68,16 @@ node test/e2e/web-app-branching.test.mjs
 
 ## Generated files
 
-`dist/` is generated and committed. It is required by installs such as
-`npx -y github:shlokkhemani/rabbithole`, because the package has no `prepare`
-script. If a change affects `src/ui/`, shared HTML or styles, browser renderer
-dependencies, or the build, run:
+`dist/` is generated and ignored. `npm ci` and `npm install` build it through
+the `prepare` lifecycle, which also makes GitHub installs and packed releases
+self-contained. If a change affects `src/ui/`, shared HTML or styles, browser
+renderer dependencies, or the build, run:
 
 ```bash
 npm run build
-npm run check:dist
 ```
 
-Commit the corresponding `dist/` changes with the source. Do not hand-edit
-generated bundles.
+Do not hand-edit or commit generated bundles.
 
 `web/dist/` and `publish/` are generated but ignored. `npm run build` recreates
 `web/dist/`; `npm run build:publish` recreates both and adds deployment metadata
@@ -119,7 +117,8 @@ record the rationale and use `npm run calibrate:budgets` deliberately.
    behavior changes.
 5. Run the focused test while iterating, then the suite appropriate to the
    touched boundary.
-6. Rebuild generated artifacts when browser code changes.
+6. Rebuild generated artifacts when browser code changes; commit only the
+   reader-facing generated documentation.
 7. Before opening a pull request, run the complete validation set appropriate
    to the change.
 
@@ -128,7 +127,6 @@ For most source changes, the full local validation set is:
 ```bash
 npm run check:types
 npm run build
-npm run check:dist
 npm run check:purity
 npm test
 npm run test:packaging

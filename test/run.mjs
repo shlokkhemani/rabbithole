@@ -8,6 +8,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const testDir = path.join(rootDir, "test");
 const tiers = ["unit", "contracts", "integration", "e2e", "performance", "packaging"];
 const options = parseArgs(process.argv.slice(2));
+if (!["unit", "packaging"].includes(options.tier)) await ensureFullBuild();
 const checks = {
   icons: [process.execPath, [path.join(rootDir, "scripts/generate-ionicons.mjs"), "--check"]],
   css: [process.execPath, [path.join(rootDir, "scripts/check-css-integrity.mjs")]],
@@ -19,6 +20,15 @@ const checks = {
   "ui-architecture": [process.execPath, [path.join(rootDir, "scripts/check-ui-architecture.mjs")]],
   "suite-purity": [process.execPath, [path.join(rootDir, "test/harness/suite-purity.mjs")]],
 };
+
+async function ensureFullBuild() {
+  try {
+    await fs.access(path.join(rootDir, "web/dist/index.html"));
+  } catch {
+    const code = await run(process.execPath, [path.join(rootDir, "build.mjs")]);
+    if (code !== 0) process.exit(code);
+  }
+}
 
 let jobs = [];
 if (options.tier === "all") {

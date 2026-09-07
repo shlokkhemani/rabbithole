@@ -19,7 +19,7 @@ Plain ES modules, a small esbuild-based browser build, and script-driven tests.
 - `src/web/` — static BYOK browser host, provider adapters, and IndexedDB store
 - `src/core/html/` — shared self-contained shell, tokens, and stylesheet source
 - `src/core/html/icons.js` — canonical repository for all product-owned SVG icons and brand marks
-- `dist/` — committed live and frozen UI bundles; regenerate after UI changes
+- `dist/` — ignored live and frozen UI bundles; built during install and packaging
 - `test/` — capability-oriented suites documented in `docs/testing.md`
 - `website/public/` — live public assets copied by `build:publish`
 
@@ -28,7 +28,7 @@ Plain ES modules, a small esbuild-based browser build, and script-driven tests.
 ```bash
 npm install
 RABBITHOLE_NO_BROWSER=1 node bin/mcp-server.js   # speaks MCP on stdio
-npm run build                                    # regenerate committed bundles
+npm run build                                    # regenerate package and web bundles
 npm test                                         # deterministic default suite
 ```
 

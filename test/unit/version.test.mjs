@@ -45,11 +45,11 @@ test("the MCP server reports the package version in its server info", async () =
 });
 
 /*
- * The committed bundles are what an installed package runs, so the injected
- * version has to survive bundling and minification. They carry no commit: the
- * stamp would make dist/ irreproducible and check:dist would fail every build.
+ * The built bundles are what an installed package runs, so the injected
+ * version has to survive bundling and minification. Package assets carry no
+ * commit stamp; only the deployed web build identifies a source revision.
  */
-test("the committed browser bundles carry the injected version", async () => {
+test("the built browser bundles carry the injected version", async () => {
   for (const name of ["client.js", "frozen-client.js"]) {
     const bundle = await fs.readFile(path.join(rootDir, "dist", name), "utf8");
     assert.ok(

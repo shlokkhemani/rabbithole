@@ -56,6 +56,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/contracts/docs-tour.test.mjs` — The offline, zero-network architecture tour.
 - `test/contracts/fetch-proxy-worker.test.mjs` — fetch proxy worker capability contracts.
 - `test/contracts/filesystem-store.test.mjs` — filesystem store capability contracts.
+- `test/contracts/generate-image.test.mjs` — generate_image MCP contracts.
 - `test/contracts/host-parity.test.mjs` — Shared engine state, persistence, and asset GC parity across the MCP and web host adapters.
 - `test/contracts/indexeddb-store.test.mjs` — indexeddb store capability contracts.
 - `test/contracts/mcp-context-budget.test.mjs` — branch context payload ceilings across the portable corpus and a 50-node note-heavy hole.
@@ -78,6 +79,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/integration/bridge-failure-modes.test.mjs` — bridge failure modes capability contracts.
 - `test/integration/bridge-http.test.mjs` — bridge http capability contracts.
 - `test/integration/custom-endpoint.test.mjs` — custom endpoint capability contracts.
+- `test/integration/generate-image.test.mjs` — generate_image materialization and session orchestration.
 - `test/integration/generation-lifecycle.test.mjs` — generation lifecycle capability contracts.
 - `test/integration/image-experience.test.mjs` — image experience capability contracts.
 - `test/integration/mcp-rearm.test.mjs` — mcp rearm capability contracts.

@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Node-only gates plus the production build artifact deploy-pages consumes.
+  # Node-only gates, built package assets, and the production artifact deploy-pages consumes.
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -25,9 +25,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:types
-      - run: npm run check:dist
-      # check:dist must verify the committed dist bytes before build rewrites
-      # them; build then recreates identical dist plus web/dist for docs/deploy.
       - run: npm run build
       - run: npm run check:purity
       - run: npm run check:docs

@@ -29,9 +29,9 @@ import { openDialog } from "./primitives/dialog.js";
 
 const SCRIM_ID = "settings-sheet-scrim";
 const SHEET_ID = "settings-sheet";
-// Build stamps, injected by build.mjs from package.json. The committed dist/
-// bundles must stay byte-reproducible, so they carry the version alone; only
-// the continuously deployed web build also carries a commit.
+// Build stamps, injected by build.mjs from package.json. Package bundles carry
+// the version alone; only the continuously deployed web build also carries a
+// commit.
 const BUILD_VERSION = typeof __RABBITHOLE_VERSION__ === "string" ? __RABBITHOLE_VERSION__ : "";
 const BUILD_COMMIT = typeof __RABBITHOLE_COMMIT__ === "string" ? __RABBITHOLE_COMMIT__ : "";
 const THEME_CHOICES = [

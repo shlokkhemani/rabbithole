@@ -9,13 +9,15 @@ This is a usage inventory, not a promise that every variable is public configura
 | `CLAUDE_CONFIG_DIR` | `scripts/install-journey-check.mjs` |
 | `CODEX_HOME` | `scripts/install-journey-check.mjs` |
 | `FORCE_COLOR` | `scripts/install-journey-check.mjs` |
-| `HOME` | `src/node/bridge/agents/codex.js`, `src/node/bridge/token.js` |
-| `PATH` | `scripts/install-journey-check.mjs`, `src/node/bridge/agents/isolation.js` |
+| `HOME` | `src/node/shared/codex-home.js` |
+| `PATH` | `scripts/install-journey-check.mjs`, `src/node/shared/process.js` |
 | `RABBITHOLE_BRIDGE_CLAUDE_BIN` | `scripts/install-journey-check.mjs`, `src/node/bridge/agents/claude.js` |
 | `RABBITHOLE_BRIDGE_CODEX_BIN` | `scripts/install-journey-check.mjs`, `src/node/bridge/agents/codex.js` |
+| `RABBITHOLE_CODEX_BIN` | `src/node/mcp/image-gen.js` |
 | `RABBITHOLE_COMMIT` | `build.mjs` |
 | `RABBITHOLE_DEV` | `src/node/mcp/http/assets.js` |
-| `RABBITHOLE_DIR` | `scripts/install-journey-check.mjs`, `src/node/bridge/token.js`, `src/node/mcp/store/fs-store.js`, `src/node/mcp/store/prefs-store.js` |
-| `RABBITHOLE_NO_BROWSER` | `src/node/mcp/registry.js`, `src/node/shared/process.js` |
+| `RABBITHOLE_DIR` | `scripts/imagegen-live-check.mjs`, `scripts/install-journey-check.mjs`, `src/node/mcp/store/fs-store.js`, `src/node/mcp/store/prefs-store.js`, `src/node/shared/codex-home.js` |
+| `RABBITHOLE_IMAGE_DEADLINE_MS` | `src/node/mcp/image-gen.js` |
+| `RABBITHOLE_NO_BROWSER` | `scripts/imagegen-live-check.mjs`, `src/node/mcp/registry.js`, `src/node/shared/process.js` |
 | `RABBITHOLE_PROGRESS_INTERVAL_MS` | `src/node/mcp/tools.js` |
 | `RABBITHOLE_PROXY_URL` | `build.mjs` |

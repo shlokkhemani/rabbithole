@@ -132,16 +132,17 @@ used to create browser artifacts:
 
 - `dist/client.js` and `dist/frozen-client.js` are the live and frozen UI
   bundles used by the local MCP host;
-- `dist/dompurify.js` and `dist/katex.css` provide self-contained sanitizer,
-  math, and font assets;
+- `dist/canvas.css`, `dist/visual-block.css`, and `dist/katex.css` provide the
+  built styles and inlined math fonts. DOMPurify and Mermaid are resolved from
+  their installed packages when the Node host assembles a page;
 - `web/dist/` is the ignored static browser application assembled from the web
   shell and browser bundles;
 - `publish/` is the ignored Cloudflare Pages payload produced by
   `npm run build:publish`.
 
-`dist/` is committed because GitHub `npx` installs run the MCP server directly
-without a prepare step. Source changes that affect it must include regenerated
-artifacts, and `npm run check:dist` verifies byte-for-byte reproducibility.
+`dist/` is generated and ignored. The `prepare` lifecycle builds it in source
+checkouts, GitHub installs, and before npm packs or publishes; published
+tarballs therefore include the assets without requiring consumers to build.
 
 Both a live MCP canvas page and an exported frozen snapshot are assembled as one
 self-contained HTML response. That constraint is load-bearing: do not introduce

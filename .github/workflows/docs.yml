@@ -15,4 +15,5 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
+      # npm ci runs prepare, which supplies the package assets build:docs reads.
       - run: npm run check:docs

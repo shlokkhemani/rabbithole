@@ -14,6 +14,12 @@ Answer one pending request in an open Rabbithole.
 
 Inputs: `session_id`, `request_id`, `title`, `content`, `base_url`, `assets`, `partial`, `delegated`
 
+## generate_image
+
+Generate one PNG for a pending answer.
+
+Inputs: `session_id`, `request_id`, `prompt`, `aspect`, `caption`, `edit_of`, `reference`
+
 ## read_rabbithole
 
 Read saved or open Rabbithole context without starting a listener.

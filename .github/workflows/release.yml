@@ -33,10 +33,8 @@ jobs:
           fi
 
       # The package gate, not the whole CI matrix: the browser tiers already
-      # ran on the commit this tag points at. check:dist must verify the
-      # committed bytes before build rewrites them.
+      # ran on the commit this tag points at.
       - run: npm run check:types
-      - run: npm run check:dist
       - run: npm run build
       - run: npm run check:purity
       - run: npm run check:docs
@@ -55,6 +53,7 @@ jobs:
             exit 1
           fi
 
+      # npm publish runs prepare, so the tarball receives freshly built package assets.
       - run: npm publish --provenance --access public
 
       - name: Create the GitHub release

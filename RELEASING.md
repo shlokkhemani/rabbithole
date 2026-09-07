@@ -19,8 +19,9 @@ bumps the patch.
    npm version minor   # or: npm version patch
    ```
 
-   The `version` lifecycle script rebuilds `dist/` and `docs/` with the new
-   version baked in and stages them, so the bump commit carries them.
+   The `version` lifecycle script rebuilds and stages `docs/` with the new
+   version baked in. The release workflow builds the complete app for its
+   checks, and `npm publish` runs `prepare` to build the package tarball assets.
 3. Push the commit and the tag:
 
    ```bash

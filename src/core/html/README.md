@@ -14,22 +14,21 @@ and CSS live as pure template strings here, while Node-only assembly lives under
   `npm run icons:studio` and open `http://127.0.0.1:4178` to compare every
   Ionicons 5 glyph in the real light, dark, navigation, and control contexts.
   Draft choices remain local until **Apply to Rabbithole** regenerates the
-  curated payload and committed UI bundles.
+  curated payload and ignored UI bundles.
 - `src/node/html/canvas.js` assembles the document and owns the public
   `buildCanvasHtml(...)` API for the MCP host.
-- `src/node/html/built-assets.js` reads committed files from `dist/`:
-  `client.js`, `frozen-client.js`, `katex.css`, `dompurify.js`, and the pinned
-  `mermaid.js` runtime.
+- `src/node/html/built-assets.js` reads built files from `dist/`: `client.js`,
+  `frozen-client.js`, `canvas.css`, and `katex.css`. DOMPurify and Mermaid are
+  resolved from their installed packages.
 - `src/node/html/dev-reload.js` holds the `RABBITHOLE_DEV` loop: with it unset
   those reads stay frozen at first access, and with it set both the bundles and
   the `src/core/` template modules are re-read per page load so a browser reload
   shows a rebuild without restarting the MCP server.
 - `src/web/` is the standalone static web host. `npm run build` writes
   `web/dist/` (ignored) with `index.html`, `app.js`, CSS, DOMPurify, Mermaid,
-  and frozen snapshot source. `scripts/check-dist.mjs` intentionally compares only the
-  committed MCP `dist/` artifacts.
+  and frozen snapshot source.
 - `src/ui/*.js` are the browser runtime source modules. Edit those, then run
-  `npm run build` and commit the resulting `dist/` changes.
+  `npm run build` to refresh both ignored build directories.
 - Hydration and SSE carry node markdown, not rendered HTML. The browser renders
   through `src/core/markdown-renderer.js`, with host adapters for UTF-8 base64
   and `asset:` URL resolution.
@@ -61,14 +60,14 @@ Behavior-preserving rules:
   file lazily from its own origin.
 - Frozen exports must not include live transport wiring (`EventSource` or
   `/sse`) or live asset route strings.
-- Browser bundles and styles are committed in `dist/`. Large byte-identical
+- Browser bundles and styles are generated in ignored `dist/`; `prepare`
+  supplies them for source installs and package creation. Large byte-identical
   vendor runtimes are resolved from declared package dependencies when the
   local host assembles a self-contained page.
 - After changing the curated Ionicons set or its normalization, run
   `npm run generate:icons`. `npm run check:icons` guards against generated drift.
 - Verify final HTML by extracting the executable inline `<script>` and running
   `node --check` on that extracted script.
-- `npm run check:dist` must pass before changes land so `dist/` stays fresh.
 
 Web CSP:
 

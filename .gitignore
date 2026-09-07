@@ -14,7 +14,8 @@ website/.next/
 website/out/
 website/next-env.d.ts
 
-# standalone web app build output
+# generated build output
+/dist/
 web/dist/
 publish/
 scratchpad/

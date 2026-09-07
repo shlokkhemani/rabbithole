@@ -34,8 +34,8 @@ write(filePath, "third", 20);
 assert.equal(readLive(), "third", "dev must serve the rebuilt bytes");
 console.log("ok dev reload: dev serves changed files without a restart");
 
-// build.mjs clears dist/ before rewriting it; a read landing in that window
-// keeps the last good bytes instead of failing the render.
+// A package-asset rebuild clears dist/ before rewriting it; a read landing in
+// that window keeps the last good bytes instead of failing the render.
 fs.rmSync(filePath);
 assert.equal(readLive(), "third", "a missing file must fall back to the last good read");
 write(filePath, "fourth", 30);

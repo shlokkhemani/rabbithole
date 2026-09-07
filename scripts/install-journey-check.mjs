@@ -217,6 +217,8 @@ async function prepareRealCliEnv(dataDirectory) {
 
 async function packProject(sourceDirectory, destination) {
   await fs.mkdir(destination, { recursive: true });
+  // npm pack runs prepare in the source tree, so the captured tarball contains
+  // fresh package assets even when the checkout began without dist/.
   const { stdout } = await execFileAsync(
     "npm",
     ["pack", "--json", "--pack-destination", destination],

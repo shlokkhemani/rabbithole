@@ -6,15 +6,16 @@
 | --- | --- |
 | `npm run build` | `node build.mjs` |
 | `npm run build:docs` | `node scripts/build-docs.mjs` |
+| `npm run build:package` | `node build.mjs --outdir=dist` |
 | `npm run build:publish` | `node scripts/build-publish.mjs` |
 | `npm run calibrate:budgets` | `node test/support/calibrate-budgets.mjs` |
 | `npm run check:bridge-live` | `node scripts/bridge-live-check.mjs` |
 | `npm run check:css` | `node scripts/check-css-integrity.mjs` |
 | `npm run check:design` | `node scripts/check-design.mjs` |
 | `npm run check:design-doc` | `node scripts/generate-design-doc.mjs --check` |
-| `npm run check:dist` | `node scripts/check-dist.mjs` |
 | `npm run check:docs` | `node scripts/build-docs.mjs --check` |
 | `npm run check:icons` | `node scripts/generate-ionicons.mjs --check` |
+| `npm run check:imagegen-live` | `node scripts/imagegen-live-check.mjs` |
 | `npm run check:install-live` | `node scripts/install-journey-check.mjs` |
 | `npm run check:isolation-live` | `node test/run.mjs isolation-live` |
 | `npm run check:purity` | `node scripts/check-ui-purity.mjs` |
@@ -27,6 +28,7 @@
 | `npm run generate:design-doc` | `node scripts/generate-design-doc.mjs` |
 | `npm run generate:icons` | `node scripts/generate-ionicons.mjs` |
 | `npm run icons:studio` | `node tools/icon-studio/server.mjs` |
+| `npm run prepare` | `node build.mjs --outdir=dist` |
 | `npm run test` | `node test/run.mjs all` |
 | `npm run test:contracts` | `node test/run.mjs contracts` |
 | `npm run test:e2e` | `node test/support/local-tier.mjs e2e` |
@@ -35,4 +37,4 @@
 | `npm run test:performance` | `node test/run.mjs performance` |
 | `npm run test:quick` | `node test/support/quick-test.mjs` |
 | `npm run test:unit` | `node test/run.mjs unit` |
-| `npm run version` | `npm run build && npm run build:docs && git add dist docs` |
+| `npm run version` | `npm run build:docs && git add docs` |

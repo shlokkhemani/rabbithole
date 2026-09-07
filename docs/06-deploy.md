@@ -2,7 +2,7 @@
 
 The hosted web app is a static build. It needs no application server and holds no user documents or provider credentials. An optional fetch relay exists only for public sources that cannot be fetched directly by a browser.
 
-The local package is distributed with committed browser artifacts so a package runner can start the MCP server immediately. The shared kernel and local host execute directly from the published source.
+The local package is distributed with browser artifacts generated before packing, so a package runner can start the MCP server immediately without building. The shared kernel and local host execute directly from the published source.
 
 Release verification separates building from deployment. Continuous integration builds and verifies the exact static bytes that the deployment workflow later publishes. A deployment therefore cannot quietly rebuild different output.
 

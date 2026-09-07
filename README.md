@@ -67,7 +67,7 @@ Useful references:
 - [Design system](docs/design-system.md)
 - [Historical proposals](docs/proposals/README.md)
 
-The canvas and frozen snapshots remain self-contained HTML. The browser bundles in `dist/` are committed so the package can run without an install-time build.
+The canvas and frozen snapshots remain self-contained HTML. Package tarballs include the browser bundles built during packaging, so registry installs need no consumer-side build.
 
 ## License
 

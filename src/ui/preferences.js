@@ -444,10 +444,14 @@ export function askPresetsLinked() {
 
 /** The keys a surface actually shows, in row order — removal follows the link. */
 export function visibleAskPresetKeys(set) {
-  return ASK_PRESET_KEYS.filter((key) => {
+  const builtIns = DEFAULT_ASK_PRESET_KEYS.filter((key) => {
     const preset = askPreset(set, key);
     return !!preset && preset.removed !== true;
   });
+  const custom = askPreset(set, "custom");
+  // A legacy store may contain three visible built-ins plus a custom preset.
+  // Keep that custom value stored but hidden until a built-in leaves a slot.
+  return [...builtIns, ...(custom && custom.removed !== true ? ["custom"] : [])].slice(0, 3);
 }
 
 export function setAskPresetsLinked(value) {
@@ -510,6 +514,7 @@ export function setAskPresetRemoved(set, key, value) {
 }
 
 export function createCustomAskPreset(set) {
+  if (visibleAskPresetKeys(set).length >= 3) return null;
   return setAskPreset(set, "custom", {
     label: "New question",
     instruction: "Ask a focused question about this.",

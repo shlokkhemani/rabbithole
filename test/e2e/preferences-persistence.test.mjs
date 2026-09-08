@@ -69,9 +69,11 @@ try {
   await pageA.locator("#asking-selection-explain-label").fill("Across sessions");
   await pageA.locator("#asking-selection-explain-instruction").fill("Use the machine-backed preference.");
   await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-done]').click();
+  await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-button="eli5"]').click();
+  await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-remove]').click();
   await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-add]').click();
-  await pageA.locator("#asking-selection-custom-label").fill("Persistent fourth");
-  await pageA.locator("#asking-selection-custom-instruction").fill("Carry the fourth slot across origins.");
+  await pageA.locator("#asking-selection-custom-label").fill("Persistent custom");
+  await pageA.locator("#asking-selection-custom-instruction").fill("Carry the custom slot across origins.");
   await pageA.locator('[data-asking-surface][data-set="selection"] [data-preset-done]').click();
   await pageA.locator('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]').click();
   await pageA.locator('[data-reaction-prompt="up"] [data-reaction-instruction]').fill(
@@ -81,7 +83,7 @@ try {
   const persisted = await waitForPreferences((values) => {
     if (values["rh-theme"] !== "dark" || values["rh-reading-scale"] !== "1.1" || values["rh-auto-tidy"] !== "on") return false;
     try {
-      return JSON.parse(values["rh-ask-presets-v1"]).selection.custom?.label === "Persistent fourth"
+      return JSON.parse(values["rh-ask-presets-v1"]).selection.custom?.label === "Persistent custom"
         && JSON.parse(values["rh-reaction-prompts-v1"]).up?.instruction
           === "Keep this exact machine-backed approach.";
     } catch {
@@ -91,7 +93,7 @@ try {
   assert.equal(JSON.parse(persisted["rh-ask-presets-v1"]).selection.explain.instruction,
     "Use the machine-backed preference.");
   assert.equal(JSON.parse(persisted["rh-ask-presets-v1"]).selection.custom.instruction,
-    "Carry the fourth slot across origins.");
+    "Carry the custom slot across origins.");
   assert.equal(await pageA.evaluate(() => localStorage.getItem("rh-reading-scale")), null,
     "host-backed preferences never write to the random origin");
 
@@ -116,7 +118,7 @@ try {
   assert.equal(
     await pageB.locator('[data-asking-surface][data-set="selection"] [data-preset-button="custom"]').evaluate((button) =>
       button.firstChild?.nodeValue),
-    "Persistent fourth ",
+    "Persistent custom ",
     "the optional slot follows the reader to the new random origin",
   );
   await pageB.locator('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]').click();
@@ -127,7 +129,7 @@ try {
   const frozenHtml = await (await fetch(second.url + "/export")).text();
   assert.equal(frozenHtml.includes("Across sessions"), false);
   assert.equal(frozenHtml.includes("Use the machine-backed preference."), false);
-  assert.equal(frozenHtml.includes("Persistent fourth"), false);
+  assert.equal(frozenHtml.includes("Persistent custom"), false);
   assert.equal(frozenHtml.includes("Keep this exact machine-backed approach."), false);
   frozenContext = await browser.newContext();
   const frozenPage = await frozenContext.newPage();

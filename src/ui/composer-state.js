@@ -97,7 +97,7 @@ export function wireComposerActions(surface) {
       !e.ctrlKey &&
       !e.altKey &&
       !e.shiftKey &&
-      /^[1-9]$/.test(e.key)
+      /^[1-3]$/.test(e.key)
     ) {
       const lens = /** @type {HTMLButtonElement | undefined} */ (
         surface.actions.querySelectorAll(".lens[data-lens]")[Number(e.key) - 1]

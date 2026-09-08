@@ -565,7 +565,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .ask-input textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg);
   font-family: var(--font-ui); font-size: var(--text-body); line-height: 1.5; padding: 3px 0; min-height: 20px; max-height: 110px; }
 .ask-input textarea::placeholder { color: var(--fg-faint); }
-/* The four labels are different lengths ("ELI5" vs "Go deeper"), so equal
+/* The labels are different lengths ("ELI5" vs "Go deeper"), so equal
    flex columns produce unequal gaps between the words — the short label floats in
    a pool of space while the long one nearly touches its neighbour. Size each pill
    to its own text with identical padding and let space-between hand out the slack:
@@ -573,24 +573,6 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .ask-actions { display: flex; flex-wrap: wrap; gap: 2px; justify-content: space-between; padding: 5px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--fg) 2.5%, transparent); }
 .preset-actions { display: contents; }
 .thumb-pair { flex: 0 0 auto; display: flex; gap: 1px; }
-/* Three presets keep the original flex row byte-for-byte. At four, only the
-   fixed-width selection surface switches to an explicit two-line grid: three
-   built-ins above, custom and the stable trailing reaction pair below. */
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets,
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets {
-  display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr) max-content; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .lens:nth-child(1),
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(1) { grid-column: 1; grid-row: 1; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .lens:nth-child(2),
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(2) { grid-column: 3; grid-row: 1; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .lens:nth-child(3),
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(3) { grid-column: 5; grid-row: 1; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .lens:nth-child(4),
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .lens:nth-child(4) { grid-column: 1 / span 3; grid-row: 2; justify-self: start; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .thumb-pair,
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .thumb-pair { grid-column: 5; grid-row: 2; justify-self: end; }
-#ask:not(.mobile-sheet) #ask-actions.has-four-presets .commit-actions,
-.asking-surface[data-set="selection"] .ask-actions.has-four-presets .commit-actions { grid-column: 1 / -1; }
 .commit-actions { position: relative; display: flex; flex: 1 1 auto; min-width: 0; gap: 2px; }
 .commit-actions::before { content: ""; position: absolute; z-index: var(--layer-local-base); top: 6px; bottom: 6px; left: 50%; width: 1px; transform: translateX(-0.5px); background: var(--border); pointer-events: none; }
 .lens, .ask-commit, .note-pop-btn { flex: 0 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: var(--weight-medium);
@@ -779,7 +761,6 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
    like the lens cells beside it. Keyboard hints mean nothing to a thumb on
    glass — hide every chip, thumbs included. */
 #ask.mobile-sheet .thumb-pair { display: flex; gap: 6px; }
-#ask.mobile-sheet #ask-actions.has-four-presets .thumb-pair { grid-column: 2; }
 #ask.mobile-sheet .thumb { flex: 1 1 50%; height: auto; min-height: 46px; padding: 10px 8px; border-radius: 8px;
   font-size: var(--text-body); background: color-mix(in srgb, var(--fg) 5%, transparent); }
 #ask.mobile-sheet .thumb:active { background: var(--hl-strong); }

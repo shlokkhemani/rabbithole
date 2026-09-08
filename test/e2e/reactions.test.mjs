@@ -13,7 +13,7 @@ try {
   const providerBodies = [];
   await routeProvider(page, {
     onProviderCall: (body) => providerBodies.push(body),
-    streams: [["TITLE: Fourth preset\n", "Digit four used the configured custom question."]],
+    streams: [["TITLE: Custom preset\n", "Digit three used the configured custom question."]],
   });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await createDocument(page, [
@@ -91,8 +91,10 @@ try {
   await page.waitForSelector("#ask:not(.visible)", { state: "attached" });
   await page.click("#t-settings");
   await page.click('[data-settings-section="asking"]');
+  await page.click('[data-asking-surface][data-set="selection"] [data-preset-button="eli5"]');
+  await page.click('[data-asking-surface][data-set="selection"] [data-preset-remove]');
   await page.click('[data-asking-surface][data-set="selection"] [data-preset-add]');
-  await page.fill("#asking-selection-custom-label", "Counterpoint");
+  await page.fill("#asking-selection-custom-label", "Doubt");
   await page.fill("#asking-selection-custom-instruction", "Challenge this claim from another angle.");
   await page.click('[data-asking-surface][data-set="selection"] [data-preset-done]');
   await page.click('[data-asking-surface][data-set="selection"] [data-reaction-button="up"]');
@@ -106,27 +108,21 @@ try {
   assert.deepEqual(await page.locator("#ask-actions").evaluate((row) => {
     const lenses = Array.from(row.querySelectorAll(".lens"));
     const pair = row.querySelector(".thumb-pair");
-    const rowRect = row.getBoundingClientRect();
     const pairRect = pair.getBoundingClientRect();
-    const tops = lenses.map((lens) => Math.round(lens.getBoundingClientRect().top));
     return {
       hints: lenses.map((lens) => lens.querySelector("kbd").textContent),
       popoverWidth: parseFloat(getComputedStyle(row.closest("#ask")).width),
       display: getComputedStyle(row).display,
-      twoLines: new Set(tops).size === 2,
-      fourthSharesLastLine: tops[3] === Math.round(pairRect.top),
-      thumbsRightAligned: Math.abs(pairRect.right - (rowRect.right - 5)) < 1,
+      sharesRow: lenses.every((lens) => Math.abs(lens.getBoundingClientRect().top - pairRect.top) <= 1),
     };
   }), {
-    hints: ["1", "2", "3", "4"],
+    hints: ["1", "2", "3"],
     popoverWidth: 372,
-    display: "grid",
-    twoLines: true,
-    fourthSharesLastLine: true,
-    thumbsRightAligned: true,
-  }, "the fourth pill wraps without widening and shares a right-anchored last line with the thumbs");
-  assert.deepEqual(await page.locator("#composer-actions .lens kbd").allTextContents(), ["1", "2", "3", "4"],
-    "the linked follow-up composer exposes the same positional fourth preset without gaining reactions");
+    display: "flex",
+    sharesRow: true,
+  }, "the custom third pill stays in the fixed-width single row with the thumbs");
+  assert.deepEqual(await page.locator("#composer-actions .lens kbd").allTextContents(), ["1", "2", "3"],
+    "the linked follow-up composer exposes the same three positional presets without gaining reactions");
 
   const distantBefore = await rectOf(page, ".card.root .doc-content p:last-of-type");
   await page.press("#ask-text", "ArrowUp");
@@ -149,10 +145,10 @@ try {
 
   await selectText(page, "distant paragraph");
   await page.waitForSelector("#ask.visible");
-  await page.press("#ask-text", "4");
+  await page.press("#ask-text", "3");
   await page.waitForFunction(() => Array.from(document.querySelectorAll(".card .doc-content"))
-    .some((node) => node.textContent.includes("Digit four used the configured custom question.")));
-  assert.equal(providerBodies.length, 1, "digit 4 submits the positional fourth preset once");
+    .some((node) => node.textContent.includes("Digit three used the configured custom question.")));
+  assert.equal(providerBodies.length, 1, "digit 3 submits the custom question in the third slot once");
   const modelContext = providerBodies[0].messages.find((message) => message.role === "user").content;
   assert.match(modelContext,
     /- Human: Anchored to "exact marked passage": Keep the exact concrete shape that worked here\./,
@@ -163,7 +159,7 @@ try {
     const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((entry) => entry.origin?.lens === "custom");
     return node ? { lens: node.origin.lens, instruction: node.origin.instruction } : null;
   }), { lens: "custom", instruction: "Challenge this claim from another angle." },
-  "digit 4 carries the custom key and instruction through the ordinary ask wire");
+  "digit 3 carries the custom key and instruction through the ordinary ask wire");
 
   const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const frozenPage = await context.newPage();
@@ -181,8 +177,8 @@ try {
       width: parseFloat(getComputedStyle(row.closest("#ask")).width),
       lastLineShared: Math.round(lenses.at(-1).getBoundingClientRect().top) === Math.round(pair.top),
     };
-  }), { count: 4, width: 372, lastLineShared: true },
-  "the frozen client keeps the four-pill wrap in the same fixed-width shell");
+  }), { count: 3, width: 372, lastLineShared: true },
+  "the frozen client keeps the three pills and thumbs in the same fixed-width row");
   const frozenMark = frozenPage.locator(`.mark-reaction[data-child="${reactionId}"]`).first();
   await frozenMark.waitFor();
   await frozenMark.hover();

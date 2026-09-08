@@ -37,7 +37,6 @@ export function renderAskPresetActions(actions, set) {
   // With every preset removed the surface rests as a bare input; CSS hides the
   // empty row until a draft brings the commit pair back.
   actions.classList.toggle("no-presets", keys.length === 0);
-  actions.classList.toggle("has-four-presets", keys.length === 4);
   group.innerHTML = keys
     .map((key, index) => {
       const preset = askPreset(setKey, key) || DEFAULT_ASK_PRESETS[setKey][key];
@@ -274,11 +273,9 @@ export function mountAskingSettings(host) {
   function renderActions(set) {
     const surface = surfaces[set];
     const keys = visibleAskPresetKeys(set);
-    const addSlot = !askPreset(set, "custom");
+    const addSlot = keys.length < 3;
     surface.row.classList.remove("no-presets");
-    // Add question stands in the fourth slot, so the row previews the two-line
-    // shape the real popover takes once a fourth question exists.
-    surface.row.classList.toggle("has-four-presets", keys.length + (addSlot ? 1 : 0) === 4);
+    // Add question occupies the same vacant slot a custom question will fill.
     surface.group.innerHTML =
       keys.map((key, index) => mockPresetButton(set, key, index)).join("") +
       (addSlot
@@ -287,7 +284,7 @@ export function mountAskingSettings(host) {
             className: "lens asking-add",
             dataAttrs: { presetAdd: true },
             label: "Add question",
-            title: "Add a fourth quick question",
+            title: "Add a quick question",
           })
         : "");
   }

@@ -3616,8 +3616,10 @@ async function verifyCanvasBranching() {
   assert.deepEqual(await pillTexts("followup"), defaultPillTexts,
     "the follow-up replica has the same three slots even while its linked surface is collapsed");
   assert.equal(await page.locator(".asking-editor.open").count(), 0, "no editor is open until a pill is clicked");
-  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-add]').innerText(), "Add question",
-    "an absent optional slot exposes one verb-first Add affordance");
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-add]').count(), 0,
+    "a full three-question replica has no Add question affordance");
+  assert.deepEqual(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-button] kbd').allTextContents(),
+    ["1", "2", "3"], "the default replica exposes only the three supported position hints");
   // Reactions are chrome on the selection surface, so the replica wears them in
   // the same trailing slot — no separate Reactions section anywhere.
   assert.deepEqual(await page.locator('[data-asking-surface][data-set="selection"] .thumb-pair [data-reaction-button]')
@@ -3629,8 +3631,11 @@ async function verifyCanvasBranching() {
     "the follow-up replica has no thumbs, like the follow-up composer");
   assert.equal(await page.locator(".asking-reactions, [data-reaction-prompt]").count(), 0,
     "no standalone Reactions section and no always-open reaction fields");
-  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] .ask-actions.has-four-presets').count(), 1,
-    "Add question fills the fourth slot, so the replica previews the two-line shape a fourth question brings");
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] .ask-actions').evaluate((row) => {
+    const first = row.querySelector("[data-preset-button]").getBoundingClientRect();
+    const thumbs = row.querySelector(".thumb-pair").getBoundingClientRect();
+    return Math.abs(first.top - thumbs.top) <= 1;
+  }), true, "the default pills and trailing thumbs share one row");
   const fidelity = await page.evaluate(() => {
     const mock = document.querySelector('[data-asking-surface][data-set="selection"] .asking-mock');
     const row = mock.querySelector(".ask-actions");
@@ -3658,8 +3663,19 @@ async function verifyCanvasBranching() {
   assert.equal(fidelity.linkChecked, true, "fresh Quick questions settings start linked");
   assert.equal(fidelity.followupVisible, "hidden", "the linked default collapses the duplicate follow-up surface");
 
-  // The optional slot is created in place, edits through the same two fields,
-  // and removal returns to Add instead of making a restore chip.
+  // Removing a built-in exposes Add in that vacant slot. The custom question
+  // is created in place, edits through the same two fields, and removal returns
+  // to Add instead of making a restore chip.
+  await page.click('[data-asking-surface][data-set="selection"] [data-preset-button="eli5"]');
+  await page.click('[data-asking-surface][data-set="selection"] [data-preset-remove]');
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] .preset-actions').evaluate((group) =>
+    group.lastElementChild?.hasAttribute("data-preset-add")), true,
+  "Add question is the last preset-actions child after a built-in leaves a slot");
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] .ask-actions').evaluate((row) => {
+    const add = row.querySelector("[data-preset-add]").getBoundingClientRect();
+    const thumbs = row.querySelector(".thumb-pair").getBoundingClientRect();
+    return Math.abs(add.top - thumbs.top) <= 1;
+  }), true, "Add question stays on the same row as the trailing thumbs");
   await page.click('[data-asking-surface][data-set="selection"] [data-preset-add]');
   await page.waitForSelector('[data-asking-surface][data-set="selection"] .asking-editor.open');
   assert.equal(await page.evaluate(() => document.activeElement.id), "asking-selection-custom-label");
@@ -3669,10 +3685,12 @@ async function verifyCanvasBranching() {
     "an optional slot has no imaginary built-in default");
   await page.fill("#asking-selection-custom-label", "Counterpoint");
   await page.fill("#asking-selection-custom-instruction", "Challenge this claim.");
-  assert.deepEqual(await pillTexts("selection"), [...defaultPillTexts, "Counterpoint "],
-    "the custom question becomes the positional fourth pill");
+  assert.deepEqual(await pillTexts("selection"), ["Explain ", "Go deeper ", "Counterpoint "],
+    "the custom question fills the vacant third slot after the remaining built-ins");
   assert.deepEqual(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-button] kbd').allTextContents(),
-    ["1", "2", "3", "4"], "four position hints remain truthful");
+    ["1", "2", "3"], "the custom question receives the third position hint");
+  assert.equal(await page.locator('[data-asking-surface][data-set="selection"] [data-preset-add]').count(), 0,
+    "filling the vacant slot removes Add question");
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("rh-ask-presets-v1")).selection.custom), {
     label: "Counterpoint", instruction: "Challenge this claim.", removed: false,
   });
@@ -3684,6 +3702,7 @@ async function verifyCanvasBranching() {
   assert.equal(await page.evaluate(() => Object.hasOwn(
     JSON.parse(localStorage.getItem("rh-ask-presets-v1")).selection, "custom")), false,
   "custom removal persists as an absent slot");
+  await page.click('[data-asking-surface][data-set="selection"] [data-preset-restore="eli5"]');
 
   // A thumb edits like a pill: click it, the editor opens in place beneath the
   // row with the instruction focused. There is no label and nothing to remove.

@@ -212,13 +212,17 @@ assert.equal(askPreset("selection", "eli5").label, "ELI5");
 // ---- optional custom preset -----------------------------------------------
 
 assert.equal(askPreset("selection", "custom"), null, "fresh sets leave the optional custom slot absent");
+const fullSetBeforeCustom = store.get(ASK_PRESETS_KEY);
+assert.equal(createCustomAskPreset("selection"), null, "a full three-question set rejects a custom question");
+assert.equal(store.get(ASK_PRESETS_KEY), fullSetBeforeCustom, "rejecting a custom question does not rewrite storage");
+setAskPresetRemoved("selection", "eli5", true);
 assert.deepEqual(createCustomAskPreset("selection"), {
   label: "New question",
   instruction: "Ask a focused question about this.",
   removed: false,
 });
-assert.deepEqual(visibleAskPresetKeys("selection"), ["explain", "eli5", "deeper", "custom"],
-  "adding the custom slot makes it the positional fourth question");
+assert.deepEqual(visibleAskPresetKeys("selection"), ["explain", "deeper", "custom"],
+  "a custom question fills the vacant third slot after the remaining built-ins");
 setAskPreset("selection", "custom", { label: "Counterpoint", instruction: "Challenge this claim." });
 assert.deepEqual(askPreset("selection", "custom"), {
   label: "Counterpoint",
@@ -233,6 +237,14 @@ assert.deepEqual(askPreset("selection", "custom"), {
   instruction: "Challenge this claim.",
   removed: false,
 }, "the optional slot reloads from the same v1 preset document");
+setAskPresetRemoved("selection", "eli5", false);
+assert.deepEqual(visibleAskPresetKeys("selection"), ["explain", "eli5", "deeper"],
+  "a legacy three-built-ins-plus-custom store keeps only the built-ins visible");
+assert.deepEqual(askPreset("selection", "custom"), {
+  label: "Counterpoint",
+  instruction: "Challenge this claim.",
+  removed: false,
+}, "the capped legacy custom question remains stored while hidden");
 setAskPresetRemoved("selection", "custom", true);
 assert.equal(askPreset("selection", "custom"), null, "removing custom deletes the slot instead of leaving a restore flag");
 assert.equal(Object.hasOwn(JSON.parse(store.get(ASK_PRESETS_KEY)).selection, "custom"), false,

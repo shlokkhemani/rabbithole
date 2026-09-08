@@ -6,8 +6,8 @@ export const ASK_PRESET_KEYS = Object.freeze([...DEFAULT_ASK_PRESET_KEYS, "custo
  * selection and the document, so a preset only needs to name the move. Anyone
  * who wants a more opinionated instruction edits the preset in Settings.
  *
- * These are the three built-in slots. A reader can add one optional custom
- * slot; it stays absent from the defaults until they do.
+ * A surface shows at most three questions. These built-ins fill the slots by
+ * default; a custom question can exist only by filling a slot a reader vacates.
  */
 /** @type {Readonly<Record<PropertyKey, { label: string, instruction: string, removed?: boolean }>>} */
 export const LENSES = Object.freeze({

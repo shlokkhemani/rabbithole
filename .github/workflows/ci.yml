@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore: ["docs/**"]
   pull_request:
 
 # A newer push to the same ref supersedes in-flight verification; the newer

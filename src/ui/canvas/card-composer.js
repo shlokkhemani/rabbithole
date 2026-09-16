@@ -2,7 +2,6 @@ import { composerActionsMarkup } from "../../core/html/markup.js";
 import { presetFor, renderAskPresetActions } from "../ask-presets.js";
 import { applyComposerState, wireComposerActions } from "../composer-state.js";
 import { closed, flashHint, motionSourceFromEvent, sessionPhase, view, viewport } from "../core.js";
-import { revealNode } from "./camera.js";
 import { updateStandaloneNoteComposer } from "./document.js";
 import { effH } from "./edges.js";
 import { canConvertNote } from "./menu.js";
@@ -173,7 +172,7 @@ export function updateCardComposer(node) {
 }
 
 // The card composer's submit gate (a closed session says so out loud), and
-// the shared landing: retract the drawer and pan the new card into view.
+// the shared landing: retract the drawer and refresh the composer.
 export function cardComposerBlocked(node, needsSettled) {
   if (closed) {
     flashHint("Session ended — reopen this Rabbithole from your terminal to continue.");
@@ -182,10 +181,9 @@ export function cardComposerBlocked(node, needsSettled) {
   return !node || !!node.source?.converting || (needsSettled && node.status === "pending");
 }
 
-export function settleCardSubmit(node, kid, source) {
+export function settleCardSubmit(node) {
   closeCardDrawer(node);
   updateCardComposer(node);
-  revealNode(kid, source);
 }
 
 export function submitCardLens(node, lens, source) {
@@ -196,7 +194,7 @@ export function submitCardLens(node, lens, source) {
   if (!kid) return;
   node.ncText.value = "";
   autoGrowEl(node.ncText, 90);
-  settleCardSubmit(node, kid, source);
+  settleCardSubmit(node);
 }
 
 export function submitCardFollowup(node, commit, source) {
@@ -210,5 +208,5 @@ export function submitCardFollowup(node, commit, source) {
   if (!kid) return;
   node.ncText.value = "";
   autoGrowEl(node.ncText, 90);
-  settleCardSubmit(node, kid, source);
+  settleCardSubmit(node);
 }

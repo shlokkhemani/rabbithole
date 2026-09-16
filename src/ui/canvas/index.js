@@ -1,4 +1,4 @@
-export { cancelViewAnimation, diveToNode, revealNode } from "./camera.js";
+export { cancelViewAnimation, diveToNode } from "./camera.js";
 export { createNodeEl } from "./card.js";
 export { autoGrowEl, updateCardComposer } from "./card-composer.js";
 export { fillBody, noteCommitFromEnter, noteComposerActions } from "./document.js";

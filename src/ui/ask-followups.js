@@ -9,15 +9,7 @@ import {
   subtreeBounds as sharedSubtreeBounds,
 } from "../core/layout.js";
 import { presetFor, refreshAskPresetActions, renderAskPresetActions } from "./ask-presets.js";
-import {
-  autoGrowEl,
-  createNodeEl,
-  drawEdges,
-  effH,
-  renderVisibility,
-  revealNode,
-  scheduleEdges,
-} from "./canvas/index.js";
+import { autoGrowEl, createNodeEl, drawEdges, effH, renderVisibility, scheduleEdges } from "./canvas/index.js";
 import { applyComposerState, wireComposerActions } from "./composer-state.js";
 import {
   ask,
@@ -574,7 +566,6 @@ function submitAsk(lensKey, source) {
       wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
       scheduleEdges();
     }
-    revealNode(node, source);
     if (anchor.block) refreshVisualMarks(parent.id, anchor.block.block_id);
   }
 
@@ -639,7 +630,6 @@ function submitNote(source, placed) {
   const sel = window.getSelection();
   if (sel) sel.removeAllRanges();
   hideAsk();
-  revealNode(node, source);
 }
 
 function submitReaction(reaction) {

@@ -1,9 +1,7 @@
-import { isNoteNode } from "../../core/hole/ask.js";
 import { iconSvg } from "../../core/html/icons.js";
 import {
   MAX_SCALE,
   MIN_SCALE,
-  mode,
   nodes,
   setViewAdjusted,
   shouldReduceMotion,
@@ -139,33 +137,7 @@ export function showPinnedOriginal(node, source) {
     }, 300);
 }
 
-// Asking from a card spawns the answer card wherever placeChild puts it —
-// possibly off-screen. Pan just enough to bring it into view (user-initiated,
-// so moving the viewport is expected; streaming never does this).
-export function revealNode(n, source) {
-  if (mode !== "canvas" || !n || isNoteNode(n)) return;
-  const pad = 30,
-    vw = viewport.clientWidth,
-    vh = viewport.clientHeight;
-  const x1 = n.position.x * view.scale + view.x,
-    y1 = n.position.y * view.scale + view.y;
-  const x2 = (n.position.x + n.size.w) * view.scale + view.x,
-    y2 = (n.position.y + effH(n)) * view.scale + view.y;
-  let dx = 0,
-    dy = 0;
-  if (x2 > vw - pad) dx = vw - pad - x2;
-  if (x1 + dx < pad) dx = pad - x1;
-  if (y2 > vh - pad) dy = vh - pad - y2;
-  if (y1 + dy < pad) dy = pad - y1;
-  if (!dx && !dy) return;
-  animatePan(view.x + dx, view.y + dy, source, 230, "out");
-}
-
-export function animatePan(tx, ty, source, duration, ease) {
-  animateView(tx, ty, view.scale, { source: source, duration: duration, ease: ease });
-}
-
-// One shared view glide (pan + zoom together): frame-all, reveal, and
+// One shared view glide (pan + zoom together): frame-all and
 // search/activity jumps. A newer glide cancels an in-flight one; hidden windows jump
 // instantly (rAF never fires there).
 let viewAnimId = 0,

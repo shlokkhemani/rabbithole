@@ -669,7 +669,7 @@ async function verifyAnchoredNotes() {
     const commandAsk = page.locator(".card:not(.root)", { hasText: "Why is this a command ask?" });
     await commandAsk.waitFor();
     await page.waitForTimeout(350);
-    assert.notDeepEqual(await readCanvasView(page), viewBeforeAsk, "creating an ask must retain its existing viewport reveal behavior");
+    assert.deepEqual(await readCanvasView(page), viewBeforeAsk, "creating an ask must leave the canvas viewport exactly where it was");
     assert.equal(await commandAsk.locator(".loading").count(), 1, "Cmd/Ctrl+Enter should create a pending ask card");
 
     await selectText(page, "restore anchor");

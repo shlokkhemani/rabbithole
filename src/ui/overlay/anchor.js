@@ -72,12 +72,15 @@ export function anchorSurface(trigger, surface, options) {
   let placement = options.placement || "bottom-end",
     disposed = false,
     frame = 0,
+    trackingFrame = 0,
     updating = false;
   let lastLeft = null,
     lastTop = null,
+    lastAnchor = null,
     settledSide = null;
 
   function updateNow() {
+    if (frame) cancelAnimationFrame(frame);
     frame = 0;
     if (
       disposed ||
@@ -94,6 +97,7 @@ export function anchorSurface(trigger, surface, options) {
     surface.style.setProperty("--overlay-viewport-height", viewport.height + "px");
     const anchor = trigger.getBoundingClientRect(),
       box = surface.getBoundingClientRect();
+    lastAnchor = { left: anchor.left, top: anchor.top, width: anchor.width, height: anchor.height };
     // A 0×0 anchor at the origin is a dead anchor (collapsed range, detached
     // node) — hold the last good position rather than glide to the corner.
     if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) {
@@ -170,6 +174,33 @@ export function anchorSurface(trigger, surface, options) {
   function update() {
     if (!disposed && !frame) frame = requestAnimationFrame(updateNow);
   }
+  function updateForAnchorMovement() {
+    if (
+      disposed ||
+      document.hidden ||
+      !surface.isConnected ||
+      (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)
+    )
+      return false;
+    const anchor = trigger.getBoundingClientRect();
+    if (
+      lastAnchor &&
+      anchor.left === lastAnchor.left &&
+      anchor.top === lastAnchor.top &&
+      anchor.width === lastAnchor.width &&
+      anchor.height === lastAnchor.height
+    )
+      return false;
+    updateNow();
+    return true;
+  }
+  function trackAnchor() {
+    if (disposed) return;
+    // Position and transform changes need not emit any event. Keep sampling
+    // even off-screen so a hidden annotation follows its anchor back into view.
+    updateForAnchorMovement();
+    trackingFrame = requestAnimationFrame(trackAnchor);
+  }
   window.addEventListener("resize", update, { passive: true });
   window.visualViewport?.addEventListener("resize", update, { passive: true });
   window.visualViewport?.addEventListener("scroll", update, { passive: true });
@@ -188,14 +219,23 @@ export function anchorSurface(trigger, surface, options) {
       : null;
   if (!virtual || contextElement) resizeObserver?.observe(observedTrigger);
   resizeObserver?.observe(surface);
-  const mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
+  const mutationObserver =
+    typeof MutationObserver === "function"
+      ? new MutationObserver(function () {
+          // A new surface state can be read before the next frame. Reconcile
+          // an already-moved anchor at this checkpoint, coalescing pending work.
+          if (!updateForAnchorMovement()) update();
+        })
+      : null;
   mutationObserver?.observe(surface, { childList: true, subtree: true, characterData: true });
   updateNow();
+  trackingFrame = requestAnimationFrame(trackAnchor);
   return {
     update: update,
     dispose: function () {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
+      if (trackingFrame) cancelAnimationFrame(trackingFrame);
       window.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);

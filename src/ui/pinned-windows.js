@@ -2,6 +2,21 @@ import { iconSvg } from "../core/html/icons.js";
 
 const DUPLICATE_REFERENCE_ATTRIBUTES = ["aria-controls", "aria-describedby", "aria-labelledby", "for"];
 
+// Moving an element through the DOM throws away every scroll offset inside
+// it. Pinning moves the live card, so its scrollers travel with it: the card
+// keeps reading on exactly where it was.
+function moveKeepingScroll(element, move) {
+  const scrolled = [];
+  for (const el of [element, ...element.querySelectorAll("*")]) {
+    if (el.scrollTop || el.scrollLeft) scrolled.push([el, el.scrollTop, el.scrollLeft]);
+  }
+  move();
+  for (const [el, top, left] of scrolled) {
+    el.scrollTop = top;
+    el.scrollLeft = left;
+  }
+}
+
 /**
  * Pins the existing interactive card above the camera and leaves an inert
  * canvas proxy behind. Callers continue to own node identity and graph state;
@@ -67,7 +82,9 @@ export function createPinnedWindows(options) {
     entries.set(node.id, entry);
     node.canvasEl = origin;
     source.classList.add("pinned-window-card");
-    wrapper.appendChild(source);
+    moveKeepingScroll(source, function () {
+      wrapper.appendChild(source);
+    });
     entry.movingCard = false;
 
     entry.observer =
@@ -354,7 +371,9 @@ export function createPinnedWindows(options) {
     });
     entry.pinBadge?.remove();
     if (entry.card?.isConnected) {
-      entry.origin.before(entry.card);
+      moveKeepingScroll(entry.card, function () {
+        entry.origin.before(entry.card);
+      });
       entry.card.classList.remove("pinned-window-card");
       entry.card.style.transform = "";
       entry.card.style.left = entry.node.position.x + "px";

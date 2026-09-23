@@ -41,6 +41,7 @@ import {
 } from "./core.js";
 import { createCleanupScope, createModuleLifecycle } from "./kit/scope.js";
 import { detachNode, teardownNode } from "./node-teardown.js";
+import { anchorClipBounds, viewportRect } from "./overlay/anchor.js";
 import { openPopover } from "./primitives/popover.js";
 import { renderMarginNotes } from "./reader.js";
 import { refreshNodeHtml } from "./renderer.js";
@@ -245,6 +246,15 @@ function paintNoteMarks(parent, node, anchor) {
   }
   if (mode === "reader") wrapInContainer(readerDoc, anchor, node.id, "hl mark-ready mark-note" + reactionClass);
   wrapInContainer(cardDoc, anchor, node.id, "hl mark-ready mark-note" + reactionClass);
+}
+
+// Undo brings a removed docked note back as what it always was: a wash on its
+// parent's words and a dot beside them. The parent's body is never rebuilt.
+export function paintDockedNote(node) {
+  const parent = node && nodes[node.parent_id];
+  if (!parent) return;
+  paintNoteMarks(parent, node, node.origin && node.origin.anchor);
+  renderDockedNotes(parent);
 }
 
 function rollbackCreatedNote(node) {
@@ -542,22 +552,36 @@ function setMarkHighlight(noteId, on) {
 }
 
 // ---------------------------------------------------------------------------
-// REACTIONS — one wash-local tooltip, positioned on the exact line entered
+// REACTIONS — one tooltip per reaction, pinned to the start of its first line
 // ---------------------------------------------------------------------------
+// A wash is one absolute fragment per line box, but a reaction is one object:
+// the tooltip lives on the first fragment and stays put while the pointer
+// wanders across any of its lines.
 
 function reactionMarkFromTarget(target) {
   const mark = target?.closest?.(".mark-reaction[data-child]");
   return mark && isReactionNote(nodes[mark.dataset.child]) ? mark : null;
 }
 
+function reactionFragments(mark) {
+  const root = mark.closest(".doc-content");
+  return root ? Array.from(root.querySelectorAll('.mark-reaction[data-child="' + mark.dataset.child + '"]')) : [mark];
+}
+
+// Fragments are painted in range order, so the first is the first line.
+function reactionHost(mark) {
+  return reactionFragments(mark)[0] || mark;
+}
+
 function clearReactionHide(mark) {
-  const timer = reactionHideTimers.get(mark);
+  const host = reactionHost(mark);
+  const timer = reactionHideTimers.get(host);
   if (timer) clearTimeout(timer);
-  reactionHideTimers.delete(mark);
+  reactionHideTimers.delete(host);
 }
 
 function reactionTooltip(mark) {
-  return mark?.querySelector?.(":scope > .reaction-tip-wrap") || null;
+  return mark ? reactionHost(mark).querySelector(":scope > .reaction-tip-wrap") : null;
 }
 
 function removeReactionTooltip(mark) {
@@ -573,12 +597,6 @@ function clearReactionTooltips() {
   reactionHideTimers.clear();
   document.querySelectorAll(".reaction-tip-wrap").forEach(function (tip) {
     tip.remove();
-  });
-}
-
-function removeSiblingReactionTooltips(mark) {
-  document.querySelectorAll('.mark-reaction[data-child="' + mark.dataset.child + '"]').forEach(function (candidate) {
-    if (candidate !== mark) removeReactionTooltip(candidate);
   });
 }
 
@@ -603,72 +621,76 @@ function reactionTooltipContent(node) {
   return tip;
 }
 
-function appendHtmlReactionTooltip(mark, node, clientX) {
-  const rect = mark.getBoundingClientRect();
+// The side is chosen once, at open: above the first line unless that would
+// clip, then below it. The tooltip never re-decides while it is showing.
+function appendHtmlReactionTooltip(host, node) {
   const wrap = document.createElement("span");
   wrap.className = "reaction-tip-wrap";
-  const ratio = rect.width ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) : 0.5;
-  wrap.style.left = ratio * 100 + "%";
   wrap.appendChild(reactionTooltipContent(node));
-  mark.appendChild(wrap);
+  host.appendChild(wrap);
+  const clip = anchorClipBounds(host, viewportRect());
+  const lineRect = host.getBoundingClientRect(),
+    tipRect = wrap.getBoundingClientRect();
+  if (lineRect.top - tipRect.height < clip.top) wrap.classList.add("reaction-tip-below");
+  const overflow = tipRect.right - clip.right;
+  if (overflow > 0) wrap.style.left = -overflow / (wrap.offsetWidth ? tipRect.width / wrap.offsetWidth : 1) + "px";
 }
 
-function appendPdfReactionTooltip(mark, node, clientX, lineTarget) {
-  const svg = mark.ownerSVGElement;
+function appendPdfReactionTooltip(host, node) {
+  const svg = host.ownerSVGElement;
   const svgRect = svg?.getBoundingClientRect();
   const box = svg?.viewBox?.baseVal;
   if (!svg || !svgRect?.width || !svgRect.height || !box?.width || !box.height) return;
   const scaleX = box.width / svgRect.width,
     scaleY = box.height / svgRect.height;
-  const lineRect = lineTarget?.getBoundingClientRect?.() || mark.getBoundingClientRect();
+  const lineRect = (host.querySelector("polygon") || host).getBoundingClientRect();
+  const clip = anchorClipBounds(svg, viewportRect());
+  const below = lineRect.top - 34 < clip.top;
+  const left = Math.min(lineRect.left, clip.right - 76);
   const width = 76 * scaleX,
-    height = 34 * scaleY,
-    centerX = (clientX - svgRect.left) * scaleX,
-    lineTop = (lineRect.top - svgRect.top) * scaleY;
+    height = 34 * scaleY;
   const wrap = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-  wrap.setAttribute("class", "reaction-tip-wrap reaction-tip-svg");
-  wrap.setAttribute("x", String(centerX - width / 2));
-  wrap.setAttribute("y", String(lineTop - height));
+  wrap.setAttribute("class", "reaction-tip-wrap reaction-tip-svg" + (below ? " reaction-tip-below" : ""));
+  wrap.setAttribute("x", String((left - svgRect.left) * scaleX));
+  const top = below ? (lineRect.bottom - svgRect.top) * scaleY : (lineRect.top - svgRect.top) * scaleY - height;
+  wrap.setAttribute("y", String(top));
   wrap.setAttribute("width", String(width));
   wrap.setAttribute("height", String(height));
   const html = document.createElementNS("http://www.w3.org/1999/xhtml", "span");
   html.className = "reaction-tip-svg-inner";
   html.appendChild(reactionTooltipContent(node));
   wrap.appendChild(html);
-  mark.appendChild(wrap);
+  host.appendChild(wrap);
 }
 
-function showReactionTooltip(mark, clientX, lineTarget) {
+function showReactionTooltip(mark) {
   const node = mark && nodes[mark.dataset.child];
   if (!mark || !isReactionNote(node)) return;
   clearReactionHide(mark);
-  removeSiblingReactionTooltips(mark);
-  removeReactionTooltip(mark);
-  const rect = mark.getBoundingClientRect();
-  const entryX = Number.isFinite(clientX) ? clientX : rect.left + rect.width / 2;
-  if (mark.namespaceURI === "http://www.w3.org/2000/svg") {
-    appendPdfReactionTooltip(mark, node, entryX, lineTarget);
-  } else {
-    appendHtmlReactionTooltip(mark, node, entryX);
-  }
+  if (reactionTooltip(mark)) return; // already open: it stays exactly where it is
+  document.querySelectorAll('.mark-reaction[data-child="' + mark.dataset.child + '"]').forEach(removeReactionTooltip);
+  const host = reactionHost(mark);
+  if (host.namespaceURI === "http://www.w3.org/2000/svg") appendPdfReactionTooltip(host, node);
+  else appendHtmlReactionTooltip(host, node);
 }
 
 function scheduleReactionTooltipHide(mark) {
   clearReactionHide(mark);
+  const host = reactionHost(mark);
   const timer = setTimeout(function () {
-    reactionHideTimers.delete(mark);
-    if (mark.matches?.(":hover") || mark.contains(document.activeElement)) return;
-    removeReactionTooltip(mark);
+    reactionHideTimers.delete(host);
+    const engaged = reactionFragments(host).some(function (fragment) {
+      return fragment.matches?.(":hover") || fragment.contains(document.activeElement);
+    });
+    if (!engaged) removeReactionTooltip(host);
   }, 180);
-  reactionHideTimers.set(mark, timer);
+  reactionHideTimers.set(host, timer);
 }
 
 function onReactionPointerOver(event) {
   if (event.pointerType && event.pointerType !== "mouse") return;
   const mark = reactionMarkFromTarget(event.target);
-  if (!mark || mark.contains(event.relatedTarget)) return;
-  const line = event.target?.closest?.("polygon") || mark;
-  showReactionTooltip(mark, event.clientX, line);
+  if (mark) showReactionTooltip(mark);
 }
 
 function onReactionPointerOut(event) {
@@ -685,14 +707,14 @@ function onReactionPointerUp(event) {
   event.preventDefault();
   event.stopPropagation();
   if (reactionTooltip(mark)) removeReactionTooltip(mark);
-  else showReactionTooltip(mark, event.clientX, event.target?.closest?.("polygon") || mark);
+  else showReactionTooltip(mark);
 }
 
 function onReactionFocusIn(event) {
   const mark = reactionMarkFromTarget(event.target);
   if (!mark) return;
   clearReactionHide(mark);
-  if (event.target === mark && !reactionTooltip(mark)) showReactionTooltip(mark);
+  if (event.target === mark) showReactionTooltip(mark);
 }
 
 function onReactionFocusOut(event) {

@@ -21,6 +21,10 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
 const textMeasureCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
 const textMeasureContext = textMeasureCanvas?.getContext("2d") || null;
+// Where the reader is in a paper belongs to the document and its surface, not
+// to one mounted view: a rebuild or a move restarts the scroller at zero, and
+// the next view must open on the same line of the same page at the same zoom.
+const readingPlaces = new Map();
 
 export function mountPdfView(container, node, options = {}) {
   const pdf = normalizePdfExtension(node);
@@ -71,6 +75,61 @@ export function mountPdfView(container, node, options = {}) {
   let touchCleanup = () => {};
   const pageStates = [];
   const visiblePages = new Set();
+  const placeKey = `${node.id}:${isReaderSurface ? "reader" : "canvas"}`;
+  // While a place is pending, every relayout puts the reader back on it. It
+  // stops being pending the moment the reader (or the app) scrolls elsewhere.
+  let placePending = readingPlaces.has(placeKey);
+  if (placePending) {
+    localZoom = readingPlaces.get(placeKey).zoom;
+    toolbar.setZoom(localZoom);
+    scroll.dataset.zoom = String(localZoom);
+  }
+
+  function currentPlace() {
+    const top = scroll.scrollTop;
+    let state = pageStates[0];
+    for (const candidate of pageStates) {
+      if (candidate.element.offsetTop > top) break;
+      state = candidate;
+    }
+    if (!state) return null;
+    return {
+      page: state.meta.n,
+      offset: (top - state.element.offsetTop) / Math.max(1, state.element.offsetHeight),
+      left: scroll.scrollLeft / Math.max(1, scroll.scrollWidth),
+      zoom: localZoom,
+    };
+  }
+
+  function applyPlace() {
+    const place = readingPlaces.get(placeKey);
+    if (!placePending || !place || !scroll.clientHeight) return;
+    const state = pageStates.find((candidate) => candidate.meta.n === place.page);
+    if (!state) return;
+    const top = state.element.offsetTop + place.offset * state.element.offsetHeight;
+    const left = place.left * scroll.scrollWidth;
+    if (Math.abs(scroll.scrollTop - top) > 1) scroll.scrollTop = top;
+    if (Math.abs(scroll.scrollLeft - left) > 1) scroll.scrollLeft = left;
+  }
+
+  function onScroll() {
+    const place = scroll.clientHeight ? currentPlace() : null;
+    if (place) {
+      const saved = readingPlaces.get(placeKey);
+      const state = pageStates.find((candidate) => candidate.meta.n === place.page);
+      const ours =
+        saved &&
+        saved.page === place.page &&
+        Math.abs((saved.offset - place.offset) * (state?.element.offsetHeight || 0)) <= 2;
+      if (placePending && !ours) placePending = false;
+      if (!placePending) readingPlaces.set(placeKey, place);
+    }
+    scheduleRender();
+  }
+
+  function releasePlace() {
+    placePending = false;
+  }
 
   function alignReaderToolbar() {
     if (!readerToolbarHost || !scroll.isConnected) return;
@@ -110,9 +169,12 @@ export function mountPdfView(container, node, options = {}) {
       zoomFrame = 0;
       const restore = pendingZoomAnchor;
       pendingZoomAnchor = null;
+      placePending = false;
       updatePageLayouts();
       scroll.dataset.zoom = String(localZoom);
       if (restore) restoreClientAnchor(restore.pinned, restore.x, restore.y);
+      const place = currentPlace();
+      if (place) readingPlaces.set(placeKey, place);
       scheduleRender();
     });
   }
@@ -144,6 +206,7 @@ export function mountPdfView(container, node, options = {}) {
     }
     refreshAllMarks();
     alignReaderToolbar();
+    applyPlace();
   }
 
   function scheduleRender() {
@@ -171,6 +234,7 @@ export function mountPdfView(container, node, options = {}) {
     state.marks.setAttribute("viewBox", `0 0 ${state.viewport.width} ${state.viewport.height}`);
     state.marks.setAttribute("width", String(state.viewport.width));
     state.marks.setAttribute("height", String(state.viewport.height));
+    applyPlace();
     await renderText(state);
     refreshAllMarks();
     return state.page;
@@ -782,7 +846,12 @@ export function mountPdfView(container, node, options = {}) {
     selectionToAsk();
   };
   scope.listen(scroll, "wheel", onWheel, { passive: false });
-  scope.listen(scroll, "scroll", scheduleRender, { passive: true });
+  scope.listen(scroll, "scroll", onScroll, { passive: true });
+  // Intent arrives before its scroll event: a reader reaching for the paper
+  // owns the position from that moment, so a relayout never tugs it back.
+  for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) {
+    scope.listen(scroll, type, releasePlace, { passive: true });
+  }
   scope.listen(container, "mouseup", onSelectionMouseUp);
   scope.listen(document, "pointermove", moveTextSelection, { passive: false });
   scope.listen(document, "pointerup", finishTextSelection);
@@ -812,7 +881,11 @@ export function mountPdfView(container, node, options = {}) {
     .catch((error) => toolbar.setError(error?.message || String(error)));
 
   if (typeof ResizeObserver === "function") {
+    // A resize reflows every page, and a view that was moved in the document
+    // (pinning) has lost its scroll offset: either way, return to the place.
     resizeObserver = new ResizeObserver(() => {
+      if (!scroll.clientHeight) return;
+      if (readingPlaces.has(placeKey)) placePending = true;
       updatePageLayouts();
       scheduleRender();
     });

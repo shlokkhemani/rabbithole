@@ -498,6 +498,71 @@ try {
   assert.equal(pdfNote.extensions?.note?.docked, true, "a PDF note docks onto the page it marks");
   assert.equal(pdfNote.size, null, "a docked PDF note takes no canvas geometry");
 
+  // A reaction deep in the paper comes and goes without moving the page under
+  // the reader: removal and undo repaint the wash, never the whole PDF.
+  const deepItem = await page.evaluate(async () => {
+    const scroll = document.querySelector(".card .rh-pdf-scroll");
+    const target = document.querySelector('.card .rh-pdf-page[data-page="3"]');
+    scroll.scrollTop += target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + 120;
+    for (let frame = 0; frame < 240; frame++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const item = [...target.querySelectorAll(".rh-pdf-textlayer span")].find((span) => span.textContent.trim().length > 24);
+      if (item) return item.textContent;
+    }
+    return null;
+  });
+  assert(deepItem, "page 3 must expose a text-layer item to react to");
+  const reactionSelection = await selectVisibleText(page, {
+    text: deepItem, rootSelector: '.card .rh-pdf-page[data-page="3"] .rh-pdf-textlayer', exact: true, start: 0, end: 12,
+  });
+  assert.equal(reactionSelection.text, deepItem.slice(0, 12));
+  await assertSelectionPopoverUsable(page);
+  await page.press("#ask-text", "ArrowUp");
+  const reactionMark = page.locator(".card .rh-pdf-mark.mark-reaction");
+  await reactionMark.waitFor();
+  const pdfScrollTop = () => page.evaluate(() => document.querySelector(".card .rh-pdf-scroll").scrollTop);
+  const reactedTop = await pdfScrollTop();
+  assert(reactedTop > 1000, `the reaction must sit deep in the paper: ${reactedTop}`);
+  await reactionMark.locator("polygon").first().hover();
+  await page.locator(".card .reaction-delete").click();
+  assert.equal(await page.locator(".card .rh-pdf-mark.mark-reaction").count(), 0, "deleting a PDF reaction removes its wash");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await pdfScrollTop(), reactedTop, "deleting a PDF reaction must leave the PDF on the page being read");
+  await page.keyboard.press("ControlOrMeta+z");
+  await reactionMark.waitFor();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await pdfScrollTop(), reactedTop, "undoing a PDF reaction removal must leave the PDF on the page being read");
+
+  // The reading place outlives any one view of the paper. Pinning moves the
+  // live card between layers, and removing an ask card rebuilds the PDF from
+  // scratch; neither may send the reader back to page one.
+  const readingPlace = await pdfPlace(page, ".card .rh-pdf-scroll");
+  assert(readingPlace.page >= 3, `the reading place must be deep in the paper: ${JSON.stringify(readingPlace)}`);
+  await page.evaluate(() => document.querySelector(".card .rh-pdf-scroll").closest(".card").querySelector(".card-more").click());
+  await page.locator("#cm-pin").evaluate((button) => button.click());
+  await page.waitForSelector(".pinned-window-card .rh-pdf-scroll");
+  await settleFrames(page);
+  assertSamePlace(await pdfPlace(page, ".pinned-window-card .rh-pdf-scroll"), readingPlace, "pinning a PDF card");
+  await page.locator(".pinned-window-card .pinned-pin").evaluate((button) => button.click());
+  await page.waitForSelector(".pinned-window-card", { state: "detached" });
+  await settleFrames(page);
+  assertSamePlace(await pdfPlace(page, ".card .rh-pdf-scroll"), readingPlace, "unpinning a PDF card");
+
+  const cardsBeforeDeepAsk = await page.locator(".card").count();
+  const deepAskSelection = await selectVisibleText(page, {
+    text: deepItem, rootSelector: '.card .rh-pdf-page[data-page="3"] .rh-pdf-textlayer', exact: true, start: 0, end: 12,
+  });
+  assert.equal(deepAskSelection.text, deepItem.slice(0, 12));
+  const askedPlace = await pdfPlace(page, ".card .rh-pdf-scroll");
+  await page.fill("#ask-text", "Deep ask to delete");
+  await page.click('#ask .ask-commit[data-commit="ask"]', { timeout: 4_000 });
+  await page.waitForFunction((count) => document.querySelectorAll(".card").length > count, cardsBeforeDeepAsk);
+  await page.locator(".card", { hasText: "Deep ask to delete" }).locator(".card-more").evaluate((button) => button.click());
+  await page.locator("#cm-delete").evaluate((button) => button.click());
+  await page.waitForFunction((count) => document.querySelectorAll(".card").length === count, cardsBeforeDeepAsk);
+  await settleFrames(page);
+  assertSamePlace(await pdfPlace(page, ".card .rh-pdf-scroll"), askedPlace, "removing an ask card rebuilds the PDF");
+
   // Docked notes are not branches: the rail lists cards, the margin lists notes.
   const expectedReaderBranches = noteState.hole.nodes
     .filter((node) => node.parent_id === root.id && node.origin?.kind !== "note").length;
@@ -546,6 +611,31 @@ try {
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
+}
+
+async function pdfPlace(page, selector) {
+  return page.evaluate((scrollSelector) => {
+    const scroll = document.querySelector(scrollSelector);
+    const pages = [...scroll.querySelectorAll(".rh-pdf-page")];
+    const current = pages.filter((element) => element.offsetTop <= scroll.scrollTop).at(-1) || pages[0];
+    return {
+      page: Number(current.dataset.page),
+      offset: (scroll.scrollTop - current.offsetTop) / current.offsetHeight,
+    };
+  }, selector);
+}
+
+function assertSamePlace(actual, expected, gesture) {
+  assert.equal(actual.page, expected.page, `${gesture} must keep the PDF on the page being read: ${JSON.stringify({ actual, expected })}`);
+  assert(Math.abs(actual.offset - expected.offset) < 0.01, `${gesture} must keep the PDF on the same line: ${JSON.stringify({ actual, expected })}`);
+}
+
+async function settleFrames(page) {
+  await page.evaluate(() => new Promise((resolve) => {
+    let frames = 6;
+    const tick = () => (--frames ? requestAnimationFrame(tick) : resolve());
+    requestAnimationFrame(tick);
+  }));
 }
 
 async function setPdfZoom(page, zoom) {

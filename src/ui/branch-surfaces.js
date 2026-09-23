@@ -29,6 +29,8 @@ function defaultBranchHooks() {
   return {
     exportSnapshot: null,
     exportPortable: null,
+    renderDockedNotes: null,
+    paintDockedNote: null,
   };
 }
 
@@ -234,7 +236,7 @@ export function removeBranch(node) {
   }
   const currentGone = ids.indexOf(currentNodeId) !== -1;
   if (currentGone) setCurrentNodeId(node.parent_id && nodes[node.parent_id] ? node.parent_id : rootId);
-  refreshAfterRemoval(node.parent_id, currentGone);
+  refreshAfterRemoval(node.parent_id, ids, currentGone, false);
   undoNotice.show({
     message: "Branch removed",
     actionLabel: "Undo",
@@ -271,6 +273,7 @@ function undoPendingRemoval() {
     const node = nodes[removal.ids[i]];
     if (node) delete node._pendingDelete;
   }
+  const currentMoved = removal.previousCurrentId !== currentNodeId;
   if (nodes[removal.previousCurrentId]) setCurrentNodeId(removal.previousCurrentId);
   if (canvasBuilt) {
     for (let j = 0; j < removal.ids.length; j++) {
@@ -279,8 +282,8 @@ function undoPendingRemoval() {
       if (restored && !restored.el && !isDockedNote(restored)) createNodeEl(restored, true);
     }
   }
-  refreshAfterRemoval(removal.parentId, false);
-  if (mode === "reader" && nodes[removal.previousCurrentId]) openNode(removal.previousCurrentId);
+  refreshAfterRemoval(removal.parentId, removal.ids, false, true);
+  if (mode === "reader" && currentMoved && nodes[removal.previousCurrentId]) openNode(removal.previousCurrentId);
 }
 export function commitPendingBranchRemoval() {
   const removal = pendingRemoval;
@@ -291,9 +294,22 @@ export function commitPendingBranchRemoval() {
   removeNodesLocal(removal.ids, removal.parentId);
   return Promise.resolve(request);
 }
-function refreshAfterRemoval(parentId, currentGone) {
+// A docked note is only a wash and a dot on its parent, so removing or
+// restoring one repaints exactly those. Rebuilding the parent's body instead
+// would re-render a PDF from scratch and throw away its scroll position.
+function refreshAfterRemoval(parentId, ids, currentGone, restoring) {
   const parent = parentId && nodes[parentId];
-  if (parent && parent.bodyEl) {
+  const dockedOnly = ids.every(function (id) {
+    return isDockedNote(nodes[id]);
+  });
+  if (dockedOnly) {
+    const hooks = branchLifecycle.hooks;
+    if (restoring && hooks.paintDockedNote)
+      ids.forEach(function (id) {
+        hooks.paintDockedNote(nodes[id]);
+      });
+    else if (hooks.renderDockedNotes) hooks.renderDockedNotes(parent);
+  } else if (parent && parent.bodyEl) {
     const scrollTop = parent.bodyEl.scrollTop;
     fillBody(parent);
     parent.bodyEl.scrollTop = scrollTop;
@@ -305,7 +321,7 @@ function refreshAfterRemoval(parentId, currentGone) {
   if (mode === "reader") {
     if (currentGone) openNode(currentNodeId);
     else {
-      if (currentNodeId === parentId) renderReaderBody();
+      if (currentNodeId === parentId && !dockedOnly) renderReaderBody();
       renderBreadcrumb();
       renderMarginNotes();
     }

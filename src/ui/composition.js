@@ -33,6 +33,7 @@ import {
   createPlacedNote,
   disposeDockedNotes,
   initDockedNotes,
+  paintDockedNote,
   positionDockedNotes,
   renderDockedNotes,
   revealDockedNote,
@@ -157,6 +158,8 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     const branchHooks = {
       exportSnapshot: capabilities.exportSnapshot || null,
       exportPortable: capabilities.exportPortable || null,
+      renderDockedNotes: renderDockedNotes,
+      paintDockedNote: paintDockedNote,
     };
 
     /* The gear lives in the shared taskbar, which outlives any one hole: the

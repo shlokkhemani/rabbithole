@@ -21,6 +21,8 @@ try {
     "",
     "The exact marked passage should accept a reaction without moving this prose.",
     "",
+    "A wrapping reaction passage runs long enough to cross several line boxes of the card, so its tooltip has to stay pinned to the start of the first line while the pointer travels down through every line of the wash and back up again.",
+    "",
     "A distant paragraph keeps identical layout metrics throughout the interaction.",
   ].join("\n"));
   await page.waitForSelector(".card.root .doc-content", { state: "visible" });
@@ -201,24 +203,48 @@ try {
   })), touchPoint);
   assert.equal(await page.locator(".reaction-tooltip").count(), 0, "touching the wash again closes its tooltip");
 
-  const entry = await mark.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return { x: rect.left + rect.width * 0.73, y: rect.top + rect.height / 2, top: rect.top };
+  await selectText(page, "wrapping reaction passage runs long enough to cross several line boxes of the card, so its tooltip has to stay pinned to the start of the first line while the pointer travels down");
+  await page.waitForSelector("#ask.visible");
+  await page.press("#ask-text", "ArrowUp");
+  await page.waitForSelector("#ask:not(.visible)", { state: "attached" });
+  const wrapId = await page.waitForFunction((firstId) => {
+    const marks = Array.from(document.querySelectorAll(".card.root .mark-reaction[data-child]"));
+    const other = marks.find((element) => element.dataset.child !== firstId);
+    return other && marks.filter((element) => element.dataset.child === other.dataset.child).length >= 3 && other.dataset.child;
+  }, reactionId).then((handle) => handle.jsonValue());
+  const lines = await page.evaluate((id) => Array.from(document.querySelectorAll(`.card.root .mark-reaction[data-child="${id}"]`))
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, left: rect.left, top: rect.top };
+    }), wrapId);
+  const tooltipRect = () => page.evaluate(() => {
+    const tips = document.querySelectorAll(".reaction-tip-wrap");
+    const tooltip = document.querySelector(".reaction-tooltip");
+    if (tips.length !== 1 || !tooltip) return { count: tips.length };
+    const rect = tooltip.getBoundingClientRect();
+    return { count: 1, identity: tips[0].dataset.probe || null, left: Math.round(rect.left), bottom: Math.round(rect.bottom) };
   });
-  await page.mouse.move(entry.x, entry.y);
-  const tooltip = page.locator(".reaction-tooltip").first();
-  await tooltip.waitFor();
-  const positioned = await tooltip.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return { center: rect.left + rect.width / 2, bottom: rect.bottom };
-  });
-  assert.equal(Math.abs(positioned.center - entry.x) < 1.5, true, "the tooltip centers on the pointer-entry x position");
-  assert.equal(Math.abs(positioned.bottom - (entry.top - 5)) < 1.5, true, "the tooltip sits five pixels above the entered line");
-  await tooltip.locator(".reaction-delete").click();
+  await page.mouse.move(lines.at(-1).x, lines.at(-1).y);
+  await page.waitForSelector(".reaction-tooltip");
+  await page.evaluate(() => { document.querySelector(".reaction-tip-wrap").dataset.probe = "first-open"; });
+  const pinned = await tooltipRect();
+  assert.deepEqual(pinned, {
+    count: 1,
+    identity: "first-open",
+    left: Math.round(lines[0].left),
+    bottom: Math.round(lines[0].top - 5),
+  }, "entering the last line opens one tooltip flush with the start of the first line, five pixels above it");
+  for (const line of [lines[1], lines[0], lines.at(-1), lines[1]]) {
+    await page.mouse.move(line.x, line.y, { steps: 6 });
+    assert.deepEqual(await tooltipRect(), pinned, "sweeping across the reaction's lines never moves or rebuilds its tooltip");
+  }
+  await page.mouse.move(lines[0].left + 8, lines[0].y, { steps: 4 });
+  await page.mouse.move(lines[0].left + 8, lines[0].top - 16, { steps: 4 });
+  await page.locator(".reaction-delete").click();
   assert.deepEqual(await page.evaluate((id) => ({
     wash: document.querySelectorAll(`.mark-reaction[data-child="${id}"]`).length,
     tooltip: document.querySelectorAll(".reaction-tooltip").length,
-  }), reactionId), { wash: 0, tooltip: 0 }, "deletion removes the wash and tooltip synchronously in the click frame");
+  }), wrapId), { wash: 0, tooltip: 0 }, "deletion removes the wash and tooltip synchronously in the click frame");
 
   await context.close();
   console.log("ok e2e reactions: row swap, arrows, wash-only layout, tooltip deletion, touch, and frozen read-only rendering");

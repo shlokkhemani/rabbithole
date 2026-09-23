@@ -688,12 +688,13 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .note-dot:focus { outline: none; }
 .note-dot:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
-/* Reaction tooltips stay inside the absolute wash fragment: their wrapper is
-   the invisible 5px bridge, so crossing from a line to its controls cannot
-   tear hover. The wrapper and tooltip are absolute paint and never enter prose
+/* Reaction tooltips live on the reaction's first wash fragment, flush with the
+   start of its first line: their wrapper is the invisible 5px bridge, so
+   crossing from a line to its controls cannot tear hover. The wrapper and tooltip are absolute paint and never enter prose
    layout. */
-.reaction-tip-wrap { position: absolute; z-index: var(--layer-local-top); bottom: 100%; display: block; padding-bottom: 5px;
-  transform: translateX(-50%); pointer-events: auto; font: var(--text-ui)/1 var(--font-ui); white-space: nowrap; }
+.reaction-tip-wrap { position: absolute; z-index: var(--layer-local-top); left: 0; bottom: 100%; display: block; padding-bottom: 5px;
+  pointer-events: auto; font: var(--text-ui)/1 var(--font-ui); white-space: nowrap; }
+.reaction-tip-wrap.reaction-tip-below { top: 100%; bottom: auto; padding: 5px 0 0; }
 .reaction-tooltip { display: inline-flex; min-height: 24px; align-items: center; gap: 2px; padding: 0 3px 0 7px;
   border: var(--border-default); border-radius: var(--radius-control); background: var(--surface-popover-bg); color: var(--fg-bold);
   box-shadow: var(--surface-popover-shadow); -webkit-backdrop-filter: var(--surface-popover-blur); backdrop-filter: var(--surface-popover-blur); }
@@ -709,7 +710,8 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .reaction-delete:active svg { transform: scale(0.88); }
 .reaction-delete:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .reaction-tip-svg { overflow: visible; transform: none; }
-.reaction-tip-svg-inner { display: flex; width: 100%; height: 100%; align-items: flex-end; justify-content: center; }
+.reaction-tip-svg-inner { display: flex; width: 100%; height: 100%; align-items: flex-end; justify-content: flex-start; }
+.reaction-tip-below .reaction-tip-svg-inner { align-items: flex-start; }
 
 /* The note's own surface: the product's popover, sized to a paragraph. No
    header and no ×; read prose sits directly on that surface like a comment. */

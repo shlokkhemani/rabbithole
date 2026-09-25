@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +10,9 @@ import { getSession } from "./registry.js";
 import { defaultFsStore, resolveAsset } from "./store/fs-store.js";
 
 const DEFAULT_DEADLINE_MS = 180_000;
+const LOGIN_STATUS_TIMEOUT_MS = 5_000;
+const CODEX_MISSING_MESSAGE = "Codex is not installed.";
+const CODEX_SIGNED_OUT_MESSAGE = "Codex is signed out. Run `codex login` and try again.";
 const OUTPUT_LIMIT = 1024 * 1024;
 const ALPHANUMERIC = "abcdefghijklmnopqrstuvwxyz0123456789";
 const sessionLocks = new WeakMap();
@@ -51,8 +54,10 @@ function abortError() {
   return error;
 }
 
+// Only Codex's own error fields: never agent_message text, which is the model's
+// prose and can legitimately talk about logins or 401s.
 function eventText(event) {
-  const values = [event?.message, event?.error?.message, event?.error, event?.item?.message, event?.item?.text];
+  const values = [event?.message, event?.error?.message, event?.error];
   return values.filter((value) => typeof value === "string").join(" ");
 }
 
@@ -70,9 +75,36 @@ function classifiedEventError(event) {
     return new ImageGenerationError(text, "image_quota", resetTime(event, text));
   }
   if (/login|sign in|signed out|unauthori[sz]ed|\b401\b/i.test(text)) {
-    return new ImageGenerationError("Codex is signed out. Run `codex login` and try again.", "codex_signed_out");
+    return new ImageGenerationError(CODEX_SIGNED_OUT_MESSAGE, "codex_signed_out");
   }
   return null;
+}
+
+/**
+ * Whether Codex can draw right now: the configured binary is installed and
+ * `codex login status` exits 0 against the same CODEX_HOME image turns use.
+ * A timeout or any other failure counts as not ready.
+ * @returns {Promise<{ready: boolean, codexBin?: string, home?: string,
+ *   code?: "codex_missing" | "codex_signed_out", message?: string}>}
+ */
+export async function codexImageReadiness({ env = process.env, timeoutMs = LOGIN_STATUS_TIMEOUT_MS } = {}) {
+  const codexBin = resolveExecutable("codex", env.RABBITHOLE_CODEX_BIN, env);
+  if (!codexBin) return { ready: false, code: "codex_missing", message: CODEX_MISSING_MESSAGE };
+  try {
+    const home = await prepareCodexHome({ env, directoryName: "codex-image-home" });
+    await new Promise((resolve, reject) => {
+      const child = execFile(codexBin, ["login", "status"], {
+        env: { ...env, CODEX_HOME: home },
+        timeout: timeoutMs,
+        killSignal: "SIGKILL",
+      }, (error) => (error ? reject(error) : resolve(undefined)));
+      child.stdin?.end();
+    });
+    return { ready: true, codexBin, home };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { ready: false, code: "codex_missing", message: CODEX_MISSING_MESSAGE };
+    return { ready: false, code: "codex_signed_out", message: CODEX_SIGNED_OUT_MESSAGE };
+  }
 }
 
 async function pngCandidates(home, threadId) {
@@ -121,7 +153,7 @@ export async function generateImageFile({
   signal,
   deadlineMs = DEFAULT_DEADLINE_MS,
 }) {
-  if (!codexBin) throw new ImageGenerationError("Codex is not installed.", "codex_missing");
+  if (!codexBin) throw new ImageGenerationError(CODEX_MISSING_MESSAGE, "codex_missing");
   if (signal?.aborted) throw abortError();
 
   const priorPngs = editOfThreadId
@@ -205,10 +237,6 @@ export async function generateImageFile({
     }
     if (reportedError) throw reportedError;
 
-    const combined = `${stdout}\n${stderr}`;
-    if (/login|sign in|signed out|unauthori[sz]ed|\b401\b/i.test(combined)) {
-      throw new ImageGenerationError("Codex is signed out. Run `codex login` and try again.", "codex_signed_out");
-    }
     const pngPath = await newestPng(home, threadId, priorPngs);
     if (!pngPath) {
       const detail = lastMessage || stderr.trim() || `Codex exited with status ${exit.code ?? exit.signal ?? "unknown"}`;
@@ -222,7 +250,7 @@ export async function generateImageFile({
       elapsedMs: Date.now() - startedAt,
     };
   } catch (error) {
-    if (error?.code === "ENOENT") throw new ImageGenerationError("Codex is not installed.", "codex_missing");
+    if (error?.code === "ENOENT") throw new ImageGenerationError(CODEX_MISSING_MESSAGE, "codex_missing");
     throw error;
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
@@ -339,9 +367,11 @@ export async function generateImage({
     session.imageAbortControllers.add(controller);
     session.broadcast({ type: "node_work_state", node_id: pending.node.id, state: "drawing" });
     try {
-      const codexBin = resolveExecutable("codex", process.env.RABBITHOLE_CODEX_BIN);
-      if (!codexBin) throw new ImageGenerationError("Codex is not installed.", "codex_missing");
-      const home = await prepareCodexHome({ directoryName: "codex-image-home" });
+      // Re-check at call time: Codex may have been removed or signed out since
+      // the tool was enabled. Never spawn an image turn that cannot succeed.
+      const codex = await codexImageReadiness();
+      if (!codex.ready) throw new ImageGenerationError(codex.message, codex.code);
+      const { codexBin, home } = codex;
       const result = await generateImageFile({
         home,
         codexBin,

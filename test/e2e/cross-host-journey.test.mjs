@@ -211,7 +211,7 @@ async function imageGenerationJourney() {
 
 async function imageSettingJourney() {
   const offDir = await fs.mkdtemp(path.join(tmp, "image-setting-off-"));
-  const offMcp = await startMcp(offDir);
+  const offMcp = await startMcp(offDir, { RABBITHOLE_CODEX_BIN: IMAGE_FIXTURE });
   const context = await browser.newContext();
   try {
     const initialTools = await offMcp.client.listTools();

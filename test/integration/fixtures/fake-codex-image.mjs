@@ -4,13 +4,32 @@ import path from "node:path";
 import zlib from "node:zlib";
 
 const args = process.argv.slice(2);
-if (args[0] !== "exec") process.exit(2);
-
 let stdin = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => { stdin += chunk; });
-process.stdin.on("end", run);
-process.on("SIGTERM", () => process.exit(0));
+if (args[0] === "login" && args[1] === "status") loginStatus();
+else if (args[0] !== "exec") process.exit(2);
+else startExec();
+
+// Mirrors codex-cli 0.155: status goes to stderr, exit code carries the answer.
+function loginStatus() {
+  const login = process.env.FAKE_CODEX_IMAGE_LOGIN || "ok";
+  if (login === "hang") {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (login === "signed_out") {
+    process.stderr.write("Not logged in\n");
+    process.exit(1);
+  }
+  process.stderr.write("Logged in using ChatGPT\n");
+  process.exit(0);
+}
+
+function startExec() {
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { stdin += chunk; });
+  process.stdin.on("end", run);
+  process.on("SIGTERM", () => process.exit(0));
+}
 
 function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -35,6 +54,11 @@ function run() {
     process.exitCode = 1;
     return;
   }
+  if (mode === "turn_failed_auth") {
+    emit({ type: "turn.failed", error: { message: "unexpected status 401 Unauthorized: token expired" } });
+    process.exitCode = 1;
+    return;
+  }
   if (mode === "quota") {
     emit({ type: "turn.failed", error: { message: "Image usage limit reached", resets_at: "2026-09-08T00:00:00Z" } });
     process.exitCode = 1;
@@ -45,7 +69,12 @@ function run() {
     fs.mkdirSync(outputDir, { recursive: true });
     fs.writeFileSync(path.join(outputDir, "item.png"), tinyPng(2, 3));
   }
-  emit({ type: "item.completed", item: { type: "agent_message", text: "I will draw a labelled diagram." } });
+  // login_text: the model's prose (and stderr chatter) about auth must not read as signed out.
+  const message = mode === "login_text"
+    ? "A diagram of how login creates a session: sign in, get a token, a 401 Unauthorized when it is signed out."
+    : "I will draw a labelled diagram.";
+  if (mode === "login_text") process.stderr.write("note: prompt mentions login and 401 unauthorized\n");
+  emit({ type: "item.completed", item: { type: "agent_message", text: message } });
   emit({ type: "item.completed", item: { type: "agent_message", text: "DONE" } });
   emit({ type: "turn.completed" });
 }

@@ -1,12 +1,13 @@
 import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { log, error as logError } from "../shared/logger.js";
+import { log, warn, error as logError } from "../shared/logger.js";
 import { buildServerInstructions } from "./instructions.js";
 import { answerBranchDescription, toolDefinitions } from "./tools.js";
 import { closeAllSessions } from "./registry.js";
 import { formatToolSuccess } from "./tool-result.js";
 import { AI_IMAGES_PREF_KEY, readImagesEnabled } from "./images-setting.js";
+import { codexImageReadiness } from "./image-gen.js";
 import { onPreferencesMerged } from "./store/prefs-store.js";
 
 // package.json is the single source of truth for the release version.
@@ -19,8 +20,17 @@ function getErrorMessage(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
+// generate_image is offered only when the setting is on AND Codex is installed
+// and signed in; readiness is checked only when the setting asks for images.
+async function imagesAvailable(settingOn) {
+  if (!settingOn) return false;
+  const codex = await codexImageReadiness();
+  if (!codex.ready) warn(`AI images are on but unavailable: ${codex.message}`);
+  return codex.ready;
+}
+
 export async function main() {
-  const enabled = await readImagesEnabled();
+  const enabled = await imagesAvailable(await readImagesEnabled());
   server = new McpServer(
     { name: "rabbithole", version: require("../../../package.json").version },
     {
@@ -60,8 +70,14 @@ export async function main() {
   }
 
   applyImagesEnabled(enabled);
+  let latestCheck = 0;
   stopPreferences = onPreferencesMerged((values) => {
-    if (AI_IMAGES_PREF_KEY in values) applyImagesEnabled(values[AI_IMAGES_PREF_KEY] === "on");
+    if (!(AI_IMAGES_PREF_KEY in values)) return;
+    // A newer flip supersedes an in-flight readiness check.
+    const check = ++latestCheck;
+    void imagesAvailable(values[AI_IMAGES_PREF_KEY] === "on").then((next) => {
+      if (check === latestCheck) applyImagesEnabled(next);
+    });
   });
 
   const transport = new StdioServerTransport();

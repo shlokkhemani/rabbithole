@@ -16,7 +16,7 @@ process.env.FAKE_CODEX_IMAGE_LOG = fixtureLog;
 process.env.HOME = homeDirectory;
 
 const { createSession, closeAllSessions } = await import("../../src/node/mcp/registry.js");
-const { generateImage } = await import("../../src/node/mcp/image-gen.js");
+const { codexImageReadiness, generateImage } = await import("../../src/node/mcp/image-gen.js");
 
 const session = await createSession({
   holeId: "generate-image-integration",
@@ -86,7 +86,35 @@ try {
   assert.equal(referenceLog.argv[imageIndex + 1], storedPath);
   assert.equal(referenceLog.argv[imageIndex + 2], "-");
 
+  const ready = await codexImageReadiness();
+  assert.equal(ready.ready, true, JSON.stringify(ready));
+  assert.equal(ready.home, path.join(directory, "codex-image-home"));
+  assert.deepEqual(
+    await codexImageReadiness({ env: { ...process.env, RABBITHOLE_CODEX_BIN: path.join(directory, "missing-codex") } }),
+    { ready: false, code: "codex_missing", message: "Codex is not installed." },
+  );
+  assert.equal((await codexImageReadiness({ env: { ...process.env, FAKE_CODEX_IMAGE_LOGIN: "signed_out" } })).code, "codex_signed_out");
+  const hung = await codexImageReadiness({ env: { ...process.env, FAKE_CODEX_IMAGE_LOGIN: "hang" }, timeoutMs: 100 });
+  assert.equal(hung.ready, false);
+  assert.equal(hung.code, "codex_signed_out");
+
+  // Signed out at call time: fail fast without spawning an image turn.
+  process.env.FAKE_CODEX_IMAGE_LOGIN = "signed_out";
+  await fs.rm(fixtureLog, { force: true });
+  const signedOutCall = assertErrorCode(await call(), "codex_signed_out");
+  assert.match(signedOutCall.message, /codex login/);
+  await assert.rejects(fs.access(fixtureLog), { code: "ENOENT" }, "a signed-out Codex must not start codex exec");
+  delete process.env.FAKE_CODEX_IMAGE_LOGIN;
+
+  // Regression: the model's own prose about logins/401s is not a sign-out.
+  process.env.FAKE_CODEX_IMAGE_MODE = "login_text";
+  const loginText = successText(await call());
+  assert.match(loginText.revised_prompt, /login creates a session/);
+
   process.env.FAKE_CODEX_IMAGE_MODE = "signed_out";
+  assertErrorCode(await call(), "codex_signed_out");
+
+  process.env.FAKE_CODEX_IMAGE_MODE = "turn_failed_auth";
   assertErrorCode(await call(), "codex_signed_out");
 
   process.env.FAKE_CODEX_IMAGE_MODE = "quota";
@@ -131,9 +159,10 @@ try {
   assertErrorCode(await closingCall, "session_closed");
   assert.throws(() => process.kill(closingLog.pid, 0), { code: "ESRCH" });
 
-  console.log("ok generate_image integration: storage, provenance, work state, generate/edit/reference CLI, and typed failures");
+  console.log("ok generate_image integration: storage, provenance, work state, generate/edit/reference CLI, Codex readiness, and typed failures");
 } finally {
   delete process.env.FAKE_CODEX_IMAGE_MODE;
+  delete process.env.FAKE_CODEX_IMAGE_LOGIN;
   delete process.env.RABBITHOLE_IMAGE_DEADLINE_MS;
   await session.close("test_complete");
   await closeAllSessions("test_complete");

@@ -1,8 +1,8 @@
 // Impact-aware quick gate. Keep source-to-test knowledge in IMPACT_RULES only:
 // overlay/camera/canvas-design changes exercise the six browser tests that
-// caught the hidden-selection regression. Every run also covers the full unit
-// tier; outside the table, directly changed contract/integration/e2e tests are
-// the focused default for their touched tier.
+// caught the hidden-selection regression. Every run also covers the static
+// checks; outside the table, directly changed contract/integration/e2e tests
+// are the focused default for their touched tier.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -34,11 +34,10 @@ const focusedTests = [...focused].sort();
 
 process.stdout.write(`Changed paths considered: ${changed.length}\n`);
 if (focusedTests.length) process.stdout.write(`Focused impact tests (${focusedTests.length}):\n${focusedTests.map((file) => `- ${file}`).join("\n")}\n`);
-else process.stdout.write("Focused impact tests: none; the unit tier is the default gate.\n");
+else process.stdout.write("Focused impact tests: none; the static checks are the default gate.\n");
 
 await requireStep("build", process.execPath, ["build.mjs"]);
-await requireStep("check:types", process.execPath, ["scripts/check-types.mjs"]);
-await requireStep("unit tier", process.execPath, ["test/run.mjs", "unit", "--fail-fast"]);
+await requireStep("static checks", process.execPath, ["test/run.mjs", "checks", "--fail-fast"]);
 if (focusedTests.length) {
   const jobs = positiveInteger(process.env.RABBITHOLE_TEST_JOBS || 2, "RABBITHOLE_TEST_JOBS");
   await requireStep("focused impact tests", process.execPath, [

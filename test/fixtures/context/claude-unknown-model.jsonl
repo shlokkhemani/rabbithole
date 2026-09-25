@@ -1,1 +1,0 @@
-{"type":"assistant","timestamp":"2026-08-12T08:00:00.000Z","message":{"role":"assistant","model":"claude-future-unknown","usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":40}}}

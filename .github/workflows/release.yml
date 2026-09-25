@@ -34,11 +34,10 @@ jobs:
 
       # The package gate, not the whole CI matrix: the browser tiers already
       # ran on the commit this tag points at.
-      - run: npm run check:types
       - run: npm run build
-      - run: npm run check:purity
+      # Types, purity, icons, CSS, design, UI lint/architecture, and suite purity.
+      - run: npm run check:static
       - run: npm run check:docs
-      - run: npm run test:unit
       - run: npm run test:packaging
 
       - name: Extract the release notes

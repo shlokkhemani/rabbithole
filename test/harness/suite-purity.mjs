@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const testDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tiers = ["unit", "contracts", "integration", "e2e", "performance", "packaging"];
+const tiers = ["contracts", "integration", "e2e", "performance", "packaging"];
 const metadataDirectories = [...tiers, "isolation-live"];
 const failures = [];
 for (const tier of metadataDirectories) {
@@ -13,7 +13,6 @@ for (const tier of metadataDirectories) {
     const file = path.join(directory, entry.name);
     const source = await fs.readFile(file, "utf8");
     if (!/^\/\*\* @protects [^\n]+ \*\//.test(source)) failures.push(`${tier}/${entry.name}: missing one-line @protects docblock`);
-    if (tier === "unit" && /from\s+["']playwright["']/.test(source)) failures.push(`${tier}/${entry.name}: unit suites cannot launch Playwright`);
     if (tier === "e2e" && source.split("\n").length > 1_500) failures.push(`${tier}/${entry.name}: e2e entrypoint exceeds 1,500 lines`);
   }
 }

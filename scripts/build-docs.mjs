@@ -73,7 +73,7 @@ function moduleMap(files) {
 function testMap(entries) {
   let out = heading("Test map");
   out += "Each description is harvested from the test file's `@protects` declaration.\n\n";
-  for (const tier of ["unit", "contracts", "integration", "e2e", "performance", "packaging", "isolation-live"]) {
+  for (const tier of ["contracts", "integration", "e2e", "performance", "packaging", "isolation-live"]) {
     const matches = entries.filter((entry) => entry.file.startsWith(`test/${tier}/`));
     out += `## ${tier}\n\n`;
     out += matches.length

@@ -46,8 +46,8 @@ through `npx` without adding it to the project.
 | `npm run build:package` | Rebuild only the ignored MCP browser assets in `dist/`. |
 | `npm run check:purity` | Enforce browser/core import boundaries. |
 | `npm run check:types` | Run strict JavaScript checking over the typed core contracts and their fixtures. |
-| `npm test` | Run unit, contract, integration, end-to-end, and performance suites. |
-| `npm run test:unit` | Run fast model, renderer, content-block, and URL-resolution tests. |
+| `npm run check:static` | Run every static check: types, purity, icons, CSS, design, UI lint and architecture, and suite metadata. |
+| `npm test` | Run the static checks plus the contract, integration, end-to-end, performance, and packaging suites. |
 | `npm run test:contracts` | Run persistence, artifact, MCP wire, security, compatibility, and relay-boundary tests. |
 | `npm run test:integration` | Run host-level ingestion, generation, portability, image, and reattachment tests. |
 | `npm run test:e2e` | Run real-browser product and cross-host journeys. |
@@ -61,7 +61,6 @@ Individual tests are executable Node programs. During iteration, run the
 narrowest relevant file directly, for example:
 
 ```bash
-node test/unit/reducer.test.mjs
 node test/contracts/artifact-roundtrip.test.mjs
 node test/e2e/web-app-branching.test.mjs
 ```
@@ -88,14 +87,16 @@ and public assets to `publish/`. Static deployment inputs live in
 
 Add the smallest test that proves the behavior:
 
-1. Use `test/unit/` for deterministic transformations and reducer behavior.
+Rabbithole has no unit tests: behavior is proven through the running product.
+
+1. Use `test/e2e/` for browser journeys or movement between hosts. This is the
+   default home for new coverage.
 2. Use `test/contracts/` for persisted formats, protocol shapes, trust
    boundaries, format validation, and storage implementations.
 3. Use `test/integration/` for a capability spanning core code and a host.
-4. Use `test/e2e/` for browser journeys or movement between hosts.
-5. Use `test/performance/` for measured regression ceilings and
+4. Use `test/performance/` for measured regression ceilings and
    `test/packaging/` for clean-install behavior.
-6. Use `test/isolation-live/` for acceptance checks that require locally
+5. Use `test/isolation-live/` for acceptance checks that require locally
    installed Claude or Codex binaries. This directory is never part of
    `npm test`; run it with `npm run check:isolation-live`.
 

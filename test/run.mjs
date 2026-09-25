@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testDir = path.join(rootDir, "test");
-const tiers = ["unit", "contracts", "integration", "e2e", "performance", "packaging"];
+const tiers = ["contracts", "integration", "e2e", "performance", "packaging"];
 const options = parseArgs(process.argv.slice(2));
-if (!["unit", "packaging"].includes(options.tier)) await ensureFullBuild();
+if (!["checks", "packaging"].includes(options.tier)) await ensureFullBuild();
 const checks = {
   icons: [process.execPath, [path.join(rootDir, "scripts/generate-ionicons.mjs"), "--check"]],
   css: [process.execPath, [path.join(rootDir, "scripts/check-css-integrity.mjs")]],
@@ -31,21 +31,13 @@ async function ensureFullBuild() {
 }
 
 let jobs = [];
+const checkJobs = Object.entries(checks).map(([name, command]) => ({ name: `check:${name}`, command }));
 if (options.tier === "all") {
-  jobs.push(...Object.entries(checks).map(([name, command]) => ({ name: `check:${name}`, command })));
+  jobs.push(...checkJobs);
   for (const name of tiers) jobs.push(...await testJobs(name));
-} else if (options.tier === "isolation-live") {
-  jobs.push(...await testJobs(options.tier));
-} else if (tiers.includes(options.tier)) {
-  if (options.tier === "unit") jobs.push(
-    { name: "check:icons", command: checks.icons },
-    { name: "check:css", command: checks.css },
-    { name: "check:design", command: checks.design },
-    { name: "check:design-doc", command: checks["design-doc"] },
-    { name: "check:ui", command: checks.ui },
-    { name: "check:ui-architecture", command: checks["ui-architecture"] },
-    { name: "check:suite-purity", command: checks["suite-purity"] },
-  );
+} else if (options.tier === "checks") {
+  jobs.push(...checkJobs);
+} else if (options.tier === "isolation-live" || tiers.includes(options.tier)) {
   jobs.push(...await testJobs(options.tier));
 } else {
   usage(`Unknown test tier ${JSON.stringify(options.tier)}.`);

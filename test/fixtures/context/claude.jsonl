@@ -1,3 +1,0 @@
-{"type":"assistant","timestamp":"2026-08-12T08:00:00.000Z","message":{"role":"assistant","model":"claude-fable-5","usage":{"input_tokens":5,"cache_read_input_tokens":10,"cache_creation_input_tokens":15,"output_tokens":20}}}
-{"type":"user","timestamp":"2026-08-12T08:00:01.000Z","message":{"role":"user","content":"fixture only"}}
-{"type":"assistant","timestamp":"2026-08-12T08:00:02.000Z","message":{"role":"assistant","model":"claude-fable-5","usage":{"input_tokens":100,"cache_read_input_tokens":200,"cache_creation_input_tokens":300,"output_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":999999},"iterations":[{"input_tokens":999999}]}}}

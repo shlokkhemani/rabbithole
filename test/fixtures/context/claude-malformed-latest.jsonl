@@ -1,2 +1,0 @@
-{"type":"assistant","timestamp":"2026-08-12T08:00:00.000Z","message":{"role":"assistant","model":"claude-fable-5","usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":40}}}
-{"type":"assistant","timestamp":"2026-08-12T08:00:01.000Z","message":{"role":"assistant","model":"claude-fable-5","usage":{"input_tokens":10,"cache_read_input_tokens":"bad","cache_creation_input_tokens":30,"output_tokens":40}}}

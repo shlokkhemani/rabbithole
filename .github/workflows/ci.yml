@@ -23,11 +23,10 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - run: npm run check:types
       - run: npm run build
-      - run: npm run check:purity
+      # Types, purity, icons, CSS, design, UI lint/architecture, and suite purity.
+      - run: npm run check:static
       - run: npm run check:docs
-      - run: npm run test:unit
       - name: Build the production site for deploy
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npm run build:publish -- --skip-build

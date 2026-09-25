@@ -135,7 +135,7 @@ try {
   assert.ok(reactionId);
   assert.equal(await mark.evaluate((element) => element.classList.contains("mark-note") && element.classList.contains("mark-ready")), true);
   assert.equal(await page.locator(`.note-dot[data-note="${reactionId}"]`).count(), 0, "a reaction paints no note dot");
-  assert.equal(await page.locator(`#margin-notes [data-child="${reactionId}"]`).count(), 0, "a reaction paints no reader rail entry");
+  assert.equal(await page.locator(`.branch-dot[data-note="${reactionId}"]`).count(), 0, "a reaction paints no branch dot");
   assert.deepEqual(await rectOf(page, ".card.root .doc-content p:last-of-type"), distantBefore,
     "the absolute reaction wash leaves distant prose layout metrics unchanged");
   await page.waitForFunction(async (id) => {

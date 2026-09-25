@@ -5,7 +5,7 @@ import { isTypingTarget } from "./input-intent.js";
 import { createCleanupScope } from "./kit/scope.js";
 import { togglePalette } from "./palette.js";
 import { applyTheme } from "./preferences.js";
-import { focusedMark, jumpToOrigin, openNode, returnToCanvas, stepMark } from "./reader.js";
+import { closeTipPane, focusedMark, jumpToOrigin, openNode, returnToCanvas, stepMark, stepPane } from "./reader.js";
 import { isSettingsSheetOpen } from "./settings-sheet.js";
 
 let chromeScope = null;
@@ -45,14 +45,15 @@ function onGlobalKeydown(e) {
     flashHint(
       mode === "canvas"
         ? "space — open the current card · t tidy · ⌘K search and commands"
-        : "j / k — walk the highlights · ↵ open · ⌫ up a level · esc — back to canvas · ⌘K search",
+        : "j / k — walk the highlights · ↵ open · ← / → move along the trail · esc — close · ⌘K search",
     );
     return;
   }
-  // Esc always collapses the focused state back onto the canvas — the same
-  // muscle memory as leaving full screen. Popovers get first claim on it.
+  // Esc peels the trail back one answer at a time; with only the document
+  // itself left, it collapses onto the canvas — the same muscle memory as
+  // leaving full screen. Popovers get first claim on it.
   if (e.key === "Escape" && mode === "reader" && !overlayOpen()) {
-    returnToCanvas();
+    if (!closeTipPane()) returnToCanvas();
     return;
   }
   if ((e.key === "t" || e.key === "T") && mode === "canvas") {
@@ -79,6 +80,9 @@ function onGlobalKeydown(e) {
   if (e.key === "j" || e.key === "k") {
     e.preventDefault();
     stepMark(e.key === "j" ? 1 : -1);
+  } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    stepPane(e.key === "ArrowLeft" ? -1 : 1);
   } else if (e.key === "Enter") {
     const m = focusedMark();
     if (m) {

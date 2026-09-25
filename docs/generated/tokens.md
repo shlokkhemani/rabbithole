@@ -58,7 +58,6 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--focus-offset` | `2px` |
 | `--focus-field-shadow` | `0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent)` |
 | `--reader-column` | `680px` |
-| `--reader-branch-rail` | `clamp(252px, 24vw, 320px)` |
 | `--rail-width` | `224px` |
 | `--surface-width-panel` | `340px` |
 | `--surface-edge` | `14px` |
@@ -122,7 +121,6 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--doc-size-small` | `.86em` |
 | `--doc-size-table-head` | `.92em` |
 | `--doc-size-compact` | `.95em` |
-| `--doc-size-normal` | `1em` |
 | `--doc-code-size` | `.82em` |
 | `--doc-block-code-size` | `.8em` |
 | `--bg` | `#1a1918` |

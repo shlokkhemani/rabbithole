@@ -19,6 +19,7 @@
 | `npm run check:install-live` | `node scripts/install-journey-check.mjs` |
 | `npm run check:isolation-live` | `node test/run.mjs isolation-live` |
 | `npm run check:purity` | `node scripts/check-ui-purity.mjs` |
+| `npm run check:static` | `node test/run.mjs checks` |
 | `npm run check:types` | `node scripts/check-types.mjs` |
 | `npm run check:ui` | `biome check src/ui` |
 | `npm run check:ui-architecture` | `node scripts/check-ui-architecture.mjs` |
@@ -36,5 +37,4 @@
 | `npm run test:packaging` | `node test/run.mjs packaging` |
 | `npm run test:performance` | `node test/run.mjs performance` |
 | `npm run test:quick` | `node test/support/quick-test.mjs` |
-| `npm run test:unit` | `node test/run.mjs unit` |
 | `npm run version` | `npm run build:docs && git add docs` |

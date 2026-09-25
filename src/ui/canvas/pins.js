@@ -1,5 +1,6 @@
 import { isDockedNote } from "../../core/hole/ask.js";
 import { CANVAS_BASE, fontPx, frozen, MAX_SCALE, MIN_SCALE, normalizeFontScale, postBrowserEvent } from "../core.js";
+import { captureReadingAnchor, restoreReadingAnchor } from "../scroll-position.js";
 import { r } from "./runtime.js";
 
 export function canPinWindow(node) {
@@ -34,7 +35,9 @@ export function setPinnedFontScale(node, value) {
   const pin = nodePin(node);
   if (!pin) return (node && node.font_scale) || 1;
   pin.fontScale = normalizeFontScale(value);
+  const anchor = captureReadingAnchor(node.bodyEl);
   applyCardFontSize(node);
+  restoreReadingAnchor(node.bodyEl, anchor);
   if (!frozen) persistCanvasExtension(node);
   return pin.fontScale;
 }

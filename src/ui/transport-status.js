@@ -43,7 +43,7 @@ import {
 } from "./core.js";
 import { cancelFrame, nextFrame } from "./kit/scope.js";
 import { applyPreferencePatch } from "./preferences.js";
-import { renderBreadcrumb, renderMarginNotes, renderReaderBody } from "./reader.js";
+import { readerScroller, readerShows, renderReaderBody, syncReaderPanes } from "./reader.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { applyServerEvent } from "./store/apply-server-event.js";
 import { upgradeMarks, wrapInContainer } from "./text-marks.js";
@@ -171,7 +171,8 @@ function postWithAdapter(adapter, payload) {
 let viewSaveTimer = 0;
 function currentViewState() {
   const cur = nodes[currentNodeId];
-  const scroll = mode === "reader" ? readerMain.scrollTop : (cur && cur._scrollTop) || 0;
+  const scroller = mode === "reader" ? readerScroller() : null;
+  const scroll = scroller ? scroller.scrollTop : (cur && cur._scrollTop) || 0;
   const state = { mode: mode, node_id: currentNodeId, scroll: scroll };
   if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
   return state;
@@ -322,7 +323,7 @@ function handleTransportOpen(epoch) {
 let streamRenderRaf = 0;
 let streamRenderQueue = {};
 function hasStreamSurface(node) {
-  return !!node.bodyEl || (mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id));
+  return !!node.bodyEl || readerShows(node.id) || readerShows(node.parent_id);
 }
 function cancelQueuedStreamRender(nodeId) {
   delete streamRenderQueue[nodeId];
@@ -393,8 +394,9 @@ export function disposeTransportStatus() {
   });
   return transportDisposePromise;
 }
-// Repaint a streaming node everywhere it is currently on screen: the reader
-// main doc, its branch-rail card, and its canvas card. Scroll positions
+// Repaint a streaming node everywhere it is currently on screen: its reader
+// pane (open beside the document it was asked from) and its canvas card, and
+// the dot that stands for it in its parent's margin. Scroll positions
 // are restored exactly on every repaint — arriving text must never move the
 // human's place (an innerHTML swap briefly collapses scrollHeight, which
 // would otherwise clamp the scroll and make the view jump).
@@ -405,24 +407,19 @@ function renderStreamSurfaces(node, firstChunk) {
     node.bodyEl.scrollTop = cs;
     scheduleEdges();
   }
-  if (mode !== "reader") return;
-  const keep = readerMain.scrollTop;
-  if (currentNodeId === node.id) {
-    const rdc = readerMain.querySelector('.doc-content[data-node-id="' + node.id + '"]');
+  if (readerShows(node.id)) {
+    const scroller = readerScroller(node.id);
+    const keep = scroller.scrollTop;
+    const rdc = scroller.querySelector('.doc-content[data-node-id="' + node.id + '"]');
     if (rdc) {
       rdc.innerHTML = "";
       if (node.html) fillStreaming(rdc, node, "reader:" + node.id);
       else rdc.appendChild(buildLoading(node));
-      readerMain.scrollTop = keep;
+      scroller.scrollTop = keep;
     }
-  } else if (currentNodeId === node.parent_id) {
-    // The branch streams live inside its rail card: the first chunk rebuilds
-    // the card (Thinking… → Writing… + the live pane), later chunks patch it.
-    const layer = document.getElementById("margin-notes");
-    const live = layer && layer.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-    if (live && !firstChunk) live.innerHTML = node.html || "";
-    else renderMarginNotes();
   }
+  // Thinking → writing is a change of state for the branch's dot.
+  if (firstChunk && readerShows(node.parent_id)) syncReaderPanes();
 }
 
 function handleServer(msg) {
@@ -498,18 +495,12 @@ function handleServer(msg) {
       updateCardComposer(node);
       refreshOpenStandaloneComposers();
       if (mode === "reader") {
-        // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id) {
-          renderBreadcrumb();
-          renderReaderBody();
-          renderMarginNotes();
-          updateComposerState();
-        } else {
-          // The parent doc may be on screen as the main document OR as a
-          // follow-up answer in the thread — upgrade marks wherever they are.
-          upgradeMarks(readerMain, node.id);
-          if (currentNodeId === node.parent_id) renderMarginNotes();
-        }
+        // The answered node may be open in its own pane, and its parent in the
+        // pane beside it: settle the answer, then its mark and dot.
+        if (readerShows(node.id)) renderReaderBody(node.id);
+        upgradeMarks(readerMain, node.id);
+        syncReaderPanes();
+        if (currentNodeId === node.id) updateComposerState();
       }
       // Upgrade the inline mark inside the parent's canvas card too.
       const p = nodes[node.parent_id];
@@ -526,7 +517,7 @@ function handleServer(msg) {
       if (result.namespace === "canvas") syncNodeCanvasPresentation(node);
       else if (result.namespace !== "attention") {
         if (node.bodyEl) fillBody(node);
-        if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
+        if (readerShows(node.id)) renderReaderBody(node.id);
         updateCardComposer(node);
         refreshOpenStandaloneComposers();
         scheduleEdges();
@@ -534,7 +525,7 @@ function handleServer(msg) {
     } else if (result.type === "pdf_convert_progress") {
       refreshNodeHtml(node);
       if (node.bodyEl) fillBody(node);
-      if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
+      if (readerShows(node.id)) renderReaderBody(node.id);
     } else if (result.type === "node_error") {
       if (result.restoreNote) {
         rollbackNoteConversion(node);
@@ -549,10 +540,9 @@ function handleServer(msg) {
         scheduleEdges();
       }
       if (mode === "reader") {
-        if (currentNodeId === node.id) {
-          renderReaderBody();
-          updateComposerState();
-        } else if (currentNodeId === node.parent_id) renderMarginNotes();
+        if (readerShows(node.id)) renderReaderBody(node.id);
+        if (currentNodeId === node.id) updateComposerState();
+        syncReaderPanes();
       }
     }
     return;
@@ -651,7 +641,7 @@ export function refreshStatus() {
     clearBanner();
     bannerDismissed = {};
   }
-  if (mode === "reader") renderMarginNotes();
+  if (mode === "reader") syncReaderPanes();
   updateComposerState();
   updateSelectionComposerState();
   if (canvasBuilt) for (const cid in nodes) updateCardComposer(nodes[cid]);

@@ -22,7 +22,7 @@ import { createModuleLifecycle } from "./kit/scope.js";
 import { detachNode, teardownNode } from "./node-teardown.js";
 import { createAnchoredMenu } from "./primitives/anchored-menu.js";
 import { wireNotice } from "./primitives/notice.js";
-import { openNode, renderBreadcrumb, renderMarginNotes, renderReaderBody } from "./reader.js";
+import { openNode, readerShows, renderReaderBody, syncReaderPanes } from "./reader.js";
 import { removeMarks } from "./text-marks.js";
 
 function defaultBranchHooks() {
@@ -321,9 +321,8 @@ function refreshAfterRemoval(parentId, ids, currentGone, restoring) {
   if (mode === "reader") {
     if (currentGone) openNode(currentNodeId);
     else {
-      if (currentNodeId === parentId && !dockedOnly) renderReaderBody();
-      renderBreadcrumb();
-      renderMarginNotes();
+      if (readerShows(parentId) && !dockedOnly) renderReaderBody(parentId);
+      syncReaderPanes();
     }
   }
 }
@@ -349,8 +348,5 @@ export function removeNodesLocal(ids, parentId) {
     renderVisibility();
     drawEdges();
   }
-  if (mode === "reader") {
-    renderBreadcrumb();
-    renderMarginNotes();
-  }
+  if (mode === "reader") syncReaderPanes();
 }

@@ -72,7 +72,7 @@ export const CANVAS_SHELL = `
 <div id="reader">
   <div id="reader-workspace">
     <div id="reader-document">
-      <div id="reader-main"></div>
+      <div id="reader-main" aria-label="Reading trail"></div>
       <div id="composer">
         <div class="composer-inner followup-composer" id="composer-inner">
           <div class="ask-input"><textarea id="composer-text" rows="1" placeholder="Ask or note…"></textarea></div>
@@ -80,10 +80,6 @@ export const CANVAS_SHELL = `
         </div>
       </div>
     </div>
-    <aside id="reader-rail" aria-labelledby="reader-rail-title">
-      <div class="reader-rail-head"><span id="reader-rail-title">Branches</span><span id="reader-rail-count">0</span></div>
-      <div id="margin-notes"></div>
-    </aside>
   </div>
 </div>
 

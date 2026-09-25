@@ -134,6 +134,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       mountDocImages: mountImages,
       animateScroll: animateScroll,
       renderDockedNotes: renderDockedNotes,
+      positionDockedNotes: positionDockedNotes,
     };
     const canvasHooks = {
       hideAsk: hideAsk,

@@ -6,6 +6,7 @@
   "pinned-scroll.test.mjs": { "ms": 1500, "browsers": [] },
   "preferences-persistence.test.mjs": { "ms": 4000, "browsers": [] },
   "reactions.test.mjs": { "ms": 1800, "browsers": [] },
+  "reader-trail.test.mjs": { "ms": 15000, "browsers": [] },
   "reducer-browser-parity.test.mjs": { "ms": 2200, "browsers": [] },
   "selection-popover.test.mjs": { "ms": 1300, "browsers": [] },
   "ui-primitives-browsers.test.mjs": { "ms": 12000, "browsers": ["firefox", "webkit"] },

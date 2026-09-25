@@ -1,4 +1,4 @@
-import { childrenOf, currentNodeId, edgesSvg, isVisible, mode, nodes, readerMain, SVGNS, view } from "../core.js";
+import { childrenOf, edgesSvg, isVisible, mode, nodes, readerMain, SVGNS, view } from "../core.js";
 import { transitionMarkGroups } from "../text-marks.js";
 import { r } from "./runtime.js";
 import { canvasBody, canvasCard, isFollowup } from "./shared.js";
@@ -207,7 +207,11 @@ export function drawEdgeSubset(ids, positionNodeIds) {
   for (const nodeId in positionNodeIds) {
     const node = nodes[nodeId];
     if (node && node.bodyEl) r.lifecycle.hooks.positionDockedNotes(node.bodyEl);
-    if (node && mode === "reader" && currentNodeId === node.id) r.lifecycle.hooks.positionDockedNotes(readerMain);
+    const pane =
+      node && mode === "reader"
+        ? readerMain.querySelector('.reader-pane:not(.pane-leaving)[data-node-id="' + node.id + '"]')
+        : null;
+    if (pane) r.lifecycle.hooks.positionDockedNotes(pane);
   }
 }
 

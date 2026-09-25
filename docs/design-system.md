@@ -55,7 +55,7 @@ This section is generated from `src/design/tokens.css`. Edit the stylesheet, the
   --focus-field-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 
   /* Layout */
-  --reader-column: 680px; --reader-branch-rail: clamp(252px, 24vw, 320px); --rail-width: 224px;
+  --reader-column: 680px; --rail-width: 224px;
   --surface-width-panel: 340px;
   --surface-edge: 14px; --surface-gap: 14px;
 
@@ -95,7 +95,7 @@ This section is generated from `src/design/tokens.css`. Edit the stylesheet, the
 
   /* Document rhythm */
   --doc-heading-1: 1.45em; --doc-heading-2: 1.22em; --doc-heading-3: 1.05em;
-  --doc-size-mermaid: .85em; --doc-size-small: .86em; --doc-size-table-head: .92em; --doc-size-compact: .95em; --doc-size-normal: 1em;
+  --doc-size-mermaid: .85em; --doc-size-small: .86em; --doc-size-table-head: .92em; --doc-size-compact: .95em;
   --doc-code-size: .82em; --doc-block-code-size: .8em;
 
   /* Dark is the no-attribute default. */

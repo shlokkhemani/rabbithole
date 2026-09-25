@@ -7,6 +7,7 @@ import { qsa } from "./dom.js";
 import { createCleanupScope } from "./kit/scope.js";
 import { onPreferenceChange, readingScale, toggleTheme } from "./preferences.js";
 import { wireNotice } from "./primitives/notice.js";
+import { captureReadingAnchor, restoreReadingAnchor } from "./scroll-position.js";
 import { createHoleStore } from "./store/hole-store.js";
 import { mountStructuredNote } from "./structured-note.js";
 import { mountVisuals } from "./visuals.js";
@@ -46,7 +47,6 @@ const loadingTimers = new Set();
 
 // refs
 export let readerMain = null;
-export let breadcrumbEl = null;
 export let viewport = null;
 export let world = null;
 export let edgesSvg = null;
@@ -129,12 +129,6 @@ export function initCore(inputHydration, hooks) {
   stackCounter = 0;
   loadingTimers.clear();
   readerMain = document.getElementById("reader-main");
-  // The lineage trail is owned by the UI, not the shell: it lives inside the
-  // reader column (hosts may clear that container between holes), so each
-  // init builds a fresh nav and the reader renders it into the document flow.
-  breadcrumbEl = document.createElement("nav");
-  breadcrumbEl.id = "breadcrumb";
-  breadcrumbEl.setAttribute("aria-label", "Breadcrumb");
   viewport = document.getElementById("viewport");
   world = document.getElementById("world");
   edgesSvg = document.getElementById("edges");
@@ -209,7 +203,7 @@ function resetCoreState() {
   orderCounter = 0;
   stackCounter = 0;
   loadingTimers.clear();
-  readerMain = breadcrumbEl = viewport = world = edgesSvg = null;
+  readerMain = viewport = world = edgesSvg = null;
   ask = askText = zoomLabel = hintEl = bannerEl = null;
   hintNotice = bannerNotice = null;
   composerInner = composerText = composerActions = null;
@@ -322,29 +316,39 @@ export function surfaceFontScale(node, surfaceKind) {
 // The global scale changed under every card at once — repaint the sizes the
 // document itself never knew about.
 export function refreshDocumentTextSizes() {
+  // Pin proxies carry no node id; their size is owned by the proxy render,
+  // so a global change must not clobber them back to scale 1.
   /** @type {HTMLElement[]} */
   const surfaces = qsa(".doc-content, .note-editor");
+  resizeTextSurfaces(surfaces.filter((surface) => nodes[surface.dataset.nodeId]));
+  coreHooks.scheduleEdges();
+}
+/*
+ * Resizing text reflows every line under the reader's eye. Each scroller that
+ * holds a resized surface keeps the line that sat at its top edge exactly
+ * where it was, so changing the size never moves what you were reading.
+ */
+/** @param {HTMLElement[]} surfaces */
+function resizeTextSurfaces(surfaces) {
+  const scrollers = new Map();
+  for (let i = 0; i < surfaces.length; i++) {
+    const scroller = surfaces[i].closest(".pane-scroll, .card-body");
+    if (scroller && !scrollers.has(scroller)) scrollers.set(scroller, captureReadingAnchor(scroller));
+  }
   for (let i = 0; i < surfaces.length; i++) {
     const surface = surfaces[i];
-    const node = nodes[surface.dataset.nodeId];
-    // Pin proxies carry no node id; their size is owned by the proxy render,
-    // so a global change must not clobber them back to scale 1.
-    if (!node) continue;
     const base = surface.dataset.surface === "reader" ? READER_BASE : CANVAS_BASE;
-    surface.style.fontSize = fontPx(base, surfaceFontScale(node, surface.dataset.surface)) + "px";
+    surface.style.fontSize =
+      fontPx(base, surfaceFontScale(nodes[surface.dataset.nodeId], surface.dataset.surface)) + "px";
   }
-  coreHooks.scheduleEdges();
+  scrollers.forEach((anchor, scroller) => restoreReadingAnchor(scroller, anchor));
 }
 export function setNodeFontScale(node, value) {
   if (!node) return 1;
   node.font_scale = normalizeFontScale(value);
   /** @type {HTMLElement[]} */
   const surfaces = qsa(".doc-content, .note-editor");
-  for (let i = 0; i < surfaces.length; i++) {
-    if (surfaces[i].dataset.nodeId !== node.id) continue;
-    const base = surfaces[i].dataset.surface === "reader" ? READER_BASE : CANVAS_BASE;
-    surfaces[i].style.fontSize = fontPx(base, surfaceFontScale(node, surfaces[i].dataset.surface)) + "px";
-  }
+  resizeTextSurfaces(surfaces.filter((surface) => surface.dataset.nodeId === node.id));
   coreHooks.persistNode(node);
   // Reflowed text moves the inline marks edges anchor to.
   coreHooks.scheduleEdges();

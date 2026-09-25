@@ -27,3 +27,6 @@ prototypes/
 pdf-reader-*.png
 
 playground/
+
+# e2e artifacts (traces, screenshots)
+test-artifacts/

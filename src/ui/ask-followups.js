@@ -41,7 +41,7 @@ import { closeLightbox } from "./lightbox.js";
 import { teardownNode } from "./node-teardown.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
 import { onPreferenceChange, reactionPrompt } from "./preferences.js";
-import { renderMarginNotes } from "./reader.js";
+import { openBranchBeside, syncReaderPanes } from "./reader.js";
 import { charOffset, mountPdfRectMark, wrapInContainer } from "./text-marks.js";
 import { refreshVisualMarks } from "./visuals.js";
 
@@ -117,23 +117,25 @@ export function initAskFollowups() {
     text: composerText,
     actions: composerActions,
     listen: scopeListen,
-    onCommit: function (kind, e) {
-      submitReaderFollowup(kind, composerSource(e));
+    onCommit: function (kind) {
+      submitReaderFollowup(kind);
     },
-    onLens: function (lens, e) {
-      submitReaderLens(lens, composerSource(e));
+    onLens: function (lens) {
+      submitReaderLens(lens);
     },
   });
   askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
   askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
   askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
+  // Each reader pane scrolls on its own; scroll does not bubble, so it is
+  // caught on the way down.
   askScope.listen(
     readerMain,
     "scroll",
     function () {
       if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation();
     },
-    { passive: true },
+    { passive: true, capture: true },
   );
   askScope.listen(document, "keydown", interruptScrollAnimation);
   return disposeAskFollowups;
@@ -169,7 +171,7 @@ function selectionOwner(dc) {
   if (card) return card;
   // A .doc-content outside a card or reader (docked-note popover, pinned-origin
   // proxy) is not an askable surface.
-  return dc && readerMain && readerMain.contains(dc) ? readerMain : null;
+  return dc && readerMain && readerMain.contains(dc) ? dc.closest(".pane-scroll") : null;
 }
 function onAskOwnerKeydown(e) {
   if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
@@ -556,17 +558,18 @@ function submitAsk(lensKey, source) {
       if (parent.bodyEl)
         mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
       scheduleEdges();
-      if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
     } else if (mode === "reader") {
       const rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
       wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-      if (currentNodeId === parent.id) renderMarginNotes();
     }
     if (parent.bodyEl && !isPdfRegion) {
       wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
       scheduleEdges();
     }
     if (anchor.block) refreshVisualMarks(parent.id, anchor.block.block_id);
+    // The answer opens beside the words it was asked about and streams there
+    // while the reader keeps reading.
+    openBranchBeside(childId);
   }
 
   const sel = window.getSelection();
@@ -726,7 +729,7 @@ export function sendFollowup(parent, question, lens, instruction = null) {
     renderVisibility();
     drawEdges();
   }
-  if (currentNodeId === parent.id && mode === "reader") renderMarginNotes();
+  openBranchBeside(childId);
   const payload = {
     type: "branch_request",
     request_id: requestId,
@@ -817,7 +820,7 @@ function readerComposerParent(needsSettled) {
   if (!parent || parent.source?.converting || (needsSettled && parent.status === "pending")) return null;
   return parent;
 }
-function submitReaderFollowup(commit, source) {
+function submitReaderFollowup(commit) {
   const parent = readerComposerParent(commit === "ask");
   const question = composerText.value.trim();
   if (!parent || !question) return;
@@ -826,9 +829,8 @@ function submitReaderFollowup(commit, source) {
   composerText.value = "";
   autoGrowComposer();
   updateComposerState();
-  scrollReaderRail(source);
 }
-function submitReaderLens(lens, source) {
+function submitReaderLens(lens) {
   const parent = readerComposerParent(true);
   const preset = presetFor("followup", lens);
   const question = composerText.value.trim();
@@ -836,11 +838,6 @@ function submitReaderLens(lens, source) {
   composerText.value = "";
   autoGrowComposer();
   updateComposerState();
-  scrollReaderRail(source);
-}
-function scrollReaderRail(source) {
-  const notes = document.getElementById("margin-notes");
-  if (notes) animateScroll(notes, notes.scrollHeight, source);
 }
 
 // Undo an optimistic branch whose request the server rejected/never received.
@@ -855,7 +852,7 @@ export function rollbackBranch(node, restore) {
   else teardownNode(node.id);
   if (blockId && parentId) refreshVisualMarks(parentId, blockId);
   if (canvasBuilt) drawEdges();
-  if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
+  if (mode === "reader") syncReaderPanes();
   flashHint("Couldn't reach the agent — that ask was undone.");
 }
 

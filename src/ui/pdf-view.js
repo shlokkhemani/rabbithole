@@ -151,6 +151,9 @@ export function mountPdfView(container, node, options = {}) {
     if (Number.isFinite(center)) readerToolbarHost.style.setProperty("--rh-pdf-reader-center", `${center}px`);
   }
 
+  // Reader panes slide along the trail without resizing: follow the pane.
+  if (readerToolbarHost) scope.listen(document, "rh-reader-layout", alignReaderToolbar);
+
   toolbar.onZoom((factor, anchor) => setZoom(factor, anchor));
   toolbar.onBoxMode((active) => {
     boxMode = active;

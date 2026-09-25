@@ -876,7 +876,6 @@ function resetHoleSurface() {
     world.style.transform = "";
   }
   document.getElementById("reader-main")?.replaceChildren();
-  document.getElementById("breadcrumb")?.replaceChildren();
 }
 
 function closeComposerSilently() {

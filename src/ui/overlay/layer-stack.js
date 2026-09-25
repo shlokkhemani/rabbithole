@@ -24,7 +24,7 @@ function consumePointerGesture(event) {
 
 export function focusElement(element, quiet) {
   if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-  if (quiet && element.getAttribute("tabindex") === "-1" && element.matches(".card, #reader-main")) {
+  if (quiet && element.getAttribute("tabindex") === "-1" && element.matches(".card, .pane-scroll")) {
     element.setAttribute("data-focus-quiet", "");
     element.addEventListener(
       "blur",

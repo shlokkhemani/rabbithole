@@ -125,23 +125,25 @@ try {
   await page.evaluate(() => document.querySelector(".card.current [aria-label='Expand document']").click());
   await page.waitForFunction(() => !document.body.classList.contains("mode-flight"));
   await page.waitForSelector("body:not(.mode-canvas) #tb-document .rh-pdf-reader-toolbar");
-  await page.waitForFunction(() => document.querySelector("#reader-main .rh-pdf-canvas-generation[data-ready='true'] canvas"));
+  await page.waitForFunction(() => document.querySelector(".reader-pane.current .rh-pdf-canvas-generation[data-ready='true'] canvas"));
   const readerContract = await page.evaluate(() => {
     const rect = (element) => element.getBoundingClientRect().toJSON();
-    const main = document.querySelector("#reader-main");
+    const pane = document.querySelector(".reader-pane.current");
+    const main = pane.querySelector(".pane-scroll");
+    const stage = document.querySelector("#reader-main");
     const col = main.querySelector(".reader-col");
     const pdf = main.querySelector(".doc-content.rh-pdf");
     const scroll = pdf.querySelector(".rh-pdf-scroll");
     const toolbar = document.querySelector("#tb-document .rh-pdf-reader-toolbar");
-    const rail = document.querySelector("#reader-rail");
     return {
       viewportWidth: innerWidth,
-      mainClass: main.className,
+      mainClass: pane.className,
       colClass: col.className,
       mainOverflow: getComputedStyle(main).overflow,
       mainClientHeight: main.clientHeight,
       mainScrollHeight: main.scrollHeight,
       mainRect: rect(main),
+      stageRect: rect(stage),
       scrollRect: rect(scroll),
       scrollContentCenter: scroll.getBoundingClientRect().left + scroll.clientWidth / 2,
       scrollClientHeight: scroll.clientHeight,
@@ -152,9 +154,8 @@ try {
       toolsRect: rect(document.querySelector("#tb-tools")),
       sessionRect: rect(document.querySelector("#tb-session")),
       composerRect: rect(document.querySelector("#composer")),
-      railRect: rect(rail),
-      railDisplay: getComputedStyle(rail).display,
-      railCount: document.querySelectorAll("#margin-notes .side-item").length,
+      rails: document.querySelectorAll("#reader-rail, #margin-notes, .side-item").length,
+      branchDots: pane.querySelectorAll(".branch-dot").length,
       inlineToolbar: !!pdf.querySelector(".rh-pdf-toolbar"),
       canvasZoom: document.querySelector(".card .rh-pdf-scroll").dataset.zoom,
     };
@@ -172,16 +173,16 @@ try {
   assert(readerContract.toolbarRect.left >= readerContract.toolsRect.right + 8 && readerContract.toolbarRect.right <= readerContract.sessionRect.left - 8,
     "docked PDF controls must never overlap application or session controls");
   assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
-  assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport down to the composer");
+  assert(Math.abs(readerContract.scrollRect.bottom - readerContract.composerRect.top) <= 1, "the PDF surface must fill the reader viewport down to the composer");
+  assert(Math.abs(readerContract.mainRect.bottom - readerContract.stageRect.bottom) <= 0.5, "the pane runs the full height; the composer floats over its foot");
   assert(Math.abs(readerContract.scrollRect.left - readerContract.mainRect.left) <= 0.5 && Math.abs(readerContract.scrollRect.right - readerContract.mainRect.right) <= 0.5,
-    "Reader must give PDF zoom the full remaining document pane instead of a prose-column viewport");
-  assert.equal(readerContract.railDisplay, "flex", "desktop Reader must reserve a persistent branch rail even before the first branch");
-  assert.equal(readerContract.railCount, 0, "a new PDF must begin with an honest empty branch rail");
-  assert(Math.abs(readerContract.mainRect.right - readerContract.railRect.left) <= 0.5 && Math.abs(readerContract.railRect.right - readerContract.viewportWidth) <= 0.5,
-    "the PDF pane and right-edge branch rail must consume the viewport without overlap or dead space");
-  assert(Math.abs(readerContract.composerRect.right - readerContract.railRect.left) <= 0.5,
-    "the follow-up composer must belong to the document pane instead of running underneath the rail");
-  assert(Math.abs(readerContract.composerRect.top - readerContract.mainRect.bottom) <= 0.5, "the composer must follow the PDF viewport without a dead band");
+    "Reader must give PDF zoom the full pane instead of a prose-column viewport");
+  assert.equal(readerContract.rails, 0, "the reader has no branch rail: branches are dots in the margin");
+  assert.equal(readerContract.branchDots, 0, "a new PDF begins with no branches");
+  assert(readerContract.mainRect.width >= readerContract.stageRect.width - 81,
+    `a PDF alone in the reader takes the whole band — its zoom needs the room (${JSON.stringify({ pane: readerContract.mainRect, stage: readerContract.stageRect })})`);
+  assert(Math.abs((readerContract.mainRect.left + readerContract.mainRect.right) / 2 - (readerContract.stageRect.left + readerContract.stageRect.right) / 2) <= 1,
+    "a lone PDF sits centred on the stage");
   assert(readerContract.pageRect.top - readerContract.scrollRect.top <= 11, "paper must begin immediately below the shared chrome clearance");
   assert(readerContract.scrollHeight > readerContract.scrollClientHeight * 5, "the docked Reader PDF must retain its complete document scroll range");
 
@@ -189,7 +190,7 @@ try {
   await page.mouse.wheel(0, 420);
   await page.waitForFunction(() => document.querySelector("#reader-main .rh-pdf-scroll").scrollTop > 300);
   const readerTrackpad = await page.evaluate(() => ({
-    readerTop: document.querySelector("#reader-main").scrollTop,
+    readerTop: document.querySelector(".reader-pane.current .pane-scroll").scrollTop,
     pdfTop: document.querySelector("#reader-main .rh-pdf-scroll").scrollTop,
     canvasTop: document.querySelector(".card .rh-pdf-scroll").scrollTop,
     world: document.querySelector("#world").style.transform,
@@ -563,48 +564,45 @@ try {
   await settleFrames(page);
   assertSamePlace(await pdfPlace(page, ".card .rh-pdf-scroll"), askedPlace, "removing an ask card rebuilds the PDF");
 
-  // Docked notes are not branches: the rail lists cards, the margin lists notes.
+  // Docked notes are not branches: branches get accent dots in the margin,
+  // notes keep their graphite ones.
   const expectedReaderBranches = noteState.hole.nodes
     .filter((node) => node.parent_id === root.id && node.origin?.kind !== "note").length;
   await page.evaluate(() => document.querySelector(".card.current [aria-label='Expand document']").click());
   await page.waitForFunction(() => !document.body.classList.contains("mode-flight"));
-  await page.waitForSelector("body:not(.mode-canvas) #reader-rail");
-  await page.waitForFunction((count) => document.querySelectorAll("#margin-notes .side-item").length === count, expectedReaderBranches);
-  const pdfRail = await page.evaluate((pointerId) => {
-    const main = document.getElementById("reader-main").getBoundingClientRect();
-    const rail = document.getElementById("reader-rail").getBoundingClientRect();
-    const card = document.querySelector(`#margin-notes .side-item[data-child="${pointerId}"]`);
+  await page.waitForSelector("body:not(.mode-canvas) .reader-pane.current");
+  await page.waitForFunction((count) => document.querySelectorAll(".reader-pane.current .branch-dot:not(.branch-dot-note)").length === count, expectedReaderBranches);
+  const pdfMargin = await page.evaluate((pointerId) => {
+    const dot = document.querySelector(`.reader-pane.current .branch-dot[data-note="${pointerId}"]`);
     return {
-      cardCount: document.querySelectorAll("#margin-notes .side-item").length,
-      countLabel: document.getElementById("reader-rail-count").textContent,
-      cardText: card?.textContent || "",
-      cardName: card?.getAttribute("aria-label") || "",
-      seam: Math.abs(main.right - rail.left),
-      rightEdge: Math.abs(innerWidth - rail.right),
+      rails: document.querySelectorAll("#reader-rail, #margin-notes, .side-item").length,
+      dotName: dot?.getAttribute("aria-label") || "",
+      dotTip: dot?.querySelector(".branch-dot-tip")?.textContent || "",
     };
   }, pointerChild.id);
-  assert.equal(pdfRail.cardCount, expectedReaderBranches, "Reader rail must expose every direct PDF branch, including text and region asks");
-  assert.equal(pdfRail.countLabel, String(expectedReaderBranches), "Reader rail count must match its navigable branch cards");
-  assert.match(pdfRail.cardText, /Real pointer target[\s\S]*Attention/, "PDF selection cards must retain both the question and selected context");
-  assert.match(pdfRail.cardName, /^Open branch: Real pointer target/, "PDF branch cards must expose named link semantics");
-  assert(pdfRail.seam <= 0.5 && pdfRail.rightEdge <= 0.5, `PDF document and branch rail must divide the full viewport exactly: ${JSON.stringify(pdfRail)}`);
+  assert.equal(pdfMargin.rails, 0, "the reader has no branch rail");
+  assert.match(pdfMargin.dotName, /^Open Answer: Real pointer target/, "PDF branch dots must be named for their question");
+  assert.match(pdfMargin.dotTip, /Real pointer target/, "hovering a PDF branch dot names its question");
 
-  const pointerReaderMark = page.locator(`#reader-main .rh-pdf-mark[data-child="${pointerChild.id}"]`);
+  const pointerReaderMark = page.locator(`.reader-pane.current .rh-pdf-mark[data-child="${pointerChild.id}"]`);
   await pointerReaderMark.waitFor();
-  assert.equal(await page.locator(`#reader-main .rh-pdf-mark.mark-note[data-child="${pdfNote.id}"]`).count(), 1,
+  assert.equal(await page.locator(`.reader-pane.current .rh-pdf-mark.mark-note[data-child="${pdfNote.id}"]`).count(), 1,
     "PDF note marks should rebuild with note ink in Reader");
   await pointerReaderMark.focus();
   await page.keyboard.press("Enter");
-  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
-  await page.locator('#breadcrumb .crumb[role="link"]:not(.crumb-canvas)').click();
-  const multiReaderMark = page.locator(`#reader-main .rh-pdf-mark[data-child="${multi.id}"]`);
+  await page.locator(".reader-pane.current", { hasText: "Coordinate-safe response." }).waitFor();
+  assert.match(await page.locator(".reader-pane.current .reader-context").textContent(), /Real pointer target[\s\S]*Attention|Attention[\s\S]*Real pointer target/,
+    "a PDF answer keeps both its question and the selected context");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelectorAll(".reader-pane:not(.pane-leaving)").length === 1);
+  const multiReaderMark = page.locator(`.reader-pane.current .rh-pdf-mark[data-child="${multi.id}"]`);
   await multiReaderMark.waitFor();
   await multiReaderMark.locator("polygon").first().click();
-  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
-  await page.locator('#breadcrumb .crumb[role="link"]:not(.crumb-canvas)').click();
-  await page.waitForSelector(`#margin-notes .side-item[data-child="${region.id}"]`);
-  await page.click(`#margin-notes .side-item[data-child="${region.id}"]`);
-  await page.locator("#reader-main", { hasText: "Coordinate-safe response." }).waitFor();
+  await page.locator(".reader-pane:not(.pane-leaving)", { hasText: "Coordinate-safe response." }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelectorAll(".reader-pane:not(.pane-leaving)").length === 1);
+  await page.click(`.reader-pane.current .branch-dot[data-note="${region.id}"]`);
+  await page.locator(".reader-pane.current", { hasText: "Coordinate-safe response." }).waitFor();
 
   assert.deepEqual(pageErrors, [], `browser emitted PDF runtime errors:\n${pageErrors.join("\n")}`);
   console.log("ok PDF precision/performance (Attention paper): native trackpad scrolling, inert single-click and exact drag selection, flicker-free local zoom, stable text DOM, bounded reusable tiles, zoom-invariant pending regions and Poppler coordinates, multi-line quads, PDF note ink, exact Figure 2 crop, and source fidelity");

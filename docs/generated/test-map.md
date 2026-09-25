@@ -4,48 +4,6 @@
 
 Each description is harvested from the test file's `@protects` declaration.
 
-## unit
-
-- `test/unit/ai-images-setting.test.mjs` — AI images preference interpretation and runtime copy builders.
-- `test/unit/apply-server-event.test.mjs` — live node work-state projection capability contracts.
-- `test/unit/auto-tidy.test.mjs` — auto-tidy branch selection and preference capability contracts.
-- `test/unit/base-url.test.mjs` — base url capability contracts.
-- `test/unit/bridge-catalog.test.mjs` — bridge catalog capability contracts.
-- `test/unit/bridge-connection.test.mjs` — bridge connection capability contracts.
-- `test/unit/bridge.test.mjs` — bridge capability contracts.
-- `test/unit/clipboard-image.test.mjs` — clipboard image capability contracts.
-- `test/unit/content-blocks.test.mjs` — content blocks capability contracts.
-- `test/unit/context-model.test.mjs` — compact context map, deterministic tree order, thread, and delta-note contracts.
-- `test/unit/context-usage.test.mjs` — context usage capability contracts.
-- `test/unit/dev-reload.test.mjs` — dev reload capability contracts.
-- `test/unit/edge-scroll.test.mjs` — edge scroll capability contracts.
-- `test/unit/hole-host.test.mjs` — hole host capability contracts.
-- `test/unit/hole-id.test.mjs` — hole id capability contracts.
-- `test/unit/icons.test.mjs` — icons capability contracts.
-- `test/unit/id-utils.test.mjs` — short id and copied-id normalization capability contracts.
-- `test/unit/input-intent.test.mjs` — keyboard input ownership capability contracts.
-- `test/unit/lifecycle.test.mjs` — lifecycle capability contracts.
-- `test/unit/markdown-renderer.test.mjs` — markdown renderer capability contracts.
-- `test/unit/model-endpoint.test.mjs` — model endpoint capability contracts.
-- `test/unit/model-notes.test.mjs` — model notes capability contracts.
-- `test/unit/ollama-diagnostics.test.mjs` — ollama diagnostics capability contracts.
-- `test/unit/pdf-import-error.test.mjs` — pdf import error capability contracts.
-- `test/unit/pdf-ingest-staging.test.mjs` — pdf ingest staging capability contracts.
-- `test/unit/pdf-provenance.test.mjs` — pdf provenance capability contracts.
-- `test/unit/pdf-selection.test.mjs` — pdf selection capability contracts.
-- `test/unit/pdf-transcription-capability.test.mjs` — pdf transcription capability capability contracts.
-- `test/unit/preferences-backing.test.mjs` — durable reader preference backing capability contracts.
-- `test/unit/preferences-store.test.mjs` — preferences store capability contracts.
-- `test/unit/prefs-store.test.mjs` — machine preference store merge and atomicity capability contracts.
-- `test/unit/provider-registry.test.mjs` — provider registry capability contracts.
-- `test/unit/reactions.test.mjs` — reaction note normalization and selection-only action markup.
-- `test/unit/reader-preferences.test.mjs` — reader preferences capability contracts.
-- `test/unit/reducer.test.mjs` — reducer capability contracts.
-- `test/unit/request-table.test.mjs` — request table capability contracts.
-- `test/unit/subscription-source-guard.test.mjs` — subscription source guard capability contracts.
-- `test/unit/ui-card-presentation.test.mjs` — ui card presentation capability contracts.
-- `test/unit/version.test.mjs` — the release version reaching the CLI, the MCP handshake, and the built browser bundles from package.json alone.
-
 ## contracts
 
 - `test/contracts/artifact-roundtrip.test.mjs` — artifact roundtrip capability contracts.
@@ -82,6 +40,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/integration/custom-endpoint.test.mjs` — custom endpoint capability contracts.
 - `test/integration/generate-image.test.mjs` — generate_image materialization and session orchestration.
 - `test/integration/generation-lifecycle.test.mjs` — generation lifecycle capability contracts.
+- `test/integration/image-availability.test.mjs` — generate_image discovery gated on the AI images setting and Codex readiness.
 - `test/integration/image-experience.test.mjs` — image experience capability contracts.
 - `test/integration/mcp-rearm.test.mjs` — mcp rearm capability contracts.
 - `test/integration/mermaid-rendering.test.mjs` — mermaid rendering capability contracts.
@@ -102,8 +61,10 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/e2e/canvas-edge-scroll.test.mjs` — canvas edge scroll capability contracts.
 - `test/e2e/cross-host-journey.test.mjs` — cross host journey capability contracts.
 - `test/e2e/enter-composition.test.mjs` — enter composition capability contracts.
+- `test/e2e/pinned-scroll.test.mjs` — pinning, unpinning and resizing text keep a card's reading place.
 - `test/e2e/preferences-persistence.test.mjs` — durable MCP reader preferences across origins and frozen isolation.
 - `test/e2e/reactions.test.mjs` — selection reaction composition, wash-only rendering, deletion, and frozen behavior.
+- `test/e2e/reader-trail.test.mjs` — the reader trail: answers open beside their source, panes slide and fold into spines without re-wrapping text, and every gesture settles on a pane.
 - `test/e2e/reducer-browser-parity.test.mjs` — reducer browser parity capability contracts.
 - `test/e2e/selection-popover.test.mjs` — selection popover capability contracts.
 - `test/e2e/ui-primitives-browsers.test.mjs` — ui primitives browsers capability contracts.

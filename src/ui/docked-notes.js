@@ -23,7 +23,6 @@ import {
   canvasBuilt,
   childrenOf,
   closed,
-  currentNodeId,
   flashHint,
   frozen,
   goToNode,
@@ -43,7 +42,7 @@ import { createCleanupScope, createModuleLifecycle } from "./kit/scope.js";
 import { detachNode, teardownNode } from "./node-teardown.js";
 import { anchorClipBounds, viewportRect } from "./overlay/anchor.js";
 import { openPopover } from "./primitives/popover.js";
-import { renderMarginNotes } from "./reader.js";
+import { openBranchBeside } from "./reader.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { structuredNoteController } from "./structured-note.js";
 import { mountPdfRectMark, syncTextOverlayMarks, wrapInContainer } from "./text-marks.js";
@@ -191,7 +190,6 @@ function createNoteChild(parent, markdown, options) {
   else {
     renderDockedNotes(parent);
     scheduleEdges();
-    if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
   }
   const payload = placed
     ? {
@@ -263,7 +261,6 @@ function rollbackCreatedNote(node) {
   teardownNode(node.id);
   renderDockedNotes(parent);
   if (canvasBuilt) drawEdges();
-  if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
   flashHint("Couldn't save that note — it was undone.");
 }
 
@@ -293,7 +290,6 @@ function presentPlacedNote(node, parent, sourceRect) {
   renderVisibility();
   renderDockedNotes(parent);
   drawEdges();
-  if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
   flyNoteToCard(sourceRect, node);
 }
 
@@ -409,21 +405,64 @@ function dotLabel(node) {
   return noteAnchorOf(node) ? "Note: " + (words || "empty") : "Note on this card";
 }
 
+/* In the reader the margin also carries the document's branches — every answer
+   and placed note that grew from it — so the whole shape of a document reads
+   down its right edge: graphite for your notes, accent for the answers. On the
+   canvas a branch has its own card and edge, so only docked notes get a dot. */
+function branchesOf(parent) {
+  return childrenOf(parent.id)
+    .filter(function (node) {
+      return !isDockedNote(node) && !node._pendingDelete;
+    })
+    .sort(function (a, b) {
+      const aAnchor = noteAnchorOf(a),
+        bAnchor = noteAnchorOf(b);
+      if (!aAnchor !== !bAnchor) return aAnchor ? 1 : -1;
+      if (aAnchor && bAnchor) return aAnchor.offset_start - bAnchor.offset_start;
+      return nodeOrder(a, b);
+    });
+}
+
+function marginItemsOf(parent) {
+  const notes = dockedNotesOf(parent);
+  const items = notes.concat(branchesOf(parent));
+  // Whole-document items lead the column; anchored ones follow the text.
+  return items.sort(function (a, b) {
+    const aAnchor = noteAnchorOf(a),
+      bAnchor = noteAnchorOf(b);
+    if (!aAnchor !== !bAnchor) return aAnchor ? 1 : -1;
+    if (aAnchor && bAnchor) return aAnchor.offset_start - bAnchor.offset_start;
+    return nodeOrder(a, b);
+  });
+}
+
+function branchLabel(node) {
+  const question = (node.origin && node.origin.question) || node.title || "Untitled";
+  const kind = node.origin && node.origin.kind === "note" ? "Note" : "Answer";
+  return kind + ": " + question + (node.status === "answered" ? "" : " (writing)");
+}
+
 function canvasDotHost(parent) {
   return parent.el && !parent.collapsed ? parent.bodyEl : null;
 }
-function readerDotHost(parent) {
-  return mode === "reader" && currentNodeId === parent.id ? readerMain.querySelector(".reader-col") : null;
+function readerDotHosts(parent) {
+  if (mode !== "reader" || !readerMain) return [];
+  return Array.from(
+    readerMain.querySelectorAll('.reader-pane:not(.pane-leaving)[data-node-id="' + parent.id + '"] .reader-col'),
+  );
 }
 
-/* Rebuild both dot columns for one card. Cheap enough to call from every place
+/* Rebuild every dot column for one card. Cheap enough to call from every place
    that rebuilds the card's body; positioning is a separate, measure-only pass
    because the card's width is only final after layout. */
 export function renderDockedNotes(parent) {
   if (!parent) return;
-  const notes = dockedNotesOf(parent);
-  syncDotColumn(canvasDotHost(parent), notes, false);
-  syncDotColumn(readerDotHost(parent), notes, true);
+  syncDotColumn(canvasDotHost(parent), dockedNotesOf(parent), false);
+  const hosts = readerDotHosts(parent);
+  if (hosts.length) {
+    const items = marginItemsOf(parent);
+    for (let i = 0; i < hosts.length; i++) syncDotColumn(hosts[i], items, true);
+  }
   positionDockedNotes();
   if (dockedLifecycle.scope) dockedLifecycle.scope.raf(positionDockedNotes);
 }
@@ -451,20 +490,55 @@ function syncDotColumn(host, notes, reader) {
     existing[child.dataset.note] = child;
   }
   notes.forEach(function (note, index) {
+    const branch = !isDockedNote(note);
     let dot = existing[note.id];
+    if (dot && dot.classList.contains("branch-dot") !== branch) {
+      dot.remove();
+      dot = null;
+    }
     if (!dot) {
       dot = document.createElement("button");
       dot.type = "button";
       dot.dataset.note = note.id;
-      dot.setAttribute("aria-haspopup", "dialog");
-      dot.setAttribute("aria-expanded", "false");
+      if (!branch) {
+        dot.setAttribute("aria-haspopup", "dialog");
+        dot.setAttribute("aria-expanded", "false");
+      }
     }
-    dot.className = "note-dot" + (noteAnchorOf(note) ? "" : " note-dot-whole");
-    dot.setAttribute("aria-label", dotLabel(note));
+    if (branch) paintBranchDot(dot, note);
+    else {
+      dot.className = "note-dot" + (noteAnchorOf(note) ? "" : " note-dot-whole");
+      dot.setAttribute("aria-label", dotLabel(note));
+    }
     if (layer.children[index] !== dot) layer.insertBefore(dot, layer.children[index] || null);
   });
   // Every wanted dot now sits at its own index; anything beyond them is stale.
   while (layer.children.length > notes.length) layer.lastChild.remove();
+}
+
+// A branch dot is the answer's handle in its parent's margin: pending ones
+// breathe, answered ones are solid, and the one whose answer is open beside
+// its document wears a ring. Hovering it names the question.
+function paintBranchDot(dot, node) {
+  const note = node.origin && node.origin.kind === "note";
+  const open = !!(
+    readerMain && readerMain.querySelector('.reader-pane:not(.pane-leaving)[data-node-id="' + node.id + '"]')
+  );
+  dot.className =
+    "branch-dot" +
+    (noteAnchorOf(node) ? "" : " branch-dot-whole") +
+    (note ? " branch-dot-note" : "") +
+    (note || node.status === "answered" ? "" : " branch-dot-pending") +
+    (open ? " branch-dot-open" : "");
+  dot.setAttribute("aria-label", "Open " + branchLabel(node));
+  let tip = dot.querySelector(".branch-dot-tip");
+  if (!tip) {
+    tip = document.createElement("span");
+    tip.className = "branch-dot-tip";
+    tip.setAttribute("aria-hidden", "true");
+    dot.appendChild(tip);
+  }
+  tip.textContent = (node.origin && node.origin.question) || node.title || "Untitled";
 }
 
 /* Each dot sits on its anchor's line box, nudging off the exact line only when
@@ -491,13 +565,18 @@ function positionDotColumn(layer) {
   const scrollTop = reader ? 0 : host.scrollTop;
   // The reader's margin is only a margin while there is room for it; a column
   // that fills the window (a native PDF) keeps its dots inside its own edge.
-  if (reader) layer.classList.toggle("note-dots-inside", hostRect.right + 26 > (window.innerWidth || 0));
+  if (reader) {
+    const pane = host.closest(".reader-pane");
+    const edge = pane ? pane.getBoundingClientRect().right : window.innerWidth || 0;
+    layer.classList.toggle("note-dots-inside", hostRect.right + 26 > edge);
+  }
   let previous = -Infinity;
   const dots = layer.children;
   for (let i = 0; i < dots.length; i++) {
     const dot = dots[i];
     const mark = markElement(host, dot.dataset.note);
-    const markRect = mark ? mark.getBoundingClientRect() : null;
+    // An inline mark can wrap: its dot belongs on the line where it starts.
+    const markRect = mark ? mark.getClientRects()[0] || mark.getBoundingClientRect() : null;
     let top =
       markRect && markRect.height
         ? (markRect.top - hostRect.top) / scale + scrollTop + markRect.height / scale / 2 - DOT_RADIUS
@@ -533,16 +612,17 @@ function affordanceFor(node) {
 function syncPartnerHighlight(event, on) {
   const target = event.target;
   if (!target || !target.closest) return;
-  const dot = target.closest(".note-dot");
+  const dot = target.closest(".note-dot, .branch-dot");
   if (dot) {
     if (!on && dot.contains(event.relatedTarget)) return;
     setMarkHighlight(dot.dataset.note, on);
     return;
   }
   const mark = target.closest("[data-child]");
-  if (!mark || !isDockedNote(nodes[mark.dataset.child])) return;
+  if (!mark || !nodes[mark.dataset.child]) return;
   if (!on && mark.contains(event.relatedTarget)) return;
-  const partner = visibleElement('.note-dot[data-note="' + mark.dataset.child + '"]');
+  const id = mark.dataset.child;
+  const partner = visibleElement('.note-dot[data-note="' + id + '"], .branch-dot[data-note="' + id + '"]');
   if (partner) partner.classList.toggle("note-dot-partner", on);
 }
 
@@ -1111,7 +1191,6 @@ function askFromPopoverNote(session) {
       const parent = nodes[restored.parent_id];
       renderDockedNotes(parent);
       drawEdges();
-      if (mode === "reader" && currentNodeId === restored.parent_id) renderMarginNotes();
     },
   });
   if (!converted) {
@@ -1121,7 +1200,10 @@ function askFromPopoverNote(session) {
     detachNode(node);
     renderDockedNotes(nodes[node.parent_id]);
     drawEdges();
+    return;
   }
+  // A note turned question is an ask like any other: its answer opens beside.
+  openBranchBeside(node.id);
 }
 
 function deletePopoverNote(session) {

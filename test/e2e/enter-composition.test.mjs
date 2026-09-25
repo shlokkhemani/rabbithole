@@ -290,8 +290,8 @@ async function verifyReaderComposer(page, calls) {
   const readerNoteId = await readerNote.getAttribute("data-id");
   assert.deepEqual(await storedNote(page, readerNoteId), { origin: { kind: "note" }, markdown: "line one\nline two", docked: false, size: { w: 420, h: 460 } },
     "a reader Enter note should persist as a visible child note window");
-  assert.equal(await page.locator(`#margin-notes .side-item[data-child="${readerNoteId}"]`).count(), 1,
-    "a placed follow-up note should appear in the reader branch rail");
+  assert.equal(await page.locator(`.reader-pane.current .branch-dot.branch-dot-note[data-note="${readerNoteId}"]`).count(), 1,
+    "a placed follow-up note should appear as a graphite branch dot in the reader margin");
   assert.equal(calls(), 1, "plain Enter should save a reader note without calling the provider");
   await page.waitForFunction(() => Array.from(document.querySelectorAll("#composer-actions .ask-commit"))
     .every((button) => getComputedStyle(button).display === "none"));

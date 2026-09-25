@@ -16,14 +16,13 @@ import {
   mode,
   nodes,
   playLandingCue,
-  readerMain,
   rootId,
   setCanvasBuilt,
   setCanvasFramed,
   setModeValue,
 } from "../core.js";
 import { flyReaderToRect } from "../mode-transition.js";
-import { openNode } from "../reader.js";
+import { openNode, readerScroller } from "../reader.js";
 import { captureContentPosition, restoreContentPosition } from "../scroll-position.js";
 import { animateView, applyTransform, diveTargetView } from "./camera.js";
 import { createNodeEl } from "./card.js";
@@ -122,9 +121,10 @@ export function setMode(m) {
     // display:none resets the reader's scrollTop — remember it first so
     // collapsing out to the canvas and diving back lands exactly where you were.
     const cur = nodes[currentNodeId];
-    if (cur) {
-      cur._scrollTop = readerMain.scrollTop;
-      transferredPosition = captureContentPosition(readerMain);
+    const scroller = readerScroller();
+    if (cur && scroller) {
+      cur._scrollTop = scroller.scrollTop;
+      transferredPosition = captureContentPosition(scroller);
     }
   }
   setModeValue(m);

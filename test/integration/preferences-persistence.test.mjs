@@ -4,7 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildCanvasHtml } from "../../src/node/mcp/http/page.js";
-import { RabbitholeSession } from "../../src/node/transport/session.js";
+import { RabbitholeSession } from "../../src/node/mcp/hole-session/session.js";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 const previousDir = process.env.RABBITHOLE_DIR;
@@ -77,7 +78,7 @@ try {
     "engine hydration never acquires the page-only seed");
   const snapshot = await (await fetch(second.url + "/snapshot-hole")).text();
   assert.equal(snapshot.includes(customTheme), false, "snapshot JSON never carries preference values");
-  const exported = await (await fetch(second.url + "/export")).text();
+  const exported = await buildSessionExportHtml(second);
   assert.equal(exported.includes(customTheme), false, "frozen export HTML never carries preference values");
   firstStream.body.cancel().catch(() => {});
 } finally {

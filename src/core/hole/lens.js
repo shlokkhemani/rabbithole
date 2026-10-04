@@ -16,13 +16,6 @@ export const LENSES = Object.freeze({
   deeper: Object.freeze({ label: "Go deeper", instruction: "Go one level deeper." }),
 });
 
-/*
- * Lens keys that once shipped as defaults. Old nodes still carry them in
- * origin.lens, so they keep a display label without ever being offered again.
- */
-/** @type {Readonly<Record<PropertyKey, string>>} */
-const LEGACY_LENS_LABELS = Object.freeze({ example: "Example" });
-
 // Selection and follow-up ask the same three questions out of the box; the
 // sets only diverge once someone unlinks them in Settings.
 export const DEFAULT_ASK_PRESETS = Object.freeze({
@@ -40,7 +33,7 @@ export function truncate(value, length) {
 export function lensLabel(key) {
   if (LENSES[key]) return LENSES[key].label;
   if (key === "custom") return "Custom question";
-  return LEGACY_LENS_LABELS[key] || String(key || "");
+  return String(key || "");
 }
 
 /** @param {unknown} lens */

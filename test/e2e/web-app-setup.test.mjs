@@ -24,7 +24,7 @@ const { browser, baseUrl } = app;
 try {
   await verifyThemeBeforeAppRuntime();
   await verifyMobileSetupExperience();
-  await verifyExistingWebUserUpgrade();
+  await verifySavedLocalProviderSetup();
   await verifySubscriptionsPanelStates();
   await verifyCrossTabPairing();
   await verifyLocalFailureRequiresTroubleshootChoice();
@@ -62,11 +62,11 @@ async function verifyReducedMotionOverlays() {
     await context.close();
   }
 }
-async function verifyExistingWebUserUpgrade() {
+async function verifySavedLocalProviderSetup() {
   const context = await browser.newContext();
   await installBridgeFetchStub(context);
   await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
-    preset: "custom",
+    preset: "local",
     base_url: "http://localhost:11434/v1",
     model: "llama3.2",
     transcribe_model: "llama3.2",
@@ -77,7 +77,7 @@ async function verifyExistingWebUserUpgrade() {
         model: "anthropic/claude-sonnet-5",
         transcribe_model: "google/gemini-2.5-flash",
       },
-      custom: {
+      local: {
         base_url: "http://localhost:11434/v1",
         model: "llama3.2",
         transcribe_model: "llama3.2",
@@ -106,7 +106,7 @@ async function verifyExistingWebUserUpgrade() {
     await page.click('[data-provider="claude"]');
     await page.waitForSelector('.bridge-surface[data-state="re_pair"] .bridge-command code');
     assert.equal(await page.locator('.bridge-surface[data-state="re_pair"] .bridge-command code').innerText(), "npx @shlokkhemani/rabbithole bridge", "first-run must show the command, not ask for a token from nowhere");
-    assert.equal(await page.getAttribute('[data-provider="claude"]', "aria-checked"), "true", "Claude Code must be reachable from pre-bridge preferences");
+    assert.equal(await page.getAttribute('[data-provider="claude"]', "aria-checked"), "true", "Claude Code must be reachable from saved Local preferences");
     await page.click('[data-provider="openrouter"]');
     assert.equal(await page.locator("#api-key").count(), 1);
     await page.click('[data-provider="local"]');
@@ -124,12 +124,12 @@ async function verifyExistingWebUserUpgrade() {
 async function verifyLocalFailureRequiresTroubleshootChoice() {
   const context = await browser.newContext();
   await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
-    preset: "custom",
+    preset: "local",
     base_url: "http://localhost:11434/v1",
     model: "llama3.2",
     transcribe_model: "llama3.2",
     session_only: true,
-    generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+    generation_setup: { version: 1, preset: "local", base_url: "http://localhost:11434/v1", model: "llama3.2" },
   })));
   try {
     const page = await context.newPage();
@@ -667,11 +667,11 @@ async function verifySetupReadinessInvalidation() {
   await context.close();
   const local = await browser.newContext();
   await local.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
-    preset: "custom",
+    preset: "local",
     base_url: "http://localhost:11434/v1",
     model: "llama3.2",
     session_only: true,
-    generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+    generation_setup: { version: 1, preset: "local", base_url: "http://localhost:11434/v1", model: "llama3.2" },
   })));
   const localPage = await local.newPage();
   await localPage.route(LOCAL_MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }] }) }));

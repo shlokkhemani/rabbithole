@@ -1,6 +1,5 @@
 import { defaultProviderSettings, normalizeProviderSettings, providerFor } from "../provider/provider-registry.js";
 import { saveApiKey } from "./credential-store.js";
-import { migrateSettings } from "./migrate.js";
 
 export const SETTINGS_KEY = "rh-web-settings";
 const DEFAULT_FETCH_PROXY_URL =
@@ -28,17 +27,13 @@ export function loadSettings() {
   if (currentSettings) return currentSettings;
   const defaults = defaultWebSettings();
   try {
-    const parsedValue = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    const { value: parsed, changed } = parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue)
-      ? migrateSettings(parsedValue)
-      : { value: parsedValue, changed: false };
+    const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return defaults;
     const preset = providerFor(parsed.preset).id;
     const providers = normalizeProviderSettings(parsed.providers, { [preset]: parsed });
     const active = providers[preset] || normalizeProviderSettings({ [preset]: parsed })[preset];
     providers[preset] = active;
     currentSettings = { ...defaults, ...parsed, agent: "", agents: {}, preset, ...active, providers };
-    if (changed) persist(currentSettings);
     return currentSettings;
   } catch {
     currentSettings = defaults;

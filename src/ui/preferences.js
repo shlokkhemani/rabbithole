@@ -330,19 +330,6 @@ export function setAiImagesEnabled(value) {
 
 // ------------------------------------------------------------ ask presets
 
-/*
- * "example" and its spellings are absent on purpose: the slot retired before
- * the optional custom slot shipped, so stored entries for it stay dropped.
- */
-const PRESET_KEY_ALIASES = Object.freeze({
-  explain: "explain",
-  eli5: "eli5",
-  deeper: "deeper",
-  "go-deeper": "deeper",
-  go_deeper: "deeper",
-  custom: "custom",
-});
-
 function clonePresetSetDefaults(set) {
   return Object.fromEntries(
     DEFAULT_ASK_PRESET_KEYS.map((key) => [
@@ -366,27 +353,16 @@ function clonePresetDefaults() {
 }
 
 function normalizedPresetKey(value) {
-  return (
-    PRESET_KEY_ALIASES[
-      String(value || "")
-        .trim()
-        .toLowerCase()
-    ] || null
-  );
+  return ASK_PRESET_KEYS.includes(value) ? value : null;
 }
 
 function normalizePresetSet(value, defaults) {
   const out = { ...defaults };
-  const entries = Array.isArray(value)
-    ? value.map((entry, index) => [entry?.key ?? entry?.id ?? ASK_PRESET_KEYS[index], entry])
-    : value && typeof value === "object"
-      ? Object.entries(value)
-      : [];
-  for (const [rawKey, rawPreset] of entries) {
-    const key = normalizedPresetKey(rawKey);
-    if (!key || !rawPreset || typeof rawPreset !== "object" || Array.isArray(rawPreset)) continue;
+  const entries = value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value) : [];
+  for (const [key, rawPreset] of entries) {
+    if (!normalizedPresetKey(key) || !rawPreset || typeof rawPreset !== "object" || Array.isArray(rawPreset)) continue;
     const label = String(rawPreset.label ?? "").trim();
-    const instruction = String(rawPreset.instruction ?? rawPreset.q ?? "").trim();
+    const instruction = String(rawPreset.instruction ?? "").trim();
     if (label && instruction && !(key === "custom" && rawPreset.removed === true))
       out[key] = {
         label: label.slice(0, 80),
@@ -397,20 +373,16 @@ function normalizePresetSet(value, defaults) {
   return out;
 }
 
-/** Migrate and validate storage only here; callers always receive v1 canonical keys. */
+/** Validate storage only here; callers always receive the v1 shape. */
 export function normalizeAskPresets(value) {
   const defaults = clonePresetDefaults();
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const legacySets = raw.presets && typeof raw.presets === "object" ? raw.presets : raw;
-  const shared = legacySets.lenses || legacySets.default || null;
   return {
     version: 1,
-    // Linked is the default: one set everywhere until someone unlinks. Only an
-    // explicit false survives — v1 always writes the boolean, and the legacy
-    // shapes shared one set anyway.
+    // Linked is the default: one set everywhere until someone unlinks.
     linked: raw.linked !== false,
-    selection: normalizePresetSet(legacySets.selection || shared, defaults.selection),
-    followup: normalizePresetSet(legacySets.followup || legacySets.followups || shared, defaults.followup),
+    selection: normalizePresetSet(raw.selection, defaults.selection),
+    followup: normalizePresetSet(raw.followup, defaults.followup),
   };
 }
 
@@ -449,8 +421,8 @@ export function visibleAskPresetKeys(set) {
     return !!preset && preset.removed !== true;
   });
   const custom = askPreset(set, "custom");
-  // A legacy store may contain three visible built-ins plus a custom preset.
-  // Keep that custom value stored but hidden until a built-in leaves a slot.
+  // Restoring a built-in can leave three visible built-ins beside a custom
+  // preset: the custom value stays stored, hidden until a slot frees up.
   return [...builtIns, ...(custom && custom.removed !== true ? ["custom"] : [])].slice(0, 3);
 }
 
@@ -543,12 +515,10 @@ function cloneReactionPromptDefaults() {
 export function normalizeReactionPrompts(value) {
   const defaults = cloneReactionPromptDefaults();
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const source = raw.prompts && typeof raw.prompts === "object" && !Array.isArray(raw.prompts) ? raw.prompts : raw;
-  for (const [rawKey, rawPrompt] of Object.entries(source)) {
+  for (const [rawKey, rawPrompt] of Object.entries(raw)) {
     const key = normalizeReactionKey(rawKey);
     if (!key) continue;
-    const candidate = typeof rawPrompt === "string" ? rawPrompt : rawPrompt?.instruction;
-    const instruction = String(candidate ?? "").trim();
+    const instruction = String(rawPrompt?.instruction ?? "").trim();
     if (instruction) defaults[key] = { instruction: instruction.slice(0, 4000) };
   }
   return defaults;

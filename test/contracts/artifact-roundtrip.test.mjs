@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { FsStore } from "../../src/node/fs-store.js";
+import { FsStore } from "../../src/node/mcp/store/fs-store.js";
 import { extractNodeAssetRefs } from "../../src/core/assets.js";
 import { createSnapshotProjection } from "../../src/core/snapshot-projection.js";
 import { buildSnapshotHtml, snapshotProjectionUsesMermaid } from "../../src/core/snapshot-html.js";

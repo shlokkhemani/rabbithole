@@ -5,11 +5,9 @@ import { createRequire } from "node:module";
 import { getAssetContentType, MAX_ASSET_BYTES, validateImageAssetName } from "../../../core/assets.js";
 import { defaultFsStore, resolveAsset, resolveAssetInfo } from "../store/fs-store.js";
 import { readPreferences } from "../store/prefs-store.js";
-import { slugifyTitle } from "../../../core/utils.js";
 import { toPersistedHole } from "../../../core/schema.js";
 import { buildJsonError, parseRequestBody } from "../../shared/http.js";
 import { writeSseEvent } from "../../shared/sse.js";
-import { buildSessionExportHtml } from "./export.js";
 import { log } from "../../shared/logger.js";
 import { errorStatusCode } from "../../shared/errno.js";
 
@@ -62,18 +60,6 @@ export async function handleSessionRequest(session, req, res) {
       "Cache-Control": "no-store, no-cache, must-revalidate",
     });
     res.end(JSON.stringify(toPersistedHole(/** @type {any} */ (session.toHole()), { cloneExtensions: false })));
-    return;
-  }
-
-  // Compatibility route for saved links: emit the canonical portable snapshot.
-  if (req.method === "GET" && url.pathname === "/export") {
-    const html = await buildSessionExportHtml(session);
-    res.writeHead(200, {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${exportFilename(session.title)}"`,
-      "Cache-Control": "no-store, no-cache, must-revalidate",
-    });
-    res.end(html);
     return;
   }
 
@@ -348,8 +334,3 @@ function rawAssetRequestName(reqUrl) {
   return name;
 }
 
-/** @param {string} title */
-// Download filename for /export — slug of the title, safe for a header.
-function exportFilename(title) {
-  return `rabbithole-${slugifyTitle(title, { fallback: "export" })}.html`;
-}

@@ -10,10 +10,11 @@ import { buildMap, buildThread } from "../../src/core/hole/context.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
-import { openRabbithole, answerBranch } from "../../src/node/rabbithole.js";
-import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { FsStore } from "../../src/node/fs-store.js";
+import { openRabbithole, answerBranch } from "../../src/node/mcp/open.js";
+import { closeAllSessions, getSession } from "../../src/node/mcp/registry.js";
+import { FsStore } from "../../src/node/mcp/store/fs-store.js";
 import { importSnapshotFile } from "../../src/web/portable.js";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mcp-markdown-wire-"));
@@ -432,9 +433,7 @@ async function runMarkdownWireFixture() {
   assertNoContentHtml(reloadedHydration, "reloaded hydration");
   assert.equal(reloadedHydration.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
 
-  const exported = await fetch(`${session.url}/export`);
-  assert.equal(exported.status, 200);
-  const exportHtml = await exported.text();
+  const exportHtml = await buildSessionExportHtml(session);
   const projection = validatePortableProjection(JSON.parse(extractSnapshotPayload(exportHtml)));
   const exportHydration = snapshotProjectionToFrozenHydration(projection);
   assert.equal(exportHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "export should contain exactly one inert payload");

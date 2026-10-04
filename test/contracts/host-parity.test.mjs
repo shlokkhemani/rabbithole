@@ -8,8 +8,8 @@ process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole
 process.env.RABBITHOLE_NO_BROWSER = "1";
 
 const [{ RabbitholeSession }, { defaultFsStore }, { DirectRabbitholeHost }] = await Promise.all([
-  import("../../src/node/transport/session.js"),
-  import("../../src/node/fs-store.js"),
+  import("../../src/node/mcp/hole-session/session.js"),
+  import("../../src/node/mcp/store/fs-store.js"),
   import("../../src/web/transport/direct-host.js"),
 ]);
 const { toPersistedHole } = await import("../../src/core/schema.js");
@@ -49,7 +49,7 @@ const events = [
     position: { x: 40, y: 60 }, size: { w: 300, h: 180 } },
   { type: "node_update", node_id: "note", title: "Renamed parity note", position: { x: 80, y: 120 }, size: { w: 340, h: 220 } },
   { type: "node_extensions_patch", node_id: "note", namespace: "canvas", value: { pin: { x: 9, y: 10, scale: 1 } } },
-  { type: "view_state", state: { node_id: "note", scroll: 12, view: { x: 3, y: 4, scale: 0.9 } } },
+  { type: "view_state", state: { node_id: "note", view: { x: 3, y: 4, scale: 0.9 } } },
   { type: "delete_node", node_id: "note" },
 ];
 

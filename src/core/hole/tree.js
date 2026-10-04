@@ -30,7 +30,7 @@ export function collectSubtreeIds(nodes, rootId) {
 /**
  * Return every node in deterministic depth-first order. The document root is
  * visited first, followed by parentless canvas nodes, then any malformed
- * disconnected components so legacy data is never silently omitted.
+ * disconnected components, so no node is ever silently omitted.
  * @param {NodeCollection} nodes
  * @param {string | null} rootId
  * @returns {HoleNode[]}

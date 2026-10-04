@@ -9,7 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
-import { FsStore } from "../../src/node/fs-store.js";
+import { FsStore } from "../../src/node/mcp/store/fs-store.js";
 import { importRabbitholeFile } from "../../src/web/portable.js";
 import { assertCodeCopy } from "../support/code-copy.mjs";
 

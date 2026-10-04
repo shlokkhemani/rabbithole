@@ -8,12 +8,12 @@ import path from "node:path";
 import {
   HARDENING_ARGS,
   parseClaudeEvent,
-} from "../../src/node/bridge/claude.js";
+} from "../../src/node/bridge/agents/claude.js";
 import { buildClaudeInput } from "../../src/node/bridge/messages.js";
 import {
   resolveExecutable,
   terminateChild,
-} from "../../src/node/bridge/process-utils.js";
+} from "../../src/node/bridge/agents/isolation.js";
 
 const temporaryCwd = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-claude-isolation-"));
 await fs.chmod(temporaryCwd, 0o700);

@@ -146,7 +146,7 @@ async function resumeRabbithole(holeId, signal, assets, focus = false) {
 /**
  * Answer a pending branch request. Delegation is a state-only transition that
  * returns immediately. A delegated request's later final answer also returns
- * immediately; ordinary final answers retain the legacy listener handoff.
+ * immediately; an ordinary final answer hands off to the blocking listener.
  * @param {{
  *   sessionId: string,
  *   requestId: string,

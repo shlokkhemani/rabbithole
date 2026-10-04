@@ -15,12 +15,12 @@ and CSS live as pure template strings here, while Node-only assembly lives under
   Ionicons 5 glyph in the real light, dark, navigation, and control contexts.
   Draft choices remain local until **Apply to Rabbithole** regenerates the
   curated payload and ignored UI bundles.
-- `src/node/html/canvas.js` assembles the document and owns the public
+- `src/node/mcp/http/page.js` assembles the document and owns the public
   `buildCanvasHtml(...)` API for the MCP host.
-- `src/node/html/built-assets.js` reads built files from `dist/`: `client.js`,
+- `src/node/shared/dist-assets.js` reads built files from `dist/`: `client.js`,
   `frozen-client.js`, `canvas.css`, and `katex.css`. DOMPurify and Mermaid are
   resolved from their installed packages.
-- `src/node/html/dev-reload.js` holds the `RABBITHOLE_DEV` loop: with it unset
+- `src/node/mcp/http/assets.js` holds the `RABBITHOLE_DEV` loop: with it unset
   those reads stay frozen at first access, and with it set both the bundles and
   the `src/core/` template modules are re-read per page load so a browser reload
   shows a rebuild without restarting the MCP server.
@@ -34,9 +34,9 @@ and CSS live as pure template strings here, while Node-only assembly lives under
   and `asset:` URL resolution.
 - Persisted holes are versioned in `src/core/schema.js`, storage goes through
   the `RabbitholeStore` port in `src/core/store.js`, and the filesystem
-  implementation is `src/node/fs-store.js`.
-- Node-tree mutations shared by hosts live in `src/core/reducer.js`; the MCP
-  session in `src/node/transport/session.js` handles HTTP/SSE and agent
+  implementation is `src/node/mcp/store/fs-store.js`.
+- Node-tree mutations shared by hosts live in `src/core/hole/reduce.js`; the MCP
+  session in `src/node/mcp/hole-session/session.js` handles HTTP/SSE and agent
   orchestration around that reducer.
 - The web host injects a direct in-page transport adapter instead of HTTP/SSE:
   browser events go to `DirectRabbitholeHost`, which applies the core reducer,
@@ -47,12 +47,12 @@ and CSS live as pure template strings here, while Node-only assembly lives under
   and reconnect logic simple while preserving existing scroll positions.
 - The share menu's Download snapshot flow is client-generated: it serializes the
   current markdown state, fetches referenced `asset:` files as data URIs, and
-  writes a frozen single-file HTML using `dist/frozen-client.js`. The `/export`
-  route packages the same frozen projection server-side.
+  writes a frozen single-file HTML using `dist/frozen-client.js`;
+  `buildSessionExportHtml` packages the same frozen projection host-side.
 
 Behavior-preserving rules:
 
-- The served page and `/export` must stay single-file HTML with no external
+- The served page and the frozen export must stay single-file HTML with no external
   asset requests.
 - MCP pages carry Mermaid as inert script text and activate it only when a
   Mermaid fence mounts. Frozen snapshots include that carrier only when their

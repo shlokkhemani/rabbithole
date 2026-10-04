@@ -15,8 +15,8 @@ const previousDir = process.env.RABBITHOLE_DIR;
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-generation-lifecycle-"));
 process.env.RABBITHOLE_DIR = dir;
 const [{ GenerationIngress }, { RabbitholeSession }] = await Promise.all([
-  import("../../src/node/transport/generation-ingress.js"),
-  import("../../src/node/transport/session.js"),
+  import("../../src/node/mcp/hole-session/generation-ingress.js"),
+  import("../../src/node/mcp/hole-session/session.js"),
 ]);
 
 try {

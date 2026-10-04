@@ -5,7 +5,7 @@ import { FIELDS, makeNode, projectNode } from "../../src/core/hole/node.js";
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../src/core/hole/reduce.js";
 import { parsePersistedHole, toPersistedHole, validatePersistedHole } from "../../src/core/schema.js";
 
-const legacyNode = {
+const persistedNode = {
   id: "child",
   parent_id: "root",
   title: "Why?",
@@ -37,11 +37,11 @@ const legacyNode = {
   },
 };
 
-const node = makeNode(legacyNode);
+const node = makeNode(persistedNode);
 assert.deepEqual(Object.keys(node), Object.keys(FIELDS), "makeNode is driven by the one FIELDS declaration");
-assert.deepEqual(node.source, legacyNode.extensions.pdf);
+assert.deepEqual(node.source, persistedNode.extensions.pdf);
 assert.deepEqual(node.view, { pin: { x: 2, y: 3 }, docked: true });
-assert.deepEqual(node.progress, legacyNode.extensions.learn);
+assert.deepEqual(node.progress, persistedNode.extensions.learn);
 assert.deepEqual(node.extensions, { third_party: { kept: true } });
 
 const expectedKeys = (target) => Object.entries(FIELDS)
@@ -62,12 +62,12 @@ for (const target of targets) {
 /** @type {Array<"persist" | "hydrate" | "portable">} */
 const roundTripTargets = ["persist", "hydrate", "portable"];
 for (const target of roundTripTargets) {
-  assert.deepEqual(projectNode(node, target).extensions, legacyNode.extensions, `${target} round-trips all schema-v2 namespaces`);
+  assert.deepEqual(projectNode(node, target).extensions, persistedNode.extensions, `${target} round-trips all schema-v2 namespaces`);
 }
 assert.deepEqual(projectNode(node, "snapshot").extensions, {
-  pdf: legacyNode.extensions.pdf,
-  canvas: legacyNode.extensions.canvas,
-  note: legacyNode.extensions.note,
+  pdf: persistedNode.extensions.pdf,
+  canvas: persistedNode.extensions.canvas,
+  note: persistedNode.extensions.note,
 }, "snapshot projection keeps page-shaping namespaces and defaults all others private");
 assert.equal(Object.hasOwn(projectNode(node, "wire"), "extensions"), false);
 
@@ -107,17 +107,17 @@ state = reduceHoleEvent(state, { type: "node_answered", node_id: "pending", mark
 assert.equal(state.asks.get("pending").state, "settled");
 assert.equal(holeStateToHole(state).asks, undefined, "Ask is canonical engine state, not a schema-v2 wire change");
 
-let extensionState = createHoleState({ root_id: "child", nodes: [makeNode(legacyNode)] }, { canonicalNodes: true });
+let extensionState = createHoleState({ root_id: "child", nodes: [makeNode(persistedNode)] }, { canonicalNodes: true });
 extensionState = reduceHoleEvent(extensionState, {
   type: "node_extensions_patch", node_id: "child", namespace: "canvas", value: {},
 }).state;
 assert.deepEqual(extensionState.nodes.get("child").view, { docked: true },
   "a canvas namespace replacement removes omitted fields while preserving note presentation");
 assert.deepEqual(holeStateToHole(extensionState).nodes[0].extensions, {
-  pdf: legacyNode.extensions.pdf,
-  note: legacyNode.extensions.note,
-  learn: legacyNode.extensions.learn,
-  third_party: legacyNode.extensions.third_party,
+  pdf: persistedNode.extensions.pdf,
+  note: persistedNode.extensions.note,
+  learn: persistedNode.extensions.learn,
+  third_party: persistedNode.extensions.third_party,
 }, "removing a canonical canvas field survives the schema-v2 projection");
 
 const oldPersisted = {
@@ -127,7 +127,7 @@ const oldPersisted = {
   root_id: "root",
   created_at: null,
   updated_at: null,
-  view_state: { mode: "reader", node_id: "root", scroll: 9 },
+  view_state: { mode: "reader", node_id: "root" },
   nodes: [{ ...projectNode(makeNode({ id: "root" }), "persist"), origin: { web_root_question: "Old question" } }],
 };
 assert.equal(parsePersistedHole(oldPersisted).nodes[0].origin.web_root_question, "Old question");

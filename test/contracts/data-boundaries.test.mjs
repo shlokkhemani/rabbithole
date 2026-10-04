@@ -22,7 +22,7 @@ import {
 import { createSnapshotProjection, snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
 import { parsePersistedHole, toPersistedHole, validatePersistedHole } from "../../src/core/schema.js";
 import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../../src/core/store.js";
-import { FsStore } from "../../src/node/fs-store.js";
+import { FsStore } from "../../src/node/mcp/store/fs-store.js";
 import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile, parseRabbitholeFile } from "../../src/web/portable.js";
 import { persistedHoleFixture, portableArtifactFixture } from "../fixtures/contracts/artifact-fixture.js";
 import { storeFixture } from "../fixtures/contracts/store-fixture.js";
@@ -303,6 +303,9 @@ const snapshot = (payload, before = "", after = "") =>
   assert.throws(() => parseRabbitholeFile(portable(tooManyNodes)), /exceeds 5,000 nodes/);
   const tooManyAssets = Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`a${index}.png`, ""]));
   assert.throws(() => parseRabbitholeFile(portable(validHole(), tooManyAssets)), /exceeds 200 assets/);
+  const escapingAttachment = validHole({ nodes: [validNode({ origin: { question: "Look", attachment_assets: ["../escape.png"] } })] });
+  assert.throws(() => parsePersistedHole(escapingAttachment), /origin attachment must be a lowercase filename/,
+    "a saved ask whose attachment names a path outside the asset store never opens (imports clean such names instead)");
 
   const aggregateChunk = Buffer.alloc(18 * 1024 * 1024).toString("base64");
   assert.throws(

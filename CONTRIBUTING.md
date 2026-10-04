@@ -24,7 +24,7 @@ RABBITHOLE_NO_BROWSER=1 node bin/mcp-server.js
 ```
 
 The process speaks MCP over standard input and output. Never write logs or debug
-output to stdout; use the logger in `src/node/logger.js`, which writes to stderr.
+output to stdout; use the logger in `src/node/shared/logger.js`, which writes to stderr.
 Local documents are stored below `~/.rabbithole/` unless `RABBITHOLE_DIR` points
 to a disposable development directory.
 

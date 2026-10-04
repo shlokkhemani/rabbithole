@@ -545,12 +545,12 @@ export function createModelSettings({
     if (!bridgeState) return;
     const current = loadSettings();
     if (providerFor(current.preset).id !== "subscriptions") return;
-    const legacyAgent = bridgeAgentOf(current.model);
+    const modelAgent = bridgeAgentOf(current.model);
     const agentId = current.agent === "claude" || current.agent === "codex"
       ? current.agent
-      : legacyAgent || chooseInitialBridgeAgent(bridgeState);
+      : modelAgent || chooseInitialBridgeAgent(bridgeState);
     const agents = { ...(current.agents || {}) };
-    if (legacyAgent) agents[legacyAgent] = bridgeAgentSnapshot(current, legacyAgent, agents);
+    if (modelAgent) agents[modelAgent] = bridgeAgentSnapshot(current, modelAgent, agents);
     applyBridgeSelection(current, agentId, agents);
   }
 

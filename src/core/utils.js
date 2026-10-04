@@ -64,10 +64,6 @@ export function normalizeId(value) {
     .replace(/\s+/gu, "");
 }
 
-export function randomUuidOrFallback() {
-  return shortId();
-}
-
 /** @param {string} _prefix */
 export function randomId(_prefix) {
   return shortId();

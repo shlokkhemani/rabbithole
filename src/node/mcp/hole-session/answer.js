@@ -1,5 +1,5 @@
 import { addAssetsToHole, defaultFsStore } from "../store/fs-store.js";
-import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../../core/base-url.js";
+import { applyFrontmatterBaseUrl, normalizeBaseUrl } from "../../../core/base-url.js";
 import { isNoteNode } from "../../../core/hole/ask.js";
 import { projectNode } from "../../../core/hole/node.js";
 import { buildJsonError } from "../../shared/http.js";
@@ -162,7 +162,7 @@ export class SessionAnswer extends SessionBroadcast {
       read: false,
     };
     const answered = ingress.acceptChunk(content, { final: true, title, answeredFields });
-    if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(answered);
+    if (!explicitBaseUrl) applyFrontmatterBaseUrl(answered);
     this.dispatchHoleEvent(answered);
     const finalNode = this.nodes.get(nodeId);
     // A delegated final was written by a sub-agent; the listener that will

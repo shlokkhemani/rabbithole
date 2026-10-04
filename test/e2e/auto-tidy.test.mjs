@@ -336,8 +336,8 @@ async function verifyFreshAnswerInvalidation(app) {
   let context = null;
   try {
     const [{ createSession }, { buildCanvasHtml }, { mergePreferences }] = await Promise.all([
-      import("../../src/node/sessions.js"),
-      import("../../src/node/html/canvas.js"),
+      import("../../src/node/mcp/registry.js"),
+      import("../../src/node/mcp/http/page.js"),
       import("../../src/node/mcp/store/prefs-store.js"),
     ]);
     await mergePreferences({ "rh-auto-tidy": "on", "rh-auto-tidy-grace": "5" });
@@ -346,7 +346,7 @@ async function verifyFreshAnswerInvalidation(app) {
       holeId: "auto-tidy-new-answer",
       title: "Auto-tidy new answer",
       rootId: "root",
-      viewState: { mode: "canvas", node_id: "b", scroll: 0 },
+      viewState: { mode: "canvas", node_id: "b" },
       isResume: true,
       nodes: [
         {

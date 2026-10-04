@@ -10,8 +10,8 @@ import { promisify } from "node:util";
 import {
   CodexAppServer,
   prepareCodexHome,
-} from "../../src/node/bridge/codex.js";
-import { resolveExecutable } from "../../src/node/bridge/process-utils.js";
+} from "../../src/node/bridge/agents/codex.js";
+import { resolveExecutable } from "../../src/node/bridge/agents/isolation.js";
 import { assertNoDeletedSubscriptionMechanisms } from "../support/subscription-source-guard.mjs";
 
 const execFileAsync = promisify(execFile);

@@ -8,7 +8,7 @@ import path from "node:path";
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-http-guard-"));
 
-const { RabbitholeSession } = await import("../../src/node/transport/session.js");
+const { RabbitholeSession } = await import("../../src/node/mcp/hole-session/session.js");
 
 const session = new RabbitholeSession({
   holeId: "http-guard",

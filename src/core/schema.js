@@ -1,5 +1,5 @@
 import { normalizePdfAnchor } from "./hole/anchor.js";
-import { validateLegacyAskOrigin } from "./hole/ask.js";
+import { validatePersistedOrigin } from "./hole/ask.js";
 import { normalizeViewState } from "./hole/bookmark.js";
 import { projectNode } from "./hole/node.js";
 
@@ -86,7 +86,7 @@ function validatePersistedNode(node) {
   if (node.base_url_source !== null && !["explicit", "frontmatter", "inherited"].includes(node.base_url_source)) {
     throw new Error(`Persisted node ${node.id} base_url_source is invalid`);
   }
-  validateLegacyAskOrigin(node.origin, node.id);
+  validatePersistedOrigin(node.origin, node.id);
   if (!node.position || typeof node.position !== "object" || Array.isArray(node.position)
     || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y)) {
     throw new Error(`Persisted node ${node.id} position must contain finite x and y numbers`);

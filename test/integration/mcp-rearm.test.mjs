@@ -8,12 +8,12 @@ import path from "node:path";
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mcp-rearm-"));
 
-const { openRabbithole, answerBranch, sendToRabbithole } = await import("../../src/node/rabbithole.js");
-const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
-const { defaultFsStore } = await import("../../src/node/fs-store.js");
+const { openRabbithole, answerBranch, sendToRabbithole } = await import("../../src/node/mcp/open.js");
+const { closeAllSessions, getSession } = await import("../../src/node/mcp/registry.js");
+const { defaultFsStore } = await import("../../src/node/mcp/store/fs-store.js");
 const { SERVER_INSTRUCTIONS } = await import("../../src/node/mcp/instructions.js");
-const { toolDefinitions } = await import("../../src/node/tools/manifest.js");
-const { RabbitholeSession } = await import("../../src/node/transport/session.js");
+const { toolDefinitions } = await import("../../src/node/mcp/tools.js");
+const { RabbitholeSession } = await import("../../src/node/mcp/hole-session/session.js");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -317,12 +317,9 @@ async function runZeroIdleTurnsAndSingleListenerFixture() {
   assert(session, "cancelled host wait should leave the durable canvas session live");
   assert.equal(session.agentAttached, false);
 
-  // Even a legacy local override must not be able to reintroduce model
-  // polling. This makes the zero-idle-turn invariant fast to test.
-  process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
+  // An idle canvas never re-polls the model: the listener stays pending.
   const idle = session.waitForEvent();
   const idleOutcome = await Promise.race([idle.then(() => "resolved"), sleep(125).then(() => "pending")]);
-  delete process.env.RABBITHOLE_MAX_BLOCK_MS;
   assert.equal(idleOutcome, "pending", "an idle canvas must not periodically resolve its model listener");
   assert(session.waiter, "one background listener should remain attached during idle time");
   assert.equal(session.agentAttached, true);
@@ -560,7 +557,7 @@ async function runSavedAskRequeueFixture() {
       lens: null,
       anchor: null,
       branch_type: "followup",
-      attachment_assets: ["../escape.png", "source.pdf", "paste-saved.png"],
+      attachment_assets: ["source.pdf", "paste-saved.png"],
     },
     position: { x: 0, y: 0 },
     size: null,
@@ -931,7 +928,7 @@ async function runDelegatedConcurrencyFixture() {
   const ordinary = await answerBranch({
     sessionId: session.id, requestId: "req-c", title: "C", content: "C stays backward compatible.", signal: abortAfter(),
   });
-  assert.equal(ordinary.status, "cancelled", "ordinary final answers retain the legacy blocking listener contract");
+  assert.equal(ordinary.status, "cancelled", "ordinary final answers keep the blocking listener contract");
   assert.equal([...session.requests.records()].filter((record) => record.watchdog).length, 0);
 
   const listenForD = session.waitForEvent();

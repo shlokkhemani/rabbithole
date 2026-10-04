@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { openRabbithole } from "../../src/node/rabbithole.js";
-import { ingestPdfDocument } from "../../src/node/pdf-ingest.js";
-import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { defaultFsStore, resolveAsset } from "../../src/node/fs-store.js";
+import { openRabbithole } from "../../src/node/mcp/open.js";
+import { ingestPdfDocument } from "../../src/node/mcp/pdf/ingest.js";
+import { closeAllSessions, getSession } from "../../src/node/mcp/registry.js";
+import { defaultFsStore, resolveAsset } from "../../src/node/mcp/store/fs-store.js";
 import { ATTENTION_PDF_PAGE_COUNT, ATTENTION_PAGE_VIEW, readAttentionPdf } from "../support/attention-pdf.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";

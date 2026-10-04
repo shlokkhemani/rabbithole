@@ -23,7 +23,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/contracts/mcp-list-rabbitholes.test.mjs` — bounded and searchable list_rabbitholes MCP contracts.
 - `test/contracts/mcp-markdown-wire.test.mjs` — mcp markdown wire capability contracts.
 - `test/contracts/mcp-read-rabbithole.test.mjs` — read_rabbithole selectors, disk/live delivery state, normalization, and file-root context contracts.
-- `test/contracts/mcp-short-ids.test.mjs` — MCP short-id, legacy-id, and copied-id boundary contracts.
+- `test/contracts/mcp-short-ids.test.mjs` — MCP short-id, UUID-id, and copied-id boundary contracts.
 - `test/contracts/mcp-thread-delta.test.mjs` — delta thread delivery: published nodes are delivered, delegated finals are not, and thread carries only undelivered lineage.
 - `test/contracts/node-projection.test.mjs` — node projection capability contracts.
 - `test/contracts/preferences-wire.test.mjs` — machine preference patch validation and document-boundary capability contracts.

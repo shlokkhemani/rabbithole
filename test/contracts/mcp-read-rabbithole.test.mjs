@@ -7,10 +7,10 @@ import path from "node:path";
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-read-contract-"));
 
-const { openRabbithole, sendToRabbithole } = await import("../../src/node/rabbithole.js");
-const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
-const { defaultFsStore } = await import("../../src/node/fs-store.js");
-const { toolDefinitions } = await import("../../src/node/tools/manifest.js");
+const { openRabbithole, sendToRabbithole } = await import("../../src/node/mcp/open.js");
+const { closeAllSessions, getSession } = await import("../../src/node/mcp/registry.js");
+const { defaultFsStore } = await import("../../src/node/mcp/store/fs-store.js");
+const { toolDefinitions } = await import("../../src/node/mcp/tools.js");
 
 const readTool = toolDefinitions.find((tool) => tool.name === "read_rabbithole");
 assert(readTool, "the MCP manifest exposes read_rabbithole");

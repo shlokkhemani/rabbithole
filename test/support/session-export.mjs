@@ -1,12 +1,18 @@
+/**
+ * Packages a live MCP session as the frozen single-file snapshot, from the same
+ * core projection and snapshot builder the share menu's Download uses in the
+ * browser. Tests read snapshot properties (inline assets, offline Mermaid and
+ * PDF runtimes, no preference values) without driving the download.
+ */
 import fs from "node:fs/promises";
-import { extractNodeAssetRefs } from "../../../core/assets.js";
-import { createSnapshotProjection } from "../../../core/snapshot-projection.js";
-import { buildSnapshotHtml, snapshotProjectionUsesMermaid, snapshotProjectionUsesPdf } from "../../../core/snapshot-html.js";
-import { toPersistedHole } from "../../../core/schema.js";
-import { resolveAsset } from "../store/fs-store.js";
-import { getDompurifyScript, getMermaidScript, getPdfJsScript, getPdfWorkerScript, getUiAssets } from "../../shared/dist-assets.js";
+import { extractNodeAssetRefs } from "../../src/core/assets.js";
+import { createSnapshotProjection } from "../../src/core/snapshot-projection.js";
+import { buildSnapshotHtml, snapshotProjectionUsesMermaid, snapshotProjectionUsesPdf } from "../../src/core/snapshot-html.js";
+import { toPersistedHole } from "../../src/core/schema.js";
+import { resolveAsset } from "../../src/node/mcp/store/fs-store.js";
+import { getDompurifyScript, getMermaidScript, getPdfJsScript, getPdfWorkerScript, getUiAssets } from "../../src/node/shared/dist-assets.js";
 
-/** @param {import("../hole-session/session.js").RabbitholeSession} session */
+/** @param {import("../../src/node/mcp/hole-session/session.js").RabbitholeSession} session */
 async function buildSessionSnapshotProjection(session) {
   const hole = toPersistedHole(/** @type {any} */ (session.toHole()), { cloneExtensions: false });
   const referencedNames = new Set();
@@ -31,7 +37,7 @@ async function buildSessionSnapshotProjection(session) {
   return createSnapshotProjection(hole, /** @type {any} */ (session.viewState), assets);
 }
 
-/** @param {import("../hole-session/session.js").RabbitholeSession} session */
+/** @param {import("../../src/node/mcp/hole-session/session.js").RabbitholeSession} session */
 export async function buildSessionExportHtml(session) {
   const snapshotProjection = await buildSessionSnapshotProjection(session);
   const { stylesheetText, frozenClientSource } = await getUiAssets();

@@ -509,8 +509,5 @@ export function mountAskingSettings(host) {
 }
 
 export function askingSettingsSection() {
-  // Touch storage at the section boundary so legacy shapes migrate before UI.
-  askPresets();
-  reactionPrompts();
   return { id: "asking", label: "Quick questions", order: 5, mount: mountAskingSettings };
 }

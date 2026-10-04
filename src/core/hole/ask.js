@@ -54,9 +54,8 @@ export function branchTypeOfNode(node) {
 
 /**
  * Derive the canonical Ask from a schema-v2 node. The persisted `origin`
- * spelling remains unchanged so old Rabbitholes and MCP clients keep working;
- * all new domain logic can use this one shape instead of reinterpreting seven
- * legacy flags independently.
+ * spelling is the file format MCP clients read; domain logic uses this one
+ * shape instead of reinterpreting the origin's separate flags.
  *
  * @param {HoleNode} node
  * @returns {import("../contracts/engine.js").Ask | null}
@@ -122,20 +121,15 @@ export function validateAsk(value) {
 }
 
 /**
- * Validate every schema-v2 origin shape that Rabbithole owns. Unknown legacy
- * shapes remain opaque for backwards compatibility; recognized Ask fields do
- * not get the old unchecked escape hatch.
+ * Validate a persisted schema-v2 origin: every field Rabbithole reads must hold
+ * its own type.
  * @param {unknown} origin
  * @param {string} nodeId
  */
-export function validateLegacyAskOrigin(origin, nodeId) {
+export function validatePersistedOrigin(origin, nodeId) {
   if (origin === null) return true;
   if (!origin || typeof origin !== "object" || Array.isArray(origin)) throw new Error(`Persisted node ${nodeId} origin must be object or null`);
   const raw = /** @type {Record<string, any>} */ (origin);
-  const owned = raw.kind === "note" || "question" in raw || "selected_text" in raw || "anchor" in raw
-    || "branch_type" in raw || "lens" in raw || "instruction" in raw || "attachment_assets" in raw || "crop_asset" in raw
-    || "web_root_question" in raw;
-  if (!owned) return true;
   if (raw.kind !== undefined && raw.kind !== "note") throw new Error(`Persisted node ${nodeId} origin.kind is invalid`);
   if (raw.author !== undefined && raw.author !== "human" && raw.author !== "agent") throw new Error(`Persisted node ${nodeId} origin.author is invalid`);
   for (const field of ["question", "selected_text", "web_root_question"]) {
@@ -147,10 +141,7 @@ export function validateLegacyAskOrigin(origin, nodeId) {
   if (raw.anchor !== undefined && raw.anchor !== null && !normalizeAnchor(raw.anchor)) throw new Error(`Persisted node ${nodeId} origin.anchor is invalid`);
   if (raw.attachment_assets !== undefined) {
     if (!Array.isArray(raw.attachment_assets) || raw.attachment_assets.length > MAX_ASK_ATTACHMENTS) throw new Error(`Persisted node ${nodeId} origin.attachments are invalid`);
-    // Schema-v2 files historically admitted arbitrary strings here and the
-    // host filtered unsafe or missing assets when rehydrating an Ask. Keep old
-    // files open while `askOfNode()` produces the strict, sanitized Ask shape.
-    for (const name of raw.attachment_assets) if (typeof name !== "string") throw new Error(`Persisted node ${nodeId} origin.attachments are invalid`);
+    for (const name of raw.attachment_assets) validateAssetName(name, `Persisted node ${nodeId} origin attachment`);
   }
   if (raw.crop_asset !== undefined && raw.crop_asset !== null && typeof raw.crop_asset !== "string") throw new Error(`Persisted node ${nodeId} origin.crop_asset is invalid`);
   return true;

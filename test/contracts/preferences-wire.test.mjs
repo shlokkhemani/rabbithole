@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { RabbitholeSession } from "../../src/node/transport/session.js";
+import { RabbitholeSession } from "../../src/node/mcp/hole-session/session.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 const previousDir = process.env.RABBITHOLE_DIR;

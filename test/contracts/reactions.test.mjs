@@ -62,17 +62,6 @@ assert.equal(prompt.split("\n").find((line) => line.startsWith("- Human:")),
   '- Human: Anchored to "marked passage": Keep the crisp example and concrete opening.',
   "the shared note projection substitutes the configured instruction before prompt assembly");
 
-const legacyReaction = makeNode({
-  ...reaction,
-  id: "legacy-reaction",
-  origin: { ...reaction.origin, instruction: undefined },
-});
-assert.equal(collectRelevantNotes(new Map([
-  [root.id, root],
-  [legacyReaction.id, legacyReaction],
-]), "root")[0].content, DEFAULT_REACTION_PROMPTS.up.instruction,
-"a persisted reaction created before prompts existed derives the current default from its glyph");
-
 for (const { label, projection } of [
   { label: "portable", projection: createPortableProjection(roundTrip, {}) },
   { label: "snapshot", projection: createSnapshotProjection(roundTrip, null, {}) },
@@ -85,4 +74,4 @@ for (const { label, projection } of [
   assert.equal(Object.hasOwn(projected.origin, "reaction"), false, `${label} projection adds no reaction-specific origin field`);
 }
 
-console.log("ok reaction contracts: glyph persistence, configured context, legacy fallback, portable, and snapshot");
+console.log("ok reaction contracts: glyph persistence, configured context, portable, and snapshot");

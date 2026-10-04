@@ -9,11 +9,12 @@ import { chromium } from "playwright";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { getUiAssets } from "../../src/node/html/built-assets.js";
+import { buildCanvasHtml } from "../../src/node/mcp/http/page.js";
+import { getUiAssets } from "../../src/node/shared/dist-assets.js";
 import { CANVAS_STYLES } from "../support/design-css.mjs";
-import { addAssetsToHole, defaultFsStore } from "../../src/node/fs-store.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
+import { addAssetsToHole, defaultFsStore } from "../../src/node/mcp/store/fs-store.js";
+import { createSession, closeAllSessions } from "../../src/node/mcp/registry.js";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-image-experience-"));
@@ -125,9 +126,7 @@ async function runPageFixtures() {
     const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
     assert.equal(check.status, 0, check.stderr || check.stdout);
 
-    const exported = await fetch(`${session.url}/export`);
-    assert.equal(exported.status, 200);
-    const exportHtml = await exported.text();
+    const exportHtml = await buildSessionExportHtml(session);
     assertIncludes(exportHtml, "--image-matte", "export should retain bundled image-matte CSS");
     console.log("ok image ux: served client, matte CSS, export CSS");
   } finally {

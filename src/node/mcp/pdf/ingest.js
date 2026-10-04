@@ -22,6 +22,7 @@ function loadDependencies() {
   if (!dependenciesPromise) dependenciesPromise = (async () => {
     const canvas = await import("@napi-rs/canvas").catch(() => null);
     if (canvas) for (const name of ["DOMMatrix", "DOMPoint", "DOMRect", "Path2D", "ImageData"]) if (!globalThis[name] && canvas[name]) globalThis[name] = canvas[name];
+    // pdfjs-dist names its Node-compatible build "legacy"; it is the current build for Node.
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     return {
       pdfjs,

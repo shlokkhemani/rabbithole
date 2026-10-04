@@ -6,8 +6,8 @@ import path from "node:path";
 
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-list-contract-"));
 
-const { listRabbitholes } = await import("../../src/node/rabbithole.js");
-const { toolDefinitions } = await import("../../src/node/tools/manifest.js");
+const { listRabbitholes } = await import("../../src/node/mcp/open.js");
+const { toolDefinitions } = await import("../../src/node/mcp/tools.js");
 
 const baseTime = Date.parse("2026-09-01T12:00:00.000Z");
 await Promise.all(Array.from({ length: 60 }, async (_, index) => {

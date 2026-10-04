@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { assertRabbitholeStore } from "../../src/core/store.js";
-import { FsStore } from "../../src/node/fs-store.js";
-import { RabbitholeSession } from "../../src/node/transport/session.js";
+import { FsStore } from "../../src/node/mcp/store/fs-store.js";
+import { RabbitholeSession } from "../../src/node/mcp/hole-session/session.js";
 import { runStoreContract } from "../support/store-contract.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";

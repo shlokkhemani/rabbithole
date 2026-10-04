@@ -4,13 +4,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 const previousDir = process.env.RABBITHOLE_DIR;
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-preferences-e2e-"));
 process.env.RABBITHOLE_DIR = dir;
 const { buildCanvasHtml } = await import("../../src/node/mcp/http/page.js");
-const { RabbitholeSession } = await import("../../src/node/transport/session.js");
+const { RabbitholeSession } = await import("../../src/node/mcp/hole-session/session.js");
 const browser = await chromium.launch({ headless: true });
 
 function session(id) {
@@ -126,7 +127,7 @@ try {
     "Keep this exact machine-backed approach.",
     "reaction instructions use the same host-persisted preference backing");
 
-  const frozenHtml = await (await fetch(second.url + "/export")).text();
+  const frozenHtml = await buildSessionExportHtml(second);
   assert.equal(frozenHtml.includes("Across sessions"), false);
   assert.equal(frozenHtml.includes("Use the machine-backed preference."), false);
   assert.equal(frozenHtml.includes("Persistent custom"), false);

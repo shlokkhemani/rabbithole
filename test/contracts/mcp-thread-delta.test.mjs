@@ -7,8 +7,8 @@ import path from "node:path";
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-thread-delta-"));
 
-const { openRabbithole, answerBranch, sendToRabbithole } = await import("../../src/node/rabbithole.js");
-const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
+const { openRabbithole, answerBranch, sendToRabbithole } = await import("../../src/node/mcp/open.js");
+const { closeAllSessions, getSession } = await import("../../src/node/mcp/registry.js");
 
 try {
   await runPublishedNodeIsDelivered();

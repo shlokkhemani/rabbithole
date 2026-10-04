@@ -52,11 +52,11 @@ export function makeNode(partial) {
     const fallback = cloneDefault(descriptor.default);
     node[name] = descriptor.normalize(Object.prototype.hasOwnProperty.call(raw, name) ? raw[name] : fallback);
   }
-  const legacy = splitLegacyExtensions(raw.extensions);
-  if (raw.source == null && legacy.source) node.source = legacy.source;
-  if (!Object.keys(node.view).length) node.view = legacy.view;
-  if (!Object.keys(node.progress).length) node.progress = legacy.progress;
-  node.extensions = legacy.extensions;
+  const persisted = splitPersistedExtensions(raw.extensions);
+  if (raw.source == null && persisted.source) node.source = persisted.source;
+  if (!Object.keys(node.view).length) node.view = persisted.view;
+  if (!Object.keys(node.progress).length) node.progress = persisted.progress;
+  node.extensions = persisted.extensions;
   return /** @type {HoleNode} */ (node);
 }
 
@@ -92,7 +92,7 @@ export function projectNode(node, target) {
     if (!descriptor.targets.includes(target) || ["source", "view", "progress", "extensions"].includes(name)) continue;
     projection[name] = cloneJson(normalized[name]);
   }
-  if (FIELDS.extensions.targets.includes(target)) projection.extensions = joinLegacyExtensions(normalized, target);
+  if (FIELDS.extensions.targets.includes(target)) projection.extensions = joinPersistedExtensions(normalized, target);
   return /** @type {PersistedNode} */ (projection);
 }
 
@@ -163,7 +163,7 @@ export function normalizeSize(size) {
 }
 
 /** @param {unknown} extensions @returns {{ source: Record<string, any> | null, view: Record<string, any>, progress: Record<string, any>, extensions: Record<string, any> }} */
-function splitLegacyExtensions(extensions) {
+function splitPersistedExtensions(extensions) {
   const raw = normalizeObject(extensions);
   const source = normalizeObjectOrNull(raw.pdf);
   const canvas = normalizeObject(raw.canvas);
@@ -183,7 +183,7 @@ function splitLegacyExtensions(extensions) {
 }
 
 /** @param {HoleNode & Record<string, any>} node @param {NodeProjectionTarget} target */
-function joinLegacyExtensions(node, target) {
+function joinPersistedExtensions(node, target) {
   const extensions = { ...normalizeObject(node.extensions) };
   if (node.source) extensions.pdf = cloneJson(node.source);
   const view = normalizeObject(node.view);

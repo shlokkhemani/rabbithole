@@ -1,4 +1,4 @@
-/** @protects MCP short-id, legacy-id, and copied-id boundary contracts. */
+/** @protects MCP short-id, UUID-id, and copied-id boundary contracts. */
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -7,10 +7,10 @@ import path from "node:path";
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-short-ids-"));
 
-const { listRabbitholes } = await import("../../src/node/rabbithole.js");
-const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
-const { defaultFsStore } = await import("../../src/node/fs-store.js");
-const { toolDefinitions } = await import("../../src/node/tools/manifest.js");
+const { listRabbitholes } = await import("../../src/node/mcp/open.js");
+const { closeAllSessions, getSession } = await import("../../src/node/mcp/registry.js");
+const { defaultFsStore } = await import("../../src/node/mcp/store/fs-store.js");
+const { toolDefinitions } = await import("../../src/node/mcp/tools.js");
 
 function abortAfter(ms = 25) {
   const controller = new AbortController();
@@ -64,19 +64,19 @@ try {
   assert.equal(session.nodes.get(branch.node_id).markdown, "Yes.");
   await session.close("short_id_contract_complete");
 
-  const legacyHoleId = "12345678-1234-1234-1234-123456789abc";
-  const legacyRootId = "abcdefab-cdef-cdef-cdef-abcdefabcdef";
+  const uuidHoleId = "12345678-1234-1234-1234-123456789abc";
+  const uuidRootId = "abcdefab-cdef-cdef-cdef-abcdefabcdef";
   await defaultFsStore.saveHole({
-    hole_id: legacyHoleId,
-    title: "Legacy UUID hole",
-    root_id: legacyRootId,
+    hole_id: uuidHoleId,
+    title: "UUID-id hole",
+    root_id: uuidRootId,
     created_at: new Date().toISOString(),
     view_state: null,
     nodes: [{
-      id: legacyRootId,
+      id: uuidRootId,
       parent_id: null,
-      title: "Legacy root",
-      markdown: "Legacy content",
+      title: "UUID root",
+      markdown: "UUID content",
       base_url: null,
       base_url_source: null,
       origin: null,
@@ -89,13 +89,13 @@ try {
       created_at: new Date().toISOString(),
     }],
   });
-  const legacyInput = { hole_id: `\`${legacyHoleId}\`` };
-  openTool.validateInput(legacyInput);
-  const resumed = await openTool.run(legacyInput, { signal: abortAfter() });
+  const uuidInput = { hole_id: `\`${uuidHoleId}\`` };
+  openTool.validateInput(uuidInput);
+  const resumed = await openTool.run(uuidInput, { signal: abortAfter() });
   assert.equal(resumed.status, "cancelled");
-  assert.equal(getSession(resumed.session_id)?.holeId, legacyHoleId);
+  assert.equal(getSession(resumed.session_id)?.holeId, uuidHoleId);
 
-  console.log("ok MCP ids: new ids are short, copied ids normalize, and legacy UUID holes resume");
+  console.log("ok MCP ids: new ids are short, copied ids normalize, and UUID-id holes resume");
 } finally {
   await closeAllSessions("short_id_contract_cleanup");
 }

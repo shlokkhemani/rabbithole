@@ -11,15 +11,12 @@ export const DEFAULT_REACTION_PROMPTS = Object.freeze({
 
 /** @param {unknown} value @returns {ReactionKey | null} */
 export function normalizeReactionKey(value) {
-  const key = String(value ?? "").trim();
-  if (key === "up" || key === "down") return key;
-  return REACTION_KEYS.find((candidate) => DEFAULT_REACTION_PROMPTS[candidate].glyph === key) || null;
+  return value === "up" || value === "down" ? value : null;
 }
 
-/** @param {{ markdown?: unknown, origin?: any } | null | undefined} node */
+/** @param {{ origin?: any } | null | undefined} node */
 export function reactionInstructionForNode(node) {
-  const stored = String(node?.origin?.instruction ?? "").trim();
-  if (stored) return stored.slice(0, 4000);
-  const key = normalizeReactionKey(node?.markdown);
-  return key ? DEFAULT_REACTION_PROMPTS[key].instruction : String(node?.markdown ?? "");
+  return String(node?.origin?.instruction ?? "")
+    .trim()
+    .slice(0, 4000);
 }

@@ -61,9 +61,9 @@ async function verifyEnterCompositionAndNewlines() {
 async function verifyPendingRootStandaloneComposer() {
   process.env.RABBITHOLE_NO_BROWSER = "1";
   const [{ createSession }, { buildCanvasHtml }, { defaultFsStore }] = await Promise.all([
-    import("../../src/node/sessions.js"),
-    import("../../src/node/html/canvas.js"),
-    import("../../src/node/fs-store.js"),
+    import("../../src/node/mcp/registry.js"),
+    import("../../src/node/mcp/http/page.js"),
+    import("../../src/node/mcp/store/fs-store.js"),
   ]);
   const holeId = `pending-root-e2e-${Date.now()}`;
   await defaultFsStore.putAsset(holeId, "paste-selected.png", Buffer.from(

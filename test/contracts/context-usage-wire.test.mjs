@@ -9,7 +9,7 @@ import { CANVAS_STYLES } from "../support/design-css.mjs";
 const previousDir = process.env.RABBITHOLE_DIR;
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-context-usage-wire-"));
 process.env.RABBITHOLE_DIR = dir;
-const { RabbitholeSession } = await import("../../src/node/transport/session.js");
+const { RabbitholeSession } = await import("../../src/node/mcp/hole-session/session.js");
 
 try {
 const session = new RabbitholeSession({

@@ -6,7 +6,7 @@
  * title extraction are {@link ../../web/transport/direct-host.js},
  * {@link ../../web/provider/title-sentinel.js}, and {@link ../../web/app.js}.
  * The MCP path is normalized by
- * {@link ../../node/transport/generation-ingress.js} before entering the same
+ * {@link ../../node/mcp/hole-session/generation-ingress.js} before entering the same
  * `Run`; it has no browser-style `Provider` and receives partial/final
  * tool calls carrying `content`, `partial`, and `title` instead.
  *

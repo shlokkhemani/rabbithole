@@ -9,14 +9,15 @@ import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { MAX_ASSET_BYTES } from "../../src/core/assets.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
+import { buildCanvasHtml } from "../../src/node/mcp/http/page.js";
+import { createSession, closeAllSessions } from "../../src/node/mcp/registry.js";
 import {
   addAssetsToHole,
   defaultFsStore,
   resolveAsset,
-} from "../../src/node/fs-store.js";
-import { toolDefinitions } from "../../src/node/tools/manifest.js";
+} from "../../src/node/mcp/store/fs-store.js";
+import { toolDefinitions } from "../../src/node/mcp/tools.js";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-assets-"));
@@ -306,9 +307,7 @@ async function runSessionFixtures(source, source2) {
       assert.equal(res.status, 404, `${requestPath} should be rejected`);
     }
 
-    const exported = await fetch(`${session.url}/export`);
-    assert.equal(exported.status, 200);
-    const exportHtml = await exported.text();
+    const exportHtml = await buildSessionExportHtml(session);
     const projection = validatePortableProjection(JSON.parse(extractSnapshotPayload(exportHtml)));
     assert.equal(exportHtml.split(SNAPSHOT_PAYLOAD_OPEN).length - 1, 1, "export should contain exactly one inert payload");
     assertIncludes(exportHtml, "RabbitholeFrozenClient.startPortableSnapshot", "export should use the canonical portable bootstrap");

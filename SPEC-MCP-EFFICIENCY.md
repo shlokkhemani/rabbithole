@@ -60,8 +60,8 @@ spinner; no change needed.
    when it needs it.
 4. **No agent-side work for UI truthfulness.** Card states derive from server
    state the server already has.
-5. **Legacy holes keep opening.** Persisted UUIDs, old note shapes, and
-   already-saved rehydration-era files load unchanged.
+5. **Saved holes keep opening.** UUID ids, every note shape, and
+   already-saved files load unchanged.
 
 ## 2. Step 1 — Remove the idle timeout
 
@@ -97,9 +97,9 @@ Ruling: "Let's just issue shorter IDs." No prefix matching; new ids are short.
 - Input hygiene on every id parameter: trim, strip surrounding quotes and
   interior whitespace before lookup. Cheap, and it would have saved 4 of the
   14 failures on its own.
-- Legacy UUIDs remain valid keys everywhere; no migration.
+- UUID ids remain valid keys everywhere; no migration.
 
-Acceptance: `list_rabbitholes` shows 8-char ids for new holes; a legacy
+Acceptance: `list_rabbitholes` shows 8-char ids for new holes; a UUID-id
 36-char hole resumes; a request id with a stray space or quote still answers.
 
 ## 4. Step 3 — Bounded `list_rabbitholes`

@@ -4,9 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { openRabbithole } from "../../src/node/rabbithole.js";
-import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { buildSessionExportHtml } from "../../src/node/transport/session-export.js";
+import { openRabbithole } from "../../src/node/mcp/open.js";
+import { closeAllSessions, getSession } from "../../src/node/mcp/registry.js";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { ATTENTION_PDF_PAGE_COUNT, ATTENTION_PDF_PATH, readAttentionPdf } from "../support/attention-pdf.mjs";
 

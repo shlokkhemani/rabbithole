@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { openRabbithole, answerBranch } from "../../src/node/rabbithole.js";
-import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { defaultFsStore } from "../../src/node/fs-store.js";
+import { openRabbithole, answerBranch } from "../../src/node/mcp/open.js";
+import { closeAllSessions, getSession } from "../../src/node/mcp/registry.js";
+import { defaultFsStore } from "../../src/node/mcp/store/fs-store.js";
 import { readAttentionPdfTwoPage } from "../support/attention-pdf.mjs";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";

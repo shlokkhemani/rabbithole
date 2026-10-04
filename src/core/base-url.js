@@ -116,7 +116,7 @@ export function normalizeStoredBaseUrlFields(node) {
 }
 
 /** @param {LooseObject | null | undefined} node */
-export function maybeUpgradeBaseUrlFromFrontmatter(node) {
+export function applyFrontmatterBaseUrl(node) {
   if (!node || (node.base_url_source !== "inherited" && node.base_url_source !== null)) return false;
   const frontmatter = inferBaseUrlFromFrontmatter(node.markdown ?? "");
   if (!frontmatter) return false;

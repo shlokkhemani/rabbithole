@@ -5,11 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
-import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { answerBranch } from "../../src/node/rabbithole.js";
-import { createSession, closeAllSessions } from "../../src/node/sessions.js";
+import { buildCanvasHtml } from "../../src/node/mcp/http/page.js";
+import { answerBranch } from "../../src/node/mcp/open.js";
+import { createSession, closeAllSessions } from "../../src/node/mcp/registry.js";
 import { ensureWebDist } from "../support/build.mjs";
 import { serveStatic } from "../support/static-server.mjs";
+import { buildSessionExportHtml } from "../support/session-export.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -156,9 +157,7 @@ async function verifySelfContainedMcpPage() {
       return button && getComputedStyle(button).opacity === "0";
     }, blockId);
   }
-  const exported = await fetch(`${session.url}/export`);
-  assert.equal(exported.status, 200);
-  const html = await exported.text();
+  const html = await buildSessionExportHtml(session);
   assert(html.includes('id="rabbithole-mermaid-runtime"'), "MCP export should carry its Mermaid runtime offline");
   await context.close();
   return html;

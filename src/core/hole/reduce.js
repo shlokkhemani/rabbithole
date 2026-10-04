@@ -1,4 +1,4 @@
-import { maybeUpgradeBaseUrlFromFrontmatter, normalizeStoredBaseUrlFields } from "../base-url.js";
+import { applyFrontmatterBaseUrl, normalizeStoredBaseUrlFields } from "../base-url.js";
 import { normalizeBlockIds } from "../blocks.js";
 import { cloneJson } from "../schema.js";
 import {
@@ -327,7 +327,7 @@ function reduceNodeAnswered(state, event, options) {
   const base = normalizeStoredBaseUrlFields(next);
   next.base_url = base.base_url;
   next.base_url_source = base.base_url_source;
-  maybeUpgradeBaseUrlFromFrontmatter(next);
+  applyFrontmatterBaseUrl(next);
   const nodes = cloneNodes(state, options);
   nodes.set(nodeId, next);
   let progressRuns = state.progressRuns;

@@ -29,12 +29,12 @@ const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 const context = await browser.newContext();
 await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
-  preset: "custom",
+  preset: "local",
   base_url: "http://localhost:11434/v1",
   model: "llama3.2",
   transcribe_model: "llama3.2-vision",
   session_only: true,
-  generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+  generation_setup: { version: 1, preset: "local", base_url: "http://localhost:11434/v1", model: "llama3.2" },
 })));
 const page = await context.newPage();
 page.on("pageerror", (error) => process.stderr.write(`browser page error: ${error.stack || error.message}\n`));
@@ -465,11 +465,11 @@ try {
   const retryContext = await browser.newContext();
   try {
     await retryContext.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
-      preset: "custom",
+      preset: "local",
       base_url: "http://localhost:11434/v1",
       model: "llama3.2",
       session_only: true,
-      generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+      generation_setup: { version: 1, preset: "local", base_url: "http://localhost:11434/v1", model: "llama3.2" },
     })));
     const retryPage = await retryContext.newPage();
     let runtimeRequests = 0;

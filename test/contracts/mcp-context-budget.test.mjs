@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { isNoteNode } from "../../src/core/hole/ask.js";
 import { lineageNodesFromMap } from "../../src/core/hole/tree.js";
-import { RabbitholeSession } from "../../src/node/transport/session.js";
+import { RabbitholeSession } from "../../src/node/mcp/hole-session/session.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-context-budget-"));

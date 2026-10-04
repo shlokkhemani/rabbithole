@@ -68,8 +68,6 @@ This inventory is derived from the source tree.
 - `src/node/bridge/agents/claude.js`
 - `src/node/bridge/agents/codex.js`
 - `src/node/bridge/agents/isolation.js`
-- `src/node/bridge/claude.js`
-- `src/node/bridge/codex.js`
 - `src/node/bridge/cors.js`
 - `src/node/bridge/errors.js`
 - `src/node/bridge/events.js`
@@ -77,7 +75,6 @@ This inventory is derived from the source tree.
 - `src/node/bridge/main.js`
 - `src/node/bridge/messages.js`
 - `src/node/bridge/models.js`
-- `src/node/bridge/process-utils.js`
 - `src/node/bridge/server.js`
 - `src/node/bridge/state.js`
 - `src/node/bridge/token.js`
@@ -88,19 +85,6 @@ This inventory is derived from the source tree.
 - `src/node/context-gauge/transcripts/claude.js`
 - `src/node/context-gauge/transcripts/codex.js`
 - `src/node/context-gauge/usage.js`
-- `src/node/context/claude.js`
-- `src/node/context/codex.js`
-- `src/node/context/confirmation.js`
-- `src/node/context/correlation.js`
-- `src/node/context/model-windows.js`
-- `src/node/context/monitor.js`
-- `src/node/context/usage.js`
-- `src/node/errno.js`
-- `src/node/fs-store.js`
-- `src/node/html/built-assets.js`
-- `src/node/html/canvas.js`
-- `src/node/html/dev-reload.js`
-- `src/node/logger.js`
 - `src/node/mcp/hole-session/answer.js`
 - `src/node/mcp/hole-session/broadcast.js`
 - `src/node/mcp/hole-session/crops.js`
@@ -111,7 +95,6 @@ This inventory is derived from the source tree.
 - `src/node/mcp/hole-session/session-values.js`
 - `src/node/mcp/hole-session/session.js`
 - `src/node/mcp/http/assets.js`
-- `src/node/mcp/http/export.js`
 - `src/node/mcp/http/page.js`
 - `src/node/mcp/http/routes.js`
 - `src/node/mcp/image-gen.js`
@@ -128,10 +111,6 @@ This inventory is derived from the source tree.
 - `src/node/mcp/store/prefs-store.js`
 - `src/node/mcp/tool-result.js`
 - `src/node/mcp/tools.js`
-- `src/node/pdf-crop.js`
-- `src/node/pdf-ingest.js`
-- `src/node/rabbithole.js`
-- `src/node/sessions.js`
 - `src/node/shared/codex-home.js`
 - `src/node/shared/deadline.js`
 - `src/node/shared/dist-assets.js`
@@ -143,15 +122,6 @@ This inventory is derived from the source tree.
 - `src/node/shared/ndjson.js`
 - `src/node/shared/process.js`
 - `src/node/shared/sse.js`
-- `src/node/tools/manifest.js`
-- `src/node/transport/browser.js`
-- `src/node/transport/generation-ingress.js`
-- `src/node/transport/http.js`
-- `src/node/transport/session-export.js`
-- `src/node/transport/session-router.js`
-- `src/node/transport/session-runtime.js`
-- `src/node/transport/session.js`
-- `src/node/transport/sse.js`
 
 ## src/ui
 
@@ -268,10 +238,8 @@ This inventory is derived from the source tree.
 - `src/web/settings/bridge-pairing.js`
 - `src/web/settings/credential-store.js`
 - `src/web/settings/key-validation.js`
-- `src/web/settings/migrate.js`
 - `src/web/settings/model-settings.js`
 - `src/web/settings/ollama-recovery.js`
-- `src/web/settings/preferences-store.js`
 - `src/web/settings/settings-runtime.js`
 - `src/web/settings/settings.js`
 - `src/web/settings/setup-readiness.js`

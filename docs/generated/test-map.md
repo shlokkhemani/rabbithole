@@ -61,12 +61,18 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/e2e/canvas-edge-scroll.test.mjs` — canvas edge scroll capability contracts.
 - `test/e2e/cross-host-journey.test.mjs` — cross host journey capability contracts.
 - `test/e2e/enter-composition.test.mjs` — enter composition capability contracts.
+- `test/e2e/large-document.test.mjs` — a ~30k-word hole stays cheap everywhere: work follows what is on screen or what changed, never the size of the documents.
+- `test/e2e/long-ask-strip.test.mjs` — a long ask reads as its first lines in the reader: More opens the rest in place, and the strip stays as the reader left it.
+- `test/e2e/measure-follows-pane.test.mjs` — one motion, not two: a document's text widens and narrows with its pane as the pane moves, never re-wrapping once it has landed, and the line being read stays put.
+- `test/e2e/pending-dot-hover.test.mjs` — a pending answer's dot keeps turning whatever the pointer does: hovering its text or the dot itself lights the pair without stopping the turn.
 - `test/e2e/pinned-scroll.test.mjs` — pinning, unpinning and resizing text keep a card's reading place.
 - `test/e2e/preferences-persistence.test.mjs` — durable MCP reader preferences across origins and frozen isolation.
 - `test/e2e/reactions.test.mjs` — selection reaction composition, wash-only rendering, deletion, and frozen behavior.
-- `test/e2e/reader-trail.test.mjs` — the reader trail: answers open beside their source, panes slide and fold into spines without re-wrapping text, and every gesture settles on a pane.
+- `test/e2e/reader-trail.test.mjs` — the reader trail: answers open beside their source, panes slide and fold into spines without re-wrapping text as they slide, a document read alone reads wider, and every gesture settles on a pane.
 - `test/e2e/reducer-browser-parity.test.mjs` — reducer browser parity capability contracts.
+- `test/e2e/refresh-restores-view.test.mjs` — a browser refresh restores exactly what the human was looking at — reader or canvas, the whole trail, every scroll place, focus, camera, PDF place — in the web app and on the MCP-served page.
 - `test/e2e/selection-popover.test.mjs` — selection popover capability contracts.
+- `test/e2e/switch-keeps-places.test.mjs` — one place per document: switching between the canvas and the reader keeps every document where it was read to, not only the one switched through.
 - `test/e2e/ui-primitives-browsers.test.mjs` — ui primitives browsers capability contracts.
 - `test/e2e/web-app-branching.test.mjs` — Image-backed asks, note-to-ask conversion, and logical selection marks.
 - `test/e2e/web-app-learning.test.mjs` — web app learning capability contracts.

@@ -5,7 +5,17 @@ import { isTypingTarget } from "./input-intent.js";
 import { createCleanupScope } from "./kit/scope.js";
 import { togglePalette } from "./palette.js";
 import { applyTheme } from "./preferences.js";
-import { closeTipPane, focusedMark, jumpToOrigin, openNode, returnToCanvas, stepMark, stepPane } from "./reader.js";
+import {
+  closeTipPane,
+  focusedMark,
+  jumpToOrigin,
+  leaveFocus,
+  openNode,
+  returnToCanvas,
+  stepMark,
+  stepPane,
+  toggleFocus,
+} from "./reader.js";
 import { isSettingsSheetOpen } from "./settings-sheet.js";
 
 let chromeScope = null;
@@ -45,7 +55,7 @@ function onGlobalKeydown(e) {
     flashHint(
       mode === "canvas"
         ? "space — open the current card · t tidy · ⌘K search and commands"
-        : "j / k — walk the highlights · ↵ open · ← / → move along the trail · esc — close · ⌘K search",
+        : "j / k — walk the highlights · ↵ open · ← / → move along the trail · f — read alone · esc — close · ⌘K search",
     );
     return;
   }
@@ -53,7 +63,19 @@ function onGlobalKeydown(e) {
   // itself left, it collapses onto the canvas — the same muscle memory as
   // leaving full screen. Popovers get first claim on it.
   if (e.key === "Escape" && mode === "reader" && !overlayOpen()) {
-    if (!closeTipPane()) returnToCanvas();
+    if (!leaveFocus() && !closeTipPane()) returnToCanvas();
+    return;
+  }
+  // F reads the document you are in alone, and brings the trail back.
+  if (
+    (e.key === "f" || e.key === "F") &&
+    mode === "reader" &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    !overlayOpen()
+  ) {
+    toggleFocus();
     return;
   }
   if ((e.key === "t" || e.key === "T") && mode === "canvas") {

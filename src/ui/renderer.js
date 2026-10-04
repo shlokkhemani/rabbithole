@@ -64,12 +64,56 @@ export function refreshNodeHtml(node) {
   node.html = renderNodeMarkdown(node);
   node._htmlFor = node.markdown;
   node._plainFor = null;
+  node._stream = null;
   return node.html;
 }
 
 export function ensureNodeHtml(node) {
   if (!node) return "";
   return node._htmlFor === node.markdown ? node.html : refreshNodeHtml(node);
+}
+
+/*
+ * An answer still arriving only grows at its end, and a block a blank line
+ * has closed can no longer change. Each block is rendered once, as it
+ * settles (`_stream.blocks`); a frame renders only what is still open
+ * (`_stream.live`), so its work follows the new text, not the whole answer.
+ * Joined, the pieces are exactly the whole answer rendered at once
+ * (`node.html`): the newlines a whole render would keep after a block's last
+ * tag (it drops them before a tag) wait on the piece that follows.
+ */
+export function refreshStreamingHtml(node) {
+  const markdown = String(node.markdown || "");
+  const options = { baseUrl: node.base_url || null, assetNames: assetNames };
+  let stream = node._stream;
+  if (!stream || !markdown.startsWith(stream.source)) stream = emptyStream();
+  const tail = markdown.slice(stream.source.length);
+  const settled = markdownRenderer.settledMarkdownLength(tail);
+  // A link definition can change text anywhere, even in settled blocks.
+  if (settled < 0) stream = emptyStream();
+  else if (settled > 0) {
+    const html = afterSettled(stream, renderMarkdownToHtml(tail.slice(0, settled), options));
+    const newlines = /\n+$/.exec(html);
+    const kept = newlines && html[newlines.index - 1] === ">" ? newlines.index : html.length;
+    stream.blocks.push(html.slice(0, kept));
+    stream.html += html.slice(0, kept);
+    stream.newlines = html.slice(kept);
+    stream.source += tail.slice(0, settled);
+  }
+  stream.live = afterSettled(stream, renderMarkdownToHtml(markdown.slice(stream.source.length), options));
+  node._stream = stream;
+  node.html = stream.html + stream.live;
+  node._htmlFor = node.markdown;
+  node._plainFor = null;
+  return node.html;
+}
+
+function emptyStream() {
+  return { source: "", html: "", blocks: [], newlines: "", live: "" };
+}
+
+function afterSettled(stream, html) {
+  return html.charAt(0) === "<" ? html : stream.newlines + html;
 }
 
 if (typeof window !== "undefined") {

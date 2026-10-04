@@ -205,6 +205,7 @@ This inventory is derived from the source tree.
 - `src/ui/trail/layout.js`
 - `src/ui/trail/stage.js`
 - `src/ui/transport-status.js`
+- `src/ui/view-state.js`
 - `src/ui/visual-style-runtime.js`
 - `src/ui/visuals.js`
 

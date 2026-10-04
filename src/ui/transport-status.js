@@ -11,6 +11,7 @@ import {
   renderVisibility,
   rollbackNoteConversion,
   scheduleEdges,
+  scheduleNodeEdges,
   syncNodeCanvasPresentation,
   updateCardComposer,
 } from "./canvas/index.js";
@@ -19,11 +20,11 @@ import {
   bannerNotice,
   buildLoading,
   canvasBuilt,
+  childrenOf,
   closed,
   closedReason,
   connLost,
   currentNodeId,
-  fillStreaming,
   frozen,
   hydration,
   incrementSseFails,
@@ -38,15 +39,16 @@ import {
   setAgentReason,
   setClosedState,
   setConnLost,
-  view,
-  viewAdjusted,
+  updateStreaming,
 } from "./core.js";
 import { cancelFrame, nextFrame } from "./kit/scope.js";
 import { applyPreferencePatch } from "./preferences.js";
 import { readerScroller, readerShows, renderReaderBody, syncReaderPanes } from "./reader.js";
-import { refreshNodeHtml } from "./renderer.js";
+import { refreshNodeHtml, refreshStreamingHtml } from "./renderer.js";
+import { setScrollPlace } from "./scroll-position.js";
 import { applyServerEvent } from "./store/apply-server-event.js";
 import { upgradeMarks, wrapInContainer } from "./text-marks.js";
+import { captureViewState, journalBeforeUnload, notePosted, watchViewSurfaces } from "./view-state.js";
 import { refreshVisualMarks } from "./visuals.js";
 
 // ===========================================================================
@@ -64,11 +66,45 @@ export function setTransportAdapter(adapter) {
   transportAdapter = adapter && typeof adapter === "object" ? adapter : null;
 }
 
+/** @type {(() => void) | null} */
+let stopViewWatch = null;
+
 export function initTransportStatus() {
   transportEpoch += 1;
   transportDisposed = false;
   transportDisposePromise = null;
   renderContextUsage(hydration && hydration.context_usage);
+  stopWatchingView();
+  const stopScrolls = watchViewSurfaces(scheduleViewSave);
+  // A refresh or a closed tab must not lose the last moments: whatever is
+  // still waiting on its debounce goes out now, on a request that outlives
+  // the page.
+  const onPageHide = function () {
+    void flushPendingSavesWith(postBeforeUnload);
+    journalBeforeUnload();
+  };
+  const onVisibility = function () {
+    if (document.visibilityState === "hidden") void flushPendingSaves();
+  };
+  window.addEventListener("pagehide", onPageHide);
+  document.addEventListener("visibilitychange", onVisibility);
+  stopViewWatch = function () {
+    stopScrolls();
+    window.removeEventListener("pagehide", onPageHide);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
+}
+
+function stopWatchingView() {
+  const stop = stopViewWatch;
+  stopViewWatch = null;
+  if (stop) stop();
+}
+
+function postBeforeUnload(payload) {
+  if (frozen || transportDisposed) return Promise.resolve(null);
+  notePosted(payload);
+  return postWithAdapter(transportAdapter, payload, { keepalive: true });
 }
 
 function renderContextUsage(usage) {
@@ -121,6 +157,7 @@ function renderContextUsage(usage) {
 export function post(payload) {
   if (frozen) return Promise.resolve({ ok: true }); // a snapshot has no server
   if (transportDisposed) return Promise.resolve(null);
+  notePosted(payload);
   return postWithAdapter(transportAdapter, payload);
 }
 export function putAsset(name, blob) {
@@ -151,16 +188,20 @@ export function deleteAsset(name) {
     return null;
   });
 }
-function postWithAdapter(adapter, payload) {
+function postWithAdapter(adapter, payload, { keepalive = false } = {}) {
   if (adapter && typeof adapter.post === "function") {
     return Promise.resolve(adapter.post(payload)).catch(function () {
       return null;
     });
   }
+  const body = JSON.stringify(payload);
   return fetch("/events", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: body,
+    // keepalive lets the request finish after the page is gone; browsers
+    // cap its body at 64 KiB, so a large note update goes the ordinary way.
+    keepalive: keepalive && body.length < 60000,
   }).catch(function () {
     return null;
   });
@@ -170,12 +211,7 @@ function postWithAdapter(adapter, payload) {
 /** @type {ReturnType<typeof setTimeout> | 0} */
 let viewSaveTimer = 0;
 function currentViewState() {
-  const cur = nodes[currentNodeId];
-  const scroller = mode === "reader" ? readerScroller() : null;
-  const scroll = scroller ? scroller.scrollTop : (cur && cur._scrollTop) || 0;
-  const state = { mode: mode, node_id: currentNodeId, scroll: scroll };
-  if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
-  return state;
+  return captureViewState();
 }
 export function scheduleViewSave() {
   if (frozen || closed || transportDisposed) return;
@@ -343,7 +379,7 @@ function scheduleStreamRender(node, firstChunk) {
       const item = batch[id];
       if (!item.node || item.node.status !== "pending") return;
       if (!hasStreamSurface(item.node)) return;
-      refreshNodeHtml(item.node);
+      refreshStreamingHtml(item.node);
       renderStreamSurfaces(item.node, item.firstChunk);
     });
   });
@@ -383,6 +419,7 @@ export function disposeTransportStatus() {
   const adapter = transportAdapter;
   transportDisposed = true;
   transportEpoch += 1;
+  stopWatchingView();
   closeConnections();
   cancelStreamRender();
   transportDisposePromise = Promise.resolve(
@@ -396,27 +433,32 @@ export function disposeTransportStatus() {
 }
 // Repaint a streaming node everywhere it is currently on screen: its reader
 // pane (open beside the document it was asked from) and its canvas card, and
-// the dot that stands for it in its parent's margin. Scroll positions
-// are restored exactly on every repaint — arriving text must never move the
-// human's place (an innerHTML swap briefly collapses scrollHeight, which
-// would otherwise clamp the scroll and make the view jump).
+// the dot that stands for it in its parent's margin. A surface showing the
+// answer takes only the text that arrived (updateStreaming). An answer already
+// marked (a note dropped on it mid-stream) is drawn afresh with its marks.
 function renderStreamSurfaces(node, firstChunk) {
+  const marked = childrenOf(node.id).length > 0;
   if (node.bodyEl) {
-    const cs = node.bodyEl.scrollTop;
-    fillBody(node);
-    node.bodyEl.scrollTop = cs;
-    scheduleEdges();
+    const dc = node.bodyEl.querySelector(".doc-content");
+    if (dc && dc._rhStream && node.html && !marked) updateStreaming(dc, node, "canvas:" + node.id);
+    // Behind the reader a card has no place to keep and nothing to lay out.
+    else if (mode !== "canvas") fillBody(node);
+    else {
+      // A rebuilt body keeps its place exactly: the swap briefly collapses
+      // scrollHeight, which would otherwise clamp the scroll.
+      const cs = node.bodyEl.scrollTop;
+      fillBody(node);
+      setScrollPlace(node.bodyEl, cs);
+    }
+    scheduleNodeEdges(node);
   }
   if (readerShows(node.id)) {
-    const scroller = readerScroller(node.id);
-    const keep = scroller.scrollTop;
-    const rdc = scroller.querySelector('.doc-content[data-node-id="' + node.id + '"]');
-    if (rdc) {
-      rdc.innerHTML = "";
-      if (node.html) fillStreaming(rdc, node, "reader:" + node.id);
-      else rdc.appendChild(buildLoading(node));
-      scroller.scrollTop = keep;
-    }
+    /** @type {any} */
+    const rdc = readerScroller(node.id).querySelector('.doc-content[data-node-id="' + node.id + '"]');
+    if (rdc && node.html) {
+      if (marked) rdc._rhStream = null;
+      updateStreaming(rdc, node, "reader:" + node.id);
+    } else if (rdc) rdc.replaceChildren(buildLoading(node));
   }
   // Thinking → writing is a change of state for the branch's dot.
   if (firstChunk && readerShows(node.parent_id)) syncReaderPanes();

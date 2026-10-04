@@ -1,4 +1,4 @@
-import { childrenOf, edgesSvg, isVisible, mode, nodes, readerMain, SVGNS, view } from "../core.js";
+import { childrenOf, edgesSvg, isVisible, mode, nodes, SVGNS, view } from "../core.js";
 import { transitionMarkGroups } from "../text-marks.js";
 import { r } from "./runtime.js";
 import { canvasBody, canvasCard, isFollowup } from "./shared.js";
@@ -8,25 +8,21 @@ export function requestEdgeFrame() {
     r.edgeRaf = 0;
     const redrawAll = r.edgeRedrawAll;
     const ids = r.edgeRedrawIds;
-    const positionNodeIds = r.edgePositionNodeIds;
     r.edgeRedrawAll = false;
     r.edgeRedrawIds = {};
-    r.edgePositionNodeIds = {};
     if (redrawAll) drawEdges();
-    else drawEdgeSubset(ids, positionNodeIds);
+    else drawEdgeSubset(ids);
   });
 }
 
 export function scheduleEdges() {
   r.edgeRedrawAll = true;
   r.edgeRedrawIds = {};
-  r.edgePositionNodeIds = {};
   requestEdgeFrame();
 }
 
 export function scheduleNodeEdges(node) {
   if (!node || r.edgeRedrawAll) return requestEdgeFrame();
-  r.edgePositionNodeIds[node.id] = true;
   if (node.parent_id) r.edgeRedrawIds[node.id] = true;
   const kids = childrenOf(node.id);
   for (let i = 0; i < kids.length; i++) r.edgeRedrawIds[kids[i].id] = true;
@@ -164,9 +160,16 @@ export function rebuildEdges() {
   r.edgeEls = {};
   r.edgeGeometry = {};
   drawEdges();
+  // Cards may have changed while the canvas was away: their dots take their
+  // places once, here; from now on each card's own layout moves them.
+  r.lifecycle.hooks.positionDockedNotes();
 }
 
+// Edges exist only on the canvas. Out of sight they are not measured at all —
+// measuring would lay out every hidden card — and returning to the canvas
+// rebuilds them (rebuildEdges).
 export function drawEdges() {
+  if (mode !== "canvas") return;
   const live = {};
   const visCache = Object.create(null);
   const measureCache = Object.create(null);
@@ -185,11 +188,10 @@ export function drawEdges() {
   for (const childId in r.edgeEls) {
     if (!live[childId]) removeEdge(childId);
   }
-  // Whatever moved the edges moved the marks: the margin dots ride along.
-  r.lifecycle.hooks.positionDockedNotes();
 }
 
-export function drawEdgeSubset(ids, positionNodeIds) {
+export function drawEdgeSubset(ids) {
+  if (mode !== "canvas") return;
   const visCache = Object.create(null);
   const measureCache = Object.create(null);
   function vis(node) {
@@ -203,15 +205,6 @@ export function drawEdgeSubset(ids, positionNodeIds) {
       continue;
     }
     renderEdge(parent, child, measureCache);
-  }
-  for (const nodeId in positionNodeIds) {
-    const node = nodes[nodeId];
-    if (node && node.bodyEl) r.lifecycle.hooks.positionDockedNotes(node.bodyEl);
-    const pane =
-      node && mode === "reader"
-        ? readerMain.querySelector('.reader-pane:not(.pane-leaving)[data-node-id="' + node.id + '"]')
-        : null;
-    if (pane) r.lifecycle.hooks.positionDockedNotes(pane);
   }
 }
 

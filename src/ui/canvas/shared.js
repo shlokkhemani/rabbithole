@@ -96,6 +96,8 @@ export function defaultCanvasHooks() {
     // for them by hook rather than reaching into their module.
     renderDockedNotes: function () {},
     positionDockedNotes: function () {},
+    /** @param {Element} _doc */
+    watchDocumentLayout: function (_doc) {},
     closeDockedNotePopover: function () {},
   };
 }
@@ -259,7 +261,6 @@ export function cleanupCanvasView(resetHooks) {
   }
   r.edgeRedrawAll = false;
   r.edgeRedrawIds = {};
-  r.edgePositionNodeIds = {};
   if (r.filmCameraHandle && window.__rhFilmCamera === r.filmCameraHandle) {
     try {
       delete window.__rhFilmCamera;

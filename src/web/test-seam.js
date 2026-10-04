@@ -58,12 +58,15 @@ export function installTestSeam({
 
 async function readRawRecord(store, id) {
   const db = await store.open();
-  const tx = db.transaction("holes", "readonly");
-  const request = tx.objectStore("holes").get(id);
-  const value = await new Promise((resolve, reject) => {
+  const tx = db.transaction(["holes", "meta"], "readonly");
+  const read = (request) => new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result || null);
     request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
   });
+  const value = await read(tx.objectStore("holes").get(id));
+  // A view saved after the hole's last full write is kept beside it.
+  const view = await read(tx.objectStore("meta").get(`view:${id}`));
+  if (value && view) value.view_state = view.view_state;
   await new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
     tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));

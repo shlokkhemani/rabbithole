@@ -4,7 +4,7 @@ import { isNoteNode } from "../../core/hole/ask.js";
 import { wirePastedImages } from "../authoring/note-editor.js";
 import { normalizeClipboardImage } from "../clipboard-image.js";
 import { wireComposerActions } from "../composer-state.js";
-import { closed, deleteAsset, flashHint, frozen, putAsset, viewport } from "../core.js";
+import { closed, deleteAsset, flashHint, frozen, putAsset } from "../core.js";
 import { createCleanupScope } from "../kit/scope.js";
 import { refreshNodeHtml, registerRendererAssetName } from "../renderer.js";
 import { structuredNoteController } from "../structured-note.js";
@@ -171,6 +171,4 @@ export function startNoteEditing(node, dc, caretOffset, pointer) {
   updateActions();
   if (pointer) controller.focusAtCoords(pointer.left, pointer.top);
   else controller.focusAt(caretOffset);
-  viewport.scrollLeft = 0;
-  viewport.scrollTop = 0;
 }

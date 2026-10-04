@@ -62,6 +62,7 @@ export class SessionBase {
             ...snapshot,
             nodes: snapshot.nodes.map((node) => node.status === "pending" ? { ...node, markdown: "" } : node),
           }),
+          saveViewState: (savedHoleId, viewState) => defaultFsStore.saveViewState(savedHoleId, viewState),
           deleteAsset: (savedHoleId, name) => defaultFsStore.deleteAsset(savedHoleId, name),
         },
         emit: (event) => this.broadcast(event),

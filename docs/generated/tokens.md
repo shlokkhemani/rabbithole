@@ -57,7 +57,7 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--focus-ring` | `2px solid var(--accent)` |
 | `--focus-offset` | `2px` |
 | `--focus-field-shadow` | `0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent)` |
-| `--reader-column` | `680px` |
+| `--reader-column` | `800px` |
 | `--rail-width` | `224px` |
 | `--surface-width-panel` | `340px` |
 | `--surface-edge` | `14px` |
@@ -70,20 +70,14 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--duration-zero` | `0ms` |
 | `--duration-instant` | `70ms` |
 | `--duration-fast` | `120ms` |
-| `--duration-legacy-150` | `150ms` |
 | `--duration-enter` | `160ms` |
-| `--duration-legacy-180` | `180ms` |
-| `--duration-legacy-200` | `200ms` |
-| `--duration-legacy-220` | `220ms` |
-| `--duration-legacy-240` | `240ms` |
-| `--duration-legacy-260` | `260ms` |
-| `--duration-legacy-320` | `320ms` |
+| `--duration-move` | `220ms` |
 | `--duration-slow` | `340ms` |
-| `--duration-legacy-600` | `600ms` |
-| `--duration-legacy-1100` | `1100ms` |
-| `--duration-legacy-1150` | `1150ms` |
-| `--duration-legacy-1350` | `1350ms` |
-| `--duration-legacy-1450` | `1450ms` |
+| `--duration-spin` | `800ms` |
+| `--duration-sweep` | `1100ms` |
+| `--duration-breathe` | `1150ms` |
+| `--duration-shimmer` | `1350ms` |
+| `--duration-hop` | `1450ms` |
 | `--ease-standard` | `ease` |
 | `--ease-out` | `cubic-bezier(.23, 1, .32, 1)` |
 | `--ease-spring` | `cubic-bezier(.3, 1.4, .45, 1)` |
@@ -251,4 +245,5 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--duration-instant` | `0ms` |
 | `--duration-fast` | `0ms` |
 | `--duration-enter` | `0ms` |
+| `--duration-move` | `0ms` |
 | `--duration-slow` | `0ms` |

@@ -22,8 +22,9 @@ import {
   setModeValue,
 } from "../core.js";
 import { flyReaderToRect } from "../mode-transition.js";
-import { openNode, readerScroller } from "../reader.js";
-import { captureContentPosition, restoreContentPosition } from "../scroll-position.js";
+import { openNode, readerScroller, readerViewState } from "../reader.js";
+import { putPlaces, readPlaces } from "../scroll-position.js";
+import { restoreCardScrolls } from "../view-state.js";
 import { animateView, applyTransform, diveTargetView } from "./camera.js";
 import { createNodeEl } from "./card.js";
 import { cardScreenRect, rectMostlyVisible } from "./card-composer.js";
@@ -114,23 +115,47 @@ export function ensureCanvasBuilt() {
   applyTransform();
 }
 
-export function setMode(m) {
-  let transferredPosition = null;
-  const fromReader = m === "canvas" && mode === "reader";
-  if (fromReader) {
-    // display:none resets the reader's scrollTop — remember it first so
-    // collapsing out to the canvas and diving back lands exactly where you were.
-    const cur = nodes[currentNodeId];
-    const scroller = readerScroller();
-    if (cur && scroller) {
-      cur._scrollTop = scroller.scrollTop;
-      transferredPosition = captureContentPosition(scroller);
+/**
+ * Build the canvas a card at a time while the browser is idle — behind a
+ * reader that came up first. Entering the canvas sooner builds whatever is
+ * left at once (ensureCanvasBuilt).
+ */
+export function prebuildCanvas() {
+  const idle = window.requestIdleCallback
+    ? window.requestIdleCallback.bind(window)
+    : function (fn) {
+        return setTimeout(function () {
+          fn({ timeRemaining: () => 8 });
+        }, 50);
+      };
+  const ids = Object.keys(nodes);
+  const hole = rootId;
+  function slice(deadline) {
+    if (canvasBuilt || rootId !== hole) return;
+    while (ids.length && deadline.timeRemaining() > 2) {
+      const node = nodes[ids.shift()];
+      if (node && !node.el && !isDockedNote(node)) createNodeEl(node);
     }
+    if (ids.length) idle(slice);
+    else ensureCanvasBuilt();
   }
+  idle(slice);
+}
+
+export function setMode(m) {
+  const fromReader = m === "canvas" && mode === "reader";
+  // Every document the reader shows hands its place to its card, read while
+  // the reader still shows it.
+  const places = fromReader ? readPlaces((readerViewState()?.trail || []).map((id) => [id, readerScroller(id)])) : null;
   setModeValue(m);
   if (m === "canvas") {
     ensureCanvasBuilt();
     document.body.classList.add("mode-canvas");
+    if (places) {
+      putPlaces(places, (id) => nodes[id]?.bodyEl);
+      // Every other card goes back to where it was read to on the canvas.
+      restoreCardScrolls({ except: places });
+    }
     // Settle the reader back toward the card it is. If the card still sits
     // in view, the camera stays put (macOS restore: the window returns to
     // its spot). If the human panned away — or dove into a different branch
@@ -165,8 +190,6 @@ export function setMode(m) {
       }
     }
     requestAnimationFrame(function () {
-      const active = nodes[currentNodeId];
-      if (transferredPosition && active?.bodyEl) restoreContentPosition(active.bodyEl, transferredPosition);
       rebuildEdges();
       // Frame everything only the first time; afterwards the canvas keeps the
       // pan/zoom you left it at.

@@ -3,7 +3,7 @@ import { wirePastedImages } from "../authoring/note-editor.js";
 import { createStandaloneNoteSubmitter } from "../authoring/standalone-note-submit.js";
 import { normalizeClipboardImage } from "../clipboard-image.js";
 import { wireComposerActions } from "../composer-state.js";
-import { deleteAsset, flashHint, viewport } from "../core.js";
+import { deleteAsset, flashHint } from "../core.js";
 import { createCleanupScope } from "../kit/scope.js";
 import { teardownNode } from "../node-teardown.js";
 import {
@@ -104,10 +104,6 @@ export function startStandaloneNoteComposer(node, dc) {
     release(false);
     teardownNode(node.id);
   }
-  function pinCanvasScroll() {
-    viewport.scrollLeft = 0;
-    viewport.scrollTop = 0;
-  }
   const submit = createStandaloneNoteSubmitter({
     node: node,
     editor: editor,
@@ -128,7 +124,6 @@ export function startStandaloneNoteComposer(node, dc) {
       return pendingAssetCleanup;
     },
     queueAssetCleanup: queueAssetCleanup,
-    pinCanvasScroll: pinCanvasScroll,
     fail: function (message) {
       flashHint(message);
       editor.focus({ preventScroll: true });
@@ -204,11 +199,6 @@ export function startStandaloneNoteComposer(node, dc) {
   scope.listen(editor, "input", function () {
     growStandaloneNoteComposer(node);
     updateStandaloneNoteComposer(node);
-    // A textarea caret can programmatically scroll an overflow-hidden
-    // ancestor as it moves down. The camera transform, never DOM scroll,
-    // owns the canvas position.
-    pinCanvasScroll();
-    scope.raf(pinCanvasScroll);
   });
   scope.listen(editor, "keydown", function (e) {
     if (e.key !== "Escape") return;
@@ -249,5 +239,4 @@ export function startStandaloneNoteComposer(node, dc) {
   updateStandaloneNoteComposer(node);
   editor.focus({ preventScroll: true });
   editor.setSelectionRange(editor.value.length, editor.value.length);
-  pinCanvasScroll();
 }

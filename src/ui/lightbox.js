@@ -139,14 +139,35 @@ export function openLightbox(options) {
     if (!keys.length) drag = null;
   }
 
+  // Zoom follows how far the fingers or the wheel actually moved, not how
+  // many events they sent (a trackpad sends dozens a second), and keeps the
+  // point under the cursor where it is. A pinch arrives as ctrl+wheel, in
+  // small deltas; a wheel or two-finger scroll in larger ones, so it is geared
+  // down to about the same feel.
   function onWheel(e) {
     e.preventDefault();
     e.stopPropagation();
-    state.scale = clampLightboxZoom(state.scale * (e.deltaY < 0 ? 1.12 : 0.88));
-    if (state.scale <= 1) {
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
+    const rate = e.ctrlKey ? 0.01 : 0.0015;
+    const factor = Math.max(0.8, Math.min(1.25, Math.exp(-e.deltaY * unit * rate)));
+    zoomAt(state.scale * factor, e.clientX, e.clientY);
+  }
+
+  function zoomAt(scale, clientX, clientY) {
+    const next = clampLightboxZoom(scale);
+    if (next <= 1) {
       state.x = 0;
       state.y = 0;
+    } else {
+      // The content scales about its own centre, which the pan has moved.
+      const rect = entry.content.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2 - state.x;
+      const cy = rect.top + rect.height / 2 - state.y;
+      const ratio = next / state.scale;
+      state.x = clientX - cx - ratio * (clientX - cx - state.x);
+      state.y = clientY - cy - ratio * (clientY - cy - state.y);
     }
+    state.scale = next;
     setLightboxTransform(entry.content, state);
   }
 

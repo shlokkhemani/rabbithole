@@ -2,26 +2,24 @@ import { systemClock } from "../core/clock.js";
 import { isNoteNode } from "../core/hole/ask.js";
 import { makeNode } from "../core/hole/node.js";
 import { DEFAULT_CHILD, DEFAULT_ROOT, DEFAULT_STANDALONE_NOTE } from "../core/layout.js";
-import { setMode } from "./canvas/index.js";
-import {
-  frozen,
-  hydration,
-  MAX_SCALE,
-  MIN_SCALE,
-  nextOrder,
-  nodes,
-  registerNode,
-  rootId,
-  setCanvasFramed,
-  setCurrentNodeId,
-  setViewAdjusted,
-  view,
-} from "./core.js";
+import { prebuildCanvas, setMode } from "./canvas/index.js";
+import { frozen, hydration, nextOrder, nodes, registerNode, rootId } from "./core.js";
 import { setRendererAssetData } from "./renderer.js";
+import {
+  applyJournaledEdits,
+  restoreCanvasSurface,
+  restoreReaderSurface,
+  seedViewState,
+  takeUnloadJournal,
+} from "./view-state.js";
 
-export function hydrateInitialState({ connectSse = null, refreshStatus = null } = {}) {
+export function hydrateInitialState({ connectSse = null, refreshStatus = null, post = null } = {}) {
   setRendererAssetData(hydration.asset_data || null);
   if (frozen) document.body.classList.add("frozen");
+  // A refresh taken moments after an edit or a move: what the page could not
+  // save as it went comes back from its unload journal.
+  const journal = frozen ? null : takeUnloadJournal();
+  if (journal) applyJournaledEdits(hydration.nodes, journal.edits);
   (hydration.nodes || []).forEach(function (raw) {
     const isRoot = raw.id === rootId;
     const size =
@@ -41,24 +39,20 @@ export function hydrateInitialState({ connectSse = null, refreshStatus = null } 
   Object.keys(nodes).forEach(function (id) {
     nodes[id]._order = nextOrder();
   });
-  // Land exactly where the human left off: same current document, same scroll,
-  // same canvas framing. A first open starts at the root like always.
-  const vs = hydration.view_state;
-  if (vs && vs.node_id && nodes[vs.node_id]) {
-    setCurrentNodeId(vs.node_id);
-    if (vs.scroll) nodes[vs.node_id]._scrollTop = vs.scroll;
+  // Land exactly where the human left off: the same surface, the same
+  // current document, every place in every document, the same camera. A
+  // first open starts at the root on the canvas, framed, like always.
+  const vs = (journal && journal.view) || hydration.view_state || null;
+  seedViewState(vs, { viewAdjusted: journal && journal.view ? journal.viewAdjusted : true });
+  // A shared snapshot always opens on its map; a live hole reopens wherever
+  // its reader was — at once, with the canvas behind it built while the
+  // browser is idle, instead of every card first.
+  if (!frozen && restoreReaderSurface(vs)) prebuildCanvas();
+  else {
+    setMode("canvas");
+    restoreCanvasSurface(vs, { allowReader: !frozen });
   }
-  if (vs && vs.view) {
-    view.x = vs.view.x;
-    view.y = vs.view.y;
-    view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vs.view.scale || 1));
-    setCanvasFramed(true); // the saved framing wins; don't re-frame on first entry
-    setViewAdjusted(true); // keep an existing user view in later state saves
-  }
-  // Canvas is home: every entry lands on the map, whatever mode was up when
-  // the hole closed. The reader is a focus state — you re-enter it by
-  // expanding the current card, which still remembers its scroll position.
-  setMode("canvas");
   if (typeof refreshStatus === "function") refreshStatus();
   if (!frozen && typeof connectSse === "function") connectSse();
+  if (journal && typeof post === "function") journal.edits.forEach(post);
 }

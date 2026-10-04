@@ -54,7 +54,12 @@ export function transitionMarkGroups(event, entering, stateClass, onTransition) 
   }
 }
 
-export function applyChildHighlights(dc, node) {
+/**
+ * Mark every branch and note anchored in `dc`. A note's wash is a measured
+ * overlay: `measure` false leaves it to the dot pass that follows (which
+ * measures only the surface on screen) and to the document's layout watch.
+ */
+export function applyChildHighlights(dc, node, measure = true) {
   if (dc && dc.classList.contains("rh-pdf")) return;
   const kids = childrenOf(node.id).filter(function (k) {
     return k.origin && k.origin.anchor && !k.origin.anchor.block;
@@ -72,7 +77,7 @@ export function applyChildHighlights(dc, node) {
       (k.status === "answered" ? "mark-ready" : "mark-pending") +
       (note ? " mark-note" : "") +
       (isReactionNote(k) ? " mark-reaction" : "");
-    if (note) overlayRange(r, k.id, cls);
+    if (note) overlayRange(r, k.id, cls, measure);
     else wrapRange(r, k.id, cls);
   });
 }
@@ -228,13 +233,15 @@ function initializeMark(m, childId, cls) {
   return m;
 }
 
-function overlayRange(range, childId, cls) {
+function overlayRange(range, childId, cls, measure = true) {
   const ancestor = range.commonAncestorContainer;
   const dc = (ancestor.nodeType === 1 ? ancestor : ancestor.parentElement).closest(".doc-content");
   if (!dc) return;
-  const rects = Array.from(range.getClientRects()).filter(function (rect) {
-    return rect.width > 0 && rect.height > 0;
-  });
+  const rects = measure
+    ? Array.from(range.getClientRects()).filter(function (rect) {
+        return rect.width > 0 && rect.height > 0;
+      })
+    : [];
   const selector = 'mark.mark-overlay[data-child="' + childId + '"]';
   const marks = Array.from(dc.querySelectorAll(selector));
   const fragmentCount = Math.max(1, rects.length);

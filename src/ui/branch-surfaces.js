@@ -23,6 +23,7 @@ import { detachNode, teardownNode } from "./node-teardown.js";
 import { createAnchoredMenu } from "./primitives/anchored-menu.js";
 import { wireNotice } from "./primitives/notice.js";
 import { openNode, readerShows, renderReaderBody, syncReaderPanes } from "./reader.js";
+import { setScrollPlace } from "./scroll-position.js";
 import { removeMarks } from "./text-marks.js";
 
 function defaultBranchHooks() {
@@ -312,7 +313,7 @@ function refreshAfterRemoval(parentId, ids, currentGone, restoring) {
   } else if (parent && parent.bodyEl) {
     const scrollTop = parent.bodyEl.scrollTop;
     fillBody(parent);
-    parent.bodyEl.scrollTop = scrollTop;
+    setScrollPlace(parent.bodyEl, scrollTop);
   }
   if (canvasBuilt) {
     renderVisibility();

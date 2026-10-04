@@ -37,6 +37,7 @@ import {
   positionDockedNotes,
   renderDockedNotes,
   revealDockedNote,
+  watchDocumentLayout,
 } from "./docked-notes.js";
 import { disposeImageUx, mountDocImages } from "./image-ux.js";
 import { createCleanupScope } from "./kit/scope.js";
@@ -134,7 +135,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       mountDocImages: mountImages,
       animateScroll: animateScroll,
       renderDockedNotes: renderDockedNotes,
-      positionDockedNotes: positionDockedNotes,
+      watchDocumentLayout: watchDocumentLayout,
     };
     const canvasHooks = {
       hideAsk: hideAsk,
@@ -142,6 +143,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       sendPlacedNote: createPlacedNote,
       renderDockedNotes: renderDockedNotes,
       positionDockedNotes: positionDockedNotes,
+      watchDocumentLayout: watchDocumentLayout,
       closeDockedNotePopover: closeDockedNotePopover,
       rollbackBranch: rollbackBranch,
       copyNodeMarkdown: copyNodeMarkdown,

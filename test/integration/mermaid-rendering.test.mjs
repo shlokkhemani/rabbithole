@@ -137,7 +137,8 @@ async function verifySelfContainedMcpPage() {
     { block: { block_id: "flow1", selected_text: "Safe" }, question: "", lens: "explain", instruction: true },
     { block: { block_id: "show1", selected_text: oversizedShowSelection.slice(0, 2000) }, question: "Why is this target important?", lens: null, instruction: false },
   ], "visual asks persist block identity while preset instructions remain separate from typed human questions");
-  assert.equal(await page.locator(`.card[data-id="${blockAsks[1].id}"] .origin-quote`).innerText(),
+  // The canvas waits behind the reader, unrendered: read what the card says.
+  assert.equal(await page.locator(`.card[data-id="${blockAsks[1].id}"] .origin-quote`).textContent(),
     "“Why is this target important?”",
     "an answer window must quote the human's question instead of the selected source text");
 
@@ -438,6 +439,24 @@ async function verifyWebApp() {
   }, beforeTheme);
   await page.waitForFunction((before) => document.querySelector(".rh-lightbox-diagram")?.outerHTML !== before, beforeFullscreen);
   assert.equal(await page.locator(".rh-lightbox-diagram").evaluate((svg) => svg.style.getPropertyValue("--rh-zoom")), "2", "theme refresh should preserve fullscreen zoom");
+  // A trackpad pinch arrives as a burst of small ctrl+wheel events: zoom must
+  // follow the fingers' travel, not the event count, and hold the point under
+  // the cursor still.
+  await page.locator(".rh-lightbox-diagram").dblclick();
+  const pinch = await page.locator(".rh-lightbox-diagram").evaluate((svg) => {
+    const before = svg.getBoundingClientRect();
+    const at = { x: before.left + before.width * 0.3, y: before.top + before.height * 0.4 };
+    for (let i = 0; i < 30; i++) {
+      svg.dispatchEvent(new WheelEvent("wheel", { deltaY: -2, ctrlKey: true, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
+    }
+    const after = svg.getBoundingClientRect();
+    return {
+      zoom: Number(svg.style.getPropertyValue("--rh-zoom")),
+      drift: Math.hypot(after.left + after.width * 0.3 - at.x, after.top + after.height * 0.4 - at.y),
+    };
+  });
+  assert(pinch.zoom > 1.5 && pinch.zoom < 2.2, `a small pinch zooms in proportion to its travel (${JSON.stringify(pinch)})`);
+  assert(pinch.drift < 2, `zoom holds the point under the cursor (${JSON.stringify(pinch)})`);
   await page.keyboard.press("Escape");
   await page.waitForSelector(".rh-lightbox", { state: "detached" });
   assert.equal(await page.evaluate(() => {

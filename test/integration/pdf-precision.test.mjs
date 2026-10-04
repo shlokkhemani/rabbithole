@@ -153,7 +153,8 @@ try {
       toolbarParent: toolbar.parentElement.id,
       toolsRect: rect(document.querySelector("#tb-tools")),
       sessionRect: rect(document.querySelector("#tb-session")),
-      composerRect: rect(document.querySelector("#composer")),
+      composerRect: rect(pane.querySelector(".pane-foot")),
+      composerInFoot: !!pane.querySelector(".pane-foot #composer"),
       rails: document.querySelectorAll("#reader-rail, #margin-notes, .side-item").length,
       branchDots: pane.querySelectorAll(".branch-dot").length,
       inlineToolbar: !!pdf.querySelector(".rh-pdf-toolbar"),
@@ -174,6 +175,7 @@ try {
     "docked PDF controls must never overlap application or session controls");
   assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
   assert(Math.abs(readerContract.scrollRect.bottom - readerContract.composerRect.top) <= 1, "the PDF surface must fill the reader viewport down to the composer");
+  assert(readerContract.composerInFoot, "a page that scrolls itself keeps the composer at the pane's foot, below the paper");
   assert(Math.abs(readerContract.mainRect.bottom - readerContract.stageRect.bottom) <= 0.5, "the pane runs the full height; the composer floats over its foot");
   assert(Math.abs(readerContract.scrollRect.left - readerContract.mainRect.left) <= 0.5 && Math.abs(readerContract.scrollRect.right - readerContract.mainRect.right) <= 0.5,
     "Reader must give PDF zoom the full pane instead of a prose-column viewport");

@@ -7,8 +7,7 @@ import {
 } from "../core/snapshot-html.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
 import { slugifyTitle } from "../core/utils.js";
-import { currentNodeId, mode, nodes, view } from "./core.js";
-import { readerScroller } from "./reader.js";
+import { currentNodeId, mode, view } from "./core.js";
 import { flushPendingSaves } from "./transport-status.js";
 
 function defaultSnapshotHooks() {
@@ -47,13 +46,9 @@ export function resetSnapshotHooks() {
 }
 
 function snapshotViewState() {
-  const cur = nodes[currentNodeId];
-  const scroller = mode === "reader" ? readerScroller() : null;
-  const scroll = scroller ? scroller.scrollTop : (cur && cur._scrollTop) || 0;
   return {
     mode: mode,
     node_id: currentNodeId,
-    scroll: scroll,
     view: { x: view.x, y: view.y, scale: view.scale },
   };
 }

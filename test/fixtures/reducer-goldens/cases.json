@@ -89,8 +89,8 @@
   {
     "name": "view_state normalizes reader and bounded canvas values",
     "initial": { "root_id": "root", "nodes": [] },
-    "events": [{ "event": { "type": "view_state", "state": { "mode": "other", "node_id": 7, "scroll": -3, "view": { "x": "4", "y": null, "scale": 99 } } } }],
-    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": { "mode": "reader", "node_id": null, "scroll": 0, "view": { "x": 4, "y": 0, "scale": 2.5 } }, "nodes": [] },
+    "events": [{ "event": { "type": "view_state", "state": { "mode": "other", "node_id": 7, "view": { "x": "4", "y": null, "scale": 99 } } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": { "mode": "reader", "node_id": null, "view": { "x": 4, "y": 0, "scale": 2.5 } }, "nodes": [] },
     "expected_effects": {}
   },
   {

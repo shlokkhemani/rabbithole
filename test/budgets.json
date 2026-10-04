@@ -8,20 +8,20 @@
       "description": "Built live client bundle size",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact file size after a deterministic build. Asking everywhere deliberately adds editable preset settings, shadow-root visual selection and marks, and atomic docked-note conversion to the live client; the WYSIWYG Quick questions section, linked preset sets, and removable presets are part of that trade.",
-      "baseline": 737228,
-      "ceiling": 774089.4,
-      "measured_at_commit": "5633597+asking-settings-wysiwyg"
+      "rationale": "Exact file size after a deterministic build. Asking everywhere deliberately adds editable preset settings, shadow-root visual selection and marks, and atomic docked-note conversion to the live client; the WYSIWYG Quick questions section, linked preset sets, and removable presets are part of that trade. The reader trail (answers beside their source, spring stage, tabs, focus) and exact refresh restore (view-state.js: reader trail, per-document places, card scrolls, PDF places) are part of that trade.",
+      "baseline": 790354,
+      "ceiling": 829871.7,
+      "measured_at_commit": "f0fd6ee+reader-trail"
     },
     {
       "id": "bundle_frozen_client_bytes",
       "description": "Built frozen client bundle size",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact file size after a deterministic build. Asking everywhere deliberately adds read-only visual branch chips, fullscreen selection-safe visual mounting, and preset-origin presentation to frozen snapshots without adding a runtime.",
-      "baseline": 703024,
-      "ceiling": 738175.2,
-      "measured_at_commit": "5633597+asking-settings-wysiwyg"
+      "rationale": "Exact file size after a deterministic build. Asking everywhere deliberately adds read-only visual branch chips, fullscreen selection-safe visual mounting, and preset-origin presentation to frozen snapshots without adding a runtime. Frozen snapshots read through the same reader trail and restore their saved view exactly.",
+      "baseline": 741569,
+      "ceiling": 778647.45,
+      "measured_at_commit": "f0fd6ee+reader-trail"
     },
     {
       "id": "web_initial_js_bytes",
@@ -58,20 +58,20 @@
       "description": "Frozen HTML size for the math-heavy reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size. Snapshots now carry the note extensions namespace and docked-note affordances.",
-      "baseline": 1184955,
-      "ceiling": 1244202.75,
-      "measured_at_commit": "bb59262"
+      "rationale": "Exact UTF-8 snapshot size. Snapshots now carry the note extensions namespace and docked-note affordances. Snapshots embed the frozen client, which now carries the reader trail and exact view restore.",
+      "baseline": 1262170,
+      "ceiling": 1325278.5,
+      "measured_at_commit": "f0fd6ee+reader-trail"
     },
     {
       "id": "snapshot_assets_bytes",
       "description": "Frozen HTML size for the PNG/SVG reference corpus",
       "unit": "bytes",
       "tolerance": 0.05,
-      "rationale": "Exact UTF-8 snapshot size including assets. Snapshots now carry the note extensions namespace and docked-note affordances.",
-      "baseline": 1184989,
-      "ceiling": 1244238.45,
-      "measured_at_commit": "bb59262"
+      "rationale": "Exact UTF-8 snapshot size including assets. Snapshots now carry the note extensions namespace and docked-note affordances. Snapshots embed the frozen client, which now carries the reader trail and exact view restore.",
+      "baseline": 1262197,
+      "ceiling": 1325306.85,
+      "measured_at_commit": "f0fd6ee+reader-trail"
     },
     {
       "id": "snapshot_math_build_ms",

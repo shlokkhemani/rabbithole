@@ -1,21 +1,22 @@
 import { shouldReduceMotion } from "../core.js";
 import { createCleanupScope } from "../kit/scope.js";
 import {
-  centreOffset,
   foldAmount,
   maxPosition,
   paneFrames,
   revealPosition,
   rubberBand,
+  spineTitled,
   trailMetrics,
+  trailShape,
 } from "./layout.js";
 
 /*
- * The stage turns one number into motion. `p` (which pane leads) and the
- * lone-document centring offset each ride a critically damped spring, so every
- * way of moving — a trackpad swipe, a touch drag, a click, a key, a new
- * answer — shares one physics and can interrupt any other mid-flight without
- * a seam. Direct manipulation is 1:1: while fingers are down, the panes are
+ * The stage turns three numbers into motion. `p` (which pane leads), the tab
+ * width and the widening that fills the window each ride a critically damped
+ * spring, so every way of moving — a trackpad swipe, a touch drag, a click, a
+ * key, a new answer, focusing one document — shares one physics and can
+ * interrupt any other mid-flight without a seam. Direct manipulation is 1:1: while fingers are down, the panes are
  * exactly where the fingers put them; the spring only takes over on release.
  */
 
@@ -28,12 +29,13 @@ const REST = 0.0005;
 /**
  * @param {{
  *   stage: HTMLElement,
- *   panes: () => { el: HTMLElement, scroll: HTMLElement, spine: HTMLElement, wide: boolean }[],
+ *   panes: () => { el: HTMLElement, scroll: HTMLElement, spine: HTMLElement }[],
  *   compact: () => boolean,
  *   focusIndex?: () => number,
- *   onFrame?: (frames: ReturnType<typeof paneFrames>, metrics: ReturnType<typeof trailMetrics>) => void,
+ *   onFrame?: (frames: ReturnType<typeof paneFrames>, metrics: ReturnType<typeof trailMetrics>, extra: number) => void,
  *   onSettle?: (position: number) => void,
  *   onMetrics?: (metrics: ReturnType<typeof trailMetrics>) => void,
+ *   keepPlace?: (resize: () => void) => void,
  * }} options
  */
 export function createTrailStage(options) {
@@ -41,57 +43,95 @@ export function createTrailStage(options) {
   const { stage } = options;
   let metrics = trailMetrics(stage.clientWidth, { compact: options.compact() });
   const springP = { x: 0, v: 0, target: 0 };
-  const springO = { x: 0, v: 0, target: 0 };
+  const springS = { x: metrics.spine, v: 0, target: metrics.spine };
+  const springE = { x: 0, v: 0, target: 0 };
+  const springs = [springP, springS, springE];
+  let focused = false;
   let frame = 0;
   let lastTime = 0;
   let dragging = false; // a finger or a live trackpad gesture owns p
   let wheel = null;
   let touch = null;
   let settledAt = 0;
+  let paintedBox = "";
 
   function count() {
     return options.panes().length;
   }
 
-  function wideLone(panes) {
-    return panes.length === 1 && metrics.cap > 1 && panes[0].wide;
+  function shape(n = count()) {
+    return trailShape(n, focused, metrics);
+  }
+
+  // The tab width and widening the trail should settle into for its panes.
+  function aimShape() {
+    const next = shape();
+    springS.target = next.spine;
+    springE.target = next.extra;
+    return next;
+  }
+
+  function snapAll() {
+    for (const spring of springs) {
+      spring.x = spring.target;
+      spring.v = 0;
+    }
+  }
+
+  function currentFrames(panes) {
+    const shownP = dragging ? rubberBand(springP.x, maxPosition(panes.length, shape(panes.length).open)) : springP.x;
+    return paneFrames(panes.length, shownP, springS.x, springE.x, metrics);
   }
 
   function measure() {
     const next = trailMetrics(stage.clientWidth, { compact: options.compact() });
     const changed =
-      !metrics || next.cap !== metrics.cap || next.paneWidth !== metrics.paneWidth || next.left !== metrics.left;
+      !metrics || next.cap !== metrics.cap || next.paneWidth !== metrics.paneWidth || next.stage !== metrics.stage;
     metrics = next;
     if (changed && options.onMetrics) options.onMetrics(metrics);
     return changed;
   }
 
-  function paint() {
+  // `rest`: the trail has come to a stop. Making a pane inert or hidden
+  // restyles its whole document — tens of milliseconds for a long one — so
+  // those wait for the stop and never land mid-slide. Showing a pane cannot
+  // wait: it must be there as it slides into view.
+  function paint(rest) {
     const panes = options.panes();
-    const shownP = dragging ? rubberBand(springP.x, maxPosition(panes.length, metrics.cap)) : springP.x;
-    const frames = paneFrames(panes.length, shownP, springO.x, metrics);
-    // A page (a native PDF) alone in the reader takes the whole band: its zoom
-    // needs the room, and there is nothing yet to share it with.
-    const wide = wideLone(panes);
-    if (wide) frames[0].x = metrics.left + metrics.spine;
+    const frames = currentFrames(panes);
+    const tab = Math.max(0, springS.x);
+    const titled = spineTitled(tab);
+    // Every pane is one width. A text's measure follows its pane's (base.css),
+    // so a change of width may re-wrap it: whoever reads it keeps their line.
+    const box = frames.length ? frames[0].box.toFixed(2) + "px" : "";
+    const resize = function () {
+      for (const pane of panes) pane.el.style.width = box;
+    };
+    if (box !== paintedBox && options.keepPlace) options.keepPlace(resize);
+    else resize();
+    paintedBox = box;
     for (let i = 0; i < panes.length; i++) {
       const { el, scroll, spine } = panes[i];
       const f = frames[i];
-      const fold = foldAmount(f.exposed, metrics);
+      const fold = foldAmount(f.exposed, tab, f.box);
       el.style.transform = "translate3d(" + f.x.toFixed(2) + "px,0,0)";
       el.style.zIndex = String(f.z);
-      el.style.width = (wide ? metrics.band - 2 * metrics.spine : metrics.paneWidth) + "px";
+      spine.style.width = tab.toFixed(2) + "px";
+      spine.classList.toggle("pane-spine-sliver", !titled);
       const covered = f.exposed < 0.5;
-      el.style.visibility = covered ? "hidden" : "";
-      el.inert = covered;
+      if (!covered) el.style.visibility = "";
+      if (rest) {
+        if (covered) el.style.visibility = "hidden";
+        if (el.inert !== covered) el.inert = covered;
+        if (scroll.inert !== fold > 0.5) scroll.inert = fold > 0.5;
+      }
       scroll.style.opacity = fold ? String(1 - Math.min(1, fold * 1.15)) : "";
-      scroll.inert = fold > 0.5;
       spine.style.opacity = metrics.spine ? String(fold) : "0";
       spine.style.pointerEvents = fold > 0.5 ? "auto" : "none";
       spine.tabIndex = fold > 0.5 && !covered ? 0 : -1;
       el.classList.toggle("pane-folded", fold > 0.5);
     }
-    if (options.onFrame) options.onFrame(frames, metrics);
+    if (options.onFrame) options.onFrame(frames, metrics, springE.x);
   }
 
   function step(now) {
@@ -99,7 +139,7 @@ export function createTrailStage(options) {
     const dt = Math.min(0.05, Math.max(0.001, (now - (lastTime || now)) / 1000 || 1 / 60));
     lastTime = now;
     let moving = false;
-    for (const spring of [springP, springO]) {
+    for (const spring of springs) {
       if (dragging && spring === springP) continue;
       advance(spring, dt);
       if (Math.abs(spring.x - spring.target) > REST || Math.abs(spring.v) > REST) moving = true;
@@ -108,7 +148,7 @@ export function createTrailStage(options) {
         spring.v = 0;
       }
     }
-    paint();
+    paint(!moving && !dragging);
     if (moving || dragging) schedule();
     else {
       lastTime = 0;
@@ -126,10 +166,8 @@ export function createTrailStage(options) {
     if (frame) return;
     // A hidden window never runs rAF; arrive instantly rather than never.
     if (document.hidden) {
-      springP.x = springP.target;
-      springO.x = springO.target;
-      springP.v = springO.v = 0;
-      paint();
+      snapAll();
+      paint(true);
       settled();
       return;
     }
@@ -137,26 +175,25 @@ export function createTrailStage(options) {
   }
 
   /**
-   * Move to pane position `p` (and centring for `n` panes). `instant` skips
-   * the spring — used when the reader first appears, under its own flight.
+   * Move to pane position `p`, with the tabs and widths the trail's panes now
+   * call for. `instant` skips the spring — used when the reader first
+   * appears, under its own flight.
    */
   function moveTo(p, { instant = false } = {}) {
     const n = count();
-    springP.target = Math.max(0, Math.min(maxPosition(n, metrics.cap), p));
-    springO.target = centreOffset(n, metrics);
+    const { open } = aimShape();
+    springP.target = Math.max(0, Math.min(maxPosition(n, open), p));
     settledAt = NaN;
     if (instant || shouldReduceMotion()) {
-      springP.x = springP.target;
-      springO.x = springO.target;
-      springP.v = springO.v = 0;
+      snapAll();
       if (frame) cancelAnimationFrame(frame);
       frame = 0;
-      paint();
+      paint(true);
       settled();
       return;
     }
     // Paint now: a pane created this tick must never show a frame unplaced.
-    paint();
+    paint(false);
     schedule();
   }
 
@@ -169,15 +206,40 @@ export function createTrailStage(options) {
     const n = count();
     // A window that now holds fewer (or more) panes keeps the document you
     // are in on screen, moving as little as it can.
+    const { open } = aimShape();
     const focus = options.focusIndex ? options.focusIndex() : -1;
-    const kept = Math.max(0, Math.min(maxPosition(n, metrics.cap), Math.round(springP.target)));
-    springP.target = focus >= 0 ? revealPosition(focus, kept, n, metrics.cap) : kept;
-    springP.x = springP.target;
-    springO.x = springO.target = centreOffset(n, metrics);
-    springP.v = springO.v = 0;
+    const kept = Math.max(0, Math.min(maxPosition(n, open), Math.round(springP.target)));
+    springP.target = focus >= 0 ? revealPosition(focus, kept, n, open) : kept;
+    snapAll();
     settledAt = NaN;
-    paint();
+    paint(true);
     settled();
+  }
+
+  /**
+   * Focus one document: it alone stands open and everything before and after
+   * it folds into tabs. Its text keeps its measure — only its margins grow.
+   */
+  function setFocused(value, index) {
+    focused = !!value;
+    const { open } = aimShape();
+    const n = count();
+    const kept = Math.max(0, Math.min(maxPosition(n, open), Math.round(springP.target)));
+    springP.target = index >= 0 ? revealPosition(index, kept, n, open) : kept;
+    settledAt = NaN;
+    if (shouldReduceMotion()) {
+      snapAll();
+      paint(true);
+      settled();
+      return;
+    }
+    paint(false);
+    schedule();
+  }
+
+  // One pane's width on screen: what a finger's travel is measured against.
+  function boxWidth() {
+    return Math.max(1, metrics.paneWidth + springE.x);
   }
 
   // --- trackpad -------------------------------------------------------------
@@ -214,13 +276,13 @@ export function createTrailStage(options) {
     }
     if (wheel.axis !== "x" || wheel.native) return;
     e.preventDefault();
-    if (count() < 2 && metrics.cap > 1) return;
+    if (count() < 2) return;
     dragging = true;
     springP.v = 0;
-    springP.x += dx / Math.max(1, metrics.paneWidth);
+    springP.x += dx / boxWidth();
     wheel.samples.push({ t: now, dx: dx });
     while (wheel.samples.length > 2 && now - wheel.samples[0].t > 100) wheel.samples.shift();
-    const max = maxPosition(count(), metrics.cap);
+    const max = maxPosition(count(), shape().open);
     springP.x = Math.max(-0.5, Math.min(max + 0.5, springP.x));
     scope.timeout(releaseWheelIfIdle, WHEEL_IDLE_MS + 10);
     schedule();
@@ -236,14 +298,14 @@ export function createTrailStage(options) {
     if (samples.length > 1) {
       const span = Math.max(16, samples[samples.length - 1].t - samples[0].t);
       const distance = samples.reduce((sum, sample) => sum + sample.dx, 0);
-      velocity = (distance / Math.max(1, metrics.paneWidth) / span) * 1000;
+      velocity = (distance / boxWidth() / span) * 1000;
     }
     release(Math.max(-6, Math.min(6, velocity)));
   }
 
   function release(velocity) {
     dragging = false;
-    const max = maxPosition(count(), metrics.cap);
+    const max = maxPosition(count(), shape().open);
     const shown = rubberBand(springP.x, max);
     springP.x = shown;
     // Where the motion was heading decides the pane it lands on.
@@ -296,7 +358,7 @@ export function createTrailStage(options) {
     const now = performance.now();
     touch.samples.push({ t: now, x: e.clientX });
     while (touch.samples.length > 2 && now - touch.samples[0].t > 90) touch.samples.shift();
-    springP.x = touch.p0 - (e.clientX - touch.x0) / Math.max(1, metrics.paneWidth);
+    springP.x = touch.p0 - (e.clientX - touch.x0) / boxWidth();
     schedule();
   }
 
@@ -309,7 +371,7 @@ export function createTrailStage(options) {
     const last = t.samples[t.samples.length - 1];
     const ms = Math.max(1, last.t - first.t);
     // px/ms → panes/s, sign flipped: dragging right walks back up the trail.
-    const velocity = (-(last.x - first.x) / ms / Math.max(1, metrics.paneWidth)) * 1000;
+    const velocity = (-(last.x - first.x) / ms / boxWidth()) * 1000;
     release(Math.max(-6, Math.min(6, velocity)));
   }
 
@@ -340,14 +402,16 @@ export function createTrailStage(options) {
       return metrics;
     },
     frames: function () {
-      const panes = options.panes();
-      const frames = paneFrames(panes.length, springP.x, springO.x, metrics);
-      if (wideLone(panes)) frames[0].x = metrics.left + metrics.spine;
-      return frames;
+      return currentFrames(options.panes());
     },
-    /** The on-screen width of the pane at `index` (a lone page is wider). */
-    paneBoxWidth: function (index) {
-      return index === 0 && wideLone(options.panes()) ? metrics.band - 2 * metrics.spine : metrics.paneWidth;
+    /** How many panes stand open once the trail settles. */
+    openCount: function () {
+      return shape().open;
+    },
+    /** How many open panes the text is measured for now. */
+    setFocused: setFocused,
+    focused: function () {
+      return focused;
     },
     isMoving: function () {
       return !!frame || dragging;

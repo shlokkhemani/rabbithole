@@ -6,6 +6,7 @@ import { errorCode } from "../../shared/errno.js";
 import { systemClock } from "../../../core/clock.js";
 import { mapConcurrent } from "../../../core/concurrency.js";
 import { warn } from "../../shared/logger.js";
+import { normalizeViewState } from "../../../core/hole/bookmark.js";
 import { parsePersistedHole, toPersistedHole } from "../../../core/schema.js";
 import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } from "../../../core/store.js";
 import { MAX_ASSETS_PER_CALL, maxAssetBytes, validateAssetName } from "../../../core/assets.js";
@@ -39,6 +40,15 @@ function holePath(holeId) {
 
 function holeSummaryPath(holeId) {
   return path.join(holesDir(), `${assertSafeHoleId(holeId)}.summary.json`);
+}
+
+/**
+ * Where the human was reading, when it moved after the hole was last written
+ * in full: a scroll pause writes this small file, not every document. A full
+ * write carries the view itself and removes it.
+ */
+function viewStatePath(holeId) {
+  return path.join(holesDir(), "views", `${assertSafeHoleId(holeId)}.json`);
 }
 
 function assetsDir() {
@@ -159,17 +169,25 @@ export class FsStore {
     // JSON.parse already returns a fresh object owned by this load. Avoid a
     // second stringify/parse clone while keeping parsePersistedHole's public
     // defensive-copy default intact.
-    return parsePersistedHole(JSON.parse(raw), { clone: false });
+    const hole = parsePersistedHole(JSON.parse(raw), { clone: false });
+    const view = await readViewState(holeId);
+    if (view) hole.view_state = normalizeViewState(view.view_state);
+    return hole;
   }
 
   async saveHole(hole) {
     await persistHole(hole);
   }
 
+  async saveViewState(holeId, viewState) {
+    await persistViewState(holeId, viewState);
+  }
+
   async deleteHole(holeId) {
     await Promise.all([
       fs.rm(holePath(holeId), { force: true }),
       fs.rm(holeSummaryPath(holeId), { force: true }),
+      fs.rm(viewStatePath(holeId), { force: true }),
     ]);
     await deleteHoleAssets(holeId);
   }
@@ -380,6 +398,16 @@ async function deleteHoleAssets(holeId) {
 
 const holeSaveQueues = new Map();
 
+// One hole's writes land one after another, in the order they were asked for.
+function queueHoleWrite(holeId, write) {
+  const previous = holeSaveQueues.get(holeId) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(write);
+  holeSaveQueues.set(holeId, operation);
+  return operation.finally(() => {
+    if (holeSaveQueues.get(holeId) === operation) holeSaveQueues.delete(holeId);
+  });
+}
+
 /**
  * @param {{ hole_id, title, root_id, created_at, nodes: object[] }} hole
  */
@@ -388,8 +416,7 @@ function persistHole(hole) {
   const serialized = JSON.stringify(persisted);
   const serializedSummary = JSON.stringify(holeSummary(persisted));
   const holeId = persisted.hole_id;
-  const previous = holeSaveQueues.get(holeId) || Promise.resolve();
-  const operation = previous.catch(() => {}).then(async () => {
+  return queueHoleWrite(holeId, async () => {
     await ensureDir();
   // Unique temp name per write so concurrent/overlapping saves of the same hole
   // never clobber each other's temp file mid-write; rename is atomic, last wins.
@@ -408,6 +435,8 @@ function persistHole(hole) {
     await fs.rm(summaryPath, { force: true });
     await fs.rename(tmp, finalPath);
     await fs.rename(summaryTmp, summaryPath);
+    // The hole now carries the latest view; an older one must not outrank it.
+    await fs.rm(viewStatePath(holeId), { force: true });
   } catch (err) {
     await Promise.all([
       fs.rm(tmp, { force: true }).catch(() => {}),
@@ -417,10 +446,31 @@ function persistHole(hole) {
   }
   return persisted;
   });
-  holeSaveQueues.set(holeId, operation);
-  return operation.finally(() => {
-    if (holeSaveQueues.get(holeId) === operation) holeSaveQueues.delete(holeId);
+}
+
+function persistViewState(holeId, viewState) {
+  const serialized = JSON.stringify({ hole_id: assertSafeHoleId(holeId), view_state: normalizeViewState(viewState) });
+  return queueHoleWrite(holeId, async () => {
+    const finalPath = viewStatePath(holeId);
+    const tmp = `${finalPath}.${shortId()}.tmp`;
+    await fs.mkdir(path.dirname(finalPath), { recursive: true });
+    try {
+      await fs.writeFile(tmp, serialized, "utf-8");
+      await fs.rename(tmp, finalPath);
+    } catch (err) {
+      await fs.rm(tmp, { force: true }).catch(() => {});
+      throw err;
+    }
   });
+}
+
+async function readViewState(holeId) {
+  try {
+    const view = JSON.parse(await fs.readFile(viewStatePath(holeId), "utf-8"));
+    return view && view.hole_id === holeId ? view : null;
+  } catch {
+    return null;
+  }
 }
 
 async function listHoles() {

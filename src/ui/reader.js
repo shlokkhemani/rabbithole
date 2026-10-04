@@ -1,4 +1,4 @@
-import { isDockedNote } from "../core/hole/ask.js";
+import { isDockedNote, isReactionNote } from "../core/hole/ask.js";
 import { truncate } from "../core/hole/lens.js";
 import { lineageNodesFromMap } from "../core/hole/tree.js";
 import { iconSvg } from "../core/html/icons.js";
@@ -7,6 +7,7 @@ import { presetLabelForOrigin } from "./ask-presets.js";
 import {
   buildDocContent,
   changeNodeFontScale,
+  childrenOf,
   composerInner,
   currentNodeId,
   goToNode,
@@ -18,13 +19,14 @@ import {
   readerMain,
   setCurrentNodeId,
   setModeValue,
+  surfaceFontScale,
   world,
 } from "./core.js";
 import { createModuleLifecycle } from "./kit/scope.js";
 import { flyReaderFromRect } from "./mode-transition.js";
 import { appendOriginAttachmentThumbnails, originAttachmentNames } from "./origin-attachments.js";
 import { buildOriginCrop } from "./origin-provenance.js";
-import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
+import { holdFullLayout, putPlaces, readPlaces, reflowKeepingPlace, setScrollPlace } from "./scroll-position.js";
 import { applyChildHighlights, transitionMarkGroups } from "./text-marks.js";
 import { revealPosition } from "./trail/layout.js";
 import { createTrailStage } from "./trail/stage.js";
@@ -54,9 +56,10 @@ function defaultReaderHooks() {
     animateScroll: function () {},
     // Docked notes and branch dots belong to the document on screen; the
     // reader gives each pane a real right margin and asks their module to
-    // fill it.
+    // fill it — and to keep them on their marks as the document re-flows.
     renderDockedNotes: function () {},
-    positionDockedNotes: function (_root) {},
+    /** @param {Element} _doc */
+    watchDocumentLayout: function (_doc) {},
   };
 }
 
@@ -66,21 +69,21 @@ const COMPACT_QUERY = "(hover: none), (pointer: coarse), (max-width: 760px)";
 /** @type {string[]} */
 let trail = [];
 /**
- * @typedef {{ id: string, el: HTMLElement, scroll: HTMLElement, col: HTMLElement, spine: HTMLButtonElement,
- *   title: HTMLElement, spineTitle: HTMLElement, back: HTMLButtonElement, close: HTMLButtonElement, wide: boolean }} ReaderPane
+ * @typedef {{ id: string, el: HTMLElement, scroll: HTMLElement, col: HTMLElement, foot: HTMLElement,
+ *   spine: HTMLButtonElement, title: HTMLElement, spineTitle: HTMLElement, back: HTMLButtonElement,
+ *   focus: HTMLButtonElement, close: HTMLButtonElement, margin: number, html: string, renderedFrom: string }} ReaderPane
  */
 /** @type {Map<string, ReaderPane>} */
 let panes = new Map();
 /** @type {ReturnType<typeof createTrailStage> | null} */
 let stage = null;
-let composerGlide = false;
-// How much of every pane's foot the floating composer covers: the text can
-// always scroll clear of it.
-let composerClear = 0;
-// Anything that re-wraps a pane's column — a new width, a text size, an image
-// or a formula arriving — moves its marks; their dots follow on the same frame.
-/** @type {ResizeObserver | null} */
-let columnWatch = null;
+// The composer's height: every pane's foot keeps that much room, so moving
+// the composer to another document never shifts the one it left.
+let composerRoom = 0;
+// How much wider than its core every pane is right now (see fitPage).
+let lastExtra = 0;
+// The pane a click or key walked to: the keyboard follows once it stands open.
+let focusOnSettle = "";
 
 export function returnToCanvas() {
   if (mode === "canvas") return null;
@@ -113,7 +116,9 @@ export function readerScroller(id = currentNodeId) {
 export function openNode(id) {
   if (!nodes[id] || !stage) return;
   const fromCanvas = document.body.classList.contains("mode-canvas");
-  const transferredPosition = fromCanvas ? captureContentPosition(nodes[id].bodyEl) : null;
+  // Every document the reader is about to show opens where its card was
+  // read to, read while the canvas still shows it.
+  const places = fromCanvas ? readPlaces(trailCandidates(id).map((cid) => [cid, nodes[cid].bodyEl])) : null;
   // The reader rises out of the card it came from — capture the card's
   // on-screen rect while the canvas is still up so the flight anchors there.
   let cardRect = null;
@@ -125,39 +130,64 @@ export function openNode(id) {
   document.body.classList.remove("mode-canvas");
   readerLifecycle.hooks.hideAsk();
   if (fromCanvas) {
-    // The reader was display:none while the canvas moved on — its width was
-    // zero, its panes lost their scroll offsets, and their documents may have
-    // gained marks or edits. Measure, then rebuild every pane in place.
+    // The reader kept every pane while the canvas was up. Only a document
+    // that changed meanwhile — an edit, a new mark, an answer landing — is
+    // rendered again.
     stage.relayout();
     pruneTrail();
-    panes.forEach(renderPaneBody);
+    panes.forEach(function (pane) {
+      const node = nodes[pane.id];
+      if (node && (pane.html !== node.html || pane.renderedFrom !== renderedFrom(node))) renderPaneBody(pane);
+    });
   }
+  showWholeTrail();
   showInTrail(id, { focus: true, instant: fromCanvas });
-  const scroller = readerScroller(id);
-  if (transferredPosition && scroller) {
-    restoreContentPosition(scroller, transferredPosition);
-    nodes[id]._scrollTop = scroller.scrollTop;
+  if (places) {
+    putPlaces(places, readerScroller);
+    panes.forEach(function (pane) {
+      const node = nodes[pane.id];
+      if (!node) return;
+      // A document with no card to read from keeps its own last place.
+      if (!places.has(pane.id) && Math.abs(pane.scroll.scrollTop - (node._scrollTop || 0)) > 1)
+        setScrollPlace(pane.scroll, node._scrollTop || 0);
+      node._scrollTop = pane.scroll.scrollTop;
+      syncBarState(pane);
+    });
   }
   readerLifecycle.hooks.scheduleViewSave();
   if (fromCanvas) flyReaderFromRect(cardRect);
 }
 
+// The documents a reader opened on `id` can show: the trail it keeps, or
+// the lineage it becomes.
+function trailCandidates(id) {
+  const ids = new Set(trail);
+  for (const node of lineageNodesFromMap(nodes, id)) ids.add(node.id);
+  return [...ids].filter((cid) => nodes[cid]);
+}
+
 /**
- * A new answer opens beside the document it was asked from, without taking
- * the reader away from it: you keep reading, it streams in next to you. On a
- * one-pane reader there is no "beside" — its dot in the margin carries it.
+ * A new answer opens beside the document it was asked from, without moving
+ * that document: it streams in to its right and becomes the pane you are in.
+ * Reading alone ends — an answer is read beside its source. A window with
+ * room for one pane keeps you where you are, the answer waiting as a tab at
+ * the right edge; a phone has no "beside" — its dot in the margin carries it.
  */
 export function openBranchBeside(childId) {
   const child = nodes[childId];
   if (!stage || mode !== "reader" || !child || isDockedNote(child) || !panes.has(child.parent_id)) return;
-  if (stage.metrics().cap < 2) {
+  if (!stage.metrics().spine) {
     syncReaderPanes();
     return;
   }
-  // The document you asked from stays in view — the answer lands to its right
-  // — and stays the one you are in.
+  showWholeTrail();
   showInTrail(childId, { focus: false, instant: false, keep: child.parent_id });
-  setCurrentPane(child.parent_id);
+  setCurrentPane(stage.openCount() > 1 ? childId : child.parent_id);
+}
+
+// Opening any answer shows it the default way: beside its source, never alone.
+function showWholeTrail() {
+  if (stage && stage.focused()) stage.setFocused(false, -1);
 }
 
 /** @param {string} id @param {{ focus: boolean, instant: boolean, keep?: string }} options */
@@ -166,11 +196,11 @@ function showInTrail(id, { focus, instant, keep: keepId }) {
   const known = trail.indexOf(id);
   if (known < 0) setTrail(lineageNodesFromMap(nodes, id).map((n) => n.id));
   const index = trail.indexOf(id);
-  const { cap } = stage.metrics();
+  const open = stage.openCount();
   // A document new to the trail lands as its rightmost pane, its source to
   // its left; one already on it is revealed with the least movement.
   const keep = trail.indexOf(keepId || currentNodeId);
-  let p = known < 0 ? Math.max(0, index - cap + 1) : revealPosition(index, stage.position(), trail.length, cap);
+  let p = known < 0 ? Math.max(0, index - open + 1) : revealPosition(index, stage.position(), trail.length, open);
   // Opening beside must never slide the asking pane out of view.
   if (!focus && keep >= 0 && keep < p) p = keep;
   stage.moveTo(p, { instant: instant });
@@ -185,8 +215,28 @@ export function closePane(id) {
   const currentIndex = trail.indexOf(currentNodeId);
   setTrail(trail.slice(0, index));
   if (currentIndex >= index) setCurrentPane(trail[index - 1]);
-  stage.moveTo(Math.min(stage.position(), Math.max(0, trail.length - stage.metrics().cap)));
+  stage.moveTo(Math.min(stage.position(), Math.max(0, trail.length - stage.openCount())));
   syncReaderPanes();
+  return true;
+}
+
+/**
+ * Read one document alone: everything before and after it folds into tabs,
+ * and its text keeps its measure. Asking again (or Esc) brings the trail back.
+ */
+export function toggleFocus(id = currentNodeId) {
+  if (!stage || mode !== "reader" || !panes.has(id)) return;
+  const focusing = !stage.focused();
+  if (focusing && trail.length < 2) return;
+  setCurrentPane(id);
+  stage.setFocused(focusing, trail.indexOf(id));
+  panes.forEach(paintPaneChrome);
+}
+
+/** Esc, first: a focused document rejoins its trail. */
+export function leaveFocus() {
+  if (!stage || mode !== "reader" || !stage.focused()) return false;
+  toggleFocus();
   return true;
 }
 
@@ -207,11 +257,11 @@ export function stepPane(delta) {
 function revealPane(id, focus) {
   const index = trail.indexOf(id);
   if (index < 0 || !stage) return;
-  stage.moveTo(revealPosition(index, stage.position(), trail.length, stage.metrics().cap));
+  stage.moveTo(revealPosition(index, stage.position(), trail.length, stage.openCount()));
   if (focus) {
     setCurrentPane(id);
-    const scroller = readerScroller(id);
-    if (scroller) focusQuietly(scroller);
+    // A pane opening is inert until it stands open: the keys follow it there.
+    focusOnSettle = id;
   }
 }
 
@@ -237,7 +287,7 @@ function pruneTrail() {
   if (gone < 0) return false;
   setTrail(trail.slice(0, gone));
   if (!panes.has(currentNodeId) && trail.length) setCurrentPane(trail[trail.length - 1]);
-  if (stage) stage.moveTo(Math.min(stage.position(), Math.max(0, trail.length - stage.metrics().cap)));
+  if (stage) stage.moveTo(Math.min(stage.position(), Math.max(0, trail.length - stage.openCount())));
   return true;
 }
 
@@ -246,6 +296,10 @@ function retirePane(id) {
   panes.delete(id);
   if (!pane) return;
   const el = pane.el;
+  // The composer belongs to whichever document stays; never let it fade out
+  // with this one.
+  const shell = composerShell();
+  if (shell && pane.foot.contains(shell)) readerMain.parentElement?.appendChild(shell);
   el.inert = true;
   el.classList.remove("current");
   el.classList.add("pane-leaving");
@@ -254,7 +308,6 @@ function retirePane(id) {
     if (done) return;
     done = true;
     disposeDoc(pane.col);
-    if (columnWatch) columnWatch.unobserve(pane.col);
     el.remove();
   };
   el.addEventListener("animationend", finish, { once: true });
@@ -294,15 +347,22 @@ function createPane(id) {
   back.innerHTML = iconSvg("chevron", { size: 16 });
   const title = document.createElement("span");
   title.className = "pane-title";
+  const focus = document.createElement("button");
+  focus.type = "button";
+  focus.className = "pane-focus";
   const close = document.createElement("button");
   close.type = "button";
   close.className = "pane-close";
   close.innerHTML = iconSvg("close", { size: 16 });
-  bar.append(back, title, close);
+  bar.append(back, title, focus, close);
 
   const col = document.createElement("div");
   col.className = "reader-col";
-  scroll.append(bar, col);
+  // Where the composer rests when this is the document you are in: after
+  // the last line, never over it.
+  const foot = document.createElement("div");
+  foot.className = "pane-foot";
+  scroll.append(bar, col, foot);
 
   const spine = document.createElement("button");
   spine.type = "button";
@@ -313,28 +373,79 @@ function createPane(id) {
   spine.appendChild(spineTitle);
 
   el.append(scroll, spine);
-  const pane = { id, el, scroll, col, spine, title, spineTitle, back, close, wide: false };
-  applyPaneMetrics(pane);
-  if (columnWatch) columnWatch.observe(col);
+  const pane = {
+    id,
+    el,
+    scroll,
+    col,
+    foot,
+    spine,
+    title,
+    spineTitle,
+    back,
+    focus,
+    close,
+    margin: -1,
+    html: "",
+    renderedFrom: "",
+  };
+  sizeFoot(pane);
   return pane;
 }
 
-// Reading measure depends only on the window: the pane's side padding is set
-// once per window size, and the bar reaches edge to edge across it.
-function applyPaneMetrics(pane) {
-  if (!stage) return;
-  const flush = pane.el.classList.contains("pdf-reader-viewport");
-  const pad = flush ? 0 : stage.metrics().pad;
-  pane.scroll.style.paddingInline = flush ? "" : pad + "px";
-  // A PDF page keeps its own scroller clear of the composer; prose runs on
-  // beneath it and only its end needs the room.
-  pane.scroll.style.paddingBottom = composerClear ? composerClear + (flush ? 0 : 20) + "px" : "";
-  const bar = pane.scroll.firstElementChild;
-  if (!(bar instanceof HTMLElement)) return;
-  bar.style.marginInline = -pad + "px";
-  // The title starts where the text does; Close centres on the text's edge.
-  bar.style.paddingLeft = Math.max(4, pad - 6) + "px";
-  bar.style.paddingRight = Math.max(4, pad - 14) + "px";
+// A document never reads narrower than two side by side do (base.css widens
+// it with its pane from there): the window alone decides that floor.
+function setMeasure(metrics) {
+  readerMain.style.setProperty("--trail-floor", Math.max(0, metrics.column).toFixed(2) + "px");
+}
+
+// A pane changing width may re-wrap its text: everyone keeps reading the line
+// they were on, frame by frame.
+function keepPlaces(resize) {
+  const scrollers = [];
+  panes.forEach(function (pane) {
+    if (pane.scroll.scrollTop > 0) scrollers.push(pane.scroll);
+  });
+  reflowKeepingPlace(scrollers, resize, { full: false });
+}
+
+function isPageViewport(pane) {
+  return pane.el.classList.contains("pdf-reader-viewport");
+}
+
+// A page fits its width, so every change of width re-renders it. While the
+// trail moves, a page keeps the width it was fitted to (centred, or clipped
+// at its edges for a moment); it refits once, when the trail comes to rest.
+function fitPage(pane, extra, settled) {
+  const col = pane.col.style;
+  if (settled || pane.margin < 0 || !stage) {
+    pane.margin = extra;
+    col.width = col.marginLeft = col.flexShrink = "";
+    return;
+  }
+  col.width = (stage.metrics().paneWidth + pane.margin).toFixed(2) + "px";
+  col.marginLeft = ((extra - pane.margin) / 2).toFixed(2) + "px";
+  col.flexShrink = "0";
+}
+
+function sizeFoot(pane) {
+  pane.foot.style.minHeight = composerRoom ? composerRoom + "px" : "";
+}
+
+// Everything a pane's rendering depends on besides the document's HTML.
+function renderedFrom(node) {
+  const marks = childrenOf(node.id)
+    .map(function (child) {
+      return child.id + ":" + child.status + (isReactionNote(child) ? ":r" : "") + (child.origin?.anchor ? ":a" : "");
+    })
+    .join(",");
+  return [
+    node.status,
+    node.error?.message || "",
+    node.source?.converting ? 1 : 0,
+    surfaceFontScale(node, "reader"),
+    marks,
+  ].join("|");
 }
 
 function renderPaneBody(pane) {
@@ -348,8 +459,11 @@ function renderPaneBody(pane) {
   const crop = buildOriginCrop(node, "reader");
   if (crop) col.appendChild(crop);
   const dc = buildDocContent(node, READER_BASE);
+  pane.html = node.html;
+  pane.renderedFrom = renderedFrom(node);
   col.appendChild(dc);
-  applyChildHighlights(dc, node);
+  applyChildHighlights(dc, node, false);
+  readerLifecycle.hooks.watchDocumentLayout(dc);
   const isPdfReader = dc.classList.contains("rh-pdf");
   // A root PDF is already a complete reading surface: its own scroller fills
   // the pane. Threaded PDFs keep the normal flow so their origin stays visible.
@@ -358,39 +472,72 @@ function renderPaneBody(pane) {
   pane.el.classList.toggle("pdf-reader-viewport", isPdfViewport);
   col.classList.toggle("pdf-reader-col", isPdfReader);
   col.classList.toggle("pdf-reader-viewport", isPdfViewport);
-  pane.wide = isPdfViewport;
-  applyPaneMetrics(pane);
+  pane.margin = -1;
+  if (isPdfViewport) fitPage(pane, lastExtra, false);
+  else pane.col.style.width = pane.col.style.marginLeft = pane.col.style.flexShrink = "";
   readerLifecycle.hooks.renderDockedNotes(node);
   paintPaneChrome(pane);
   // Each document remembers where you were; a first open starts at the top.
-  pane.scroll.scrollTop = node._scrollTop || 0;
-  syncBarState(pane);
+  // A place is set only where it can be laid out: a pane built behind the
+  // canvas takes its place (and its bar follows) when the reader opens.
+  if (mode === "reader") {
+    setScrollPlace(pane.scroll, node._scrollTop || 0);
+    syncBarState(pane);
+  }
 }
+
+// Asks whose whole strip the reader chose to see. Kept across re-renders: an
+// answer re-renders as it streams and when a new ask marks it.
+const openedStrips = new Set();
 
 function buildContextStrip(node) {
   if (!node.origin || !(node.origin.selected_text || node.origin.question || originAttachmentNames(node).length))
     return null;
   const ctx = document.createElement("div");
   ctx.className = "reader-context";
+  const text = document.createElement("div");
+  text.className = "rc-text";
   if (node.origin.selected_text) {
     const tail = node.origin.lens
       ? " — " + lensBadgeHtml(node.origin)
       : node.origin.question
         ? " — " + escapeHtml(node.origin.question)
         : "";
-    ctx.innerHTML =
+    text.innerHTML =
       '<span class="rc-label">From</span>“' +
       escapeHtml(truncate(node.origin.selected_text, 200)) +
       "”" +
       tail +
       '<span class="rc-go">→</span>';
   } else {
-    ctx.innerHTML =
+    text.innerHTML =
       '<span class="rc-label">Follow-up</span>' +
       (node.origin.lens
         ? lensBadgeHtml(node.origin) + (node.origin.question ? " " + escapeHtml(node.origin.question) : "")
         : escapeHtml(node.origin.question || "Pasted image"));
   }
+  ctx.appendChild(text);
+  // A long ask shows its first lines; the rest is a click away. The toggle
+  // shows only while there is more than the clamp holds.
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "rc-more";
+  const paintMore = function () {
+    const open = openedStrips.has(node.id);
+    ctx.classList.toggle("open", open);
+    more.setAttribute("aria-expanded", String(open));
+    more.innerHTML = (open ? "Less" : "More") + iconSvg("chevron", { size: 12 });
+    if (!open) more.hidden = text.scrollHeight <= text.clientHeight + 1;
+  };
+  more.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (openedStrips.has(node.id)) openedStrips.delete(node.id);
+    else openedStrips.add(node.id);
+    paintMore();
+  });
+  new ResizeObserver(paintMore).observe(text);
+  paintMore();
+  ctx.appendChild(more);
   appendOriginAttachmentThumbnails(ctx, node);
   // The strip is a live link: click it to land on the exact spot in the
   // parent this branch grew from (flashed so the eye finds it).
@@ -404,7 +551,7 @@ function buildContextStrip(node) {
       jumpToOrigin(node, motionSourceFromEvent(e));
     });
     ctx.addEventListener("keydown", function (e) {
-      if (e.key !== "Enter") return;
+      if (e.key !== "Enter" || e.target !== ctx) return;
       e.preventDefault();
       jumpToOrigin(node, "keyboard");
     });
@@ -420,7 +567,7 @@ export function renderReaderBody(id = currentNodeId) {
   const keep = scroll.scrollTop;
   renderPaneBody(pane);
   // A rebuild briefly collapses the scroll height; the reader's place holds.
-  if (keep) scroll.scrollTop = keep;
+  if (keep) setScrollPlace(scroll, keep);
   markOpenBranches();
 }
 
@@ -449,6 +596,12 @@ function paintPaneChrome(pane) {
   pane.close.setAttribute("aria-label", "Close " + name);
   pane.close.title = "Close · Esc";
   pane.close.hidden = index <= 0;
+  const focused = !!stage && stage.focused();
+  pane.focus.hidden = !stage || !stage.metrics().spine || (!focused && trail.length < 2);
+  pane.focus.innerHTML = iconSvg(focused ? "contract" : "expand", { size: 14 });
+  pane.focus.setAttribute("aria-label", focused ? "Show the whole trail" : "Read " + name + " alone");
+  pane.focus.title = focused ? "Show the trail · F" : "Read alone · F";
+  pane.focus.setAttribute("aria-pressed", String(focused));
   const parent = node && nodes[node.parent_id];
   pane.back.hidden = !parent;
   pane.back.setAttribute("aria-label", "Back to " + ((parent && parent.title) || "Untitled"));
@@ -477,45 +630,44 @@ function setCurrentPane(id) {
   panes.forEach(function (pane) {
     pane.el.classList.toggle("current", pane.id === id);
   });
-  composerGlide = changed;
   placeComposer();
   readerLifecycle.hooks.updateComposerState();
   readerLifecycle.hooks.scheduleViewSave();
 }
 
-// The composer asks about the current document, so it floats over the foot
-// of that document's pane and glides along with it. The pane runs the full
-// height behind it: the text passes under the composer and dissolves.
-function placeComposer(frames) {
-  if (!stage || !composerInner) return;
-  const index = trail.indexOf(currentNodeId);
-  if (index < 0) return;
-  const metrics = stage.metrics();
-  const all = frames || stage.frames();
-  const frame = all[index];
-  const shell = composerInner.parentElement;
-  if (!frame || !shell) return;
+function composerShell() {
+  return composerInner ? composerInner.parentElement : null;
+}
+
+// The composer asks about the current document, so it rests at that
+// document's end — where a reader who has finished it arrives — and moves
+// with the document you are in. Every foot keeps its room, so the documents
+// it leaves never shift.
+function placeComposer() {
+  const shell = composerShell();
   const pane = panes.get(currentNodeId);
-  const gutter = pane && !pane.wide ? pane.scroll.offsetWidth - pane.scroll.clientWidth : 0;
-  const box = stage.paneBoxWidth(index) - gutter;
-  const width = Math.max(0, metrics.paneWidth - 2 * metrics.pad - gutter);
-  // Under prose the composer lines up with the text column; under a lone
-  // page it centres beneath the page.
-  composerInner.style.width = width + "px";
-  composerInner.style.marginLeft = (pane && pane.wide ? (box - width) / 2 : metrics.pad) + "px";
-  shell.style.width = box + "px";
-  shell.style.transition = composerGlide ? "" : "none";
-  shell.style.transform = "translate3d(" + frame.x.toFixed(2) + "px,0,0)";
-  composerGlide = false;
+  if (!shell || !pane || pane.foot.contains(shell)) return;
+  pane.foot.appendChild(shell);
+}
+
+// Every frame: prose follows its pane (see keepPlaces); a page holds the width
+// it was fitted to until the trail rests.
+function onStageFrame(_frames, _metrics, extra) {
+  lastExtra = extra;
+  panes.forEach(function (pane) {
+    if (isPageViewport(pane)) fitPage(pane, extra, false);
+  });
 }
 
 function onStageSettle() {
+  panes.forEach(function (pane) {
+    if (isPageViewport(pane)) fitPage(pane, lastExtra, true);
+  });
   // A swipe may have carried the current pane out of view: the pane now in
   // front of you becomes the one you are in.
   const frames = stage.frames();
-  const metrics = stage.metrics();
   const index = trail.indexOf(currentNodeId);
-  const open = frames.map((f) => f.exposed >= metrics.paneWidth - 1);
+  const open = frames.map((f) => f.exposed >= f.box - 1);
   if (index < 0 || !open[index]) {
     let best = -1;
     for (let i = 0; i < open.length; i++) {
@@ -523,11 +675,21 @@ function onStageSettle() {
     }
     if (best >= 0) setCurrentPane(trail[best]);
   }
+  const keys = focusOnSettle;
+  focusOnSettle = "";
+  const scroller = keys === currentNodeId ? readerScroller(keys) : null;
+  const active = document.activeElement;
+  if (scroller && (!active || active === document.body || readerMain.contains(active))) focusQuietly(scroller);
   document.dispatchEvent(new CustomEvent("rh-reader-layout"));
 }
 
-function onStageMetrics() {
-  panes.forEach(applyPaneMetrics);
+function onStageMetrics(metrics) {
+  setMeasure(metrics);
+  panes.forEach(function (pane) {
+    pane.margin = -1;
+    if (isPageViewport(pane)) fitPage(pane, lastExtra, false);
+    paintPaneChrome(pane);
+  });
 }
 
 // The bar is quiet over the document's own title and becomes a title bar only
@@ -559,38 +721,27 @@ export function initReader(hooks) {
       focusIndex: function () {
         return trail.indexOf(currentNodeId);
       },
-      onFrame: placeComposer,
+      onFrame: onStageFrame,
       onSettle: onStageSettle,
       onMetrics: onStageMetrics,
+      keepPlace: keepPlaces,
     });
+    setMeasure(stage.metrics());
     readerScope.addCleanup(function () {
       if (stage) stage.dispose();
       stage = null;
     });
-    if (typeof ResizeObserver === "function") {
-      const watch = new ResizeObserver(function (entries) {
-        for (const entry of entries) {
-          const paneEl = entry.target.closest(".reader-pane:not(.pane-leaving)");
-          if (paneEl) readerLifecycle.hooks.positionDockedNotes(paneEl);
-        }
-      });
-      columnWatch = watch;
-      readerScope.addCleanup(function () {
-        watch.disconnect();
-        if (columnWatch === watch) columnWatch = null;
-      });
-    }
-    const shell = composerInner && composerInner.parentElement;
+    const shell = composerShell();
     if (shell && typeof ResizeObserver === "function") {
-      const clearance = new ResizeObserver(function () {
+      const room = new ResizeObserver(function () {
         const next = Math.round(shell.offsetHeight);
-        if (next === composerClear) return;
-        composerClear = next;
-        panes.forEach(applyPaneMetrics);
+        if (!next || next === composerRoom) return;
+        composerRoom = next;
+        panes.forEach(sizeFoot);
       });
-      clearance.observe(shell);
+      room.observe(shell);
       readerScope.addCleanup(function () {
-        clearance.disconnect();
+        room.disconnect();
       });
     }
     // Scroll does not bubble: every pane's scroll is caught on the way down.
@@ -640,6 +791,10 @@ export function disposeReader() {
 }
 
 function disposeReaderResources(resetHooks) {
+  // The composer is the shell's, lent to a pane: hand it back before the
+  // panes go.
+  const shell = composerShell();
+  if (shell && readerMain.contains(shell)) readerMain.parentElement?.appendChild(shell);
   panes.forEach(function (pane) {
     disposeDoc(pane.col);
   });
@@ -669,7 +824,8 @@ function onPaneScroll(e) {
   if (!(scroller instanceof HTMLElement) || !scroller.classList.contains("pane-scroll")) return;
   const pane = paneOf(scroller);
   const node = pane && nodes[pane.id];
-  if (!node) return;
+  // Behind the canvas a pane cannot hold a place; its last real one stands.
+  if (!node || mode !== "reader") return;
   node._scrollTop = scroller.scrollTop;
   syncBarState(pane);
   if (node.id === currentNodeId) readerLifecycle.hooks.scheduleViewSave();
@@ -692,6 +848,10 @@ function onReaderClick(e) {
   }
   if (target.closest(".pane-close")) {
     closePane(pane.id);
+    return;
+  }
+  if (target.closest(".pane-focus")) {
+    toggleFocus(pane.id);
     return;
   }
   if (target.closest(".pane-back")) {
@@ -736,8 +896,11 @@ export function jumpToOrigin(node, source) {
 function scrollMarkIntoView(mark, viewportRatio, source) {
   const scroller = mark.closest(".rh-pdf-scroll") || mark.closest(".pane-scroll");
   if (!scroller) return;
+  // The glide aims at a place in the real layout, and keeps it while it moves.
+  const release = holdFullLayout(scroller);
   const top = mark.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
   readerLifecycle.hooks.animateScroll(scroller, Math.max(0, top - scroller.clientHeight * viewportRatio), source);
+  setTimeout(release, 400);
 }
 
 // A mark takes you to its branch — unless the branch is a docked note, whose
@@ -794,4 +957,60 @@ export function stepMark(delta) {
   const m = marks[kbdMarkIdx];
   m.classList.add("mark-focus");
   scrollMarkIntoView(m, 0.42, "keyboard");
+}
+
+// ===========================================================================
+// VIEW STATE — what a refresh must bring back
+// ===========================================================================
+// The reader's part of where-was-I: which documents stand on the trail, where
+// it rests, and whether one is read alone. Scroll places are not here: every
+// document keeps its own on its node (`_scrollTop`), and view-state.js saves
+// and brings those back for panes and cards alike.
+
+/** @returns {{ trail: string[], position: number, focused: boolean } | null} */
+export function readerViewState() {
+  if (!stage || !trail.length) return null;
+  return { trail: trail.slice(), position: stage.position(), focused: stage.focused() };
+}
+
+/**
+ * Put the reader back exactly as it was, instantly — no flight, no slide, no
+ * pane entering: the same trail, the same document current, resting at the
+ * same place, read alone or not. Whatever of the saved trail no longer exists
+ * (a deleted answer) is cut off where the lineage breaks; with nothing left,
+ * the reader stays down and this returns false. `hidden` puts the trail back
+ * behind the canvas without raising the reader, so opening it later finds
+ * the trail it left.
+ * @param {{ trail: string[], position: number, focused: boolean }} state
+ * @param {string | null} current the document that was current
+ * @param {{ hidden?: boolean }} [options]
+ */
+export function restoreReaderView(state, current, { hidden = false } = {}) {
+  if (!stage || !state || !Array.isArray(state.trail)) return false;
+  /** @type {string[]} */
+  const ids = [];
+  for (const id of state.trail) {
+    const node = nodes[id];
+    const parent = ids.length ? ids[ids.length - 1] : null;
+    if (!node || node._pendingDelete || isDockedNote(node) || (node.parent_id || null) !== parent) break;
+    ids.push(id);
+  }
+  if (!ids.length) return false;
+  const here = current && ids.includes(current) ? current : ids[ids.length - 1];
+  if (!hidden) {
+    setModeValue("reader");
+    document.body.classList.remove("mode-canvas");
+    readerLifecycle.hooks.hideAsk();
+    stage.relayout();
+  }
+  setTrail(ids);
+  // A restored pane was already there: it does not animate in.
+  panes.forEach(function (pane) {
+    pane.el.classList.remove("pane-entering");
+  });
+  if (!hidden) setCurrentPane(here);
+  if (state.focused && ids.length > 1) stage.setFocused(true, ids.indexOf(here));
+  stage.moveTo(Number(state.position) || 0, { instant: true });
+  syncReaderPanes();
+  return true;
 }

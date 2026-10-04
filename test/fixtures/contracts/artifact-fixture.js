@@ -9,7 +9,7 @@ export const persistedHoleFixture = {
   root_id: "root",
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-02T00:00:00.000Z",
-  view_state: { mode: "canvas", node_id: "root", scroll: 12, view: { x: 3, y: -4, scale: 1.25 } },
+  view_state: { mode: "canvas", node_id: "root", view: { x: 3, y: -4, scale: 1.25 } },
   nodes: [{
     id: "root", parent_id: null, title: "Root", markdown: "Body",
     base_url: null, base_url_source: null, origin: { type: "fixture" },

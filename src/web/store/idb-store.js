@@ -1,4 +1,5 @@
 import { maxAssetBytes, validateAssetName } from "../../core/assets.js";
+import { normalizeViewState } from "../../core/hole/bookmark.js";
 import { parsePersistedHole, toPersistedHole } from "../../core/schema.js";
 import { assertSafeHoleId, assertSafeIngestId, createIngestId, holeSummary } from "../../core/store.js";
 
@@ -9,6 +10,11 @@ const HOLE_SUMMARIES = "hole-summaries";
 const ASSETS = "assets";
 const STAGING = "staging";
 const META = "meta";
+
+// A hole's view, when it moved after the hole was last written in full.
+function viewKey(holeId) {
+  return `view:${holeId}`;
+}
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -70,13 +76,18 @@ export class IdbStore {
   async loadHole(holeId) {
     const safeHoleId = assertSafeHoleId(holeId);
     const db = await this.open();
-    const tx = db.transaction(HOLES, "readonly");
+    const tx = db.transaction([HOLES, META], "readonly");
     const done = txDone(tx);
-    const raw = await requestToPromise(tx.objectStore(HOLES).get(safeHoleId));
+    const [raw, view] = await Promise.all([
+      requestToPromise(tx.objectStore(HOLES).get(safeHoleId)),
+      requestToPromise(tx.objectStore(META).get(viewKey(safeHoleId))),
+    ]);
     await done;
     if (!raw) return null;
     // IndexedDB has already returned a structured clone owned by this request.
-    return parsePersistedHole(raw, { clone: false });
+    const hole = parsePersistedHole(raw, { clone: false });
+    if (view) hole.view_state = normalizeViewState(view.view_state);
+    return hole;
   }
 
   async saveHole(hole, options = {}) {
@@ -84,10 +95,22 @@ export class IdbStore {
     this.requestPersistenceOnce();
     const persisted = toPersistedHole(hole, { ...options, cloneExtensions: false });
     const db = await this.open();
-    const tx = db.transaction([HOLES, HOLE_SUMMARIES], "readwrite");
+    const tx = db.transaction([HOLES, HOLE_SUMMARIES, META], "readwrite");
     const done = txDone(tx);
     tx.objectStore(HOLES).put(persisted);
     tx.objectStore(HOLE_SUMMARIES).put(holeSummary(persisted));
+    // The hole now carries the latest view; an older one must not outrank it.
+    tx.objectStore(META).delete(viewKey(persisted.hole_id));
+    await done;
+  }
+
+  /** Where the human was reading, written without every document (see loadHole). */
+  async saveViewState(holeId, viewState) {
+    const safeHoleId = assertSafeHoleId(holeId);
+    const db = await this.open();
+    const tx = db.transaction(META, "readwrite");
+    const done = txDone(tx);
+    tx.objectStore(META).put({ key: viewKey(safeHoleId), view_state: normalizeViewState(viewState) });
     await done;
   }
 
@@ -95,10 +118,11 @@ export class IdbStore {
     const safeHoleId = assertSafeHoleId(holeId);
     this.requestPersistenceOnce();
     const db = await this.open();
-    const tx = db.transaction([HOLES, HOLE_SUMMARIES, ASSETS], "readwrite");
+    const tx = db.transaction([HOLES, HOLE_SUMMARIES, ASSETS, META], "readwrite");
     const done = txDone(tx);
     tx.objectStore(HOLES).delete(safeHoleId);
     tx.objectStore(HOLE_SUMMARIES).delete(safeHoleId);
+    tx.objectStore(META).delete(viewKey(safeHoleId));
     await deleteByPrefix(tx.objectStore(ASSETS), safeHoleId, this.IDBKeyRange, "hole_id");
     await done;
   }

@@ -1,100 +1,114 @@
 /*
  * The reader is a trail: the lineage of the document being read, laid out as
- * panes side by side. Everything on screen is a pure function of one number,
- * `p` — the index of the leftmost fully shown pane — so a swipe, a click, a
- * keystroke and a new answer all move the same value and the picture follows.
+ * panes side by side. Everything on screen is a pure function of three
+ * numbers — `p`, the index of the leftmost open pane; `spine`, how wide each
+ * folded pane's tab is; and `extra`, the width every pane gains so the trail
+ * always fills the window edge to edge — so a swipe, a click, a key and a new
+ * answer all move the same values and the picture follows.
  *
- * Panes never change width while a window stays one size: they translate,
- * nothing else, so text never re-wraps under the reader's eye. A pane pushed
- * past the band's edge does not leave — it parks there and the next pane
- * slides over it, leaving a spine: the whole path stays one click away.
+ * A pane's text follows its width (base.css): sliding moves no width, so
+ * nothing re-wraps; a pane that widens or narrows as another opens or closes
+ * takes its text along in the same motion. A pane pushed past the open panes
+ * does not leave — it folds into a tab at that edge, and every ancestor keeps
+ * its own tab: the whole path stays one click away.
  */
 
 // Two panes need this much reading measure each before the trail shows two.
 const MIN_COLUMN = 480;
-const MAX_COLUMN = 680;
 const SPINE = 40;
+// Below this a tab can no longer carry its title; it narrows to a sliver that
+// still opens its document (its name stays in its tooltip).
+const TITLED_SPINE = 22;
 const PAD = 40;
 const COMPACT_PAD = 18;
 
 /**
- * Reading geometry for a stage of `width` pixels. Compact stages (phones,
- * coarse pointers) show one full-bleed pane and no spines: a swipe reveals the
- * document underneath instead.
+ * Reading geometry for a stage of `width` pixels. `paneWidth` is the pane's
+ * core width, and `column` the measure two documents side by side read at —
+ * the least any document is given. Compact stages
+ * (phones, coarse pointers) show one full-bleed pane and no tabs: a swipe
+ * reveals the document underneath instead.
  * @param {number} width
  * @param {{ compact?: boolean }} [options]
  */
 export function trailMetrics(width, options = {}) {
   const stage = Math.max(0, width || 0);
   if (options.compact) {
-    return {
-      cap: 1,
-      spine: 0,
-      pad: COMPACT_PAD,
-      paneWidth: stage,
-      column: stage - 2 * COMPACT_PAD,
-      band: stage,
-      left: 0,
-    };
+    const column = stage - 2 * COMPACT_PAD;
+    return { stage: stage, cap: 1, spine: 0, pad: COMPACT_PAD, paneWidth: stage, column: column };
   }
   const twoUp = (stage - 2 * SPINE) / 2 >= MIN_COLUMN + 2 * PAD;
   const cap = twoUp ? 2 : 1;
-  const paneWidth = Math.max(0, Math.min(MAX_COLUMN + 2 * PAD, (stage - 2 * SPINE) / cap));
-  const band = cap * paneWidth + 2 * SPINE;
+  const paneWidth = Math.max(0, (stage - 2 * SPINE) / cap);
   return {
+    stage: stage,
     cap: cap,
     spine: SPINE,
     pad: PAD,
     paneWidth: paneWidth,
     column: paneWidth - 2 * PAD,
-    band: band,
-    // Wider than two full measures: the band centres and the rest is margin.
-    left: Math.max(0, (stage - band) / 2),
   };
 }
 
-/** Highest meaningful `p` for a trail of `count` panes. */
-export function maxPosition(count, cap) {
-  return Math.max(0, count - cap);
-}
-
 /**
- * A lone document (fewer panes than the band holds) sits centred; the
- * offset is how far right of the first slot that is.
- */
-export function centreOffset(count, metrics) {
-  return count < metrics.cap ? ((metrics.cap - count) * metrics.paneWidth) / 2 : 0;
-}
-
-/**
- * Where every pane is for a position `p` and centring offset `offset`.
- * Returns, per pane: `x` (left edge, stage coordinates), `z` (paint order),
- * and `exposed` (visible width, after nearer panes cover it).
+ * How many panes stand open, how wide the tabs are, and how much every pane
+ * widens to fill the window — for `count` panes, optionally focused on one.
  * @param {number} count
- * @param {number} p
- * @param {number} offset
+ * @param {boolean} focused
  * @param {ReturnType<typeof trailMetrics>} metrics
  */
-export function paneFrames(count, p, offset, metrics) {
-  const { paneWidth: width, spine, left, band } = metrics;
-  const minX = left;
-  const maxX = left + band - spine - (spine ? 0 : width);
+export function trailShape(count, focused, metrics) {
+  const { stage, cap, paneWidth } = metrics;
+  const open = Math.max(1, Math.min(focused ? 1 : cap, count));
+  if (!metrics.spine) return { open: open, spine: 0, extra: 0 };
+  const folded = Math.max(0, count - open);
+  const room = stage - open * paneWidth;
+  const spine = folded ? Math.min(SPINE, room / folded) : SPINE;
+  return { open: open, spine: spine, extra: Math.max(0, (room - spine * folded) / open) };
+}
+
+/** Whether a tab this wide still has room for its title. */
+export function spineTitled(spine) {
+  return spine >= TITLED_SPINE;
+}
+
+/** Highest meaningful `p` for a trail of `count` panes with `open` shown. */
+export function maxPosition(count, open) {
+  return Math.max(0, count - open);
+}
+
+/**
+ * Where every pane is for position `p`, tab width `spine` and widening
+ * `extra`. Per pane: `x` (left edge, stage coordinates), `z` (paint order),
+ * `exposed` (visible width once nearer panes cover it). Every pane is `box`
+ * wide. Open panes sit side by side after the left tabs; a pane that reaches
+ * its tab's place stops there while the next slides over it.
+ * @param {number} count
+ * @param {number} p
+ * @param {number} spine
+ * @param {number} extra
+ * @param {ReturnType<typeof trailMetrics>} metrics
+ */
+export function paneFrames(count, p, spine, extra, metrics) {
+  const box = metrics.paneWidth + extra;
+  const right = metrics.stage;
   const frames = [];
   for (let i = 0; i < count; i++) {
-    const natural = left + spine + offset + (i - p) * width;
-    const parkedRight = spine > 0 && natural > maxX;
-    const x = parkedRight ? maxX : Math.max(minX, natural);
+    const natural = spine * p + (i - p) * box;
+    const leftStop = spine * i;
+    const rightStop = right - spine * (count - i);
+    const parkedRight = natural > rightStop;
+    const x = parkedRight ? rightStop : Math.max(leftStop, natural);
     // Parked on the left, a later pane covers an earlier one; parked on the
     // right, the nearer pane must cover the deeper one instead.
-    frames.push({ x: x, z: parkedRight ? count - i : count + i, exposed: 0 });
+    frames.push({ x: x, z: parkedRight ? count - i : count + i, exposed: 0, box: box });
   }
-  const stageRight = left + band;
   for (let i = 0; i < count; i++) {
     const own = frames[i];
-    let segments = [[own.x, Math.min(own.x + width, stageRight)]];
+    let segments = [[Math.max(0, own.x), Math.min(own.x + box, right)]];
     for (let j = 0; j < count; j++) {
       if (j === i || frames[j].z <= own.z) continue;
-      segments = subtract(segments, frames[j].x, frames[j].x + width);
+      segments = subtract(segments, frames[j].x, frames[j].x + box);
     }
     own.exposed = segments.reduce((sum, [a, b]) => sum + Math.max(0, b - a), 0);
   }
@@ -117,21 +131,20 @@ function subtract(segments, from, to) {
  * The `p` that brings pane `index` fully into view while moving as little as
  * possible from `from`.
  */
-export function revealPosition(index, from, count, cap) {
-  const max = maxPosition(count, cap);
+export function revealPosition(index, from, count, open) {
+  const max = maxPosition(count, open);
   let p = from;
   if (index < p) p = index;
-  else if (index > p + cap - 1) p = index - cap + 1;
+  else if (index > p + open - 1) p = index - open + 1;
   return Math.max(0, Math.min(max, Math.round(p)));
 }
 
 /**
- * How far a pane has folded into its spine: 0 fully open, 1 only the spine
+ * How far a pane has folded into its tab: 0 fully open, 1 only the tab
  * shows. Continuous, so content fades as it is covered rather than popping.
  */
-export function foldAmount(exposed, metrics) {
-  const { spine, paneWidth } = metrics;
-  if (!spine) return exposed >= paneWidth - 0.5 ? 0 : 1 - exposed / Math.max(1, paneWidth);
+export function foldAmount(exposed, spine, box) {
+  if (!spine) return exposed >= box - 0.5 ? 0 : 1 - exposed / Math.max(1, box);
   const t = (exposed - spine) / (spine * 2);
   return 1 - Math.max(0, Math.min(1, t));
 }

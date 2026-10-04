@@ -18,6 +18,7 @@ import {
   viewport,
 } from "../core.js";
 import {
+  absorbViewportScroll,
   animateView,
   applyTransform,
   cancelViewAnimation,
@@ -60,6 +61,7 @@ export function initViewportPan() {
     r.lifecycle.scope,
   );
   initTouchViewportGestures();
+  r.lifecycle.scope.listen(viewport, "scroll", absorbViewportScroll);
 }
 
 // Can this element still scroll in the direction of the wheel delta?
@@ -177,8 +179,6 @@ export function createStandaloneNoteAtViewportCenter() {
 export function createStandaloneNoteAtScreen(sx, sy) {
   if (mode !== "canvas" || document.body.classList.contains("mode-flight") || frozen || closed) return null;
   cancelViewAnimation();
-  viewport.scrollLeft = 0;
-  viewport.scrollTop = 0;
   const point = screenToWorld(sx, sy);
   const standalone = Object.assign(
     makeNode({

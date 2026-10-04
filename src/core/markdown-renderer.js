@@ -175,6 +175,18 @@ function findDisplayDollarClose(src, from) {
   return -1;
 }
 
+/**
+ * Marked asks a block extension where it could next start only to cut the
+ * paragraph it is reading short there, and a blank line ends that paragraph
+ * first. Looking no further keeps a long document's parse linear: searching
+ * the whole rest of the document from every paragraph is quadratic.
+ * @param {string} src
+ */
+function paragraphWindow(src) {
+  const blank = src.indexOf("\n\n");
+  return blank === -1 ? src : src.slice(0, blank);
+}
+
 /** @param {string} tex @param {boolean} displayMode */
 function mathSourceCode(tex, displayMode) {
   const code = `<code class="math-source">${escapeHtml(tex)}</code>`;
@@ -308,7 +320,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         name: "visualFencePending",
         level: "block",
         start(src) {
-          const match = visualFenceStart?.exec(src);
+          const match = visualFenceStart?.exec(paragraphWindow(src));
           if (!match) return undefined;
           return match.index + (match[0][0] === "\n" ? 1 : 0);
         },
@@ -329,7 +341,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         name: "mathBlock",
         level: "block",
         start(src) {
-          const match = BLOCK_MATH_START.exec(src);
+          const match = BLOCK_MATH_START.exec(paragraphWindow(src));
           if (!match) return undefined;
           return match.index + (match[0][0] === "\n" ? 1 : 0);
         },
@@ -479,7 +491,41 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     }
   }
 
+  /**
+   * How much of `markdown`, an answer still being written, has settled: its
+   * leading blocks up to a blank line before the last block. No text appended
+   * later can change those (a blank line closes every block that cannot
+   * contain one, and an open fence, math block or list is always the last
+   * block). -1 when a link reference definition can still change text
+   * anywhere in it.
+   * @param {unknown} markdown
+   */
+  function settledMarkdownLength(markdown) {
+    const src = String(markdown ?? "");
+    // Marked normalizes line endings, so its token lengths would not add up.
+    if (src.includes("\r")) return 0;
+    const lexer = new marked.Lexer(marked.defaults);
+    const tokens = lexer.blockTokens(src, []);
+    if (Object.keys(lexer.tokens.links).length) return -1;
+    let end = 0;
+    let lastBlock = 0;
+    const starts = [];
+    for (const token of tokens) {
+      starts.push(end);
+      if (token.type !== "space") lastBlock = end;
+      end += token.raw.length;
+    }
+    if (end !== src.length) return 0;
+    let settled = 0;
+    for (const start of starts) {
+      if (start > lastBlock) break;
+      if (start >= 2 && src.startsWith("\n\n", start - 2)) settled = start;
+    }
+    return settled;
+  }
+
   return {
     renderMarkdownToHtml,
+    settledMarkdownLength,
   };
 }

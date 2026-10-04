@@ -7,7 +7,7 @@ import { qsa } from "./dom.js";
 import { createCleanupScope } from "./kit/scope.js";
 import { onPreferenceChange, readingScale, toggleTheme } from "./preferences.js";
 import { wireNotice } from "./primitives/notice.js";
-import { captureReadingAnchor, restoreReadingAnchor } from "./scroll-position.js";
+import { reflowKeepingPlace } from "./scroll-position.js";
 import { createHoleStore } from "./store/hole-store.js";
 import { mountStructuredNote } from "./structured-note.js";
 import { mountVisuals } from "./visuals.js";
@@ -330,18 +330,19 @@ export function refreshDocumentTextSizes() {
  */
 /** @param {HTMLElement[]} surfaces */
 function resizeTextSurfaces(surfaces) {
-  const scrollers = new Map();
+  const scrollers = new Set();
   for (let i = 0; i < surfaces.length; i++) {
     const scroller = surfaces[i].closest(".pane-scroll, .card-body");
-    if (scroller && !scrollers.has(scroller)) scrollers.set(scroller, captureReadingAnchor(scroller));
+    if (scroller) scrollers.add(scroller);
   }
-  for (let i = 0; i < surfaces.length; i++) {
-    const surface = surfaces[i];
-    const base = surface.dataset.surface === "reader" ? READER_BASE : CANVAS_BASE;
-    surface.style.fontSize =
-      fontPx(base, surfaceFontScale(nodes[surface.dataset.nodeId], surface.dataset.surface)) + "px";
-  }
-  scrollers.forEach((anchor, scroller) => restoreReadingAnchor(scroller, anchor));
+  reflowKeepingPlace(Array.from(scrollers), function () {
+    for (let i = 0; i < surfaces.length; i++) {
+      const surface = surfaces[i];
+      const base = surface.dataset.surface === "reader" ? READER_BASE : CANVAS_BASE;
+      surface.style.fontSize =
+        fontPx(base, surfaceFontScale(nodes[surface.dataset.nodeId], surface.dataset.surface)) + "px";
+    }
+  });
 }
 export function setNodeFontScale(node, value) {
   if (!node) return 1;
@@ -518,12 +519,32 @@ function mountDocMedia(dc, node, base) {
   if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, surfaceKey);
   mountCodeCopy(dc);
 }
-// A pending node that has streamed content renders it live: the words so far,
-// a breathing caret at the end of the text, and a quiet status row beneath.
-export function fillStreaming(dc, node, surfaceKey) {
-  dc.innerHTML = node.html || "";
+/*
+ * A pending node that has streamed content renders it live: the words so far,
+ * a breathing caret at the end of the text, and a quiet status row beneath.
+ * Each frame, blocks that settled since the last one are added under the ones
+ * already shown and only the still-open end is built again (see
+ * refreshStreamingHtml), so a frame costs what arrived, not the whole answer.
+ * Nothing above the open end is touched, so the reader's place cannot move.
+ */
+export function updateStreaming(dc, node, surfaceKey) {
+  const stream = node._stream || null;
+  let shown = dc._rhStream;
+  if (!shown || shown.stream !== stream) {
+    dc.replaceChildren();
+    shown = dc._rhStream = { stream: stream, blocks: 0, nodes: 0, caret: null };
+  }
+  if (shown.caret) shown.caret.remove();
+  while (dc.childNodes.length > shown.nodes) dc.lastChild.remove();
+  if (stream) {
+    for (; shown.blocks < stream.blocks.length; shown.blocks++)
+      dc.insertAdjacentHTML("beforeend", stream.blocks[shown.blocks]);
+    shown.nodes = dc.childNodes.length;
+  }
+  dc.insertAdjacentHTML("beforeend", stream ? stream.live : node.html || "");
   const caret = document.createElement("span");
   caret.className = "stream-caret";
+  shown.caret = caret;
   let last = dc.lastElementChild;
   if (last && (last.tagName === "UL" || last.tagName === "OL")) last = last.lastElementChild || last;
   if (last && /^(P|H[1-6]|LI)$/.test(last.tagName)) last.appendChild(caret);
@@ -582,8 +603,10 @@ export function buildDocContent(node, base) {
   dc.dataset.nodeId = node.id;
   dc.dataset.surface = base === CANVAS_BASE ? "canvas" : "reader";
   dc.style.fontSize = fontPx(base, surfaceFontScale(node, dc.dataset.surface)) + "px";
+  // An answer still arriving is laid out in full (see scroll-position.js).
+  dc.classList.toggle("place-exact", node.status === "pending");
   if (node.status === "pending") {
-    if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
+    if (node.html) updateStreaming(dc, node, visualSurfaceKey(node, base));
     else dc.appendChild(buildLoading(node));
   } else {
     if (isNoteNode(node) && !node.source) {

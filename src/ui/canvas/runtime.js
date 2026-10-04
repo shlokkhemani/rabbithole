@@ -33,7 +33,6 @@ export const r = {
   edgeRaf: 0,
   edgeRedrawAll: false,
   edgeRedrawIds: {},
-  edgePositionNodeIds: {},
   edgeEls: {},
   edgeGeometry: {},
   edgeHl: {},

@@ -662,7 +662,11 @@ function submitReaction(reaction) {
 // ---------- follow-up composer ----------
 export function updateComposerState() {
   const current = nodes[currentNodeId];
+  const pending = !!current && current.status === "pending";
   composerInner.classList.toggle("has-draft", !!composerText.value.trim());
+  // Nothing to follow up on until the answer is whole: the bar waits unseen,
+  // its room kept, and fades in once the last word lands.
+  composerInner.parentElement?.classList.toggle("composer-waiting", pending);
   // A missing agent doesn't disable asking — questions queue server-side and
   // are answered when it returns. Only a closed session (server gone) does.
   applyComposerState(
@@ -674,7 +678,7 @@ export function updateComposerState() {
     },
     {
       phase: sessionPhase(),
-      pending: !!current && current.status === "pending",
+      pending: pending,
       unavailable: !current || !!current.source?.converting,
     },
     {

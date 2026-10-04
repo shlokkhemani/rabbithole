@@ -24,6 +24,18 @@ body {
 .md h4, .md h5, .md h6 { font-family: var(--font-ui); font-weight: var(--weight-semibold); font-size: var(--doc-code-size); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-dim); margin: 1.6em 0 0.5em; }
 .md h1:first-child, .md h2:first-child, .md h3:first-child, .md h4:first-child { margin-top: 0; }
 .md p { margin: 0 0 0.85em; }
+/* A long document renders only the stretch you can see. Each top-level text
+   block off screen is skipped — not laid out, not painted — and remembers its
+   real size once it has been seen, so a 30,000-word card pans, scrolls and
+   opens as lightly as a short one. */
+.doc-content.md > :is(p, h1, h2, h3, h4, h5, h6, pre, blockquote, .code-block, ul, ol) { content-visibility: auto; contain-intrinsic-size: auto 5lh; overflow-clip-margin: 8px; }
+/* Laid out in full: while a place is being set (scroll-position.js), while
+   an answer is still arriving — text that streams in must never shift what
+   is above it — and in a note being read or edited in its popover. */
+:is(:is(.place-exact, .note-pop-view) .doc-content.md, .doc-content.md.place-exact) > * { content-visibility: visible; }
+/* A skipped block contains its children's margins: the last item of a list
+   gives its margin to the list, as it did when the two collapsed. */
+.doc-content.md > :is(ul, ol) > li:last-child, .doc-content.md > :is(ul, ol) > li:last-child > :last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 0.1em 0 0.95em; padding-left: 1.35em; }
 .md li { margin: 0 0 0.3em; }
 .md li::marker { color: var(--fg-faint); }
@@ -63,9 +75,9 @@ body {
 .md .katex { color: inherit; }
 .md .katex-display { color: inherit; margin: 0.65em 0 1em; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
 .md .math-pending { position: relative; overflow: hidden; margin: 0.55em 0 1em; padding: 0.7em 0.9em; border: 1px solid var(--border); border-radius: 8px; background: var(--sk-base); color: var(--fg-dim); font-family: var(--font-ui); font-size: var(--doc-size-small); font-style: normal; }
-.md .math-pending::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 9%, transparent), transparent); animation: math-pending-shimmer var(--duration-legacy-1350) ease-in-out infinite; }
+.md .math-pending::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 9%, transparent), transparent); animation: math-pending-shimmer var(--duration-shimmer) ease-in-out infinite; }
 .md .viz-pending { position: relative; overflow: hidden; margin: 0.55em 0 1em; padding: 0.7em 0.9em; border: 1px solid var(--border); border-radius: 8px; background: var(--sk-base); color: var(--fg-dim); font-family: var(--font-ui); font-size: var(--doc-size-small); font-style: normal; }
-.md .viz-pending::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 9%, transparent), transparent); animation: math-pending-shimmer var(--duration-legacy-1350) ease-in-out infinite; }
+.md .viz-pending::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 9%, transparent), transparent); animation: math-pending-shimmer var(--duration-shimmer) ease-in-out infinite; }
 .md .viz-fallback { margin: 0.55em 0 1em; border: 1px solid var(--border); border-radius: 8px; padding: 0.75em 0.9em; background: var(--card-bg); color: var(--fg); font-family: var(--font-ui); }
 .md .viz-fallback-note { margin-bottom: 0.55em; color: var(--warn); font-size: var(--doc-code-size); font-weight: var(--weight-semibold); }
 .md .viz-fallback pre { margin: 0; }
@@ -122,12 +134,12 @@ html[data-theme="dark"] .rh-lightbox-img:not([data-rh-pasted="1"]) { padding: 8p
 /* While the ask popup is open, focus sits in its textarea and the browser paints
    the document selection as inactive (near-invisible) — so we paint it ourselves. */
 ::highlight(rh-ask) { background-color: var(--hl-strong); }
-.doc-content mark.hl { position: relative; background: var(--hl); color: inherit; border-radius: 2px; padding: 0.02em 1px; cursor: pointer; transition: background var(--duration-legacy-150), border-color var(--duration-legacy-150); }
+.doc-content mark.hl { position: relative; background: var(--hl); color: inherit; border-radius: 2px; padding: 0.02em 1px; cursor: pointer; transition: background var(--duration-fast), border-color var(--duration-fast); }
 /* A note wash is paint over an untouched text run. Empty absolute fragments
    preserve the exact shaping, measure, and line breaks the prose had before
    the note existed; the fragment boxes provide the same clickable wash. */
 .doc-content mark.mark-overlay { position: absolute; display: block; margin: 0; padding: 0; }
-.doc-content mark.hl::after { content: ""; position: absolute; inset: -0.05em -2px; border-radius: 3px; background: var(--hl-strong); opacity: 0; pointer-events: none; transition: opacity var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1); }
+.doc-content mark.hl::after { content: ""; position: absolute; inset: -0.05em -2px; border-radius: 3px; background: var(--hl-strong); opacity: 0; pointer-events: none; transition: opacity var(--duration-enter) cubic-bezier(0.23, 1, 0.32, 1); }
 .doc-content mark.mark-pending { border-bottom: 2px dotted color-mix(in srgb, var(--accent) 55%, transparent); }
 .doc-content mark.mark-ready { border-bottom: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .doc-content mark.mark-ready:hover, .doc-content mark.mark-pending:hover, .doc-content mark.mark-hover, .doc-content mark.mark-dom-focus, .doc-content mark.mark-focus { background: var(--hl-strong); border-bottom-color: var(--accent); }
@@ -146,7 +158,7 @@ html[data-theme="dark"] .rh-lightbox-img:not([data-rh-pasted="1"]) { padding: 8p
 .loading { padding: 0.2em 0; }
 .loading-status { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); font-size: var(--text-ui); margin-bottom: 0.9em; }
 .loading-bunny { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: 0 0 22px; line-height: 1;
-  color: var(--fg-dim); transform-origin: 50% 100%; animation: bunny-hop var(--duration-legacy-1450) infinite; }
+  color: var(--fg-dim); transform-origin: 50% 100%; animation: bunny-hop var(--duration-hop) infinite; }
 .loading-status svg { display: block; width: 20px; height: 20px; overflow: visible; }
 .loading-time { color: var(--fg-faint); font-variant-numeric: tabular-nums; font-size: var(--text-sm); }
 .ll-stalled, .ll-closed { display: none; color: var(--fg-faint); font-weight: var(--weight-medium); }
@@ -168,7 +180,7 @@ body.agent-down .loading-bunny, body.session-over .loading-bunny, body.frozen .l
 
 /* ---------- streaming (the answer arriving live) ---------- */
 .stream-caret { display: inline-block; width: 0.5em; height: 0.92em; margin-left: 3px; vertical-align: -0.08em; border-radius: 2px;
-  background: color-mix(in srgb, var(--accent) 78%, var(--fg)); animation: caret-breathe var(--duration-legacy-1150) ease-in-out infinite; }
+  background: color-mix(in srgb, var(--accent) 78%, var(--fg)); animation: caret-breathe var(--duration-breathe) ease-in-out infinite; }
 @keyframes caret-breathe { 0%, 100% { opacity: 0.8; } 50% { opacity: 0.16; } }
 @keyframes math-pending-shimmer { 100% { transform: translateX(100%); } }
 body.agent-down .stream-caret, body.session-over .stream-caret { animation: none; opacity: 0.22; }
@@ -188,7 +200,11 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
 /* ---------- READER ---------- */
 /* The taskbar floats above; the reader clears it with top padding. */
 #reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: var(--layer-reader); padding-top: var(--taskbar-clear); }
-body.mode-canvas #reader { display: none; }
+/* The mode you are not in keeps its rendered state — every pane's layout and
+   scroll place, every card — and costs nothing while unseen: content-visibility
+   skips it. (display: none would throw that state away, and every switch back
+   would lay out each word of a long document again.) */
+body.mode-canvas #reader { content-visibility: hidden; background: none; pointer-events: none; }
 #reader-workspace { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
 #reader-document { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 /* The way back lives in the taskbar's session cluster (left of share/theme/
@@ -201,10 +217,23 @@ body.mode-canvas #tb-restore-pill { display: none; }
 #tb-restore-pill:hover { border-color: var(--border-focus); }
 /* ---------- the trail ----------
    The reader is a stage of panes: the lineage of the document you are in,
-   laid side by side. JS places every pane with a transform (trail/stage.js);
-   nothing here ever animates a width, so text never re-wraps under the eye. */
-#reader-main { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; overscroll-behavior: none; touch-action: pan-y pinch-zoom; }
-.reader-pane { position: absolute; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; background: var(--bg); will-change: transform; contain: layout paint; }
+   laid side by side. JS places every pane with a transform (trail/stage.js). */
+/* --trail-col is a pane's reading measure, and a function of the pane's own
+   width (100cqw): two documents side by side read at --trail-floor (set by
+   reader.js per window), one alone widens up to --reader-column. It follows
+   the pane through every frame of a motion — a document left alone widens as
+   its pane does, not after — but reaches its measure 50px a side before the
+   pane's own margins would, so the text is done re-wrapping while the pane
+   still travels, never through the spring's slow last pixels. */
+#reader-main { --trail-col: min(var(--reader-column), max(var(--trail-floor, 0px), 100cqw - 180px)); position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; overscroll-behavior: none; touch-action: pan-y pinch-zoom; }
+.reader-pane { container-type: inline-size; position: absolute; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; background: var(--bg); will-change: transform; contain: layout paint; }
+/* The pane you are in is the one lit. Any other rests under a thin veil of
+   the page — still legible, plainly not where your keys and questions go —
+   and lifts it halfway when the pointer comes to it. */
+.reader-pane::after { content: ""; position: absolute; inset: 0; z-index: var(--layer-local-toolbar); pointer-events: none; background: var(--bg); opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard); }
+.reader-pane:not(.current):not(.pane-folded)::after { opacity: 0.45; }
+.reader-pane:not(.current):not(.pane-folded):hover::after { opacity: 0.22; }
 /* A pane laid over the one before it reads as a sheet on a sheet: a hairline
    and a soft shadow that falls back onto the page it came from. */
 .reader-pane + .reader-pane { box-shadow: -1px 0 0 var(--border), -18px 0 30px -26px var(--shadow-alpha-45); }
@@ -213,10 +242,12 @@ body.mode-canvas #tb-restore-pill { display: none; }
    with a column laid out for the width it had before. */
 .pane-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: scroll; padding-bottom: 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .pane-scroll:focus { outline: none; }
-.reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
+.reader-col { position: relative; width: var(--trail-col); margin: 0 auto; }
 /* Each pane's own bar: quiet over the document's title, a title bar once the
    title has scrolled away. Close lives here; so does Back on a phone. */
-.pane-bar { position: sticky; top: 0; z-index: var(--layer-local-top); display: flex; align-items: center; gap: var(--space-2); height: var(--control-h-lg); margin-bottom: var(--space-4); padding-inline: var(--space-4);
+/* Its title starts where the text does. */
+.pane-bar { position: sticky; top: 0; z-index: var(--layer-local-top); display: flex; align-items: center; gap: var(--space-2); height: var(--control-h-lg); margin-bottom: var(--space-4);
+  padding-left: max(4px, calc((100% - var(--trail-col)) / 2 - 6px)); padding-right: 10px;
   font-family: var(--font-ui); }
 /* Scrolled, the text passes under the bar and fades out beneath it — no rule,
    no box: the page simply dissolves at its top edge. */
@@ -229,28 +260,32 @@ body.mode-canvas #tb-restore-pill { display: none; }
   transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-standard); }
 .reader-pane.pane-titled .pane-title { opacity: 1; transform: none; }
 .reader-pane.current .pane-title { color: var(--fg-bold); }
-.pane-back, .pane-close { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: var(--control-h-sm); height: var(--control-h-sm); padding: 0; border: 0; border-radius: var(--radius-control-lg);
+.pane-back, .pane-focus, .pane-close { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: var(--control-h-sm); height: var(--control-h-sm); padding: 0; border: 0; border-radius: var(--radius-control-lg);
   background: none; color: var(--fg-faint); cursor: pointer; transition: var(--transition-color), opacity var(--duration-fast) var(--ease-standard); }
-.pane-back:hover, .pane-close:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg-bold); }
-.pane-back:focus-visible, .pane-close:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
-.pane-back[hidden], .pane-close[hidden] { display: none; }
+.pane-back:hover, .pane-focus:hover, .pane-close:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg-bold); }
+.pane-back:focus-visible, .pane-focus:focus-visible, .pane-close:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.pane-back[hidden], .pane-focus[hidden], .pane-close[hidden] { display: none; }
 .pane-back svg { transform: rotate(90deg); }
 /* On a wide trail the source is on screen already — Back is a phone idiom. */
 .pane-back { display: none; }
-.pane-close { margin-left: auto; opacity: 0.6; }
-.reader-pane:hover .pane-close, .pane-close:focus-visible { opacity: 1; }
+.pane-focus, .pane-close { opacity: 0.6; }
+.reader-pane:hover .pane-focus, .reader-pane:hover .pane-close, .pane-focus:focus-visible, .pane-close:focus-visible { opacity: 1; }
+.pane-focus[aria-pressed="true"] { opacity: 1; color: var(--fg-dim); }
 /* The spine: what a pane folds into when the next one slides over it. */
-.pane-spine { position: absolute; top: 0; bottom: 0; left: 0; display: flex; justify-content: center; width: 40px; padding: 22px 0; border: 0;
+.pane-spine { position: absolute; top: 0; bottom: 0; left: 0; z-index: var(--layer-local-toolbar); display: flex; overflow: hidden; justify-content: center; width: 40px; padding: 22px 0; border: 0;
   background: color-mix(in srgb, var(--bar-bg) 72%, var(--bg)); color: var(--fg-dim); cursor: pointer; opacity: 0; pointer-events: none;
   font-family: var(--font-ui); transition: var(--transition-color); }
 .pane-spine:hover { background: color-mix(in srgb, var(--fg) 6%, var(--bar-bg)); color: var(--fg-bold); }
 .pane-spine:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Tabs for a deep trail share the edge; too narrow for a title, a tab is a
+   sliver that still opens its document and names it on hover. */
+.pane-spine-sliver .pane-spine-title { opacity: 0; }
 .pane-spine-title { max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl;
   font-size: var(--text-ui); font-weight: var(--weight-medium); letter-spacing: 0.01em; }
 @keyframes pane-enter { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pane-leave { to { opacity: 0; } }
-.reader-pane.pane-entering .pane-scroll { animation: pane-enter var(--duration-legacy-220) var(--ease-out); }
-.reader-pane.pane-leaving { pointer-events: none; animation: pane-leave var(--duration-legacy-180) var(--ease-standard) forwards; }
+.reader-pane.pane-entering .pane-scroll { animation: pane-enter var(--duration-move) var(--ease-out); }
+.reader-pane.pane-leaving { pointer-events: none; animation: pane-leave var(--duration-enter) var(--ease-standard) forwards; }
 /* A PDF is already a complete reading surface. A root PDF gets its pane's
    whole height and no bar of its own; threaded PDFs keep the normal flow so
    their origin stays reachable. */
@@ -262,10 +297,18 @@ body.mode-canvas #tb-restore-pill { display: none; }
 .reader-context { font-family: var(--font-ui); font-size: var(--text-ui-plus); color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding: 2px 0 2px 12px; margin: var(--space-6) 0 26px; line-height: 1.55; }
 .reader-context .rc-label { color: var(--fg-faint); text-transform: uppercase; font-size: var(--text-xs); letter-spacing: 0.08em; margin-right: 6px; }
 /* The FROM strip is a live link back to the exact spot this branch grew from. */
-.reader-context.linked { cursor: pointer; transition: border-color var(--duration-legacy-150); }
+.reader-context.linked { cursor: pointer; transition: border-color var(--duration-fast); }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
-.reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color var(--duration-legacy-150); }
+.reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color var(--duration-fast); }
+/* A long ask shows its first four lines; More opens the rest in place. */
+.reader-context .rc-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.reader-context.open .rc-text { display: block; }
+.reader-context .rc-more { display: inline-flex; align-items: center; gap: 3px; margin: 2px 0 0; padding: 0; border: 0; background: none; font: inherit; font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-faint); cursor: pointer; transition: color var(--duration-fast); }
+.reader-context .rc-more[hidden] { display: none; }
+.reader-context .rc-more:hover, .reader-context .rc-more:focus-visible { color: var(--accent); }
+.reader-context .rc-more svg { transition: rotate var(--duration-fast) var(--ease-standard); }
+.reader-context.open .rc-more svg { rotate: 180deg; }
 /* The mark an open answer grew from stays lit while that answer is beside it. */
 .doc-content mark.mark-open { background: var(--hl-strong); border-bottom-color: var(--accent); }
 .lens-badge { display: inline-block; font-family: var(--font-ui); font-style: normal; font-size: var(--text-xxs-plus); font-weight: var(--weight-semibold); letter-spacing: 0.07em; text-transform: uppercase;
@@ -274,16 +317,21 @@ body.mode-canvas #tb-restore-pill { display: none; }
 
 /* ---------- composer (follow-up input) ---------- */
 /* One composer for the whole trail. It asks about the current document, so
-   it floats over the foot of that document's pane and glides along with it.
-   No band, no rule: the pane runs to the bottom of the window and its text
-   dissolves into the page behind the composer, as it does under the bar. */
-#composer { position: absolute; left: 0; bottom: 0; padding: 30px 0 16px; pointer-events: none; will-change: transform;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent), var(--bg) 30px);
-  transition: transform var(--duration-legacy-260) var(--ease-out); }
+   it rests at that document's end — where a reader who has finished arrives —
+   and never sits over the text. Each pane's foot keeps its room, so moving it
+   to another document shifts nothing. Parked in the shell (between panes) it
+   is out of sight. */
+#reader-document > #composer { display: none; }
+/* An answer still being written has nothing to follow up on yet: its bar
+   waits unseen (room kept, so nothing shifts) and fades in when it lands. */
+#composer, .card-composer { transition: opacity var(--duration-fast) var(--ease-out), visibility var(--duration-zero); }
+#composer.composer-waiting, .card-composer.composer-waiting { visibility: hidden; opacity: 0; }
+.pane-foot { width: var(--trail-col); margin: 0 auto; padding: calc(2 * var(--space-10)) 0 var(--space-2); box-sizing: content-box; }
+.reader-pane.pdf-reader-viewport .pane-foot { flex: none; box-sizing: border-box; width: 100%; max-width: calc(var(--reader-column) + 32px); padding: 10px 16px 14px; }
 /* The reader composer is the popover's composer surface mounted in flow: same
    .ask-input + .ask-actions structure, same paddings, wider column. The shell
    itself carries no padding — symmetry comes from the shared inner parts. */
-.composer-inner { max-width: 100%; margin: 0; display: block; pointer-events: auto; background: var(--card-bg); border: var(--border-default); border-radius: var(--radius-popover); padding: 0; overflow: hidden; box-shadow: 0 1px 2px var(--shadow-alpha-08), 0 12px 32px -16px var(--shadow-alpha-28); transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+.composer-inner { max-width: 100%; margin: 0; display: block; background: var(--card-bg); border: var(--border-default); border-radius: var(--radius-popover); padding: 0; overflow: hidden; transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
 .composer-inner:focus-within { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .composer-inner.disabled { opacity: 0.6; }
 /* Compact screens: one full-bleed pane at a time. The document you came from
@@ -291,13 +339,13 @@ body.mode-canvas #tb-restore-pill { display: none; }
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   #reader { height: 100dvh; min-height: -webkit-fill-available; overflow: hidden; }
   .pane-scroll { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
-  .reader-col { max-width: none; }
+  #reader-main { --trail-col: var(--trail-floor, 100%); }
   .pane-back { display: inline-flex; }
   .pane-back[hidden] { display: none; }
   .pane-spine { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
   .rh-origin-crop { max-width: 100%; }
-  #composer { padding: 22px 0 max(10px, env(safe-area-inset-bottom)); }
+  .pane-foot { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .followup-composer .ask-input textarea { min-height: 32px; font-size: var(--text-lg); line-height: 1.4; }
   .followup-composer .lens, .followup-composer .ask-commit { min-height: 44px; }
 }
@@ -307,16 +355,17 @@ body.mode-canvas #tb-restore-pill { display: none; }
 }
 
 /* ---------- CANVAS ---------- */
-#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: pan-x pan-y;
+/* Never left scrolled: a scroll the browser makes to reveal something is
+   handed to the camera (viewport.js). */
+#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: pan-x pan-y;
   background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 26px 26px; }
-body.mode-canvas #viewport { display: block; }
+body:not(.mode-canvas):not(.mode-flight) #viewport { content-visibility: hidden; pointer-events: none; }
 /* Mode flights: while the reader sheet rises out of (or settles back toward)
    its card — an anchored zoom-fade, never a geometric morph — both surfaces
    stay up: the canvas underneath, the fading sheet above it. The classes flip
    first; the flight is decoration. transform-origin (the card's center) is
    set inline by mode-transition.js. */
-body.mode-flight #reader { display: flex; }
-body.mode-flight #viewport { display: block; }
+body.mode-flight #reader { content-visibility: visible; background: var(--bg); }
 #reader.reader-flying { pointer-events: none; will-change: transform, opacity; }
 #viewport.panning { cursor: grabbing; }
 #viewport.pinching { cursor: zoom-in; }
@@ -326,10 +375,10 @@ body.mode-flight #viewport { display: block; }
    scale (old cards blur while a fresh card paints sharp). */
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
-#edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke var(--duration-legacy-220) ease; }
+#edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke var(--duration-move) ease; }
 /* Hover wakes an edge gently — a lean toward the accent, not a costume change. */
 #edges path.edge-hl { stroke: color-mix(in srgb, var(--accent) 45%, var(--edge)); }
-#edges circle { fill: var(--edge); transition: fill var(--duration-legacy-220) ease; }
+#edges circle { fill: var(--edge); transition: fill var(--duration-move) ease; }
 #edges circle.anchored { fill: color-mix(in srgb, var(--accent) 65%, var(--edge)); }
 #edges circle.edge-hl { fill: color-mix(in srgb, var(--accent) 60%, var(--edge)); }
 /* overflow stays visible so the follow-up drawer can slide out below the card;
@@ -337,8 +386,8 @@ body.mode-flight #viewport { display: block; }
 .card { --card-head-bg: var(--card-head); position: absolute; display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
 [data-focus-quiet]:focus-visible { outline: none; }
 .card.card-note { --card-head-bg: var(--note-card-head); background: var(--note-card-bg); border-color: var(--note-card-border); }
-.card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) 16%, transparent); opacity: 0; pointer-events: none; transition: opacity var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1); }
-.card.card-enter { opacity: 0; transform: translateY(8px); transition: opacity var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1), transform var(--duration-legacy-180) cubic-bezier(0.23, 1, 0.32, 1); }
+.card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) 16%, transparent); opacity: 0; pointer-events: none; transition: opacity var(--duration-enter) cubic-bezier(0.23, 1, 0.32, 1); }
+.card.card-enter { opacity: 0; transform: translateY(8px); transition: opacity var(--duration-enter) cubic-bezier(0.23, 1, 0.32, 1), transform var(--duration-enter) cubic-bezier(0.23, 1, 0.32, 1); }
 .card.card-enter.entered { opacity: 1; transform: translateY(0); }
 .card.root { border-color: var(--border-focus); }
 /* The document you're "in" (last read, Space's target) keeps a quiet identity. */
@@ -563,7 +612,7 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 #ask:focus-within { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 /* 14px inline on both sides: the textarea's text edge lands exactly where the
    first lens label starts below it (5px row padding + 9px pill padding) — one
-   shared alignment edge, and no legacy right-side slot for a send button. */
+   shared alignment edge, and no right-side slot for a send button. */
 .ask-input { display: flex; align-items: flex-end; gap: 8px; padding: 8px 14px; }
 .ask-input textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg);
   font-family: var(--font-ui); font-size: var(--text-body); line-height: 1.5; padding: 3px 0; min-height: 20px; max-height: 110px; }
@@ -682,9 +731,9 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .note-dot::before { content: ""; position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
 .note-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
   background: var(--note-ink); box-shadow: 0 0 0 2px var(--card-bg);
-  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-standard); }
+  transition: scale var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-standard); }
 .note-dots-reader .note-dot::after { box-shadow: 0 0 0 2px var(--bg); }
-.note-dot:hover::after, .note-dot.note-dot-partner::after { transform: scale(1.12); background: color-mix(in srgb, var(--note-ink) 74%, var(--fg-bold)); }
+.note-dot:hover::after, .note-dot.note-dot-partner::after { scale: 1.12; background: color-mix(in srgb, var(--note-ink) 74%, var(--fg-bold)); }
 /* A note about the whole card has no line to sit beside, so it reads as an
    outline at the top of the column instead of a filled anchor. */
 .note-dot-whole { width: 9px; height: 9px; }
@@ -699,15 +748,24 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .note-dots-inside .branch-dot { left: auto; right: 4px; }
 .branch-dot::before { content: ""; position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); }
 .branch-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
-  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-out); }
+  transition: scale var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-out); }
 .branch-dot-note::after { background: var(--note-ink); }
 .branch-dot-whole { width: 9px; height: 9px; }
 .branch-dot-whole::after { background: var(--bg); border: 2px solid var(--accent); box-shadow: 0 0 0 1.5px var(--bg); }
 .branch-dot-whole.branch-dot-note::after { border-color: var(--note-ink); }
-.branch-dot-pending::after { background: var(--bg); border: 1.5px solid var(--accent); animation: branch-breathe var(--duration-legacy-1350) ease-in-out infinite; }
-@keyframes branch-breathe { 50% { opacity: 0.4; transform: scale(0.8); } }
+/* Still being written: a hairline arc that turns, its tail fading into a
+   faint track — the same small circle as an answered dot, working. It turns
+   on `rotate` and grows on hover on `scale`: two properties, so lighting the
+   pair never stops the turn. */
+.branch-dot-pending::after { inset: -1.5px; border: 0; border-radius: 50%; box-shadow: none;
+  background: conic-gradient(from 0turn, color-mix(in srgb, var(--accent) 14%, transparent) 0 18%, var(--accent));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--accent) calc(100% - 1.6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--accent) calc(100% - 1.6px));
+  animation: branch-turn var(--duration-spin) linear infinite; }
+.branch-dot-pending.branch-dot-open::after { box-shadow: none; }
+@keyframes branch-turn { to { rotate: 1turn; } }
 .branch-dot-open::after { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px color-mix(in srgb, var(--accent) 55%, transparent); }
-.branch-dot:hover::after, .branch-dot.note-dot-partner::after { transform: scale(1.3); }
+.branch-dot:hover::after, .branch-dot.note-dot-partner::after { scale: 1.3; }
 .branch-dot:focus { outline: none; }
 .branch-dot:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 /* The question an answer was asked with, named on hover. */
@@ -1132,7 +1190,7 @@ body:not(.mode-canvas) #branch-undo { bottom: 84px; }
    accent wash directly: a lighter cousin of the live-selection tint by default,
    selection-strength on hover / when the answer card is hovered (mark-focus). */
 .doc-content .rh-pdf-mark { pointer-events: auto; cursor: pointer; }
-.doc-content .rh-pdf-mark polygon { pointer-events: all; fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill var(--duration-legacy-150), stroke var(--duration-legacy-150); }
+.doc-content .rh-pdf-mark polygon { pointer-events: all; fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: color-mix(in srgb, var(--accent) 32%, transparent); stroke-width: .75; vector-effect: non-scaling-stroke; transition: fill var(--duration-fast), stroke var(--duration-fast); }
 .doc-content .rh-pdf-mark.mark-pending polygon { fill: color-mix(in srgb, var(--accent) 9%, transparent); stroke-dasharray: 3 2; }
 .doc-content .rh-pdf-mark:hover polygon, .doc-content .rh-pdf-mark.mark-hover polygon, .doc-content .rh-pdf-mark.mark-dom-focus polygon, .doc-content .rh-pdf-mark.mark-focus polygon { fill: color-mix(in srgb, var(--accent) 30%, transparent); stroke: color-mix(in srgb, var(--accent) 55%, transparent); }
 .doc-content .rh-pdf-mark.mark-note polygon { fill: var(--note-hl); stroke: color-mix(in srgb, var(--note-ink) 48%, transparent); }
@@ -1146,7 +1204,7 @@ body:not(.mode-canvas) #branch-undo { bottom: 84px; }
 .rh-pdf-box-draft::before, .rh-pdf-box-draft::after { content: ""; position: absolute; width: 8px; height: 8px; border: 2px solid var(--accent); }
 .rh-pdf-box-draft::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-top-left-radius: 3px; }
 .rh-pdf-box-draft::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: 3px; }
-.rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow var(--duration-legacy-180) ease; }
+.rh-pdf-box-draft.settled { box-shadow: 0 0 0 100vmax color-mix(in srgb, black 14%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); transition: box-shadow var(--duration-enter) ease; }
 .rh-pdf-toolbar { position: sticky; top: 0; z-index: var(--layer-local-toolbar); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; box-sizing: border-box; width: 100%; min-height: 35px; padding: 4px 8px; flex: 0 0 auto; background: var(--card-head); border-bottom: 1px solid var(--border); border-radius: 0; }
 .rh-pdf-toolbar-actions { display: flex; align-items: center; gap: var(--control-gap); flex-shrink: 0; }
 .rh-pdf-region-actions { min-width: 0; justify-content: flex-start; }
@@ -1181,7 +1239,6 @@ body:not(.mode-canvas) #branch-undo { bottom: 84px; }
   #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .card-btn { width: 44px; height: 44px; }
   #tb-document > .rh-pdf-reader-toolbar .rh-pdf-zoom-controls .rh-pdf-zoom-value { min-width: 52px; }
 }
-.rh-pdf-legacy { margin: 0 0 14px; padding: 10px 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border)); border-radius: var(--radius-control); font-family: var(--font-ui); font-size: var(--text-ui); }
 .rh-pdf-box-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
 .rh-pdf-convert:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 4%, transparent); border-color: color-mix(in srgb, var(--fg) 9%, transparent); }
 .rh-pdf-convert.primary:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }

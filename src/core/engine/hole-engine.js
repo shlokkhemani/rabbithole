@@ -9,16 +9,35 @@ export class HoleEngine {
     this.port = assertEnginePort(port);
     this.state = createHoleState(hole, { cloneExtensions: false, canonicalNodes: true });
     this.onSaveError = onSaveError;
+    // Where the human is reading changes on every scroll pause; the hole
+    // itself far less often. A save with nothing but a new view writes only
+    // the view (when the store can), so its cost follows the view, not every
+    // document. The first save of a session writes the whole hole.
+    this.fullSave = true;
     this.saveChain = createSaveChain({
       debounceMs,
       save: () => {
+        const store = this.port.store;
+        if (!this.fullSave && typeof store.saveViewState === "function") {
+          const holeId = this.state.hole_id;
+          const viewState = this.state.view_state;
+          return () => Promise.resolve(store.saveViewState(holeId, viewState)).catch((error) => this.saveFailed(error));
+        }
+        this.fullSave = false;
         const snapshot = this.toHole();
-        return () => Promise.resolve(this.port.store.saveHole(snapshot)).catch((error) => {
-          if (this.onSaveError) return this.onSaveError(error);
-          throw error;
+        return () => Promise.resolve(store.saveHole(snapshot)).catch((error) => {
+          // Whatever this write carried is still unsaved: the next one writes it all.
+          this.fullSave = true;
+          return this.saveFailed(error);
         });
       },
     });
+  }
+
+  /** @param {any} error */
+  saveFailed(error) {
+    if (this.onSaveError) return this.onSaveError(error);
+    throw error;
   }
 
   get nodes() { return this.state.nodes; }
@@ -29,6 +48,7 @@ export class HoleEngine {
   dispatch(event, options = {}) {
     const reduced = reduceHoleEvent(this.state, event, { ...options, mutate: true });
     this.state = reduced.state;
+    if (event.type !== "view_state") this.fullSave = true;
     this.saveChain.markDirty();
     return reduced.effects || {};
   }

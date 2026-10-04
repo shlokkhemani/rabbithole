@@ -222,6 +222,11 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
     await page.waitForFunction(() => !document.body.classList.contains("mode-flight"));
     assert.deepEqual(await composerRowState(page, "#composer-actions"), { lensesVisible: true, commitsHidden: true },
       `${engineName}: an empty mobile reader composer must rest on the three presets with the commit pair hidden`);
+    // The composer rests after the document's last line: read to the end.
+    await page.evaluate(() => {
+      const scroller = document.querySelector(".reader-pane.current .pane-scroll");
+      scroller.scrollTop = scroller.scrollHeight;
+    });
     await page.fill("#composer-text", "Mobile follow-up draft");
     const mobileReader = await page.evaluate(() => {
       const rect = (selector) => {
@@ -262,7 +267,7 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
     assert.match(mobileReader.main.touchAction, /pan-y/,
       `${engineName}: one-finger swipes must be routed to native vertical reading (${JSON.stringify(mobileReader)})`);
     assert(mobileReader.composer.bottom <= mobileReader.viewport.height + 0.5,
-      `${engineName}: the follow-up composer must remain above the phone viewport edge (${JSON.stringify(mobileReader)})`);
+      `${engineName}: at the document's end the follow-up composer sits above the phone viewport edge (${JSON.stringify(mobileReader)})`);
     assert(mobileReader.inputFont >= 16,
       `${engineName}: the mobile follow-up field must not trigger iOS focus zoom`);
     assert(mobileReader.commits.every((target) => target.width >= 44 && target.height >= 44),
@@ -314,7 +319,6 @@ async function verifyDesktopReaderLayout(browserEngine) {
     const desktop = await page.evaluate(() => {
       const stage = document.getElementById("reader-main").getBoundingClientRect();
       const pane = document.querySelector(".reader-pane.current").getBoundingClientRect();
-      const scroller = document.querySelector(".reader-pane.current .pane-scroll");
       const column = document.querySelector(".reader-pane.current .reader-col").getBoundingClientRect();
       const workspaceStyle = getComputedStyle(document.getElementById("reader-workspace"));
       const bar = document.getElementById("taskbar").getBoundingClientRect();
@@ -328,8 +332,7 @@ async function verifyDesktopReaderLayout(browserEngine) {
         workspaceBorderTopStyle: workspaceStyle.borderTopStyle,
         workspaceBorderTopWidth: parseFloat(workspaceStyle.borderTopWidth),
         sessionRight: session.right,
-        doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display,
-        mainPaddingLeft: parseFloat(getComputedStyle(scroller).paddingLeft) };
+        doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display };
     });
     assert.equal(desktop.rails, 0, `desktop: the reader has no branch rail — branches live as dots in the margin (${JSON.stringify(desktop)})`);
     assert(Math.abs(desktop.stageWidth - desktop.viewportWidth) <= 1 && desktop.stageLeft === 0,
@@ -337,14 +340,17 @@ async function verifyDesktopReaderLayout(browserEngine) {
     assert(Math.abs(desktop.paneCentre - desktop.stageCentre) <= 1, `desktop: a lone document sits centred (${JSON.stringify(desktop)})`);
     assert(desktop.columnLeft >= desktop.paneLeft && desktop.columnRight <= desktop.paneRight,
       `desktop: prose stays inside its pane (${JSON.stringify(desktop)})`);
-    assert(desktop.columnWidth >= 480 && desktop.columnWidth <= 680, `desktop: a comfortable reading measure (${JSON.stringify(desktop)})`);
+    assert(desktop.columnWidth >= 480 && desktop.columnWidth <= 800, `desktop: a document read alone gets the wide measure (${JSON.stringify(desktop)})`);
     assert(desktop.barHeight < 52, `desktop: the shared taskbar must remain a single compact row (${JSON.stringify(desktop)})`);
     assert(desktop.contentTop >= desktop.barBottom, `desktop: reader content must clear the floating taskbar (${JSON.stringify(desktop)})`);
     assert.equal(desktop.workspaceBorderTopStyle, "solid", `desktop: the Reader workspace must have a continuous top boundary (${JSON.stringify(desktop)})`);
     assert(desktop.workspaceBorderTopWidth > 0, `desktop: the Reader workspace top boundary must remain visible (${JSON.stringify(desktop)})`);
     assert(desktop.viewportWidth - desktop.sessionRight <= 20, `desktop: the session cluster must hug the top-right corner (${JSON.stringify(desktop)})`);
     assert.equal(desktop.doneDisplay, "none", `desktop: Done ends an agent session — it must never render in the web app (${JSON.stringify(desktop)})`);
-    assert.equal(desktop.mainPaddingLeft, 40, `desktop: the reading gutter is 40px`);
+    assert(desktop.paneLeft <= desktop.stageLeft + 0.5 && desktop.paneRight >= desktop.stageLeft + desktop.stageWidth - 0.5,
+      `desktop: a lone document's pane fills the window, no dead margin beside it (${JSON.stringify(desktop)})`);
+    assert(desktop.columnLeft - desktop.paneLeft >= 40 && desktop.paneRight - desktop.columnRight >= 40,
+      `desktop: the reading gutter is at least 40px on each side (${JSON.stringify(desktop)})`);
     await page.close();
   } finally {
     await context.close();
@@ -813,7 +819,7 @@ async function verifyDockedNotes() {
     }, "the power-chord note to persist with geometry").then((hole) => hole.nodes.find((node) => node.id === directPlacedId));
     assert.deepEqual({ docked: directStored.extensions?.note?.docked ?? false, size: directStored.size,
       edge: await page.locator(`#edges path[data-child="${directPlacedId}"]`).count(),
-      dot: await page.locator(`.note-dot[data-note="${directPlacedId}"]`).count(),
+      dot: await page.locator(`.note-dot[data-note="${directPlacedId}"]:visible`).count(),
       selected: directStored.origin.selected_text },
     { docked: false, size: { w: 420, h: 460 }, edge: 1, dot: 0, selected: "this document" },
     "Cmd/Ctrl+Shift+Enter should create a placed note window with its parent edge in one commit");
@@ -848,7 +854,7 @@ async function verifyDockedNotes() {
     `dot motion should use the fast, restrained ease-out transition: ${JSON.stringify(column)}`);
 
     // Click reads, double click edits — on the dot and on the wash alike.
-    await page.locator(`.note-dot[data-note="${firstId}"]`).click();
+    await page.locator(`.note-dot[data-note="${firstId}"]:visible`).click();
     await popover.waitFor({ state: "visible" });
     await page.waitForFunction(() => document.getElementById("notepop").contains(document.activeElement));
     assert.deepEqual(await popover.evaluate((surface) => ({
@@ -1012,7 +1018,7 @@ async function verifyDockedNotes() {
     await page.keyboard.press("Escape");
 
     // The dot answers the same grammar as the wash: one click reads, two edit.
-    await page.locator(`.note-dot[data-note="${firstId}"]`).dblclick();
+    await page.locator(`.note-dot[data-note="${firstId}"]:visible`).dblclick();
     await popover.locator(".note-editor").waitFor();
     assert.equal((await popover.locator(".note-editor").innerText()).trim(), "The first docked note, revised",
       "double-clicking the dot opens the note for editing");
@@ -1038,7 +1044,7 @@ async function verifyDockedNotes() {
       return note?.size && !note.extensions?.note?.docked;
     }, "the whole-card note window to persist").then((hole) => hole.nodes.find((node) => node.id === wholeId));
     assert.deepEqual({ size: wholeStored.size, edge: await page.locator(`#edges path[data-child="${wholeId}"]`).count(),
-      dot: await page.locator(`.note-dot[data-note="${wholeId}"]`).count() },
+      dot: await page.locator(`.note-dot[data-note="${wholeId}"]:visible`).count() },
     { size: { w: 420, h: 460 }, edge: 1, dot: 0 },
     "the follow-up Note action should create a visible child window with standard canvas geometry");
     await page.keyboard.press("Escape");
@@ -1089,7 +1095,7 @@ async function verifyDockedNotes() {
 
     // Place on canvas: the same node, now with a place.
     const cardsBefore = await page.locator(".card").count();
-    await page.locator(`.note-dot[data-note="${secondId}"]`).click();
+    await page.locator(`.note-dot[data-note="${secondId}"]:visible`).click();
     await popover.waitFor({ state: "visible" });
     await page.waitForFunction(() => document.getElementById("notepop").contains(document.activeElement));
     await page.keyboard.press("Control+Enter");
@@ -1132,11 +1138,11 @@ async function verifyDockedNotes() {
       "a placed note's mark navigates to its card like any other branch");
 
     // Delete from the read state, no confirmation.
-    await page.locator(`.note-dot[data-note="${firstId}"]`).click();
+    await page.locator(`.note-dot[data-note="${firstId}"]:visible`).click();
     await popover.waitFor({ state: "visible" });
     await page.waitForFunction(() => document.getElementById("notepop").contains(document.activeElement));
     await page.keyboard.press("Backspace");
-    await page.waitForFunction((id) => !document.querySelector(`.note-dot[data-note="${id}"]`), firstId);
+    await page.waitForFunction((id) => !document.querySelector(`#viewport .note-dot[data-note="${id}"]`), firstId);
     assert.equal(await rootCard.locator(`mark[data-child="${firstId}"]`).count(), 0, "deleting a docked note takes its wash with it");
     // Deletion keeps the product's one exact undo: the removal commits when the
     // toast expires, which is also when the store may forget the note.
@@ -1155,11 +1161,11 @@ async function verifyDockedNotes() {
     // Asking from the read-state dot popover is one gesture: the note gains a
     // place and becomes the question, so the answer has something to hang from.
     const askId = await dockNote("third anchor", "Should this become a question?");
-    await page.locator(`.note-dot[data-note="${askId}"]`).click();
+    await page.locator(`.note-dot[data-note="${askId}"]:visible`).click();
     await popover.locator(".note-pop-ask").click();
     await page.waitForSelector(`.card[data-id="${askId}"]`);
     await page.locator(`.card[data-id="${askId}"]`, { hasText: "Fallback streamed document." }).waitFor();
-    assert.equal(await page.locator(`.note-dot[data-note="${askId}"]`).count(), 0, "a note that became an ask leaves the margin");
+    assert.equal(await page.locator(`.note-dot[data-note="${askId}"]:visible`).count(), 0, "a note that became an ask leaves the margin");
     const asked = await waitForStoredHole(page, (hole) => {
       const node = hole.nodes.find((entry) => entry.id === askId);
       return node?.origin?.question && node.position.x > 0 && !node.extensions?.note?.docked;
@@ -1368,7 +1374,7 @@ async function verifyNotePopoverWysiwyg() {
 
     async function popoverHeights(id) {
       await page.evaluate(() => window.getSelection()?.removeAllRanges());
-      await page.locator(`.note-dot[data-note="${id}"]`).click();
+      await page.locator(`.note-dot[data-note="${id}"]:visible`).click();
       await popover.waitFor({ state: "visible" });
       await popover.locator(".note-pop-view").waitFor();
       // The popover slides in over --popover-speed; measure only once settled.
@@ -1411,7 +1417,7 @@ async function verifyNotePopoverWysiwyg() {
     // Proof the keyboard flow survived the ringless focus target: the read
     // state's delete shortcut still lands without touching the mouse.
     await page.keyboard.press("Backspace");
-    await page.waitForFunction((id) => !document.querySelector(`.note-dot[data-note="${id}"]`), singleId);
+    await page.waitForFunction((id) => !document.querySelector(`#viewport .note-dot[data-note="${id}"]`), singleId);
     await popover.waitFor({ state: "hidden" });
 
     const multi = await popoverHeights(multiId);
@@ -1499,7 +1505,7 @@ async function verifyNotePopoverAnchorStability() {
     const firstId = await dockNote("first anchor", "The pinned note under test");
     const secondId = await dockNote("second anchor", "The neighbouring dot");
 
-    await page.locator(`.note-dot[data-note="${firstId}"]`).click();
+    await page.locator(`.note-dot[data-note="${firstId}"]:visible`).click();
     await popover.waitFor({ state: "visible" });
     await page.waitForFunction(() => {
       const transform = getComputedStyle(document.getElementById("notepop")).transform;
@@ -1523,21 +1529,21 @@ async function verifyNotePopoverAnchorStability() {
     await rootCard.locator(`mark[data-child="${firstId}"]`).hover();
     await page.waitForTimeout(160);
     assert.deepEqual(await page.evaluate((id) => {
-      const dot = document.querySelector(`.note-dot[data-note="${id}"]`);
+      const dot = document.querySelector(`#viewport .note-dot[data-note="${id}"]`);
       const box = dot.getBoundingClientRect();
       return { partner: dot.classList.contains("note-dot-partner"),
         box: { width: box.width, height: box.height },
-        ink: getComputedStyle(dot, "::after").transform };
-    }, firstId), { partner: true, box: { width: 7, height: 7 }, ink: "matrix(1.12, 0, 0, 1.12, 0, 0)" },
+        ink: getComputedStyle(dot, "::after").scale };
+    }, firstId), { partner: true, box: { width: 7, height: 7 }, ink: "1.12" },
     "the wash-hover partner grow lives on the ink, never on the anchor's own box");
     await still("hovering the note's wash");
-    await page.locator(`.note-dot[data-note="${firstId}"]`).hover();
+    await page.locator(`.note-dot[data-note="${firstId}"]:visible`).hover();
     await page.waitForTimeout(160);
     assert.deepEqual(await page.evaluate((id) => {
-      const dot = document.querySelector(`.note-dot[data-note="${id}"]`);
+      const dot = document.querySelector(`#viewport .note-dot[data-note="${id}"]`);
       const box = dot.getBoundingClientRect();
-      return { box: { width: box.width, height: box.height }, ink: getComputedStyle(dot, "::after").transform };
-    }, firstId), { box: { width: 7, height: 7 }, ink: "matrix(1.12, 0, 0, 1.12, 0, 0)" },
+      return { box: { width: box.width, height: box.height }, ink: getComputedStyle(dot, "::after").scale };
+    }, firstId), { box: { width: 7, height: 7 }, ink: "1.12" },
     "hovering the dot itself grows the ink without touching the anchor's box");
     await still("hovering the note's own dot");
     // Wander the pointer across the rest of the canvas: the sibling dot,
@@ -1546,7 +1552,7 @@ async function verifyNotePopoverAnchorStability() {
       const center = (el) => { const box = el.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 }; };
       const body = document.querySelector(".card.root .card-body").getBoundingClientRect();
       return [
-        center(document.querySelector(`.note-dot[data-note="${id}"]`)),
+        center(document.querySelector(`#viewport .note-dot[data-note="${id}"]`)),
         center(document.querySelector(".card-note .doc-content")),
         { x: body.left + 60, y: body.top + 40 },
         { x: body.left + body.width / 2, y: body.top + body.height / 2 },
@@ -1562,7 +1568,7 @@ async function verifyNotePopoverAnchorStability() {
     // must still flip it.
     const threshold = await page.evaluate((id) => new Promise((resolve) => {
       const pop = document.getElementById("notepop");
-      const dot = document.querySelector(`.note-dot[data-note="${id}"]`);
+      const dot = document.querySelector(`#viewport .note-dot[data-note="${id}"]`);
       const style = getComputedStyle(pop);
       const gap = parseFloat(style.getPropertyValue("--surface-gap")) || 0;
       const edge = parseFloat(style.getPropertyValue("--surface-edge")) || 0;
@@ -1608,10 +1614,10 @@ async function verifyNotePopoverAnchorStability() {
 
     // A save re-renders the dot column while the dialog is open: the dialog's
     // anchor must be the very same element afterwards — and still tracking.
-    await page.locator(`.note-dot[data-note="${secondId}"]`).click();
+    await page.locator(`.note-dot[data-note="${secondId}"]:visible`).click();
     await popover.waitFor({ state: "visible" });
     await page.waitForFunction(() => document.getElementById("notepop").contains(document.activeElement));
-    await page.evaluate((id) => { window.__testDotBefore = document.querySelector(`.note-dot[data-note="${id}"]`); }, secondId);
+    await page.evaluate((id) => { window.__testDotBefore = document.querySelector(`#viewport .note-dot[data-note="${id}"]`); }, secondId);
     await popover.locator(".note-pop-view").dblclick();
     await popover.locator(".note-editor").waitFor();
     await popover.locator(".note-editor").fill("The neighbouring dot, revised");
@@ -1619,11 +1625,11 @@ async function verifyNotePopoverAnchorStability() {
     await popover.locator(".note-pop-view").waitFor();
     await waitForStoredHole(page, (hole) => hole.nodes.find((node) => node.id === secondId)?.markdown === "The neighbouring dot, revised",
       "the revised note to persist");
-    assert.equal(await page.evaluate((id) => document.querySelector(`.note-dot[data-note="${id}"]`) === window.__testDotBefore, secondId),
+    assert.equal(await page.evaluate((id) => document.querySelector(`#viewport .note-dot[data-note="${id}"]`) === window.__testDotBefore, secondId),
       true, "re-rendering the dot column must reuse the open dialog's anchor, not conjure a stranger");
     const tracked = await page.evaluate((id) => new Promise((resolve) => {
       const pop = document.getElementById("notepop");
-      const dot = document.querySelector(`.note-dot[data-note="${id}"]`);
+      const dot = document.querySelector(`#viewport .note-dot[data-note="${id}"]`);
       const gap = parseFloat(getComputedStyle(pop).getPropertyValue("--surface-gap")) || 0;
       const geometry = () => {
         const dotBox = dot.getBoundingClientRect();
@@ -1715,7 +1721,7 @@ async function verifyStandaloneNotesAndEditing() {
       "the pinned card must retain its Ask or note composer");
     const pinnedExpand = connectedProjection.locator('[aria-label="Expand document"]');
     await pinnedExpand.click();
-    await page.locator("#reader").waitFor({ state: "visible" });
+    await page.locator("#reader-restore").waitFor({ state: "visible" });
     await page.locator("#reader-restore").click();
     await page.waitForSelector("body.mode-canvas");
     await connectedProjection.waitFor();
@@ -2083,7 +2089,7 @@ async function verifyStandaloneNotesAndEditing() {
     }, standaloneNoteId);
     await pinnedWindow.waitFor({ state: "attached" });
     await pinnedOrigin.waitFor({ state: "attached" });
-    if (await page.locator("#reader").isVisible()) await page.locator("#reader-restore").click();
+    if (!(await page.locator("body.mode-canvas").count())) await page.locator("#reader-restore").click();
     await page.waitForSelector("body.mode-canvas");
     await pinnedWindow.waitFor();
     const pinnedAfterReload = await pinnedWindow.boundingBox();
@@ -2124,6 +2130,9 @@ async function verifyStandaloneNotesAndEditing() {
     const askDraft = page.locator(".card.note-draft");
     const askEditor = askDraft.locator(".note-editor");
     await askEditor.fill("How does the standalone Ask intent work?");
+    // The draft opens around an empty point and may overhang the window: the
+    // focus reveals it by moving the camera, a frame later. Measure after.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const askDraftState = await askDraft.evaluate((card) => {
       card.__standaloneAskIdentity = true;
       const rect = card.getBoundingClientRect();
@@ -2137,7 +2146,7 @@ async function verifyStandaloneNotesAndEditing() {
         screen: { left: rect.left, top: rect.top, width: rect.width },
       };
     });
-    await askDraft.locator('.ask-commit[data-commit="ask"]').click();
+    await page.keyboard.press("Control+Enter");
     const standaloneAsk = page.locator(`.card[data-id="${askDraftState.id}"]`);
     await page.waitForFunction((id) => {
       const card = document.querySelector(`.card[data-id="${id}"]`);
@@ -2172,11 +2181,6 @@ async function verifyStandaloneNotesAndEditing() {
     }, { id: askDraftState.id, position: askDraftState.position, size: askDraftState.size });
     await standaloneAsk.filter({ hasText: "The standalone two-intent composer reached the existing provider path." }).waitFor();
     assert.equal(providerCalls, 1, "the standalone Ask action should call the configured provider exactly once");
-    await standaloneAsk.locator(".card-more").click();
-    assert.equal(await page.locator("#cardmenu #cm-pin").isVisible(), true,
-      "a standalone answer should offer the same menu-only pin action as a standalone note");
-    await page.keyboard.press("Escape");
-    assert.equal(await page.locator(".card.note-draft").count(), 0, "Ask commit should consume the ephemeral note surface");
     assert.deepEqual(await standaloneAsk.evaluate((card) => ({
       sameCard: card.__standaloneAskIdentity === true,
       edgeCount: document.querySelectorAll("#edges path").length,
@@ -2188,6 +2192,11 @@ async function verifyStandaloneNotesAndEditing() {
       ownEdges: 0,
       transform: askDraftState.transform,
     }, "the streamed answer must settle in the same disconnected card without moving the camera");
+    await standaloneAsk.locator(".card-more").click();
+    assert.equal(await page.locator("#cardmenu #cm-pin").isVisible(), true,
+      "a standalone answer should offer the same menu-only pin action as a standalone note");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".card.note-draft").count(), 0, "Ask commit should consume the ephemeral note surface");
     await page.waitForFunction(async ({ id, position, size }) => {
       const hole = await window.__rabbitholeTest.readStoredHole();
       return hole.nodes.some((node) => node.id === id && node.parent_id === null
@@ -2667,9 +2676,6 @@ async function verifyNoteToAskConversion() {
         origin: { left: rect.left, top: rect.top },
         height: card.getBoundingClientRect().height };
     };
-    // Playwright's auto-scroll can leave the overflow-hidden canvas viewport
-    // displaced; the product owns that scroll at zero, so measure from zero.
-    await page.evaluate(() => { const viewport = document.getElementById("viewport"); viewport.scrollTop = 0; viewport.scrollLeft = 0; });
     const restLine = await followupCard.evaluate(measureFirstLine);
     await followupCard.locator(".doc-content").dispatchEvent("dblclick", {
       bubbles: true, cancelable: true, clientX: 0, clientY: 0,
@@ -4298,6 +4304,12 @@ async function verifyCanvasBranching() {
   await streamedDot.focus();
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector(".reader-pane.current")?.getAttribute("aria-label") === "Euler branch");
+  // The answer slides in out of its tab at the window's edge; its text can
+  // take focus once it stands open.
+  await page.waitForFunction(() => {
+    const pane = document.querySelector(".reader-pane.current");
+    return pane && !pane.classList.contains("pane-folded") && !pane.querySelector(".pane-scroll").inert;
+  });
 
   const contextStrip = page.locator('.reader-pane.current .reader-context[role="link"]');
   assert.deepEqual(await contextStrip.evaluate((strip) => ({ tabIndex: strip.tabIndex, name: strip.getAttribute("aria-label") })),
@@ -4471,6 +4483,10 @@ async function verifyCanvasBranching() {
   assert(!reloadedRaw.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
   assert(!page.url().includes(MOCK_KEY), "URL must not contain provider key");
 
+  // A refresh taken in the reader comes back in the reader; the canvas is
+  // one click away.
+  await page.waitForSelector(".reader-pane .reader-context");
+  await page.locator("#reader-restore").click();
   await page.waitForSelector("body.mode-canvas");
   const finalBranch = page.locator('.card:not(.root)', { hasText: "Euler identity connects rotation" });
   const finalBranchId = await finalBranch.getAttribute("data-id");

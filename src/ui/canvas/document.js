@@ -30,7 +30,8 @@ export function fillBody(node) {
   const dc = buildDocContent(node, CANVAS_BASE);
   body.appendChild(dc);
   body.classList.toggle("pdf-body", dc.classList.contains("rh-pdf"));
-  applyChildHighlights(dc, node);
+  applyChildHighlights(dc, node, false);
+  r.lifecycle.hooks.watchDocumentLayout(dc);
   // The marks exist now, so the margin column that points at them can be built.
   r.lifecycle.hooks.renderDockedNotes(node);
 }

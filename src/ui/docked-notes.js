@@ -74,6 +74,8 @@ const dockedLifecycle = createModuleLifecycle({
 // itself — which note, which card, which state — lives in this record.
 let popSession = null;
 const reactionHideTimers = new Map();
+/** @type {ResizeObserver | null} */
+let layoutWatch = null;
 
 export function initDockedNotes() {
   disposeDockedNoteResources(false);
@@ -94,15 +96,24 @@ export function initDockedNotes() {
       scope.listen(surface, "mouseout", function (e) {
         syncPartnerHighlight(e, false);
       });
-      // A card's own body carries its dots along as it scrolls, but an inner
-      // scroller (a native PDF) moves the marks underneath them. Scroll does
-      // not bubble, so the reposition is caught on the way down.
-      scope.listen(surface, "scroll", scheduleEdges, true);
+      // A card's body and a reader pane carry their dots along as they
+      // scroll; only an inner scroller (a native PDF) moves the marks from
+      // under them. Scroll does not bubble, so it is caught on the way down.
+      scope.listen(surface, "scroll", onInnerScroll, true);
     });
-    // Reader line breaks can change with the viewport. Repaint the empty note
-    // overlays and move their dots after that reflow; neither pass can affect
-    // the prose that caused it.
-    scope.listen(window, "resize", positionDockedNotes);
+    // Dots follow the layout of the document they sit beside: one observer
+    // watches every rendered document and re-places its dots when its text
+    // re-flows — a new width, a text size, a formula or image arriving, a
+    // stretch of a long document rendered for the first time. Nothing else
+    // re-measures them.
+    if (typeof ResizeObserver === "function") {
+      const watch = new ResizeObserver(onDocumentLayout);
+      layoutWatch = watch;
+      scope.addCleanup(function () {
+        watch.disconnect();
+        if (layoutWatch === watch) layoutWatch = null;
+      });
+    }
     const surface = popEl();
     scope.listen(surface, "click", onPopoverClick);
     scope.listen(surface, "dblclick", onPopoverDblClick);
@@ -457,14 +468,54 @@ function readerDotHosts(parent) {
    because the card's width is only final after layout. */
 export function renderDockedNotes(parent) {
   if (!parent) return;
-  syncDotColumn(canvasDotHost(parent), dockedNotesOf(parent), false);
+  const card = canvasDotHost(parent);
+  syncDotColumn(card, dockedNotesOf(parent), false);
   const hosts = readerDotHosts(parent);
   if (hosts.length) {
     const items = marginItemsOf(parent);
     for (let i = 0; i < hosts.length; i++) syncDotColumn(hosts[i], items, true);
   }
-  positionDockedNotes();
-  if (dockedLifecycle.scope) dockedLifecycle.scope.raf(positionDockedNotes);
+  // Placed against the layout as it stands; the layout watch moves them if it
+  // changes. Only the surface on screen is measured — measuring the hidden one
+  // would lay out a whole document nobody sees.
+  if (card && mode === "canvas") positionDockedNotes(card);
+  for (let i = 0; i < hosts.length; i++) positionDockedNotes(hosts[i]);
+}
+
+/** Watch a rendered document so its dots follow its layout. */
+export function watchDocumentLayout(dc) {
+  if (layoutWatch && dc) layoutWatch.observe(dc);
+}
+
+// Documents seen on the page: one that has since left it is let go. (A card's
+// document is built before its card is placed — not yet seen, not yet gone.)
+const shownDocuments = new WeakSet();
+
+function onDocumentLayout(entries) {
+  const hosts = new Set();
+  for (const entry of entries) {
+    const dc = entry.target;
+    if (!dc.isConnected) {
+      if (shownDocuments.has(dc) && layoutWatch) layoutWatch.unobserve(dc);
+      continue;
+    }
+    shownDocuments.add(dc);
+    const host = dc.closest(".reader-pane:not(.pane-leaving) .reader-col, .card-body");
+    if (host) hosts.add(host);
+  }
+  hosts.forEach(positionDockedNotes);
+}
+
+function onInnerScroll(e) {
+  const scroller = e.target;
+  if (!(scroller instanceof Element) || !scroller.classList.contains("rh-pdf-scroll")) return;
+  const host = scroller.closest(".reader-col, .card-body");
+  if (host && dockedLifecycle.scope)
+    dockedLifecycle.scope.raf(function () {
+      positionDockedNotes(host);
+    });
+  const card = scroller.closest(".card");
+  if (card) scheduleEdges();
 }
 
 function syncDotColumn(host, notes, reader) {
@@ -542,10 +593,12 @@ function paintBranchDot(dot, node) {
 }
 
 /* Each dot sits on its anchor's line box, nudging off the exact line only when
-   a neighbour is already there. Canvas rects arrive scaled by the camera; the
-   column's own coordinates never are. */
+   a neighbour is already there. Rects arrive scaled (by the camera, or by the
+   reader's flight); the column's own coordinates never are. */
+/** Place the dots (and note washes) inside `root` — by default, the surface on screen. */
 export function positionDockedNotes(root) {
-  root = root && root.querySelectorAll ? root : document;
+  root = root && root.querySelectorAll ? root : mode === "reader" ? readerMain : world;
+  if (!root) return;
   syncTextOverlayMarks(root);
   const layers = root.matches && root.matches(".note-dots") ? [root] : root.querySelectorAll(".note-dots");
   for (let i = 0; i < layers.length; i++) positionDotColumn(layers[i]);
@@ -560,8 +613,11 @@ function positionDotColumn(layer) {
     layer.remove();
     return;
   }
-  const scale = reader ? 1 : view.scale || 1;
   const hostRect = host.getBoundingClientRect();
+  // The reader is scaled while it flies in from its card. Read the scale off
+  // the column's own height: its rounding error stays under half a pixel
+  // anywhere inside it.
+  const scale = reader ? (host.offsetHeight && hostRect.height / host.offsetHeight) || 1 : view.scale || 1;
   const scrollTop = reader ? 0 : host.scrollTop;
   // The reader's margin is only a margin while there is room for it; a column
   // that fills the window (a native PDF) keeps its dots inside its own edge.

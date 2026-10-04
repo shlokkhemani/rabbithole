@@ -131,6 +131,4 @@ function finishCanvasCommit(node, context) {
   layoutNode(node);
   updateCardComposer(node);
   scheduleEdges();
-  context.pinCanvasScroll();
-  context.scope.raf(context.pinCanvasScroll);
 }

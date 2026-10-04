@@ -26,13 +26,26 @@ const textMeasureContext = textMeasureCanvas?.getContext("2d") || null;
 // the next view must open on the same line of the same page at the same zoom.
 const readingPlaces = new Map();
 
+/** Every PDF reading place, for the view state a refresh brings back. */
+export function pdfReadingPlaces() {
+  /** @type {Record<string, { page: number, offset: number, left: number, zoom: number }>} */
+  const out = {};
+  for (const [key, place] of readingPlaces) out[key] = { ...place };
+  return out;
+}
+
+/** Replace every reading place with the saved ones: the next mount opens on them. */
+export function seedPdfReadingPlaces(places) {
+  readingPlaces.clear();
+  if (!places || typeof places !== "object") return;
+  for (const [key, place] of Object.entries(places)) {
+    if (place && Number.isFinite(place.page)) readingPlaces.set(key, { ...place });
+  }
+}
+
 export function mountPdfView(container, node, options = {}) {
   const pdf = normalizePdfExtension(node);
-  const rawPdf = node?.source;
-  if (!pdf || pdf.converted || pdf.converting) {
-    if (rawPdf?.version === 1 && !rawPdf.converted) mountLegacyNotice(container);
-    return null;
-  }
+  if (!pdf || pdf.converted || pdf.converting) return null;
 
   const scope = createCleanupScope();
 
@@ -121,10 +134,19 @@ export function mountPdfView(container, node, options = {}) {
         saved &&
         saved.page === place.page &&
         Math.abs((saved.offset - place.offset) * (state?.element.offsetHeight || 0)) <= 2;
-      if (placePending && !ours) placePending = false;
+      // A place the paper cannot reach yet (pages still growing to their real
+      // size) is clamped, not left: it stays pending until the pages arrive.
+      if (placePending && !ours && !placeOutOfReach(saved)) placePending = false;
       if (!placePending) readingPlaces.set(placeKey, place);
     }
     scheduleRender();
+  }
+
+  function placeOutOfReach(place) {
+    const state = place && pageStates.find((candidate) => candidate.meta.n === place.page);
+    if (!state) return false;
+    const top = state.element.offsetTop + place.offset * state.element.offsetHeight;
+    return top > scroll.scrollHeight - scroll.clientHeight + 1;
   }
 
   function releasePlace() {
@@ -178,6 +200,8 @@ export function mountPdfView(container, node, options = {}) {
       if (restore) restoreClientAnchor(restore.pinned, restore.x, restore.y);
       const place = currentPlace();
       if (place) readingPlaces.set(placeKey, place);
+      // A zoom need not scroll anything: say the place moved so it is saved.
+      container.dispatchEvent(new CustomEvent("rh-pdf-place", { bubbles: true }));
       scheduleRender();
     });
   }
@@ -1065,14 +1089,6 @@ function button(text, label) {
   out.textContent = text;
   out.setAttribute("aria-label", label);
   return out;
-}
-
-function mountLegacyNotice(container) {
-  const notice = document.createElement("div");
-  notice.className = "rh-pdf-legacy";
-  notice.textContent =
-    "This PDF uses the retired image-based format. Re-import the original PDF for source-quality rendering and accurate selections.";
-  container.prepend(notice);
 }
 
 function clientToViewport(clientX, clientY, rect, viewport) {

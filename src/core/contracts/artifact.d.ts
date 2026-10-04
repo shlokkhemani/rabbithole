@@ -31,11 +31,29 @@ export interface CanvasView {
   scale: number;
 }
 
+/** A PDF reading place: page, fraction down it, fraction across, zoom. */
+export interface PdfReadingPlace {
+  page: number;
+  offset: number;
+  left: number;
+  zoom: number;
+}
+
+/** Where the human was — restored exactly on refresh or reopen. Runtime authority: core/hole/bookmark.js. */
 export interface PersistedViewState {
   mode: "canvas" | "reader";
+  /** The document you are in. */
   node_id: string | null;
-  scroll: number;
+  /** Canvas camera. */
   view?: CanvasView;
+  /** Reader trail, root first; `position` is the trail's resting pane offset. */
+  reader?: { trail: string[]; position: number; focused: boolean };
+  /** Reader scroll per document (node id → scrollTop), non-zero only. */
+  scrolls?: Record<string, number>;
+  /** Canvas card body scroll per card (node id → scrollTop), non-zero only. */
+  cards?: Record<string, number>;
+  /** PDF reading place per `${nodeId}:${"reader" | "canvas"}`. */
+  pdf?: Record<string, PdfReadingPlace>;
 }
 
 /** Canonical node projection returned by `toPersistedNode`. */

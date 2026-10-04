@@ -87,9 +87,12 @@ export function createNodeEl(node, enter) {
   node.titleEl = titleEl;
   node.collapseBtn = collapseBtn;
   if (r.cardResizeObserver) r.cardResizeObserver.observe(el);
+  // Placed before it is filled (a pinned card moves into its window), so its
+  // document is laid out once, where it will be read.
+  if (node.collapsed) el.classList.add("collapsed");
+  layoutNode(node);
   fillBody(node);
   updateCardComposer(node);
-  if (node.collapsed) el.classList.add("collapsed");
   enableDrag(node, head);
   enableResize(node, resize);
   head.addEventListener("dblclick", function (e) {
@@ -157,7 +160,6 @@ export function createNodeEl(node, enter) {
     focusOrigin(node, false);
     if (node.ncComp && !node.ncText.value.trim() && document.activeElement !== node.ncText) closeCardDrawer(node);
   });
-  layoutNode(node);
   if (el.classList.contains("card-enter")) {
     requestAnimationFrame(function () {
       el.classList.add("entered");

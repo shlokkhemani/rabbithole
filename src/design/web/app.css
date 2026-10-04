@@ -717,7 +717,7 @@ body.blank-dragging .composer-card {
   inset: 0;
   transform: translateX(-100%);
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 8%, transparent), transparent);
-  animation: math-pending-shimmer var(--duration-legacy-1350) ease-in-out infinite;
+  animation: math-pending-shimmer var(--duration-shimmer) ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -932,7 +932,7 @@ body.blank-dragging .composer-card {
 .provider-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--duration-legacy-200) var(--ease-out);
+  transition: grid-template-rows var(--duration-enter) var(--ease-out);
 }
 
 .provider-item.selected .provider-body {
@@ -1947,7 +1947,7 @@ body.blank-dragging .composer-card {
 .ollama-recovery-steps > span:first-child { color: var(--fg); }
 .ollama-recovery-steps > span:nth-child(2) { color: var(--fg-faint); font-variant-numeric: tabular-nums; }
 .ollama-recovery-steps > div { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.ollama-recovery-steps i { height: 3px; border-radius: var(--radius-pill); background: var(--border); transition: background-color var(--duration-legacy-240) var(--ease-standard); }
+.ollama-recovery-steps i { height: 3px; border-radius: var(--radius-pill); background: var(--border); transition: background-color var(--duration-move) var(--ease-standard); }
 .ollama-recovery-steps i.done { background: var(--accent); }
 .ollama-recovery-steps i.active { background: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 
@@ -1959,7 +1959,7 @@ body.blank-dragging .composer-card {
   align-content: start;
   padding: 22px var(--recovery-pad-x) 24px;
   text-align: left;
-  animation: ollama-stage-in var(--duration-legacy-180) var(--ease-out) both;
+  animation: ollama-stage-in var(--duration-enter) var(--ease-out) both;
 }
 
 @keyframes ollama-stage-in {
@@ -2105,8 +2105,8 @@ body.blank-dragging .composer-card {
   background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
-.ollama-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--duration-legacy-260) var(--ease-out); }
-.ollama-progress:not([aria-valuenow]) span { width: 40%; animation: ollama-indeterminate var(--duration-legacy-1100) var(--ease-standard) infinite; transition: none; }
+.ollama-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--duration-move) var(--ease-out); }
+.ollama-progress:not([aria-valuenow]) span { width: 40%; animation: ollama-indeterminate var(--duration-sweep) var(--ease-standard) infinite; transition: none; }
 @keyframes ollama-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
 
 .ollama-progress-meta {
@@ -2126,7 +2126,7 @@ body.blank-dragging .composer-card {
 .ollama-recovery-checking { align-content: center; justify-items: center; min-height: 124px; text-align: center; }
 .ollama-recovery-checking h2 { font: var(--weight-medium) var(--text-base)/1.3 var(--font-ui); color: var(--fg); letter-spacing: -0.01em; }
 .ollama-checking-note { margin: 6px 0 0; color: var(--fg-faint); font: var(--text-ui)/1.4 var(--font-ui); }
-.ollama-spinner { width: 16px; height: 16px; margin-bottom: 12px; border: 2px solid color-mix(in srgb, var(--fg) 16%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ollama-spin var(--duration-legacy-600) linear infinite; }
+.ollama-spinner { width: 16px; height: 16px; margin-bottom: 12px; border: 2px solid color-mix(in srgb, var(--fg) 16%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ollama-spin var(--duration-spin) linear infinite; }
 @keyframes ollama-spin { to { transform: rotate(360deg); } }
 
 .ollama-recovery-success { align-content: center; justify-items: center; min-height: 124px; text-align: center; }
@@ -2142,7 +2142,7 @@ body.blank-dragging .composer-card {
   background: var(--success);
   color: var(--bg);
   font: var(--weight-bold) 15px/1 var(--font-ui);
-  animation: ollama-check-pop var(--duration-legacy-320) var(--ease-spring) both;
+  animation: ollama-check-pop var(--duration-slow) var(--ease-spring) both;
 }
 
 @keyframes ollama-check-pop {

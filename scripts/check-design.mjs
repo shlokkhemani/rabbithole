@@ -11,7 +11,7 @@ const runtimeVariables = new Set([
   "--rh-pan-x", "--rh-pan-y", "--rh-zoom", "--rail-top", "--overlay-viewport-left",
   "--overlay-viewport-top", "--overlay-viewport-width", "--overlay-viewport-height",
   "--rh-pdf-reader-center", "--node-scale", "--reader-scale", "--nc-op",
-  "--surface-gap",
+  "--surface-gap", "--trail-floor",
 ]);
 const errors = [];
 const definitions = new Set();

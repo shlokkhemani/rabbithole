@@ -6,8 +6,60 @@ function scrollRange(scroller) {
   return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
 }
 
+/*
+ * A long document skips laying out what is off screen (base.css), sizing a
+ * block it has never shown by an estimate. A pixel place means the text it
+ * meant only against the real layout, so every place is set with the document
+ * laid out in full. The browser remembers each block's real size as it lays
+ * it out, and skipping resumes a frame later without moving a thing.
+ */
+/** @type {WeakMap<Element, number>} */
+const fullLayoutHolds = new WeakMap();
+
+/** Lay `scroller`'s document out in full until the returned release is called. */
+export function holdFullLayout(scroller) {
+  fullLayoutHolds.set(scroller, (fullLayoutHolds.get(scroller) || 0) + 1);
+  scroller.classList.add("place-exact");
+  let released = false;
+  return function release() {
+    if (released) return;
+    released = true;
+    // Sizes are remembered when the frame is rendered: let one render first.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        const left = (fullLayoutHolds.get(scroller) || 1) - 1;
+        fullLayoutHolds.set(scroller, left);
+        if (left) return;
+        // Skipping resuming moves nothing (every size is remembered), yet the
+        // browser's scroll anchoring nudges the place by a few pixels as it
+        // does: it sits out that one frame.
+        scroller.style.overflowAnchor = "none";
+        scroller.classList.remove("place-exact");
+        requestAnimationFrame(function () {
+          if (!fullLayoutHolds.get(scroller)) scroller.style.overflowAnchor = "";
+        });
+      });
+    });
+  };
+}
+
+/** Put `scroller` at pixel place `top`, measured against its real layout. */
+export function setScrollPlace(scroller, top) {
+  if (!scroller) return;
+  // The top is the top whatever the estimates: nothing to lay out.
+  if (!(top > 0)) {
+    scroller.scrollTop = 0;
+    return;
+  }
+  const release = holdFullLayout(scroller);
+  scroller.scrollTop = top;
+  release();
+}
+
 export function captureContentPosition(scroller) {
   if (!scroller) return null;
+  // At the top is at the top on any surface: nothing to measure.
+  if (!(scroller.scrollTop > 0)) return { progress: 0, block: -1, offset: 0 };
   const range = scrollRange(scroller);
   const position = { progress: range ? scroller.scrollTop / range : 0, block: -1, offset: 0 };
   const content = scroller.querySelector?.(".doc-content");
@@ -27,6 +79,42 @@ export function captureContentPosition(scroller) {
 
 export function restoreContentPosition(scroller, position) {
   if (!scroller || !position) return;
+  // A document read from its top opens at its top: aligning its first block
+  // with the edge would tuck its title under a pane's bar.
+  if (!(position.progress > 0)) {
+    scroller.scrollTop = 0;
+    return;
+  }
+  const release = holdFullLayout(scroller);
+  placeAtContent(scroller, position);
+  release();
+}
+
+/*
+ * A document has one place, whichever surface shows it. The canvas and the
+ * reader measure it differently (a card is narrower than a pane), so a switch
+ * reads every place the surface being left shows, by content, while it still
+ * shows, and puts each on the surface being entered.
+ */
+/** @param {Iterable<[string, Element | null | undefined]>} scrollers @returns {Map<string, ReturnType<typeof captureContentPosition>>} */
+export function readPlaces(scrollers) {
+  const places = new Map();
+  for (const [id, scroller] of scrollers) {
+    // A scroller not laid out (a folded card) shows no place to carry.
+    if (scroller && scroller.clientHeight) places.set(id, captureContentPosition(scroller));
+  }
+  return places;
+}
+
+/** @param {Map<string, ReturnType<typeof captureContentPosition>>} places @param {(id: string) => Element | null | undefined} scrollerOf */
+export function putPlaces(places, scrollerOf) {
+  places.forEach(function (position, id) {
+    const scroller = scrollerOf(id);
+    if (scroller && scroller.clientHeight) restoreContentPosition(scroller, position);
+  });
+}
+
+function placeAtContent(scroller, position) {
   const range = scrollRange(scroller);
   const content = scroller.querySelector?.(".doc-content");
   const block = content && position.block >= 0 ? content.children[position.block] : null;
@@ -42,6 +130,29 @@ export function restoreContentPosition(scroller, position) {
   scroller.scrollTop = clamp((Number(position.progress) || 0) * range, 0, range);
 }
 
+/**
+ * Run `change` — a text-size step, a new measure — and keep every scroller's
+ * reading line where it was. The anchor is read from the layout the reader is
+ * looking at. With `full`, the reflow is laid out in full so the place, and
+ * every margin dot measured against it, lands on real sizes rather than on
+ * the estimates of blocks the old size never showed. Without it only what is
+ * on screen is laid out again: the line is kept all the same, and text above
+ * settles as it is reached (the browser's scroll anchoring holds the view).
+ * @param {Element[]} scrollers
+ * @param {() => void} change
+ * @param {{ full?: boolean }} [options]
+ */
+export function reflowKeepingPlace(scrollers, change, { full = true } = {}) {
+  const held = scrollers.map(function (scroller) {
+    return { scroller, anchor: captureReadingAnchor(scroller), release: full ? holdFullLayout(scroller) : null };
+  });
+  change();
+  for (const { scroller, anchor, release } of held) {
+    restoreReadingAnchor(scroller, anchor);
+    if (release) release();
+  }
+}
+
 // Consecutive size steps hold one anchor: re-picking the line start after each
 // reflow would let the anchor walk, so A+ then A- would not land back home.
 // Held only while it still sits where the last restore put it.
@@ -54,7 +165,7 @@ const heldAnchors = new WeakMap();
  * top edge, held at the same on-screen offset across the reflow. Blocks with
  * no text (a figure, a diagram) fall back to the block itself.
  */
-export function captureReadingAnchor(scroller) {
+function captureReadingAnchor(scroller) {
   const content = scroller?.querySelector?.(".doc-content");
   if (!content || !scroller.clientHeight) return null;
   const held = heldAnchors.get(scroller);
@@ -76,7 +187,7 @@ export function captureReadingAnchor(scroller) {
   return { block: blocks[first], offset: (top - rect.top) / Math.max(1, rect.height) };
 }
 
-export function restoreReadingAnchor(scroller, anchor) {
+function restoreReadingAnchor(scroller, anchor) {
   if (!scroller || !anchor) return;
   // Card bodies live inside the zoomed canvas world: rects are screen pixels,
   // scrollTop is CSS pixels. The ratio is only an estimate (offsetHeight is

@@ -24,6 +24,29 @@ export function applyTransform() {
   // the view moving underneath them dismisses them rather than chases them.
   if (r.cardMenuController && r.cardMenuController.isOpen()) r.cardMenuController.close({ restoreFocus: false });
   r.lifecycle.hooks.closeDockedNotePopover({ restoreFocus: false, commit: true });
+  writeTransform();
+}
+
+/**
+ * The browser scrolls the canvas to reveal what it focuses or finds: a card
+ * reached by Tab, a caret, a find-in-page match. The camera alone places the
+ * canvas, so the scroll is folded into the view and the viewport returns to
+ * zero. Nothing moves on screen, so nothing open is dismissed.
+ */
+export function absorbViewportScroll() {
+  const dx = viewport.scrollLeft,
+    dy = viewport.scrollTop;
+  if (!dx && !dy) return;
+  viewport.scrollLeft = 0;
+  viewport.scrollTop = 0;
+  cancelViewAnimation();
+  setViewAdjusted(true);
+  view.x -= dx;
+  view.y -= dy;
+  writeTransform();
+}
+
+function writeTransform() {
   world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
   zoomLabel.textContent = Math.round(view.scale * 100) + "%";
   // A transform moves every on-canvas anchor rect without firing anything a
@@ -173,6 +196,9 @@ export function cancelViewAnimation() {
 export function animateView(tx, ty, ts, opts) {
   opts = opts || {};
   cancelViewAnimation();
+  // Every glide answers something the human did (a dive, a mark, a return
+  // from the reader): the camera it lands on is theirs, and a refresh keeps it.
+  setViewAdjusted(true);
   const myId = viewAnimId;
   if (document.hidden || shouldReduceMotion() || opts.source !== "pointer") {
     view.x = tx;

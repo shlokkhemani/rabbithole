@@ -1,20 +1,30 @@
 import { iconSvg } from "../core/html/icons.js";
+import { holdFullLayout, setScrollPlace } from "./scroll-position.js";
 
 const DUPLICATE_REFERENCE_ATTRIBUTES = ["aria-controls", "aria-describedby", "aria-labelledby", "for"];
 
 // Moving an element through the DOM throws away every scroll offset inside
-// it. Pinning moves the live card, so its scrollers travel with it: the card
-// keeps reading on exactly where it was.
+// it. Pinning moves the live card, so the places it is read at travel with
+// it: the card keeps reading on exactly where it was. Only those scrollers
+// are asked (a code block's sideways offset is not a place), since asking
+// every element lays out every block a long document skips; an empty one
+// (a card pinned as it is built) has no place and is not laid out to ask.
+const READING_SCROLLERS = ".card-body, .rh-pdf-scroll, .structured-note";
+
+/** @returns {Map<Element, number>} the vertical place of each scroller that had one */
 function moveKeepingScroll(element, move) {
   const scrolled = [];
-  for (const el of [element, ...element.querySelectorAll("*")]) {
-    if (el.scrollTop || el.scrollLeft) scrolled.push([el, el.scrollTop, el.scrollLeft]);
+  for (const el of element.querySelectorAll(READING_SCROLLERS)) {
+    if (el.firstChild && (el.scrollTop || el.scrollLeft)) scrolled.push([el, el.scrollTop, el.scrollLeft]);
   }
   move();
+  const places = new Map();
   for (const [el, top, left] of scrolled) {
-    el.scrollTop = top;
+    setScrollPlace(el, top);
     el.scrollLeft = left;
+    places.set(el, top);
   }
+  return places;
 }
 
 /**
@@ -69,6 +79,8 @@ export function createPinnedWindows(options) {
       card: source,
       visual: null,
       originBody: null,
+      // The proxy is inert: its place changes only when it is rendered.
+      originScroll: 0,
       renderFrame: 0,
       movingCard: true,
       pinnedActions: [],
@@ -82,9 +94,10 @@ export function createPinnedWindows(options) {
     entries.set(node.id, entry);
     node.canvasEl = origin;
     source.classList.add("pinned-window-card");
-    moveKeepingScroll(source, function () {
+    const places = moveKeepingScroll(source, function () {
       wrapper.appendChild(source);
     });
+    entry.originScroll = places.get(source.querySelector(":scope > .card-body")) || 0;
     entry.movingCard = false;
 
     entry.observer =
@@ -177,7 +190,6 @@ export function createPinnedWindows(options) {
 
   function renderProxy(entry) {
     const source = entry.card;
-    const previousScroll = entry.originBody?.scrollTop || source.querySelector(":scope > .card-body")?.scrollTop || 0;
     const visual = source.cloneNode(true);
     visual.classList.remove("card", "current", "flash", "card-enter", "entered", "pinned-window-card", "dragging");
     visual.classList.add("pinned-origin-card");
@@ -225,7 +237,14 @@ export function createPinnedWindows(options) {
     entry.visual = visual;
     entry.originBody = visual.querySelector(":scope > .card-body");
     entry.node.canvasBodyEl = entry.originBody;
-    if (entry.originBody) entry.originBody.scrollTop = previousScroll;
+    if (entry.originBody) {
+      // The proxy stands in for the card on the graph: its height, and the
+      // edge drawn to it, must come from its real layout, not from estimates
+      // of text it has never shown. It is laid out in full once.
+      const release = holdFullLayout(entry.originBody);
+      if (entry.originScroll > 0) entry.originBody.scrollTop = entry.originScroll;
+      release();
+    }
     copyCanvasPixels(source, visual);
     positionOrigin(entry);
   }

@@ -1,6 +1,10 @@
-/** @protects the reader trail: answers open beside their source, panes slide and fold into spines without re-wrapping text, and every gesture settles on a pane. */
+/** @protects the reader trail: answers open beside their source, panes slide and fold into spines without re-wrapping text as they slide, a document read alone reads wider, and every gesture settles on a pane. */
 // Walks the failure modes written before the trail was built (see the
-// assertion labels: M = motion, G = geometry, B = behaviour). Ends by writing
+// assertion labels: M = motion, G = geometry, B = behaviour) and before its
+// second pass: W = the trail fills the window, A = the active pane is plain,
+// T = every ancestor keeps a tab, F = one document read alone (and read
+// wider: S = the solo measure), C = the composer rests at the document's end,
+// never over it. Ends by writing
 // test-artifacts/reader-trail/trace.json and a screenshot per stage: the same
 // run always produces the same trace, so a regression shows up as a diff.
 import assert from "node:assert/strict";
@@ -47,6 +51,8 @@ try {
       answer("Multi-head attention", "multi"),
       answer("Why several subspaces", "sub"),
       answer("Order without recurrence", "order"),
+      answer("Deeper still", "deep"),
+      answer("Deepest of all", "deepest"),
     ],
   });
   await page.goto(app.baseUrl, { waitUntil: "networkidle" });
@@ -60,26 +66,48 @@ try {
   // ---------------------------------------------------------------- lone
   let g = await stage("lone document", page);
   assert.equal(g.panes.length, 1);
-  const column = g.panes[0].colW;
-  assert(Math.abs(g.panes[0].x + g.panes[0].w / 2 - g.stageW / 2) <= 1, `G5 a lone document sits centred: ${JSON.stringify(g.panes[0])}`);
-  assert(column >= 480 && column <= 680, `a comfortable measure: ${column}`);
+  const solo = g.panes[0].colW;
+  // Two side by side each read at this measure; a document alone reads wider.
+  const column = Math.min(800, (g.stageW - 2 * 40) / 2 - 2 * 40);
+  assert(g.panes[0].x <= 0.5 && g.panes[0].w >= g.stageW - 0.5, `W1 a lone document's pane fills the window: ${JSON.stringify(g.panes[0])}`);
+  // Centred to within half the scrollbar's reserved gutter.
+  assert(Math.abs(g.panes[0].colX + g.panes[0].colW / 2 - g.stageW / 2) <= 6, `G5 a lone document's text sits centred: ${JSON.stringify(g.panes[0])}`);
+  assert.equal(solo, 800, `S1 a document read alone gets the wide measure: ${JSON.stringify(g.panes[0])}`);
+  await assertTitlesOnColumn(page, "G7 a lone document's bar title starts where its text does");
+  // A wide screen gives a lone document wide margins: its title stays on the text.
+  await page.setViewportSize({ width: 2560, height: 1200 });
+  await settle(page);
+  await assertTitlesOnColumn(page, "G7 on a wide screen the bar title starts where the text does");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await settle(page);
 
   // ----------------------------------------------------- ask opens beside
   await scrollPane(page, rootId, 420);
-  const rootLines = await lineBoxes(page, rootId, "heads0");
-  const placeAtAsk = await ask(page, rootId, "divide each dot product", "Why divide by the square root?");
+  const lineAtAsk = await ask(page, rootId, "divide each dot product", "Why divide by the square root?");
   g = await stage("answer opens beside", page);
   assert.equal(g.panes.length, 2, "B1 the answer opens in a pane beside its source");
   const [source, sqrt] = g.panes;
   assert.equal(source.id, rootId);
-  assert(source.current, "B1 the asking document stays the one you are in");
-  assert.equal(source.scrollTop, placeAtAsk, "G6 opening beside never moves the source's place");
-  assert.equal(source.colW, column, "G1 the source's measure never changes");
-  assert.deepEqual(await lineBoxes(page, rootId, "heads0"), rootLines, "G1 not one line of the source re-wraps");
+  assert(sqrt.current && !source.current, "A1 the answer you asked for becomes the pane you are in");
+  assert(sqrt.veil < 0.01 && source.veil > 0.3, `A1 the pane you are not in rests under a veil: ${JSON.stringify(g.panes)}`);
+  assert(sqrt.x + sqrt.w >= g.stageW - 0.5 && source.x <= 0.5, `W1 the pair fills the window edge to edge: ${JSON.stringify(g.panes)}`);
+  assert(g.stageW - sqrt.closeRight <= 24, `W2 the right pane's Close sits in the window's corner: ${sqrt.closeRight}`);
+  assert.equal(source.colW, column, `S2 a second document narrows the first to the pair's measure: ${JSON.stringify(g.panes)}`);
+  await assertLineKept(page, rootId, lineAtAsk, "S2 re-wrapping for the pair keeps the line being read");
+  await assertTitlesOnColumn(page, "G7 side by side, each bar title starts where its text does");
   assert(source.x + source.w <= sqrt.x + 0.5, `G2 open panes never overlap: ${JSON.stringify(g.panes)}`);
   assert(await paneText(page, sqrt.id, "Why the square root opens here"), "B4 the answer renders in its pane while its source stays current");
-  await assertComposerUnder(page, rootId, "B5 the composer sits under the current document");
-  await assertComposerFloats(page, "B14 the panes run the full height; the composer floats over the current one");
+  await assertComposerUnder(page, sqrt.id, "B5 the composer lines up with the current document's text");
+  await assertComposerAtEnd(page, sqrt.id, "C1 the composer rests after the current document's last line");
+  // Pointing into the source makes it the pane you are in; the composer moves
+  // to its end, and the answer it left does not shift by a pixel.
+  const answerHeight = await scrollHeightOf(page, sqrt.id);
+  const rootBar = await page.locator(`.reader-pane[data-node-id="${rootId}"] .pane-title`).boundingBox();
+  await page.mouse.click(rootBar.x + 40, rootBar.y + rootBar.height / 2);
+  g = await stage("pointing makes the source current", page);
+  assert(g.panes[0].current && g.panes[1].veil > 0.3 && g.panes[0].veil < 0.01, "A2 pointing into a pane makes it the one you are in");
+  await assertComposerAtEnd(page, rootId, "C1 the composer follows the document you are in");
+  assert.equal(await scrollHeightOf(page, sqrt.id), answerHeight, "C2 the composer leaving a document never shifts it");
   const dot = await page.evaluate((id) => {
     const pane = document.querySelector(`.reader-pane[data-node-id="${id}"]`);
     const d = pane.querySelector(".branch-dot");
@@ -117,7 +145,7 @@ try {
   const [root3, multi3, sub] = g.panes;
   assert(root3.folded, "G3 the root folds into a spine as the trail moves on");
   assert(!multi3.folded && !sub.folded, "the asking document and its answer are both open");
-  assert(multi3.current, "B1 the document you asked from stays current");
+  assert(sub.current, "A1 the deeper answer becomes the pane you are in");
   assert(multi3.x + multi3.w <= sub.x + 0.5, "G2 no open pane overlaps another");
   assert.equal(multi3.colW, column, "G1 the measure is the same in every slot");
   assert(root3.inertBody, "G4 a folded pane's content is out of reach");
@@ -215,6 +243,56 @@ try {
   g = await stage("wide again shows two", page);
   assert.equal(g.panes.filter((p) => !p.folded).length, 2, "M10 widening restores the pair");
 
+  // ------------------------------------------ four deep: every ancestor a tab
+  const beforeDeep = g.panes.length;
+  // The pair is the root and "Multi-head attention"; three more asks, each
+  // from the newest answer, make the trail five documents deep.
+  for (const [text, question] of [["multi10 multi11", "Why no recurrence?"], ["Order without recurrence opens", "And deeper?"], ["Deeper still opens", "Deeper again?"]]) {
+    await ask(page, g.panes.at(-1).id, text, question);
+    g = await stage(`ask ${question}`, page);
+  }
+  g = await stage("four deep keeps every ancestor as a tab", page);
+  assert.equal(g.panes.length, beforeDeep + 3);
+  const tabs = g.panes.filter((p) => p.folded);
+  assert.equal(tabs.length, g.panes.length - 2, "T1 every pane that is not open is a tab");
+  for (let i = 0; i < tabs.length; i++) {
+    assert(tabs[i].exposed >= 22 && tabs[i].titled, `T1 each ancestor keeps a tab wide enough for its title: ${JSON.stringify(tabs)}`);
+    if (i) assert(tabs[i].x - tabs[i - 1].x >= 22, `T1 tabs sit side by side, never on top of each other: ${JSON.stringify(tabs)}`);
+  }
+  assert.equal(g.panes.filter((p) => !p.folded).at(-1).x + g.panes.at(-1).w >= g.stageW - 0.5, true, "W1 the trail still reaches the window's edge");
+  assert(g.panes.every((p) => p.colW === column), "G1 the measure is the same at every depth");
+
+  // ------------------------------------------ read one document alone
+  const deepest = g.panes.at(-1);
+  await scrollPane(page, deepest.id, 120);
+  const lineBeforeFocus = await readingLine(page, deepest.id);
+  await page.evaluate(() => /** @type {HTMLElement} */ (document.activeElement)?.blur());
+  await page.keyboard.press("f");
+  g = await stage("f reads the current document alone", page);
+  const alone = g.panes.filter((p) => !p.folded);
+  assert.equal(alone.length, 1, `F1 focused, one document stands open: ${JSON.stringify(g.panes)}`);
+  assert.equal(alone[0].id, deepest.id, "F1 the document you were in is the one read alone");
+  assert.equal(g.panes.filter((p) => p.folded).length, g.panes.length - 1, "F1 every other document folds into a tab");
+  assert.equal(alone[0].colW, solo, "S3 a focused document reads at the wide measure");
+  await assertLineKept(page, deepest.id, lineBeforeFocus, "S3 widening keeps the line being read");
+  assert(alone[0].x + alone[0].w >= g.stageW - 0.5, "W1 the focused document fills the window beside its tabs");
+  await page.keyboard.press("ArrowLeft");
+  g = await stage("focused, left walks to the parent", page);
+  const walked = g.panes.filter((p) => !p.folded);
+  assert(walked.length === 1 && walked[0].id === g.panes.at(-2).id && walked[0].current, "F3 ← in focus reads the parent alone");
+  assert(g.panes.at(-1).folded && g.panes.at(-1).x > walked[0].x, "F3 the child waits as a tab on the right");
+  await page.keyboard.press("Escape");
+  g = await stage("escape brings the trail back", page);
+  assert.equal(g.panes.filter((p) => !p.folded).length, 2, "F2 Esc first brings the whole trail back");
+  assert.equal(g.panes.length, beforeDeep + 3, "F2 leaving focus closes nothing");
+  await page.locator(`.reader-pane[data-node-id="${g.panes.at(-1).id}"] .pane-focus`).click();
+  g = await stage("the focus button reads a document alone", page);
+  assert.equal(g.panes.filter((p) => !p.folded).length, 1, "F1 the pane's own button focuses it too");
+  await page.keyboard.press("Escape");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Escape");
+  g = await stage("escape peels back to the pair", page);
+  assert.equal(g.panes.length, beforeDeep, "B8 Esc then closes the deepest answers one by one");
+
   // ------------------------------------------------ phone: swipe back
   await page.setViewportSize({ width: 700, height: 900 });
   const cdp = await context.newCDPSession(page);
@@ -259,6 +337,11 @@ async function stage(name, page) {
           x: Math.round((r.left - s.left) * 100) / 100,
           w: Math.round(r.width * 100) / 100,
           colW: Math.round(col.width * 100) / 100,
+          colX: Math.round((col.left - s.left) * 100) / 100,
+          exposed: Math.round(Math.min(r.right, s.right) - Math.max(r.left, s.left)),
+          titled: !el.querySelector(".pane-spine").classList.contains("pane-spine-sliver"),
+          veil: Number(getComputedStyle(el, "::after").opacity),
+          closeRight: Math.round(el.querySelector(".pane-close").getBoundingClientRect().right - s.left),
           folded: el.classList.contains("pane-folded"),
           current: el.classList.contains("current"),
           scrollTop: scroll.scrollTop,
@@ -289,7 +372,7 @@ async function settle(page) {
     w.__trailLast = null;
   });
   await page.waitForFunction(() => {
-    const now = [...document.querySelectorAll(".reader-pane")].map((p) => p.style.transform).join("|");
+    const now = [...document.querySelectorAll(".reader-pane")].map((p) => p.style.transform + p.style.width).join("|");
     const w = /** @type {any} */ (window);
     if (w.__trailLast !== now) {
       w.__trailLast = now;
@@ -312,9 +395,9 @@ function assertOnSlots(g, label) {
 async function ask(page, paneId, text, question) {
   await selectVisibleText(page, { text, rootSelector: `.reader-pane[data-node-id="${paneId}"] .doc-content` });
   await page.fill("#ask-text", question);
-  // The place the reader is at the moment they ask — selecting may have
+  // The line the reader is at the moment they ask — selecting may have
   // scrolled the text into view; from here on nothing may move it.
-  const place = await page.evaluate((id) => document.querySelector(`.reader-pane[data-node-id="${id}"] .pane-scroll`).scrollTop, paneId);
+  const place = await readingLine(page, paneId);
   await page.keyboard.press("Meta+Enter");
   await page.waitForFunction((q) => [...document.querySelectorAll(".reader-context")].some((el) => el.textContent.includes(q)), question);
   return place;
@@ -326,25 +409,64 @@ async function scrollPane(page, id, top) {
   }, [id, top]);
 }
 
+// The first character at the top of a pane's view, and how far below the top
+// its line sits: the place a reader is at, whatever the measure.
+async function readingLine(page, id) {
+  return page.evaluate((paneId) => {
+    const scroll = document.querySelector(`.reader-pane[data-node-id="${paneId}"] .pane-scroll`);
+    const top = scroll.getBoundingClientRect().top;
+    const walker = document.createTreeWalker(scroll.querySelector(".doc-content"), NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (let i = 0; i < node.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const rect = range.getBoundingClientRect();
+        if (rect.height && rect.top >= top - 0.5 && node.data[i].trim()) {
+          return { text: node.data.slice(i, i + 24), dy: Math.round(rect.top - top) };
+        }
+      }
+    }
+    return null;
+  }, id);
+}
+
+// The text that was at the top of the view is still there, to the pixel it
+// sat at, though a new measure moved words between lines around it.
+async function assertLineKept(page, id, before, label) {
+  const dy = await page.evaluate(([paneId, text]) => {
+    const scroll = document.querySelector(`.reader-pane[data-node-id="${paneId}"] .pane-scroll`);
+    const walker = document.createTreeWalker(scroll.querySelector(".doc-content"), NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.data.indexOf(text);
+      if (at < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + 1);
+      return Math.round(range.getBoundingClientRect().top - scroll.getBoundingClientRect().top);
+    }
+    return null;
+  }, [id, before.text]);
+  assert(dy !== null && Math.abs(dy - before.dy) <= 1, `${label}: ${JSON.stringify({ before, dy })}`);
+}
+
+// Every open pane's bar title (shown or not yet) starts on its text column.
+async function assertTitlesOnColumn(page, label) {
+  const offsets = await page.evaluate(() =>
+    [...document.querySelectorAll(".reader-pane:not(.pane-leaving):not(.pane-folded)")].map((pane) => {
+      const range = document.createRange();
+      range.selectNodeContents(pane.querySelector(".pane-title"));
+      const title = range.getBoundingClientRect().left;
+      const col = pane.querySelector(".reader-col").getBoundingClientRect().left;
+      return Math.round((title - col) * 10) / 10;
+    }),
+  );
+  assert(offsets.length && offsets.every((d) => Math.abs(d) <= 1), `${label}: ${JSON.stringify(offsets)}`);
+}
+
 async function paneText(page, id, text) {
   await page.waitForFunction(([paneId, needle]) => document.querySelector(`.reader-pane[data-node-id="${paneId}"] .doc-content`)?.textContent.includes(needle), [id, text]);
   return true;
-}
-
-async function lineBoxes(page, id, needle) {
-  return page.evaluate(([paneId, word]) => {
-    const doc = document.querySelector(`.reader-pane[data-node-id="${paneId}"] .doc-content`);
-    const walker = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const at = node.data.indexOf(word);
-      if (at < 0) continue;
-      const range = document.createRange();
-      range.selectNodeContents(node.parentElement);
-      // Line count and each line's width: identical iff nothing re-wrapped.
-      return [...range.getClientRects()].map((r) => Math.round(r.width));
-    }
-    return null;
-  }, [id, needle]);
 }
 
 async function assertComposerUnder(page, paneId, label) {
@@ -356,17 +478,26 @@ async function assertComposerUnder(page, paneId, label) {
   assert(Math.abs(composer.left - col.left) <= 1 && Math.abs(composer.right - col.right) <= 1, `${label}: ${JSON.stringify({ composer, col })}`);
 }
 
-// Panes run the whole height of the window: the composer floats over the foot
-// of the current one instead of taking a band of its own.
-async function assertComposerFloats(page, label) {
-  const m = await page.evaluate(() => {
-    const stage = document.getElementById("reader-main").getBoundingClientRect();
-    const pane = document.querySelector(".reader-pane.current").getBoundingClientRect();
-    const composer = document.getElementById("composer-inner").getBoundingClientRect();
-    return { stageBottom: stage.bottom, paneBottom: pane.bottom, windowBottom: innerHeight, composerTop: composer.top, composerBottom: composer.bottom };
-  });
-  assert(Math.abs(m.paneBottom - m.windowBottom) <= 1 && Math.abs(m.stageBottom - m.windowBottom) <= 1, `${label}: ${JSON.stringify(m)}`);
-  assert(m.composerTop > m.windowBottom - 160 && m.composerBottom < m.windowBottom, `${label}: ${JSON.stringify(m)}`);
+// The composer rests after the document's last line: it is in the current
+// pane, below its text, and out of sight while that pane is read from the top.
+async function assertComposerAtEnd(page, paneId, label) {
+  const m = await page.evaluate((id) => {
+    const pane = document.querySelector(`.reader-pane[data-node-id="${id}"]`);
+    const composer = document.getElementById("composer");
+    const doc = pane.querySelector(".doc-content").getBoundingClientRect();
+    const scroll = pane.querySelector(".pane-scroll");
+    const keep = scroll.scrollTop;
+    scroll.scrollTop = 0;
+    const atTop = composer.getBoundingClientRect().top;
+    scroll.scrollTop = keep;
+    return { inFoot: !!composer.closest(".pane-foot") && pane.contains(composer), docBottom: doc.bottom, composerTop: composer.getBoundingClientRect().top, atTop, windowBottom: innerHeight };
+  }, paneId);
+  assert(m.inFoot && m.composerTop >= m.docBottom, `${label}: ${JSON.stringify(m)}`);
+  assert(m.atTop > m.windowBottom, `${label}: a long document read from its top shows no composer: ${JSON.stringify(m)}`);
+}
+
+async function scrollHeightOf(page, id) {
+  return page.evaluate((paneId) => document.querySelector(`.reader-pane[data-node-id="${paneId}"] .pane-scroll`).scrollHeight, id);
 }
 
 // Every dot in an open pane sits on the first line of the mark it stands for.

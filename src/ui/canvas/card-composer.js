@@ -158,6 +158,7 @@ export function updateCardComposer(node) {
   // A draft in progress keeps the drawer out even when the pointer wanders off.
   const hasDraft = !!node.ncText.value.trim();
   node.ncComp.classList.toggle("nc-draft", hasDraft);
+  node.ncComp.classList.toggle("composer-waiting", node.status === "pending");
   node.ncInner.classList.toggle("has-draft", hasDraft);
   applyComposerState(
     {

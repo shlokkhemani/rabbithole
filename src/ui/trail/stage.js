@@ -2,6 +2,7 @@ import { shouldReduceMotion } from "../core.js";
 import { createCleanupScope } from "../kit/scope.js";
 import {
   foldAmount,
+  leanTabs,
   maxPosition,
   paneFrames,
   revealPosition,
@@ -54,6 +55,13 @@ export function createTrailStage(options) {
   let touch = null;
   let settledAt = 0;
   let paintedBox = "";
+  // Pointing at a tab too narrow for its title leans it open: the other tabs
+  // on its edge give up the room, so nothing else moves. Each leaning pane
+  // has its own spring, so the lean glides from tab to tab with the pointer.
+  const leans = new Map(); // pane element → spring of how far its tab leans open
+  let pointed = null; // the pane whose tab is under the pointer
+  let keyed = null; // the pane whose tab holds keyboard focus
+  let leanAt = null; // the trail position the leaning edges were taken at
 
   function count() {
     return options.panes().length;
@@ -80,7 +88,81 @@ export function createTrailStage(options) {
 
   function currentFrames(panes) {
     const shownP = dragging ? rubberBand(springP.x, maxPosition(panes.length, shape(panes.length).open)) : springP.x;
-    return paneFrames(panes.length, shownP, springS.x, springE.x, metrics);
+    return paneFrames(panes.length, shownP, springS.x, springE.x, metrics, leanedTabs(panes));
+  }
+
+  // --- leaning tabs ----------------------------------------------------------
+  function leanedTabs(panes) {
+    if (!leanAt) return undefined;
+    // Only the left edge is a stack of tabs: on the right, the nearest
+    // pane covers the deeper ones and shows as one.
+    const weights = panes.map((pane) => (leans.has(pane.el) ? leans.get(pane.el).x : 0));
+    return leanTabs(Math.max(0, springS.x), weights, [[0, Math.min(panes.length, leanAt.p)]]);
+  }
+
+  // A lean starts only on a trail at rest, and keeps the edges it started
+  // with until it has let go: a trail on the move lets every tab go first.
+  function leanable() {
+    if (dragging || Math.abs(springP.x - springP.target) > 0.01) return false;
+    return !leanAt || leanAt.p === Math.round(springP.target);
+  }
+
+  function updateLean() {
+    const shown = options.panes().map((pane) => pane.el);
+    const asked = pointed || keyed;
+    const want = asked && shown.includes(asked) && leanable() ? asked : null;
+    if (want && !leanAt) leanAt = { p: Math.round(springP.target) };
+    if (want && !leans.has(want)) leans.set(want, { x: 0, v: 0, target: 0 });
+    let changed = false;
+    for (const [el, spring] of leans) {
+      if (!shown.includes(el)) {
+        leans.delete(el);
+        continue;
+      }
+      const target = el === want ? 1 : 0;
+      if (spring.target !== target) changed = true;
+      spring.target = target;
+      if (shouldReduceMotion()) {
+        spring.x = target;
+        spring.v = 0;
+      }
+    }
+    if (changed) schedule();
+  }
+
+  // Every tab has let go: the edges are forgotten with it.
+  function releaseLeans() {
+    for (const spring of leans.values()) if (spring.target || spring.x) return;
+    leans.clear();
+    leanAt = null;
+  }
+
+  function paneOfSpine(target) {
+    const spine = target instanceof Element ? target.closest(".pane-spine") : null;
+    const pane = spine ? options.panes().find((candidate) => candidate.spine === spine) : null;
+    return pane ? pane.el : null;
+  }
+
+  function onPointerOver(e) {
+    if (e.pointerType === "touch") return;
+    pointed = paneOfSpine(e.target);
+    updateLean();
+  }
+
+  // Tabbing along the edge names each tab as the pointer would.
+  function onFocusIn(e) {
+    keyed = e.target instanceof Element && e.target.matches(":focus-visible") ? paneOfSpine(e.target) : null;
+    updateLean();
+  }
+
+  function onFocusOut() {
+    keyed = null;
+    updateLean();
+  }
+
+  function onPointerLeave() {
+    pointed = null;
+    updateLean();
   }
 
   function measure() {
@@ -99,8 +181,6 @@ export function createTrailStage(options) {
   function paint(rest) {
     const panes = options.panes();
     const frames = currentFrames(panes);
-    const tab = Math.max(0, springS.x);
-    const titled = spineTitled(tab);
     // Every pane is one width. A text's measure follows its pane's (base.css),
     // so a change of width may re-wrap it: whoever reads it keeps their line.
     const box = frames.length ? frames[0].box.toFixed(2) + "px" : "";
@@ -113,11 +193,12 @@ export function createTrailStage(options) {
     for (let i = 0; i < panes.length; i++) {
       const { el, scroll, spine } = panes[i];
       const f = frames[i];
+      const tab = Math.max(0, f.tab);
       const fold = foldAmount(f.exposed, tab, f.box);
       el.style.transform = "translate3d(" + f.x.toFixed(2) + "px,0,0)";
       el.style.zIndex = String(f.z);
       spine.style.width = tab.toFixed(2) + "px";
-      spine.classList.toggle("pane-spine-sliver", !titled);
+      spine.classList.toggle("pane-spine-sliver", !spineTitled(tab));
       const covered = f.exposed < 0.5;
       if (!covered) el.style.visibility = "";
       if (rest) {
@@ -139,7 +220,7 @@ export function createTrailStage(options) {
     const dt = Math.min(0.05, Math.max(0.001, (now - (lastTime || now)) / 1000 || 1 / 60));
     lastTime = now;
     let moving = false;
-    for (const spring of springs) {
+    for (const spring of [...springs, ...leans.values()]) {
       if (dragging && spring === springP) continue;
       advance(spring, dt);
       if (Math.abs(spring.x - spring.target) > REST || Math.abs(spring.v) > REST) moving = true;
@@ -149,6 +230,8 @@ export function createTrailStage(options) {
       }
     }
     paint(!moving && !dragging);
+    releaseLeans();
+    updateLean();
     if (moving || dragging) schedule();
     else {
       lastTime = 0;
@@ -380,6 +463,10 @@ export function createTrailStage(options) {
   scope.listen(stage, "pointermove", onPointerMove, { passive: true });
   scope.listen(stage, "pointerup", onPointerUp, { passive: true });
   scope.listen(stage, "pointercancel", onPointerUp, { passive: true });
+  scope.listen(stage, "pointerover", onPointerOver, { passive: true });
+  scope.listen(stage, "pointerleave", onPointerLeave, { passive: true });
+  scope.listen(stage, "focusin", onFocusIn);
+  scope.listen(stage, "focusout", onFocusOut);
   if (typeof ResizeObserver === "function") {
     const observer = new ResizeObserver(function () {
       if (measure()) relayout();

@@ -72,6 +72,31 @@ export function spineTitled(spine) {
   return spine >= TITLED_SPINE;
 }
 
+/**
+ * Every pane's tab width, `spine` each — except along an edge the pointer is
+ * reading. There a tab leans open toward a full, titled tab by its weight
+ * (0…1) and the other tabs on that edge give up the room, so the edge, and
+ * every pane beside it, keeps its width. `edges` are the index ranges
+ * [from, to) of the tabs stacked along an edge.
+ * @param {number} spine
+ * @param {number[]} weights
+ * @param {[number, number][]} edges
+ */
+export function leanTabs(spine, weights, edges) {
+  const tabs = weights.map(() => spine);
+  for (const [from, to] of edges) {
+    const room = (to - from) * spine;
+    // How much more a fully leaning tab weighs than its neighbours, so that
+    // it comes out exactly a full tab wide.
+    const gain = room > SPINE + 0.5 ? Math.max(0, ((to - from) * SPINE - room) / (room - SPINE)) : 0;
+    if (!gain) continue;
+    let total = 0;
+    for (let i = from; i < to; i++) total += 1 + weights[i] * gain;
+    for (let i = from; i < to; i++) tabs[i] = (room * (1 + weights[i] * gain)) / total;
+  }
+  return tabs;
+}
+
 /** Highest meaningful `p` for a trail of `count` panes with `open` shown. */
 export function maxPosition(count, open) {
   return Math.max(0, count - open);
@@ -82,26 +107,32 @@ export function maxPosition(count, open) {
  * `extra`. Per pane: `x` (left edge, stage coordinates), `z` (paint order),
  * `exposed` (visible width once nearer panes cover it). Every pane is `box`
  * wide. Open panes sit side by side after the left tabs; a pane that reaches
- * its tab's place stops there while the next slides over it.
+ * its tab's place stops there while the next slides over it. `tabs` gives
+ * each pane its own tab width when an edge is leaning (leanTabs).
  * @param {number} count
  * @param {number} p
  * @param {number} spine
  * @param {number} extra
  * @param {ReturnType<typeof trailMetrics>} metrics
+ * @param {number[]} [tabs]
  */
-export function paneFrames(count, p, spine, extra, metrics) {
+export function paneFrames(count, p, spine, extra, metrics, tabs) {
   const box = metrics.paneWidth + extra;
   const right = metrics.stage;
+  const tab = (i) => (tabs ? tabs[i] : spine);
   const frames = [];
+  let leftStop = 0;
+  let rightStop = right;
+  for (let i = 0; i < count; i++) rightStop -= tab(i);
   for (let i = 0; i < count; i++) {
     const natural = spine * p + (i - p) * box;
-    const leftStop = spine * i;
-    const rightStop = right - spine * (count - i);
     const parkedRight = natural > rightStop;
     const x = parkedRight ? rightStop : Math.max(leftStop, natural);
+    leftStop += tab(i);
+    rightStop += tab(i);
     // Parked on the left, a later pane covers an earlier one; parked on the
     // right, the nearer pane must cover the deeper one instead.
-    frames.push({ x: x, z: parkedRight ? count - i : count + i, exposed: 0, box: box });
+    frames.push({ x: x, z: parkedRight ? count - i : count + i, exposed: 0, box: box, tab: tab(i) });
   }
   for (let i = 0; i < count; i++) {
     const own = frames[i];

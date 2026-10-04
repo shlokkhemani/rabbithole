@@ -278,10 +278,11 @@ body.mode-canvas #tb-restore-pill { display: none; }
 .pane-spine:hover { background: color-mix(in srgb, var(--fg) 6%, var(--bar-bg)); color: var(--fg-bold); }
 .pane-spine:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 /* Tabs for a deep trail share the edge; too narrow for a title, a tab is a
-   sliver that still opens its document and names it on hover. */
-.pane-spine-sliver .pane-spine-title { opacity: 0; }
+   sliver. Pointed at, it leans open (stage.js) — its neighbours give up the
+   room — and its title surfaces as the tab reaches a width that holds it. */
+.pane-spine-sliver .pane-spine-title { opacity: 0; transition-duration: var(--duration-instant); }
 .pane-spine-title { max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl;
-  font-size: var(--text-ui); font-weight: var(--weight-medium); letter-spacing: 0.01em; }
+  font-size: var(--text-ui); font-weight: var(--weight-medium); letter-spacing: 0.01em; transition: opacity var(--duration-fast) var(--ease-out); }
 @keyframes pane-enter { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pane-leave { to { opacity: 0; } }
 .reader-pane.pane-entering .pane-scroll { animation: pane-enter var(--duration-move) var(--ease-out); }

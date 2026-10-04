@@ -73,6 +73,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/e2e/refresh-restores-view.test.mjs` — a browser refresh restores exactly what the human was looking at — reader or canvas, the whole trail, every scroll place, focus, camera, PDF place — in the web app and on the MCP-served page.
 - `test/e2e/selection-popover.test.mjs` — selection popover capability contracts.
 - `test/e2e/switch-keeps-places.test.mjs` — one place per document: switching between the canvas and the reader keeps every document where it was read to, not only the one switched through.
+- `test/e2e/tab-lean.test.mjs` — a deep trail's ancestor slivers name themselves under the pointer: the pointed tab leans open to a titled tab while its neighbours give up the room, so nothing else on the stage moves.
 - `test/e2e/ui-primitives-browsers.test.mjs` — ui primitives browsers capability contracts.
 - `test/e2e/web-app-branching.test.mjs` — Image-backed asks, note-to-ask conversion, and logical selection marks.
 - `test/e2e/web-app-learning.test.mjs` — web app learning capability contracts.

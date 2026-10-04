@@ -15,6 +15,7 @@
   "refresh-restores-view.test.mjs": { "ms": 32000, "browsers": [] },
   "selection-popover.test.mjs": { "ms": 1300, "browsers": [] },
   "switch-keeps-places.test.mjs": { "ms": 6000, "browsers": [] },
+  "tab-lean.test.mjs": { "ms": 9000, "browsers": [] },
   "ui-primitives-browsers.test.mjs": { "ms": 12000, "browsers": ["firefox", "webkit"] },
   "web-app-branching.test.mjs": { "ms": 17000, "browsers": [] },
   "web-app-learning.test.mjs": { "ms": 36000, "browsers": [] },

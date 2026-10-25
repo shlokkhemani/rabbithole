@@ -1,13 +1,5 @@
 import { isDockedNote } from "../../core/hole/ask.js";
-import {
-  boundsOverlap,
-  nodeBounds,
-  nodeOrder,
-  shiftBounds,
-  TREE_PARENT_GAP,
-  TREE_STACK_GAP,
-  unionBounds,
-} from "../../core/layout.js";
+import { tidyPositions } from "../../core/layout.js";
 import {
   canvasBuilt,
   canvasFramed,
@@ -33,7 +25,6 @@ import { discardAllCollapseStacks, renderVisibility } from "./fold.js";
 import { layoutNode } from "./gestures.js";
 import { placedChildren } from "./menu.js";
 import { r } from "./runtime.js";
-import { isFollowup, isSelectionBranch } from "./shared.js";
 import { frameAll } from "./viewport.js";
 
 export function tidy(source) {
@@ -41,60 +32,21 @@ export function tidy(source) {
   // current folded geometry as its input and retire any older restore point,
   // so a later expansion cannot undo the layout the human just requested.
   discardAllCollapseStacks();
-  const visited = {};
-  function moveSubtree(node, dx, dy) {
-    node.position.x += dx;
-    node.position.y += dy;
-    placedChildren(node.id)
-      .filter(function (k) {
-        return visited[k.id];
-      })
-      .sort(nodeOrder)
-      .forEach(function (k) {
-        moveSubtree(k, dx, dy);
-      });
-  }
-  function place(node, x, y) {
-    visited[node.id] = true;
-    node.position.x = x;
-    node.position.y = y;
-    let bounds = nodeBounds(node, { effH: effH });
-    const kids = placedChildren(node.id).sort(nodeOrder);
-    const selectionKids = kids.filter(isSelectionBranch);
-    const followupKids = kids.filter(isFollowup);
-    let sideBounds = null;
-    const sideX = node.position.x + node.size.w + TREE_PARENT_GAP;
-    let sideY = node.position.y;
-    selectionKids.forEach(function (k) {
-      const kb = place(k, sideX, sideY);
-      sideBounds = unionBounds(sideBounds, kb);
-      bounds = unionBounds(bounds, kb);
-      sideY = kb.maxY + TREE_STACK_GAP;
-    });
-    let belowY = node.position.y + effH(node) + TREE_PARENT_GAP;
-    followupKids.forEach(function (k) {
-      let kb = place(k, node.position.x, belowY);
-      if (boundsOverlap(kb, sideBounds)) {
-        const dy = sideBounds.maxY + TREE_STACK_GAP - kb.minY;
-        moveSubtree(k, 0, dy);
-        kb = shiftBounds(kb, 0, dy);
-      }
-      bounds = unionBounds(bounds, kb);
-      belowY = kb.maxY + TREE_STACK_GAP;
-    });
-    return bounds;
-  }
   const root = nodes[rootId];
   if (!root) return;
-  place(root, 0, 0);
-  // Only nodes actually visited (the live tree) are laid out.
-  const ids = Object.keys(visited);
+  // The tree shape is computed by the pure core layout; this module owns only
+  // the DOM, persistence, edge, and camera work that applying it requires.
+  const positions = tidyPositions({ root, childrenOf: placedChildren, effH });
   const moved = [];
-  ids.forEach(function (id) {
-    const nn = nodes[id];
-    layoutNode(nn);
-    moved.push(nn);
+  positions.forEach(function (position, id) {
+    const node = nodes[id];
+    if (!node) return;
+    node.position.x = position.x;
+    node.position.y = position.y;
+    layoutNode(node);
+    moved.push(node);
   });
+  if (!moved.length) return;
   r.lifecycle.hooks.persistNodesBulk(moved);
   rebuildEdges();
   frameAll(true, source);

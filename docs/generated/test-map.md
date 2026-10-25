@@ -43,6 +43,7 @@ Each description is harvested from the test file's `@protects` declaration.
 - `test/unit/reducer.test.mjs` — reducer capability contracts.
 - `test/unit/request-table.test.mjs` — request table capability contracts.
 - `test/unit/subscription-source-guard.test.mjs` — subscription source guard capability contracts.
+- `test/unit/tidy-layout.test.mjs` — tidy layout fan-out and card non-overlap capability contracts.
 - `test/unit/ui-card-presentation.test.mjs` — ui card presentation capability contracts.
 - `test/unit/version.test.mjs` — the release version reaching the CLI, the MCP handshake, and the built browser bundles from package.json alone.
 

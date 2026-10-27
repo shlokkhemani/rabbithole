@@ -24,6 +24,10 @@ body {
 .md h4, .md h5, .md h6 { font-family: var(--font-ui); font-weight: var(--weight-semibold); font-size: var(--doc-code-size); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-dim); margin: 1.6em 0 0.5em; }
 .md h1:first-child, .md h2:first-child, .md h3:first-child, .md h4:first-child { margin-top: 0; }
 .md p { margin: 0 0 0.85em; }
+/* Keep scripts in the surrounding typeface without stretching the line box. */
+.md sup, .md sub { position: relative; vertical-align: baseline; font-size: var(--doc-size-script); line-height: 0; }
+.md sup { top: -0.5em; }
+.md sub { bottom: -0.25em; }
 /* A long document renders only the stretch you can see. Each top-level text
    block off screen is skipped — not laid out, not painted — and remembers its
    real size once it has been seen, so a 30,000-word card pans, scrolls and

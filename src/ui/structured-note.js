@@ -53,6 +53,10 @@ function inlineMarkdown(node) {
   if (element.matches("strong, b")) return "**" + content + "**";
   if (element.matches("em, i")) return "*" + content + "*";
   if (element.matches("del, s, strike")) return "~~" + content + "~~";
+  if (element.matches("sup, sub")) {
+    const tag = element.tagName.toLowerCase();
+    return "<" + tag + ">" + content + "</" + tag + ">";
+  }
   if (element.matches("code") && !element.closest("pre")) return "`" + content.replace(/`/g, "\\`") + "`";
   if (element.matches("a")) {
     const href = element.dataset.markdownHref || element.getAttribute("href") || "";

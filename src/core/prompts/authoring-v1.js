@@ -1,6 +1,8 @@
 export const AUTHORING_VOCABULARY_V1 = [
   "Authoring vocabulary:",
   "- Base notation: GFM markdown, $...$/$$...$$ and \\(...\\)/\\[...\\] math, and highlighted language-tagged code fences.",
+  "- Typeset scientific notation even in headings: use $E_K$, $K^+$, $x^2$, $\\frac{a}{b}$, and $\\alpha$ rather than bare E_K or x^2. Use math delimiters for formulas, fractions, roots, Greek letters, and operators; keep code and identifiers in backticks literal.",
+  "- For simple superscripts and subscripts in prose, use attribute-free <sup>...</sup> and <sub>...</sub>, for example K<sup>+</sup>, E<sub>K</sub>, and H<sub>2</sub>O. Other raw HTML is escaped; ^text^ and ~text~ are not script syntax.",
   "- If the answer is content fetched from a URL or repo, pass its document URL as base_url so relative images and links resolve.",
   "- If the answer uses a local image, pass assets: [{ name, file_path }] and reference it as ![alt](asset:name.png); use this for screenshots, generated diagrams, and other non-web images.",
   "- Use standard ```mermaid fences for flowcharts, sequence, class, state, and entity-relationship diagrams.",

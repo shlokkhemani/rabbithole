@@ -20,6 +20,7 @@ const NOTICE_SOURCE = (await fs.readFile(path.join(ROOT, "src/ui/primitives/noti
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
+  await verifyScientificNotation();
   await verifyNoticePrimitive();
   await verifyBannerGlass();
   await verifyStatefulCheckCycle();
@@ -28,6 +29,56 @@ try {
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyScientificNotation() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.keyboard.press("Escape");
+    await createDocument(page, [
+      '# K<sup>+</sup> channels and $E_K$', "",
+      'If K<sup>+</sup> were the only ion that could cross, **E<sub>K</sub> ≈ −90 mV** would be the resting potential.', "",
+      'Water: H<sub>2</sub>O. Powers: x<sup>2</sup>. Nested: x<sup>n<sub>i</sub></sup>.', "",
+      String.raw`Other math: $\frac{a}{b}$, $\sqrt{x}$, and $\alpha \approx 90$.`, "",
+      '| Symbol | Meaning |', '| --- | --- |', '| E<sub>K</sub> | potassium equilibrium |', "",
+      'Literal code: `E_K`, `K<sup>+</sup>`, `x^2`. Approximately ~77% and ~1,000; ~~removed~~.',
+    ].join("\n"));
+
+    async function assertNotation(surface) {
+      assert.equal(await surface.locator("h1 sup").innerText(), "+", "headings render superscripts");
+      assert.equal(await surface.locator("strong sub").innerText(), "K", "emphasis preserves subscripts");
+      assert.equal(await surface.locator("td sub").innerText(), "K", "table cells render subscripts");
+      assert.equal(await surface.locator("sup sub").innerText(), "i", "scripts can nest");
+      assert.deepEqual(await surface.locator("code").allTextContents(), ["E_K", "K<sup>+</sup>", "x^2"], "code stays literal");
+      assert((await surface.innerText()).includes("Approximately ~77% and ~1,000"), "approximation tildes stay literal");
+      assert.equal(await surface.locator("del").innerText(), "removed", "strikethrough stays supported");
+      assert.equal(await surface.locator(".katex math").count(), 4, "formulas retain accessible MathML");
+      assert.equal(await surface.locator("mfrac").count(), 1, "fractions render");
+      assert.equal(await surface.locator("msqrt").count(), 1, "roots render");
+      const scripts = await surface.locator("strong sub, h1 sup").evaluateAll((elements) => elements.map((el) => {
+        const style = getComputedStyle(el);
+        return { tag: el.tagName, ratio: parseFloat(style.fontSize) / parseFloat(getComputedStyle(el.parentElement).fontSize),
+          lineHeight: style.lineHeight, offset: parseFloat(el.tagName === "SUP" ? style.top : style.bottom) };
+      }));
+      for (const script of scripts) {
+        assert(Math.abs(script.ratio - 0.75) < 0.01, `${script.tag} scales with its surrounding text`);
+        assert.equal(script.lineHeight, "0px", "scripts do not stretch line spacing");
+        assert(script.offset < 0, "scripts shift off the baseline");
+      }
+    }
+
+    await assertNotation(page.locator(".card.root .doc-content").first());
+    const snapshot = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+    const frozen = await context.newPage();
+    await frozen.setContent(snapshot, { waitUntil: "load" });
+    await frozen.waitForSelector(".card.root .doc-content h1 sup");
+    await assertNotation(frozen.locator(".card.root .doc-content").first());
+    console.log("ok web app: scientific scripts, equations, and literal notation render in live and frozen documents");
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifyBranchContentSizing() {

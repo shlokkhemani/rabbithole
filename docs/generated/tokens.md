@@ -117,6 +117,7 @@ Values are read from `src/design/tokens.css`; repeated theme overrides remain vi
 | `--doc-size-compact` | `.95em` |
 | `--doc-code-size` | `.82em` |
 | `--doc-block-code-size` | `.8em` |
+| `--doc-size-script` | `.75em` |
 | `--bg` | `#1a1918` |
 | `--grid` | `#262422` |
 | `--fg` | `#cfccc4` |

@@ -115,6 +115,17 @@ async function runRendererGoldenFixtures() {
       },
     },
     {
+      name: "scientific scripts",
+      markdown: "# K<sup>+</sup>\n\n**E<sub>K</sub>** and H<sub>2</sub>O; x<SUP>n<sub>i</sub></SUP>. `E<sub>K</sub>`",
+      assert(html) {
+        assertIncludes(html, "<h1>K<sup>+</sup></h1>");
+        assertIncludes(html, "<strong>E<sub>K</sub></strong>");
+        assertIncludes(html, "H<sub>2</sub>O");
+        assertIncludes(html, "x<sup>n<sub>i</sub></sup>");
+        assertIncludes(html, "<code>E&lt;sub&gt;K&lt;/sub&gt;</code>");
+      },
+    },
+    {
       name: "code",
       markdown: "```js\nconst n = 1 < 2;\n```",
       assert(html) {
@@ -146,6 +157,17 @@ async function runRendererGoldenFixtures() {
         assertIncludes(html, "&lt;section onclick=&quot;bad()&quot;&gt;");
         assert(!html.includes("<section"));
         assert(!html.includes("<script>"));
+      },
+    },
+    {
+      name: "scripts never admit attributes or other HTML",
+      markdown: '<sup onclick="bad()">2</sup> <sub style="color:red">K</sub> <sup><img src=x onerror="bad()"></sup>',
+      assert(html) {
+        assertIncludes(html, '&lt;sup onclick=&quot;bad()&quot;&gt;');
+        assertIncludes(html, '&lt;sub style=&quot;color:red&quot;&gt;');
+        assert(!html.includes('<sup '));
+        assert(!html.includes('<sub '));
+        assert(!html.includes('<img'));
       },
     },
     {

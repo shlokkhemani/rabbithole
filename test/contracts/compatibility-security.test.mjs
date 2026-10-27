@@ -28,6 +28,7 @@ const HOSTILE = [
   "```",
   "",
   "Invalid math $\\notacommand{<img src=x onerror=window.__securityProbePwned=11>}$.",
+  "K<sup>+</sup> and E<sub>K</sub>; hostile scripts: <sup onmouseover=\"window.__securityProbePwned=12\">2</sup> <sub style=\"background:url(https://attacker.invalid/)\">K</sub>.",
   "",
   "Valid inline $x^2+1$ and display:",
   "$$\\frac{a}{b}$$",
@@ -144,6 +145,7 @@ async function assertSafeRender(page, label) {
     return {
       pwned: window.__securityProbePwned || 0,
       liveScripts: doc?.querySelectorAll("script,iframe").length || 0,
+      scriptTags: [...(doc?.querySelectorAll("sup, sub") || [])].map((el) => ({ tag: el.tagName, attributes: el.attributes.length })),
       showScripts: show?.querySelectorAll("script,iframe,object,embed,form").length || 0,
       handlers: all.flatMap((el) => [...el.attributes]).filter((a) => /^on/i.test(a.name)).length,
       jsUrls: all.flatMap((el) => [...el.attributes]).filter((a) => /^(?:href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value)).length,
@@ -159,6 +161,8 @@ async function assertSafeRender(page, label) {
   });
   assert.equal(result.pwned, 0, `${label}: hostile code must never execute`);
   assert.equal(result.liveScripts, 0, `${label}: markdown HTML must be escaped, not activated`);
+  assert(result.scriptTags.some((el) => el.tag === "SUP") && result.scriptTags.some((el) => el.tag === "SUB"), `${label}: safe script tags render`);
+  assert(result.scriptTags.every((el) => el.attributes === 0), `${label}: script tag attributes never reach the DOM`);
   assert.equal(result.showScripts, 0, `${label}: forbidden show elements must be removed`);
   assert.equal(result.handlers, 0, `${label}: event-handler attributes must be removed`);
   assert.equal(result.jsUrls, 0, `${label}: javascript URLs must be removed`);

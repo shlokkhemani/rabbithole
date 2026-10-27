@@ -418,6 +418,9 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         return renderCodeFence(token);
       },
       html({ text }) {
+        // Scientific prose needs scripts without invoking math mode. Only the
+        // attribute-free tags are admitted; all other source HTML stays inert.
+        if (/^<\/?(?:sup|sub)>$/i.test(text)) return text.toLowerCase();
         return escapeHtml(text);
       },
       link({ href, title, tokens }) {

@@ -1686,7 +1686,7 @@ async function verifyStandaloneNotesAndEditing() {
     // place it on the canvas first and then edit the card it became.
     await selectText(page, "anchored edit target");
     await page.waitForSelector("#ask.visible");
-    await page.fill("#ask-text", "Original anchored note\n\n- First list item\n- Second list item");
+    await page.fill("#ask-text", "Original anchored note: K<sup>+</sup> and E<sub>K</sub>\n\n- First list item\n- Second list item");
     await page.click('#ask .ask-commit[data-commit="note"]');
     await page.waitForSelector(".card.root .note-dot");
     const anchoredId = await placeDockedNote(page);
@@ -1884,7 +1884,11 @@ async function verifyStandaloneNotesAndEditing() {
       const item = surface.querySelector("li:last-child");
       item.append(" updated");
       surface.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: " updated" }));
-      return surface._rhStructuredNote.markdown;
+      const markdown = surface._rhStructuredNote.markdown;
+      if (!markdown.includes("K<sup>+</sup> and E<sub>K</sub>")) {
+        throw new Error("Editing a note must preserve superscript and subscript markup");
+      }
+      return markdown;
     }), /- Second list item updated/,
     "editing formatted prose should serialize the existing list structure, not flatten it to text");
     await anchoredEditor.fill(Array.from({ length: 40 }, (_value, index) => `Cap line ${index} of an anchored note that has to wrap.`).join("\n"));
